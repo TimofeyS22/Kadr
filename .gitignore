@@ -1,0 +1,14 @@
+node_modules
+dist
+dev-dist
+fixtures/*.mp4
+fixtures/*.m4a
+fixtures/*.png
+*.log
+.DS_Store
+*.tsbuildinfo
+public/ort
+public/mediapipe
+fixtures/*.jpg
+fixtures/*.wav
+fixtures/*.aiff
