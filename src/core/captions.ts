@@ -9,7 +9,8 @@ export function captionPages(words: CaptionWord[], maxWords: number, maxGap = 0.
   let page: CaptionWord[] = [];
   for (const w of words) {
     const prev = page.at(-1);
-    if (prev && (page.length >= maxWords || w.t0 - prev.t1 > maxGap || SENTENCE_END.test(prev.text))) {
+    const newCue = prev?.cue !== undefined && w.cue !== prev.cue;
+    if (prev && (newCue || page.length >= maxWords || w.t0 - prev.t1 > maxGap || SENTENCE_END.test(prev.text))) {
       pages.push(page);
       page = [];
     }
@@ -80,7 +81,8 @@ export function parseSubtitles(text: string): CaptionWord[] {
     const m0 = TIME.exec(a), m1 = TIME.exec(b);
     if (!m0 || !m1) continue;
     const body = lines.slice(i + 1).join(' ').replace(/<[^>]+>/g, '').trim();
-    if (body) words.push(...wordsFromSegment(toSec(m0), toSec(m1), body));
+    const cue = words.length ? (words[words.length - 1].cue ?? 0) + 1 : 0;
+    if (body) words.push(...wordsFromSegment(toSec(m0), toSec(m1), body).map((x) => ({ ...x, cue })));
   }
   return words.sort((x, y) => x.t0 - y.t0);
 }

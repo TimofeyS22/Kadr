@@ -19,7 +19,7 @@ import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './con
 import { ExportSheet } from './ExportSheet';
 import { CaptionEditBody, CaptionsBody, CropBody, StickersBody, VoiceoverBody } from './ToolSheets';
 import { BeatsBody, MaskBody, PausesBody, SfxBody } from './MoreSheets';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 function useSelected(): Clip | null {
   return useEditor((s) => (s.project && s.selection ? findClip(s.project, s.selection)?.clip ?? null : null));

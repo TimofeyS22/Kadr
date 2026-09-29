@@ -1,7 +1,7 @@
 import { Check, Diamond } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEditor } from '../state/store';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 export function Sheet({ title, children }: { title: string; children: ReactNode }) {
   const close = () => useEditor.getState().openSheet(null);

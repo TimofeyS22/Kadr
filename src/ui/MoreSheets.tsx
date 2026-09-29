@@ -10,7 +10,7 @@ import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { addSfx, editClip } from './actions';
 import { Chips, Slider, Toggle, pct, secs } from './controls';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 // ---------- Remove pauses ----------
 

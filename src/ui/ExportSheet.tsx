@@ -5,7 +5,7 @@ import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { Chips, Sheet } from './controls';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 type Phase = { kind: 'setup' } | { kind: 'running'; progress: number } | { kind: 'done'; result: ExportResult } | { kind: 'error'; message: string };
 

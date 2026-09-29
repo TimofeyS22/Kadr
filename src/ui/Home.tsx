@@ -8,7 +8,7 @@ import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { deleteProject, listProjects, loadProject, requestPersistence, saveProject, type ProjectMeta } from '../storage/db';
 import { formatTime } from './format';
-import { t, useLocale } from './i18n';
+import { t, useLocale } from '../lib/i18n';
 
 const ASPECT_HINT: Record<AspectId, string> = {
   '9:16': 'TikTok · Reels · Shorts', '16:9': 'YouTube', '1:1': 'Square', '4:5': 'Instagram feed', '3:4': 'Portrait',
@@ -210,7 +210,7 @@ export function Home() {
           ))}
         </ul>
       )}
-      <footer className="home-foot">{t('Projects and media are stored in this browser. Kadr v0.4')}</footer>
+      <footer className="home-foot">{t('Projects and media are stored in this browser. Kadr v0.5.1')}</footer>
     </main>
   );
 }

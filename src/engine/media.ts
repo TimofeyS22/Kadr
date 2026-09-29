@@ -6,7 +6,10 @@ import {
 import type { AssetKind } from '../core/types';
 import { getBlob, getPeaks, putPeaks } from '../storage/db';
 
-export class MediaError extends Error {}
+/** Error with a user-facing English message (a translation key); `vars` fill its {placeholders}. */
+export class MediaError extends Error {
+  constructor(message: string, readonly vars?: Record<string, string | number>) { super(message); }
+}
 
 export interface Probe { kind: AssetKind; duration: number; width: number; height: number; hasAudio: boolean }
 
@@ -24,7 +27,7 @@ export async function probe(file: Blob): Promise<Probe> {
     if (!(await input.canRead())) throw new MediaError('Unsupported file format');
     const video = await input.getPrimaryVideoTrack();
     const audio = await input.getPrimaryAudioTrack();
-    if (video && !(await video.canDecode())) throw new MediaError(`This browser cannot decode ${(await video.getCodec()) ?? 'this'} video`);
+    if (video && !(await video.canDecode())) throw new MediaError('This browser cannot decode {codec} video. On iPhone, set Camera → Formats → Most Compatible.', { codec: (await video.getCodec()) ?? '?' });
     const hasAudio = !!audio && (await audio.canDecode());
     if (!video && !hasAudio) throw new MediaError('No playable video or audio found');
     const duration = await input.computeDuration();

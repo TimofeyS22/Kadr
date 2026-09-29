@@ -19,7 +19,7 @@ import { editor, useEditor } from '../state/store';
 import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles } from './actions';
 import { Chips, Slider, Swatches, Toggle, pct } from './controls';
 import { formatTime } from './format';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 // ---------- Crop ----------
 
@@ -90,7 +90,7 @@ export function CropBody({ clip }: { clip: VideoClip | ImageClip }) {
 const extFor = (type: string) => (type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm');
 
 export function VoiceoverBody() {
-  const [state, setState] = useState<'idle' | 'recording' | 'saving'>('idle');
+  const [state, setState] = useState<'idle' | 'asking' | 'recording' | 'saving'>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [level, setLevel] = useState(0);
   const rec = useRef<VoiceRecorder | null>(null);
@@ -105,6 +105,7 @@ export function VoiceoverBody() {
 
   async function start() {
     player.prime(); // unlock audio inside the tap, before the permission prompt
+    setState('asking');
     try {
       const r = new VoiceRecorder();
       await r.start();
@@ -122,6 +123,7 @@ export function VoiceoverBody() {
       tick();
     } catch (e) {
       editor().toast(t('Microphone is not available: {error}', { error: errorMessage(e) }), 'error');
+      setState('idle');
     }
   }
 
@@ -156,10 +158,10 @@ export function VoiceoverBody() {
     <div className="recorder">
       <p className="hint">{t('Recording starts at the playhead. The video plays without sound so you can talk over it.')}</p>
       <div className="meter" aria-hidden><div style={{ width: `${Math.round(level * 100)}%` }} /></div>
-      <span className="rec-time">{formatTime(elapsed)}</span>
+      <span className="rec-time">{state === 'asking' ? t('Allow microphone access…') : formatTime(elapsed)}</span>
       {state === 'recording'
         ? <button className="rec-btn on" onClick={() => void stop()} aria-label={t('Stop recording')}><Square size={26} fill="currentColor" /></button>
-        : <button className="rec-btn" disabled={state === 'saving'} onClick={() => void start()} aria-label={t('Start recording')}><Mic size={28} /></button>}
+        : <button className="rec-btn" disabled={state === 'saving' || state === 'asking'} onClick={() => void start()} aria-label={t('Start recording')}><Mic size={28} /></button>}
     </div>
   );
 }

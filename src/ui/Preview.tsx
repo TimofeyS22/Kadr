@@ -6,6 +6,7 @@ import type { Project } from '../core/types';
 import type { LayerBounds } from '../engine/compositor';
 import { player } from '../engine/player';
 import { useEditor } from '../state/store';
+import { t } from '../lib/i18n';
 
 const PREVIEW_MAX_PX = 1280;
 const SNAP = 0.015;
@@ -108,7 +109,8 @@ export function Preview() {
       const px = (e.clientX - r.left) * k, py = (e.clientY - r.top) * k;
       const sel = useEditor.getState().selection;
       const hits = player.bounds.filter((b) => inside(b, px, py));
-      const hit = hits.find((b) => b.id === sel) ?? hits.at(-1);
+      // Visible layers win; an invisible one (e.g. text mid fade-in) is picked only when nothing visible is there.
+      const hit = hits.find((b) => b.id === sel) ?? hits.filter((b) => !b.hidden).at(-1) ?? hits.at(-1);
       const clip = hit ? findClip(useEditor.getState().project!, hit.id)?.clip : undefined;
       g.current = { id: hit?.id ?? null, base: null, local: clip ? player.time - clip.start : 0, moved: false, anchor: { x: 0, y: 0, dist: 0, angle: 0 }, start: { x: 0, y: 0, scale: 1, rotation: 0 } };
       if (hit && hit.id !== sel) useEditor.getState().select(hit.id);
@@ -149,6 +151,47 @@ export function Preview() {
     }, `gesture:${id}`, gs.base);
   };
 
+  // Corner handle: drag to scale and rotate the selected layer around its center (mouse or one finger).
+  const onHandleDown = (e: RPointerEvent) => {
+    e.stopPropagation();
+    const s = useEditor.getState();
+    const id = s.selection;
+    const lb = id ? player.bounds.find((b) => b.id === id) : undefined;
+    const f = id && s.project ? findClip(s.project, id) : null;
+    if (!id || !lb || !f || f.clip.kind === 'audio' || !s.project) return;
+    player.pause();
+    const c = canvas.current!, r = c.getBoundingClientRect(), k = r.width / c.width;
+    const cx = r.left + lb.cx * k, cy = r.top + lb.cy * k;
+    const local = player.time - f.clip.start, tf = f.clip.transform, base = s.project;
+    const s0 = evalAnim(tf.scale, local), r0 = evalAnim(tf.rotation, local);
+    const d0 = Math.max(4, Math.hypot(e.clientX - cx, e.clientY - cy)), a0 = Math.atan2(e.clientY - cy, e.clientX - cx);
+    (e.target as Element).setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const scale = Math.min(10, Math.max(0.05, (s0 * Math.hypot(ev.clientX - cx, ev.clientY - cy)) / d0));
+      let rotation = r0 + ((Math.atan2(ev.clientY - cy, ev.clientX - cx) - a0) * 180) / Math.PI;
+      const snapped = Math.round(rotation / 90) * 90;
+      if (Math.abs(rotation - snapped) < 3) rotation = snapped;
+      useEditor.getState().commit((d) => {
+        const g2 = findClip(d, id);
+        if (!g2 || g2.clip.kind === 'audio') return;
+        setAnim(g2.clip.transform.scale, local, scale);
+        setAnim(g2.clip.transform.rotation, local, rotation);
+      }, `handle:${id}`, base);
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+
+  // Double tap on text or captions opens their editor.
+  const onDoubleClick = () => {
+    const s = useEditor.getState();
+    const kind = s.project && s.selection ? findClip(s.project, s.selection)?.clip.kind : undefined;
+    if (kind === 'text') s.openSheet('text');
+    else if (kind === 'caption') s.openSheet('captionEdit');
+  };
+
   const onUp = (e: RPointerEvent) => {
     pointers.current.delete(e.pointerId);
     const gs = g.current;
@@ -158,9 +201,11 @@ export function Preview() {
   };
 
   return (
-    <div className="preview" ref={wrap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+    <div className="preview" ref={wrap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDoubleClick}>
       <canvas ref={canvas} className="preview-canvas" />
-      <div ref={box} className="sel-box" aria-hidden />
+      <div ref={box} className="sel-box">
+        <div className="sel-handle" onPointerDown={onHandleDown} role="button" aria-label={t('Drag to resize and rotate')} />
+      </div>
       {safeZones && (
         <div ref={zones} className={`safe-zones ${vertical ? 'vertical' : 'title-safe'}`} aria-hidden>
           {vertical ? <><i className="z-top" /><i className="z-right" /><i className="z-bottom" /></> : <i className="z-title" />}

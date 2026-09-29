@@ -12,3 +12,5 @@ public/mediapipe
 fixtures/*.jpg
 fixtures/*.wav
 fixtures/*.aiff
+test-results
+playwright-report

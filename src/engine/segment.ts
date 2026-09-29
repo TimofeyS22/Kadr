@@ -15,11 +15,15 @@ function getSegmenter(): Promise<ImageSegmenter> {
       outputCategoryMask: false,
       outputConfidenceMasks: true,
     });
+    // GPU is fastest, but its setup can fail or stall on weak or busy devices: fall back to CPU after 8 s.
+    const gpu = make('GPU');
+    const timeout = new Promise<null>((r) => setTimeout(() => r(null), 8000));
     try {
-      return await make('GPU');
-    } catch {
-      return make('CPU');
-    }
+      const seg = await Promise.race([gpu, timeout]);
+      if (seg) return seg;
+      void gpu.then((late) => late.close(), () => undefined);
+    } catch { /* GPU unavailable */ }
+    return make('CPU');
   })();
   segmenter.catch(() => { segmenter = null; });
   return segmenter;

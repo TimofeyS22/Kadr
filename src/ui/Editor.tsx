@@ -13,7 +13,7 @@ import { Preview } from './Preview';
 import { Sheets } from './sheets';
 import { Timeline } from './Timeline';
 import { Toolbar } from './Toolbar';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 const snapshot = () => Promise.race([player.snapshot(), new Promise<null>((r) => setTimeout(() => r(null), 800))]);
 

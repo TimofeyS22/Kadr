@@ -42,13 +42,60 @@ export async function saveProject(p: Project, thumb?: string): Promise<void> {
 
 export async function deleteProject(id: string): Promise<void> {
   const p = await loadProject(id);
-  if (p) await Promise.all(Object.keys(p.assets).flatMap((a) => [del(`b:${a}`, store), del(`w:${a}`, store)]));
+  if (p) await Promise.all(Object.keys(p.assets).map(deleteMedia));
   await del(`p:${id}`, store);
   await withIndex((index) => index.filter((m) => m.id !== id));
 }
 
-export const putBlob = (assetId: string, blob: Blob): Promise<void> => set(`b:${assetId}`, blob, store);
-export const getBlob = (assetId: string): Promise<Blob | undefined> => get<Blob>(`b:${assetId}`, store);
+// Media storage. Blobs are stored as-is when the browser allows it (disk-backed, cheapest). Safari refuses
+// Blobs in IndexedDB in private browsing and some other cases (the request fails with a null error), so
+// the fallback stores the file as 16 MB ArrayBuffer chunks, which every engine accepts.
+const CHUNK = 16 * 1024 * 1024;
+interface Chunked { type: string; size: number; chunks: number }
+const assembled = new Map<string, Promise<Blob>>();
+
+export async function putBlob(assetId: string, blob: Blob): Promise<void> {
+  try {
+    await set(`b:${assetId}`, blob, store);
+    return;
+  } catch { /* Blob storage unsupported here → chunks */ }
+  const chunks = Math.max(1, Math.ceil(blob.size / CHUNK));
+  for (let i = 0; i < chunks; i++) await set(`c:${assetId}:${i}`, await blob.slice(i * CHUNK, (i + 1) * CHUNK).arrayBuffer(), store);
+  await set(`c:${assetId}`, { type: blob.type, size: blob.size, chunks } satisfies Chunked, store);
+}
+
+export async function getBlob(assetId: string): Promise<Blob | undefined> {
+  const direct = await get<Blob>(`b:${assetId}`, store);
+  if (direct) return direct;
+  let p = assembled.get(assetId);
+  if (!p) {
+    p = (async () => {
+      const meta = await get<Chunked>(`c:${assetId}`, store);
+      if (!meta) throw new Error('missing');
+      const parts: ArrayBuffer[] = [];
+      for (let i = 0; i < meta.chunks; i++) {
+        const part = await get<ArrayBuffer>(`c:${assetId}:${i}`, store);
+        if (!part) throw new Error('missing');
+        parts.push(part);
+      }
+      return new Blob(parts, { type: meta.type });
+    })();
+    assembled.set(assetId, p);
+  }
+  try {
+    return await p;
+  } catch {
+    assembled.delete(assetId);
+    return undefined;
+  }
+}
+
+async function deleteMedia(assetId: string): Promise<void> {
+  const meta = await get<Chunked>(`c:${assetId}`, store).catch(() => undefined);
+  const keys = [`b:${assetId}`, `w:${assetId}`, `c:${assetId}`, ...Array.from({ length: meta?.chunks ?? 0 }, (_, i) => `c:${assetId}:${i}`)];
+  assembled.delete(assetId);
+  await Promise.all(keys.map((k) => del(k, store)));
+}
 export const putPeaks = (assetId: string, peaks: Float32Array): Promise<void> => set(`w:${assetId}`, peaks, store);
 export const getPeaks = (assetId: string): Promise<Float32Array | undefined> => get<Float32Array>(`w:${assetId}`, store);
 

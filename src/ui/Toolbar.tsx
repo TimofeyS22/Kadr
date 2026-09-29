@@ -8,7 +8,7 @@ import { useEditor, type SheetId } from '../state/store';
 import {
   addMedia, addText, autoReframe, deleteSelected, detachSelectedAudio, duplicateSelected, freezeFrame, reverseSelected, splitAtPlayhead, toggleCutout,
 } from './actions';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 interface Tool { icon: LucideIcon; label: string; run: () => void; danger?: boolean; on?: boolean }
 

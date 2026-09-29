@@ -98,7 +98,11 @@ export type TextClip = ClipBase & Visual & {
   kind: 'text'; text: string; style: TextStyle; animIn: TextAnim; animOut: TextAnim;
 };
 /** Word timing relative to the caption clip start. */
-export interface CaptionWord { t0: number; t1: number; text: string }
+export interface CaptionWord {
+  t0: number; t1: number; text: string;
+  /** Cue index from an imported subtitle file: lines never merge across cues. */
+  cue?: number;
+}
 export type CaptionClip = ClipBase & Visual & {
   kind: 'caption'; words: CaptionWord[]; style: TextStyle;
   /** Active-word color; null = no highlight. */

@@ -65,4 +65,5 @@ npm run dev        # dev-сервер (http://localhost:5173)
 npm run check      # typecheck + tests
 npm run build      # прод-сборка в dist/
 npm run fixtures   # тестовые медиа через ffmpeg в fixtures/
+npm run e2e        # Playwright: iPhone (WebKit) + Android (Chromium), нужен npm run fixtures
 ```

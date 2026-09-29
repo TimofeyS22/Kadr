@@ -2,7 +2,7 @@ import { Component, Suspense, lazy, useEffect, useState, type ReactNode } from '
 import { track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { Home } from './Home';
-import { t, useLocale } from './i18n';
+import { t, useLocale } from '../lib/i18n';
 
 // The editor (and the media engine) load on demand so the home screen starts fast.
 const Editor = lazy(() => import('./Editor').then((m) => ({ default: m.Editor })));

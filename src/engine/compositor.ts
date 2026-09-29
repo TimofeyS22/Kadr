@@ -124,7 +124,7 @@ void main() {
 
 const FULL = { x: 0, y: 0, w: 1, h: 1 };
 
-export interface LayerBounds { id: string; cx: number; cy: number; w: number; h: number; rot: number }
+export interface LayerBounds { id: string; cx: number; cy: number; w: number; h: number; rot: number; hidden: boolean }
 
 interface Slot { tex: WebGLTexture; key: string; w: number; h: number; mips: boolean; lastFrame: number; seg?: WebGLTexture; segKey?: string }
 
@@ -253,31 +253,31 @@ export class Compositor {
     const bounds: LayerBounds[] = [];
 
     for (const l of desc.layers) {
-      if (l.opacity <= 0.001) continue;
-      let sw = W, sh = H;
       const slotId = slotOf(l);
-      if (l.source.kind === 'solid') {
+      const d = l.source.kind === 'solid' ? null : slotId ? sources.get(slotId) : undefined;
+      if (d === undefined) continue;
+      const cr = l.crop ?? FULL;
+      const sw = d ? d.w * cr.w : W, sh = d ? d.h * cr.h : H;
+      const base = l.fit === 'native' ? 1 : l.fit === 'contain' ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
+      const w = sw * base * l.scale, h = sh * base * l.scale;
+      const cx = W / 2 + l.x * W, cy = H / 2 + l.y * H;
+      const rot = (l.rotation * Math.PI) / 180;
+      // Bounds even for layers that are momentarily invisible (e.g. text fading in), so they stay editable.
+      if (l.selectable) bounds.push({ id: l.id, cx, cy, w, h, rot, hidden: l.opacity <= 0.001 });
+      if (l.opacity <= 0.001) continue;
+      if (!d || !slotId) {
         gl.uniform1i(this.loc('uSolid'), 1);
         gl.uniform1i(this.loc('uHasSeg'), 0);
-        const [r, g, b] = hexToRgb(l.source.color);
+        const [r, g, b] = hexToRgb((l.source as { color: string }).color);
         gl.uniform4f(this.loc('uColor'), r, g, b, 1);
       } else {
-        const d = slotId ? sources.get(slotId) : undefined;
-        if (!d || !slotId) continue;
         const s = this.upload(slotId, d, needMips.has(slotId));
         const seg = l.removeBg && d.seg && s.seg ? s.seg : null;
         gl.uniform1i(this.loc('uHasSeg'), seg ? 1 : 0);
         if (seg) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, seg); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, s.tex); }
         gl.uniform1i(this.loc('uSolid'), 0);
         gl.uniform2f(this.loc('uTexel'), 1 / s.w, 1 / s.h);
-        const c = l.crop ?? FULL;
-        sw = s.w * c.w; sh = s.h * c.h;
       }
-      const base = l.fit === 'native' ? 1 : l.fit === 'contain' ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
-      const w = sw * base * l.scale, h = sh * base * l.scale;
-      const cx = W / 2 + l.x * W, cy = H / 2 + l.y * H;
-      const rot = (l.rotation * Math.PI) / 180;
-      const cr = l.crop ?? FULL;
       gl.uniform4f(this.loc('uCrop'), cr.x, cr.y, cr.w, cr.h);
       gl.uniform2f(this.loc('uCenter'), cx, cy);
       gl.uniform2f(this.loc('uSize'), w, h);
@@ -301,7 +301,6 @@ export class Compositor {
       gl.uniform3f(this.loc('uWipe'), ...(l.wipe ?? [0, 0, 0]));
       this.blend(l.blend);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      if (l.selectable) bounds.push({ id: l.id, cx, cy, w, h, rot });
     }
     for (const [id, s] of this.slots) {
       if (this.frameNo - s.lastFrame > 90) { gl.deleteTexture(s.tex); if (s.seg) gl.deleteTexture(s.seg); this.slots.delete(id); }

@@ -375,3 +375,10 @@ describe('edit by text regressions', () => {
     expect(projectDuration(p)).toBeCloseTo(9.68, 6);
   });
 });
+
+describe('subtitle import keeps cues', () => {
+  it('never merges two SRT cues into one line', () => {
+    const words = parseSubtitles('1\n00:00:00,500 --> 00:00:02,000\nHello from Kadr\n\n2\n00:00:02,500 --> 00:00:04,000\nSecond line\n');
+    expect(captionPages(words, 16).map((p) => p.map((x) => x.text).join(' '))).toEqual(['Hello from Kadr', 'Second line']);
+  });
+});

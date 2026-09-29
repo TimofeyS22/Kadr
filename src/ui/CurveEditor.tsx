@@ -1,7 +1,7 @@
 // Speed curve editor: drag points up/down on a log scale (0.1×–10×). Keyboard: focus a point, arrows adjust.
 import { useRef } from 'react';
 import { CURVE_POINTS, MAX_RATE, MIN_RATE, clampRate, subCurve } from '../core/speed';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 const W = 320, H = 132, PAD = 14;
 const yOf = (v: number) => PAD + (1 - (Math.log10(v) + 1) / 2) * (H - 2 * PAD);

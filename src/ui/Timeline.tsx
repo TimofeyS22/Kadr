@@ -12,7 +12,7 @@ import { useEditor } from '../state/store';
 import { addMedia } from './actions';
 import { clipBeatTimes } from './MoreSheets';
 import { formatTime } from './format';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 const ROW_H: Record<TrackKind, number> = { main: 56, overlay: 34, audio: 34 };
 const LONG_PRESS_MS = 300;

@@ -15,7 +15,7 @@ import { importFile, importFiles, pickFiles } from '../engine/importer';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
-import { t } from './i18n';
+import { t } from '../lib/i18n';
 
 export type AddTarget = 'main' | 'overlay' | 'audio';
 
@@ -28,8 +28,14 @@ export async function addMedia(target: AddTarget): Promise<void> {
 export async function addFiles(files: File[], target: AddTarget): Promise<void> {
   if (!files.length) return;
   const s = editor();
-  s.toast(files.length > 1 ? t('Importing {n} files…', { n: files.length }) : t('Importing…'));
-  const assets = await importFiles(files, (name, e) => s.toast(`${name}: ${errorMessage(e)}`, 'error'));
+  const busy = (i: number) => useEditor.setState({ busy: { label: t('Adding {i} of {n}…', { i: i + 1, n: files.length }), progress: i / files.length } });
+  busy(0);
+  let assets: Asset[] = [];
+  try {
+    assets = await importFiles(files, (name, e) => s.toast(t('Could not add {name}: {error}', { name, error: errorMessage(e) }), 'error'), busy);
+  } finally {
+    useEditor.setState({ busy: null });
+  }
   if (!assets.length) return;
   let first: string | null = null;
   const now = player.time;
@@ -59,6 +65,8 @@ function clipFor(a: Asset, target: AddTarget): Clip | null {
   return a.kind === 'image' ? createImageClip(a) : createVideoClip(a);
 }
 
+const showFrom = (t: number) => { player.pause(); player.seek(t); useEditor.setState({ time: player.time }); };
+
 export function addText(): void {
   let id = '';
   editor().commit((d) => {
@@ -67,6 +75,7 @@ export function addText(): void {
     id = c.id;
   });
   editor().select(id);
+  showFrom(player.time + 0.35); // past the fade-in, so the new text is visible
   editor().openSheet('text');
 }
 
@@ -157,17 +166,18 @@ export function addSticker(emoji: string): void {
     id = c.id;
   });
   editor().select(id);
+  showFrom(player.time + 0.36);
   editor().openSheet(null);
   track('sticker_added');
 }
 
 /** Adds a caption clip from words in timeline time. */
-export function addCaptions(words: CaptionWord[], presetId = 'pop'): void {
+export function addCaptions(words: CaptionWord[], presetId = 'pop', wordsPerPage?: number): void {
   if (!words.length) { editor().toast(t('No speech was found in this video')); return; }
   const preset = CAPTION_PRESETS.find((x) => x.id === presetId) ?? CAPTION_PRESETS[0];
   let id = '';
   editor().commit((d) => {
-    const c = createCaptionClip(words, preset);
+    const c = createCaptionClip(words, wordsPerPage ? { ...preset, wordsPerPage } : preset);
     placeClip(d, c);
     id = c.id;
   });
@@ -180,7 +190,7 @@ export async function importSubtitles(): Promise<void> {
   if (!file) return;
   const words = parseSubtitles(await file.text());
   if (!words.length) { editor().toast(t('No subtitles found in this file'), 'error'); return; }
-  addCaptions(words, 'clean');
+  addCaptions(words, 'clean', 16); // imported cues keep their own lines
   track('subtitles_imported', { words: words.length });
 }
 

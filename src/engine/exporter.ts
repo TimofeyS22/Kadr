@@ -51,6 +51,9 @@ async function openTarget(ext: string, type: string): Promise<{ target: BufferTa
     const handle = await root.getFileHandle(`export-${Date.now()}.${ext}`, { create: true });
     if ('createWritable' in handle) {
       const writable = await handle.createWritable();
+      // Some WebKit contexts open the stream but fail on the first write: probe before committing to it.
+      await writable.write(new Uint8Array(1));
+      await writable.truncate(0);
       return { target: new StreamTarget(writable, { chunked: true }), result: async () => new Blob([await handle.getFile()], { type }) };
     }
   } catch { /* OPFS unavailable (private mode, old browser) */ }
@@ -72,7 +75,7 @@ export async function exportProject(
   if (duration <= 0) throw new MediaError('The timeline is empty');
   const [width, height] = outputSize(p.settings, opts.resolution);
   const videoCodec = await getFirstEncodableVideoCodec(['avc', 'vp9', 'av1'], { width, height });
-  if (!videoCodec) throw new MediaError(`This device cannot encode ${width}×${height} video. Try a lower resolution.`);
+  if (!videoCodec) throw new MediaError('This device cannot encode {w}×{h} video. Try a lower resolution.', { w: width, h: height });
   const mp4 = videoCodec === 'avc';
   const audioCodec = await getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus'], { numberOfChannels: 2, sampleRate: SAMPLE_RATE });
 

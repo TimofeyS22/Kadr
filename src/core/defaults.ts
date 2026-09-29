@@ -91,7 +91,7 @@ export function createCaptionClip(words: CaptionWord[], preset: { id: string; st
   transform.y = anim(0.18); // above the caption/music zone of TikTok, Reels and Shorts
   return {
     kind: 'caption', id: uid(), start, duration: end - start,
-    words: words.map((w) => ({ t0: w.t0 - start, t1: w.t1 - start, text: w.text })),
+    words: words.map((w) => ({ ...w, t0: w.t0 - start, t1: w.t1 - start })),
     style: { ...preset.style }, highlight: preset.highlight, wordsPerPage: preset.wordsPerPage, preset: preset.id,
     transform, blend: 'normal',
   };

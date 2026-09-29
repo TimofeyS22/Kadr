@@ -1,3 +1,4 @@
+import { t } from './i18n';
 // Privacy-first product telemetry: event names and coarse numbers only, never media or text content.
 // v0.1 keeps events in memory (and logs them in dev); a backend can be plugged in later behind opt-in.
 type Props = Record<string, string | number | boolean>;
@@ -16,7 +17,8 @@ export function track(name: string, props: Props = {}): void {
 
 export const telemetryEvents = (): readonly { name: string; props: Props; at: number }[] => buffer;
 
+/** User-facing, translated message; MediaError-style errors carry `vars` for their placeholders. */
 export function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
+  if (e instanceof Error) return t(e.message, (e as Error & { vars?: Record<string, string | number> }).vars);
   return typeof e === 'string' ? e : 'Something went wrong';
 }

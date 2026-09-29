@@ -20,7 +20,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
   if (!asset || !blob) throw new MediaError('Media file is missing from this device');
   const s0 = clip.in;
   const s1 = Math.min(asset.duration, clip.in + clip.duration * clip.speed);
-  if (s1 - s0 > MAX_REVERSE_S) throw new MediaError(`Reverse works on clips up to ${MAX_REVERSE_S} s. Split the clip first.`);
+  if (s1 - s0 > MAX_REVERSE_S) throw new MediaError('Reverse works on clips up to {n} s. Split the clip first.', { n: MAX_REVERSE_S });
   const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(blob) });
   try {
     const video = await input.getPrimaryVideoTrack();
