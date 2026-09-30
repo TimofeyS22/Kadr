@@ -40,6 +40,8 @@ export interface EditorState {
    * (slider drags, gestures). `base` re-applies the edit to a snapshot taken at gesture start.
    */
   commit(fn: (d: Project) => void, key?: string, base?: Project): void;
+  /** Updates the project without a history step: for results of background work (processed sound), not user edits. */
+  amend(fn: (d: Project) => void): void;
   undo(): void;
   redo(): void;
   select(id: string | null): void;
@@ -90,6 +92,12 @@ export const useEditor = create<EditorState>()((set, get) => ({
       histAt: now,
       selection: validSelection(next, s.selection),
     });
+  },
+  amend(fn) {
+    const s = get();
+    if (!s.project) return;
+    const next = produce(s.project, fn);
+    if (next !== s.project) set({ project: next, histKey: null });
   },
   undo() {
     const s = get();

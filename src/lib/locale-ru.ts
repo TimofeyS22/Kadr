@@ -11,7 +11,7 @@ export const RU: Record<string, string> = {
   'Your projects': 'Ваши проекты',
   'Loading…': 'Загрузка…',
   'No projects yet. Start a new one or try the sample.': 'Проектов пока нет. Создайте новый или откройте пример.',
-  'Projects and media are stored in this browser. Kadr v0.5.1': 'Проекты и медиа хранятся в этом браузере. Kadr v0.5.1',
+  'Projects and media are stored in this browser. Kadr v0.5.2': 'Проекты и медиа хранятся в этом браузере. Kadr v0.5.2',
   'Project {n}': 'Проект {n}',
   'Project name': 'Название проекта',
   'Open {name}': 'Открыть «{name}»',
@@ -406,4 +406,5 @@ export const RU: Record<string, string> = {
   'Reverse works on clips up to {n} s. Split the clip first.': 'Реверс работает для клипов до {n} с. Сначала разрежьте клип.',
   'Video encoding is not supported in this browser': 'Этот браузер не поддерживает кодирование видео',
   'Allow microphone access…': 'Разрешите доступ к микрофону…',
+  'The clip changed while this was running. Try again.': 'Клип изменился, пока шла обработка. Попробуйте ещё раз.',
 };

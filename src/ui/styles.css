@@ -305,5 +305,8 @@ h1, h2, h3 { margin: 0; }
 @media (min-width: 900px) { .coach { left: auto; width: 380px; } }
 
 /* Selection handle: scale + rotate (big touch target, small visual) */
+.guide { position: absolute; left: 0; top: 0; display: none; pointer-events: none; background: #ff3b8d; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.35); }
+.guide.v { width: 1px; }
+.guide.h { height: 1px; }
 .sel-handle { position: absolute; right: -22px; bottom: -22px; width: 44px; height: 44px; pointer-events: auto; touch-action: none; cursor: nwse-resize; }
 .sel-handle::after { content: ''; position: absolute; inset: 12px; border-radius: 999px; background: var(--text); border: 2px solid var(--bg); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }

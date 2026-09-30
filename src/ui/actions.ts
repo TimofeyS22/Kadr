@@ -138,6 +138,17 @@ function clipAtPlayhead(kinds: Clip['kind'][]): Clip | null {
   return sel && covers(sel) ? sel : mainTrack(s.project).clips.find(covers) ?? null;
 }
 
+/**
+ * Long jobs (reverse, reframe, freeze) apply their result only if their clip is untouched in the meantime:
+ * immer keeps unchanged clips as the same object, so any edit or undo that affected the clip changes its identity.
+ */
+function unchanged(clip: Clip): boolean {
+  const p = editor().project;
+  const same = !!p && findClip(p, clip.id)?.clip === clip;
+  if (!same && p) editor().toast(t('The clip changed while this was running. Try again.'));
+  return same;
+}
+
 export async function freezeFrame(): Promise<void> {
   const c = clipAtPlayhead(['video']);
   if (!c || c.kind !== 'video') { editor().toast(t('Put the playhead over a video clip')); return; }
@@ -146,6 +157,7 @@ export async function freezeFrame(): Promise<void> {
   try {
     const blob = await captureFrame(c.assetId, sourceTime(c, now));
     const still = await importFile(blob, 'Freeze frame.jpg');
+    if (!unchanged(c)) return;
     let id: string | null = null;
     editor().commit((d) => { id = insertFreezeFrame(d, c.id, now, still); });
     if (id) editor().select(id);
@@ -217,7 +229,8 @@ export async function updateClipSound(clipId: string, change: (c: SoundClip) => 
   const key = expectedAudioKey(clip);
   if (key && clip.audioKey === key && clip.audioAssetId && p.assets[clip.audioAssetId]) return;
   const r = key ? await prepareClipSound(p, clip, onProgress, signal) : null;
-  editor().commit((d) => {
+  // Attaching the processed sound is not an edit of its own: undo goes straight back to the previous settings.
+  editor().amend((d) => {
     if (r) {
       for (const a of r.created) d.assets[a.id] = a;
       const src = d.assets[clip.assetId];
@@ -258,9 +271,11 @@ export async function reverseSelected(): Promise<void> {
     return;
   }
   player.pause();
-  const { reverseClipSource } = await import('../engine/reverse');
-  const rev = await withBusy(t('Reversing the clip on this device…'), (progress, signal) => reverseClipSource(s.project!, clip, progress, signal));
-  if (!rev) return;
+  // The overlay goes up in the same tap (before the module loads), so nothing can be edited while this runs.
+  const project = s.project!;
+  const rev = await withBusy(t('Reversing the clip on this device…'), async (progress, signal) =>
+    (await import('../engine/reverse')).reverseClipSource(project, clip, progress, signal));
+  if (!rev || !unchanged(clip)) return;
   editor().commit((d) => {
     d.assets[rev.id] = rev;
     const g = findClip(d, clip.id);
@@ -280,8 +295,7 @@ export async function toggleCutout(): Promise<void> {
   if (!f || (f.clip.kind !== 'video' && f.clip.kind !== 'image')) return;
   const on = !f.clip.removeBg;
   if (on) {
-    const { warmSegmenter } = await import('../engine/segment');
-    const ok = await withBusy(t('Preparing person detection…'), async () => { await warmSegmenter(); return true; });
+    const ok = await withBusy(t('Preparing person detection…'), async () => { await (await import('../engine/segment')).warmSegmenter(); return true; });
     if (!ok) return;
   }
   editClip(f.clip.id, (c) => { if (c.kind === 'video' || c.kind === 'image') c.removeBg = on; });
@@ -317,12 +331,12 @@ export async function autoReframe(): Promise<void> {
   const canvas = s.project.settings.width / s.project.settings.height;
   if (src <= canvas * 1.05) { s.toast(t('Auto reframe is for horizontal videos in vertical or square projects')); return; }
   player.pause();
-  const [{ trackSubject }, { warmSegmenter }] = await Promise.all([import('../engine/reframe'), import('../engine/segment')]);
   const samples = await withBusy(t('Following the person in the shot…'), async (progress, signal) => {
+    const [{ trackSubject }, { warmSegmenter }] = await Promise.all([import('../engine/reframe'), import('../engine/segment')]);
     await warmSegmenter();
     return trackSubject(clip, progress, signal);
   });
-  if (!samples) return;
+  if (!samples || !unchanged(clip)) return;
   const found = samples.filter((x) => x.u !== null).length;
   if (!found) { s.toast(t('No person found in this clip')); return; }
   const width = coverScale(src, canvas);

@@ -9,7 +9,21 @@ import { useEditor } from '../state/store';
 import { t } from '../lib/i18n';
 
 const PREVIEW_MAX_PX = 1280;
-const SNAP = 0.015;
+const SNAP_PX = 8; // screen pixels within which a layer snaps to a guide
+
+/**
+ * Snaps a layer's center coordinate (canvas-normalized, 0 = middle) so that its center meets the canvas middle
+ * or its edge meets a canvas edge. `half` is half the layer's on-screen extent on this axis, normalized.
+ * Returns the snapped value and where to draw the guide (-0.5 … 0.5), or null when nothing is near.
+ */
+function snapAxis(v: number, half: number, tol: number): { v: number; guide: number | null } {
+  let best: { v: number; guide: number | null } = { v, guide: null }, dist = tol;
+  for (const [target, guide] of [[0, 0], [-0.5 + half, -0.5], [0.5 - half, 0.5]] as const) {
+    const d = Math.abs(v - target);
+    if (d <= dist) { dist = d; best = { v: target, guide }; }
+  }
+  return best;
+}
 
 interface Gesture {
   id: string | null;
@@ -33,6 +47,9 @@ export function Preview() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const zones = useRef<HTMLDivElement>(null);
+  const guideV = useRef<HTMLDivElement>(null);
+  const guideH = useRef<HTMLDivElement>(null);
+  const snapped = useRef('');
   const safeZones = useEditor((s) => s.safeZones);
   const vertical = aspect < 0.7;
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -129,10 +146,6 @@ export function Preview() {
     const cx = ps.reduce((a, p) => a + p.x, 0) / ps.length, cy = ps.reduce((a, p) => a + p.y, 0) / ps.length;
     if (!gs.moved && Math.hypot(cx - gs.anchor.x, cy - gs.anchor.y) < 3 && ps.length < 2) return;
     gs.moved = true;
-    let nx = gs.start.x + (cx - gs.anchor.x) / r.width;
-    let ny = gs.start.y + (cy - gs.anchor.y) / r.height;
-    if (Math.abs(nx) < SNAP) nx = 0;
-    if (Math.abs(ny) < SNAP) ny = 0;
     let scale = gs.start.scale, rotation = gs.start.rotation;
     if (ps.length >= 2 && gs.anchor.dist > 0) {
       scale = Math.min(10, Math.max(0.05, gs.start.scale * (Math.hypot(ps[1].x - ps[0].x, ps[1].y - ps[0].y) / gs.anchor.dist)));
@@ -140,6 +153,18 @@ export function Preview() {
       const snapped = Math.round(rotation / 90) * 90;
       if (Math.abs(rotation - snapped) < 3) rotation = snapped;
     }
+    // Axis-aligned extent of the (possibly rotated) layer, scaled to the size it will have after this move.
+    const lb = player.bounds.find((b) => b.id === gs.id);
+    const cur = findClip(useEditor.getState().project!, gs.id)?.clip;
+    const k = cur && cur.kind !== 'audio' ? scale / Math.max(1e-6, evalAnim(cur.transform.scale, gs.local)) : 1;
+    const c = canvas.current!;
+    const rr = (rotation * Math.PI) / 180;
+    const halfX = lb ? ((Math.abs(lb.w * Math.cos(rr)) + Math.abs(lb.h * Math.sin(rr))) * k) / (2 * c.width) : 0;
+    const halfY = lb ? ((Math.abs(lb.w * Math.sin(rr)) + Math.abs(lb.h * Math.cos(rr))) * k) / (2 * c.height) : 0;
+    const sx = snapAxis(gs.start.x + (cx - gs.anchor.x) / r.width, halfX, SNAP_PX / r.width);
+    const sy = snapAxis(gs.start.y + (cy - gs.anchor.y) / r.height, halfY, SNAP_PX / r.height);
+    const nx = sx.v, ny = sy.v;
+    showGuides(sx.guide, sy.guide);
     const { id, local } = gs;
     useEditor.getState().commit((d) => {
       const f = findClip(d, id);
@@ -149,6 +174,19 @@ export function Preview() {
       setAnim(tf.y, local, ny);
       if (ps.length >= 2) { setAnim(tf.scale, local, scale); setAnim(tf.rotation, local, rotation); }
     }, `gesture:${id}`, gs.base);
+  };
+
+  // Center and edge guides while a layer is dragged; a short vibration marks the moment it snaps (Android).
+  const showGuides = (x: number | null, y: number | null) => {
+    const c = canvas.current, v = guideV.current, h = guideH.current;
+    if (!c || !v || !h) return;
+    const key = `${x}|${y}`;
+    if (key !== snapped.current && (x !== null || y !== null)) navigator.vibrate?.(8);
+    snapped.current = key;
+    v.style.display = x === null ? 'none' : 'block';
+    h.style.display = y === null ? 'none' : 'block';
+    if (x !== null) { v.style.height = `${c.clientHeight}px`; v.style.transform = `translate(${c.offsetLeft + Math.min(c.clientWidth - 1, (0.5 + x) * c.clientWidth)}px, ${c.offsetTop}px)`; }
+    if (y !== null) { h.style.width = `${c.clientWidth}px`; h.style.transform = `translate(${c.offsetLeft}px, ${c.offsetTop + Math.min(c.clientHeight - 1, (0.5 + y) * c.clientHeight)}px)`; }
   };
 
   // Corner handle: drag to scale and rotate the selected layer around its center (mouse or one finger).
@@ -198,11 +236,14 @@ export function Preview() {
     if (pointers.current.size > 0) { begin(); return; } // continue with the remaining finger without a jump
     if (gs && !gs.moved && !gs.id) useEditor.getState().select(null);
     g.current = null;
+    showGuides(null, null);
   };
 
   return (
     <div className="preview" ref={wrap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDoubleClick}>
       <canvas ref={canvas} className="preview-canvas" />
+      <div ref={guideV} className="guide v" aria-hidden />
+      <div ref={guideH} className="guide h" aria-hidden />
       <div ref={box} className="sel-box">
         <div className="sel-handle" onPointerDown={onHandleDown} role="button" aria-label={t('Drag to resize and rotate')} />
       </div>
