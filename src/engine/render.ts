@@ -42,7 +42,8 @@ export async function resolveDrawables(
   const faces = new Set(desc.layers.filter((l) => l.privacy?.faces).map(slotOf));
   await Promise.all([...faces].map(async (slot) => {
     const d = slot ? out.get(slot) : undefined;
-    if (d) d.faces = await faceBoxes(d.key, d.image, d.w, d.h).catch(() => []);
+    // Fail closed: if detection fails, hide the whole picture rather than show faces the user asked to hide.
+    if (d) d.faces = await faceBoxes(d.key, d.image, d.w, d.h).catch(() => [{ x: 0, y: 0, w: 1, h: 1 }]);
   }));
   return out;
 }

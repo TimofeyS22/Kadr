@@ -19,14 +19,16 @@ export function Toolbar() {
   const clip = useEditor((s) => (s.project && s.selection ? findClip(s.project, s.selection)?.clip ?? null : null));
   const kind = clip?.kind ?? null;
   const multi = useEditor((s) => s.multi);
+  const project = useEditor((s) => s.project);
   if (multi) {
-    const off = !multi.length;
+    const live = project ? multi.filter((id) => findClip(project, id)) : []; // undo may have removed some
+    const off = !live.length;
     return (
       <nav className="toolbar multi" aria-label={t('Tools')}>
         <button className="tool on" onClick={() => useEditor.getState().setMulti(null)} aria-label={t('Finish selecting')}>
           <Check size={22} /><span>{t('Done')}</span>
         </button>
-        <span className="multi-count" role="status">{t('{n} selected', { n: multi.length })}</span>
+        <span className="multi-count" role="status">{t('{n} selected', { n: live.length })}</span>
         <button className="tool danger" disabled={off} onClick={deleteMulti}><Trash2 size={22} /><span>{t('Delete')}</span></button>
         <button className="tool" disabled={off} onClick={duplicateMulti}><Copy size={22} /><span>{t('Duplicate')}</span></button>
         <button className="tool" disabled={off} onClick={multiToPlayhead}><ArrowRightToLine size={22} /><span>{t('To playhead')}</span></button>

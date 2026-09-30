@@ -64,6 +64,7 @@ class MixStream {
     this.total = Math.round(duration * SAMPLE_RATE);
   }
   get finished(): boolean { return this.done >= this.total; }
+  get progress(): number { return this.total ? this.done / this.total : 1; }
   due(untilS: number): boolean { return !this.finished && this.done < untilS * SAMPLE_RATE; }
 
   /** Pre-pass: measures integrated loudness (BS.1770-4) and sets the gain for -14 LUFS. */
@@ -224,7 +225,7 @@ export async function exportAudio(p: Project, loudness: boolean, onProgress: (f:
       if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
       const b = await mix.read();
       if (b) await audio.add(b);
-      onProgress(pre + (mix.finished ? 1 : 0.99 * (1 - pre)));
+      onProgress(pre + (1 - pre) * mix.progress);
       await yieldToUi();
     }
     audio.close();

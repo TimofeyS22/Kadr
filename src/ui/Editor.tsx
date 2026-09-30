@@ -7,7 +7,7 @@ import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { loadProject, saveProject } from '../storage/db';
-import { addFiles, deleteSelected, duplicateSelected, splitAtPlayhead } from './actions';
+import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead } from './actions';
 import { formatTime } from './format';
 import { Preview } from './Preview';
 import { Sheets } from './sheets';
@@ -84,11 +84,11 @@ export function Editor({ id }: { id: string }) {
       const key = e.key.toLowerCase();
       if (mod && key === 'z') { e.preventDefault(); if (e.shiftKey) s.redo(); else s.undo(); return; }
       if (mod && key === 'y') { e.preventDefault(); s.redo(); return; }
-      if (mod && key === 'd') { e.preventDefault(); duplicateSelected(); return; }
+      if (mod && key === 'd') { e.preventDefault(); if (s.multi) duplicateMulti(); else duplicateSelected(); return; }
       if (mod) return;
       if (key === ' ') { e.preventDefault(); player.toggle(); }
       else if (key === 's') splitAtPlayhead();
-      else if (key === 'delete' || key === 'backspace') deleteSelected();
+      else if (key === 'delete' || key === 'backspace') { if (s.multi) deleteMulti(); else deleteSelected(); }
       else if (key === 'escape') { s.openSheet(null); s.select(null); }
       else if (key === 'arrowleft' || key === 'arrowright') {
         e.preventDefault();
