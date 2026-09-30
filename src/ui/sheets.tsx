@@ -16,6 +16,7 @@ import { errorMessage } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
+import { CameraSheet } from './CameraSheet';
 import { ExportSheet } from './ExportSheet';
 import { EffectsBody, LutSection, PrivacyBody } from './FxSheets';
 import { CaptionEditBody, CaptionsBody, CropBody, StickersBody, VoiceoverBody } from './ToolSheets';
@@ -30,7 +31,7 @@ const TITLES: Record<SheetId, string> = {
   speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform & keyframes',
   text: 'Text', transition: 'Transition', canvas: 'Canvas', export: 'Export',
   crop: 'Crop', captions: 'Auto captions', captionEdit: 'Captions', voiceover: 'Voice-over', stickers: 'Stickers',
-  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces',
+  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera',
 };
 
 export function Sheets() {
@@ -38,6 +39,7 @@ export function Sheets() {
   const clip = useSelected();
   if (!sheet) return null;
   if (sheet === 'export') return <ExportSheet />;
+  if (sheet === 'camera') return <CameraSheet />;
   if (sheet === 'canvas') return <Sheet title={TITLES.canvas}><CanvasBody /></Sheet>;
   if (sheet === 'transition') return <Sheet title={TITLES.transition}><TransitionBody /></Sheet>;
   if (sheet === 'captions') return <Sheet title={TITLES.captions}><CaptionsBody /></Sheet>;

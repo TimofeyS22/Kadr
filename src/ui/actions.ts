@@ -4,7 +4,7 @@ import { anim, createAudioClip, createCaptionClip, createImageClip, createTextCl
 import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
 import { CAPTION_PRESETS } from '../core/presets';
 import {
-  clipEnd, deleteClip, detachAudio, duplicateClip, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
+  clipEnd, deleteClip, deleteClips, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
   sourceTime, splitClip,
 } from '../core/timeline';
 import type { Asset, CaptionClip, CaptionWord, Clip, SoundClip } from '../core/types';
@@ -102,6 +102,39 @@ export function deleteSelected(): void {
   if (!selection) return;
   commit((d) => deleteClip(d, selection));
   select(null);
+}
+
+/** Multi-select: ids that still exist (undo may have removed some). */
+function picked(): string[] {
+  const { multi, project } = editor();
+  return project && multi ? multi.filter((id) => findClip(project, id)) : [];
+}
+
+export function deleteMulti(): void {
+  const ids = picked();
+  if (!ids.length) return;
+  editor().commit((d) => deleteClips(d, ids));
+  editor().setMulti([]);
+  track('multi_delete', { n: ids.length });
+}
+
+export function duplicateMulti(): void {
+  const ids = picked();
+  if (!ids.length) return;
+  let copies: string[] = [];
+  editor().commit((d) => { copies = duplicateClips(d, ids); });
+  editor().setMulti(copies);
+  track('multi_duplicate', { n: ids.length });
+}
+
+/** Moves the picked free clips so the earliest one starts at the playhead. */
+export function multiToPlayhead(): void {
+  const ids = picked();
+  const p = editor().project;
+  const free = p ? ids.map((id) => findClip(p, id)).filter((f) => f && f.track.kind !== 'main') : [];
+  if (!free.length) { editor().toast(t('Main-track clips keep their order; pick clips on other tracks to move them')); return; }
+  const delta = player.time - Math.min(...free.map((f) => f!.clip.start));
+  editor().commit((d) => moveClipsBy(d, ids, delta));
 }
 
 export function duplicateSelected(): void {

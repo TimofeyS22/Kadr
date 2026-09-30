@@ -275,6 +275,52 @@ export function duplicateClip(p: Project, id: string): string | null {
   return copy.id;
 }
 
+// ---- Group operations (multi-select, v0.6): one call = one undo step. ----
+
+type Found = NonNullable<ReturnType<typeof findClip>>;
+const foundAll = (p: Project, ids: string[]): Found[] => ids.map((id) => findClip(p, id)).filter((f): f is Found => !!f);
+
+export function deleteClips(p: Project, ids: string[]): void {
+  for (const id of ids) deleteClip(p, id);
+}
+
+/**
+ * Duplicates a group. Main-track copies go, in order, right after the last selected main clip; free clips keep
+ * their relative offsets and land after the group's end. Returns the new ids.
+ */
+export function duplicateClips(p: Project, ids: string[]): string[] {
+  const found = foundAll(p, ids);
+  const out: string[] = [];
+  const main = found.filter((f) => f.track.kind === 'main').sort((a, b) => a.index - b.index);
+  if (main.length) {
+    const copies = main.map((f) => ({ ...clone(f.clip), id: uid() }));
+    main[0].track.clips.splice(main.at(-1)!.index + 1, 0, ...copies);
+    packMain(main[0].track);
+    out.push(...copies.map((c) => c.id));
+  }
+  const free = found.filter((f) => f.track.kind !== 'main');
+  if (free.length) {
+    const span = Math.max(...free.map((f) => clipEnd(f.clip))) - Math.min(...free.map((f) => f.clip.start));
+    for (const f of free) {
+      const c = { ...clone(f.clip), id: uid() };
+      c.start = r6(c.start + span);
+      placeClip(p, c, f.track.id);
+      out.push(c.id);
+    }
+  }
+  return out;
+}
+
+/** Moves free (non-main) clips together by `delta` seconds, keeping their offsets; never before 0. */
+export function moveClipsBy(p: Project, ids: string[], delta: number): void {
+  const free = foundAll(p, ids).filter((f) => f.track.kind !== 'main');
+  if (!free.length) return;
+  const d = Math.max(-Math.min(...free.map((f) => f.clip.start)), delta);
+  // Move the clip that travels into the others' space last, so the group does not collide with itself.
+  const order = free.map((f) => ({ id: f.clip.id, start: f.clip.start, track: f.track.id })).sort((a, b) => (d > 0 ? b.start - a.start : a.start - b.start));
+  for (const c of order) moveClip(p, c.id, c.start + d, c.track);
+}
+
 /** Keeps the source in-point; timeline duration scales by old/new speed, capped by the source length. */
 export function setSpeed(p: Project, id: string, speed: number): void {
   const f = findClip(p, id);

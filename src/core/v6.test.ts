@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createImageClip, createProject } from './defaults';
+import { createImageClip, createProject, createTextClip } from './defaults';
 import { punchScale, seedOf, shake } from './effects';
 import { buildFrame } from './frame';
 import { fromBase64, parseCube, toBase64 } from './lut';
-import { placeClip } from './timeline';
+import { clipEnd, deleteClips, duplicateClips, findClip, insertMain, mainTrack, moveClipsBy, placeClip } from './timeline';
 import type { Asset, ImageClip } from './types';
 
 const cube = (size: number, f: (r: number, g: number, b: number) => number[], head = '') => {
@@ -27,7 +27,7 @@ describe('.cube LUT parser', () => {
     expect(l.size).toBe(33);
     const i = ((20 * 33 + 10) * 33 + 5) * 3;
     expect(Array.from(l.data.subarray(i, i + 3))).toEqual([5, 10, 20].map((x) => Math.round((x / 32) * 255)));
-  });
+  }, 20_000); // 275k-line file: slow under a loaded parallel test run
   it('rejects 1D LUTs, wrong counts and garbage', () => {
     expect(() => parseCube('LUT_1D_SIZE 4\n0 0 0')).toThrow(/1D/);
     expect(() => parseCube('LUT_3D_SIZE 2\n0 0 0')).toThrow(/not a valid/);
@@ -82,5 +82,52 @@ describe('frame layers for v0.6 looks', () => {
     const punch = setup((c) => { c.effect = { id: 'zoomPunch', amount: 1 }; });
     expect(punch.fx).toBeNull();
     expect(punch.scale).toBeCloseTo(base.scale * 1.18, 5); // 0.5 s is the start of a punch
+  });
+});
+
+describe('group operations (multi-select)', () => {
+  const setup = () => {
+    const p = createProject('g', '9:16');
+    const img: Asset = { id: 'i', kind: 'image', name: 'i.png', mime: 'image/png', size: 1, duration: 0, width: 10, height: 10, hasAudio: false };
+    p.assets.i = img;
+    const main = [0, 1, 2].map(() => createImageClip(img, 0));
+    for (const c of main) insertMain(p, c, Infinity);
+    const t1 = createTextClip(1, 'a'), t2 = createTextClip(4, 'b');
+    placeClip(p, t1);
+    placeClip(p, t2);
+    return { p, main, t1, t2 };
+  };
+  const starts = (p: ReturnType<typeof createProject>) => p.tracks.flatMap((t) => t.clips.map((c) => [c.id, c.start] as const));
+
+  it('deletes clips across tracks and closes main-track gaps', () => {
+    const { p, main, t1 } = setup();
+    deleteClips(p, [main[0].id, t1.id]);
+    expect(mainTrack(p).clips.map((c) => c.id)).toEqual([main[1].id, main[2].id]);
+    expect(mainTrack(p).clips[0].start).toBe(0);
+    expect(findClip(p, t1.id)).toBeNull();
+  });
+  it('duplicates a group: main copies after the last pick, free copies keep offsets without overlaps', () => {
+    const { p, main, t1, t2 } = setup();
+    const ids = duplicateClips(p, [main[0].id, main[2].id, t1.id, t2.id]);
+    expect(ids).toHaveLength(4);
+    expect(mainTrack(p).clips).toHaveLength(5);
+    expect(mainTrack(p).clips.slice(3).map((c) => c.id)).toEqual(ids.slice(0, 2));
+    const [c1, c2] = ids.slice(2).map((id) => findClip(p, id)!.clip);
+    expect(c2.start - c1.start).toBeCloseTo(t2.start - t1.start, 6);
+    for (const tr of p.tracks.filter((t) => t.kind !== 'main')) {
+      const cs = [...tr.clips].sort((a, b) => a.start - b.start);
+      for (let i = 1; i < cs.length; i++) expect(cs[i].start).toBeGreaterThanOrEqual(clipEnd(cs[i - 1]) - 1e-6);
+    }
+  });
+  it('moves free clips together, never before 0, and leaves the main track alone', () => {
+    const { p, main, t1, t2 } = setup();
+    const before = starts(p);
+    moveClipsBy(p, [t1.id, t2.id, main[1].id], 2);
+    expect(findClip(p, t1.id)!.clip.start).toBeCloseTo(3, 6);
+    expect(findClip(p, t2.id)!.clip.start).toBeCloseTo(6, 6);
+    expect(findClip(p, main[1].id)!.clip.start).toBe(before.find(([id]) => id === main[1].id)![1]);
+    moveClipsBy(p, [t1.id, t2.id], -10);
+    expect(findClip(p, t1.id)!.clip.start).toBe(0);
+    expect(findClip(p, t2.id)!.clip.start).toBeCloseTo(3, 6);
   });
 });

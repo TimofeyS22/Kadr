@@ -559,3 +559,70 @@ test('hide faces automatically and with an area', async ({ page }, info) => {
   await page.getByRole('button', { name: 'Done' }).click();
   expect(changed(hidden, await photo(page, info), 20)).toBeGreaterThan(0.01); // the area hides more
 });
+
+test('multi-select: pick clips on several tracks, delete, undo, duplicate', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png', 'landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Text').click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const text = page.locator('.clip-text');
+  await expect(text).toHaveCount(1);
+  await tool(page, 'Select several').click();
+  await expect(text).toHaveClass(/picked/);
+  await page.locator('.tl-row.main .clip-image').click();
+  await expect(page.getByRole('status').filter({ hasText: '2 selected' })).toBeVisible();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await expect(text).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo' }).click(); // one step restores both
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  await expect(text).toHaveCount(1);
+  await text.click();
+  await page.locator('.tl-row.main .clip-image').click();
+  await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(3);
+  await expect(page.locator('.clip-text')).toHaveCount(2);
+  await expect(page.locator('.clip.picked')).toHaveCount(2); // the copies are now picked
+  await page.getByRole('button', { name: 'Finish selecting' }).click();
+  await expect(page.locator('.clip.picked')).toHaveCount(0);
+});
+
+test('camera with teleprompter records a clip onto the main track and releases the camera', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  // A synthetic camera: a moving canvas plus a tone, so the test runs headless on both engines.
+  await page.addInitScript(() => {
+    const w = window as unknown as { __tracks: MediaStreamTrack[] };
+    w.__tracks = [];
+    MediaDevices.prototype.getUserMedia = async function () {
+      const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
+      const g = c.getContext('2d')!;
+      let f = 0;
+      setInterval(() => { g.fillStyle = `hsl(${(f++ * 7) % 360} 70% 50%)`; g.fillRect(0, 0, 640, 360); }, 33);
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const dest = ctx.createMediaStreamDestination();
+      osc.connect(dest);
+      osc.start();
+      const s = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+      w.__tracks.push(...s.getTracks());
+      return s;
+    };
+  });
+  await newProject(page);
+  await tool(page, 'Camera').click();
+  await page.getByRole('button', { name: 'Edit script' }).click();
+  await page.getByRole('textbox', { name: 'Script' }).fill('Hello! This is a teleprompter test.\nSecond line.');
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
+  await expect(page.getByLabel('Teleprompter')).toContainText('teleprompter test');
+  await page.waitForTimeout(2500);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
+  expect(await page.evaluate(() => (window as unknown as { __tracks: MediaStreamTrack[] }).__tracks.every((tr) => tr.readyState === 'ended'))).toBe(true);
+  const file = await exportAs(page, info, 'Video', 'Export video');
+  const pr = await probe(file);
+  expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
+  expect(Number(pr.format.duration)).toBeGreaterThan(1.5);
+});

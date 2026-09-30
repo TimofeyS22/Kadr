@@ -5,7 +5,7 @@ import type { Project } from '../core/types';
 
 export type SheetId =
   | 'speed' | 'volume' | 'adjust' | 'filters' | 'transform' | 'text' | 'transition' | 'canvas' | 'export'
-  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy';
+  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera';
 
 export interface Toast { id: number; text: string; kind: 'info' | 'error' }
 /** A long on-device job (reverse, cutout model load…) shown as a progress bar with Cancel. */
@@ -21,6 +21,8 @@ export interface EditorState {
   histKey: string | null;
   histAt: number;
   selection: string | null;
+  /** Multi-select mode (v0.6): ids of the picked clips, or null when the mode is off. */
+  multi: string[] | null;
   /** Clip whose incoming transition the transition sheet edits. */
   transitionFor: string | null;
   sheet: SheetId | null;
@@ -45,6 +47,8 @@ export interface EditorState {
   undo(): void;
   redo(): void;
   select(id: string | null): void;
+  setMulti(ids: string[] | null): void;
+  toggleMulti(id: string): void;
   openSheet(s: SheetId | null, transitionFor?: string): void;
   setTime(t: number): void;
   setPlaying(b: boolean): void;
@@ -63,6 +67,7 @@ export const useEditor = create<EditorState>()((set, get) => ({
   future: [],
   histKey: null,
   histAt: 0,
+  multi: null,
   selection: null,
   transitionFor: null,
   sheet: null,
@@ -73,8 +78,8 @@ export const useEditor = create<EditorState>()((set, get) => ({
   busy: null,
   toasts: [],
 
-  open: (p) => set({ project: p, past: [], future: [], histKey: null, selection: null, sheet: null, time: 0, playing: false }),
-  close: () => set({ project: null, past: [], future: [], selection: null, sheet: null, playing: false }),
+  open: (p) => set({ project: p, past: [], future: [], histKey: null, selection: null, multi: null, sheet: null, time: 0, playing: false }),
+  close: () => set({ project: null, past: [], future: [], selection: null, multi: null, sheet: null, playing: false }),
 
   commit(fn, key, base) {
     const s = get();
@@ -112,6 +117,8 @@ export const useEditor = create<EditorState>()((set, get) => ({
     set({ project: next, past: [...s.past, s.project], future: s.future.slice(1), histKey: null, selection: validSelection(next, s.selection) });
   },
   select: (id) => set((s) => ({ selection: id, sheet: id === s.selection ? s.sheet : null })),
+  setMulti: (ids) => set({ multi: ids, sheet: null }),
+  toggleMulti: (id) => set((s) => ({ multi: s.multi?.includes(id) ? s.multi.filter((x) => x !== id) : [...(s.multi ?? []), id] })),
   openSheet: (sheet, transitionFor) => set({ sheet, transitionFor: transitionFor ?? null }),
   setTime: (time) => set({ time }),
   setPlaying: (playing) => set({ playing }),

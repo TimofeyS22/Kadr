@@ -3,7 +3,7 @@
 import { Blend, Plus, VolumeX } from 'lucide-react';
 import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import {
-  clipEnd, findClip, mainTrack, moveClip, projectDuration, reorderMain, soundAssetId, trimClip,
+  clipEnd, findClip, mainTrack, moveClip, moveClipsBy, projectDuration, reorderMain, soundAssetId, trimClip,
 } from '../core/timeline';
 import type { Asset, Clip, Project, Track, TrackKind } from '../core/types';
 import { PEAKS_PER_SEC, thumbnails, waveform, type Thumb } from '../engine/media';
@@ -16,6 +16,13 @@ import { t } from '../lib/i18n';
 
 const ROW_H: Record<TrackKind, number> = { main: 56, overlay: 34, audio: 34 };
 const LONG_PRESS_MS = 300;
+
+/** A tap picks the clip in multi-select mode, otherwise selects it. */
+function tapClip(id: string): void {
+  const s = useEditor.getState();
+  if (s.multi) s.toggleMulti(id);
+  else s.select(id);
+}
 const SNAP_PX = 10;
 
 type Drag =
@@ -28,6 +35,7 @@ export function Timeline() {
   const project = useEditor((s) => s.project)!;
   const zoom = useEditor((s) => s.zoom);
   const selection = useEditor((s) => s.selection);
+  const multi = useEditor((s) => s.multi);
   const scroller = useRef<HTMLDivElement>(null);
   const [vw, setVw] = useState(0);
   const [drag, setDragState] = useState<Drag | null>(null);
@@ -119,7 +127,7 @@ export function Timeline() {
       const s = useEditor.getState();
       const f = findClip(d.base, d.id);
       if (!f) return;
-      if (Math.hypot(d.dx, d.dy) < 3) { s.select(d.id); return; }
+      if (Math.hypot(d.dx, d.dy) < 3) { tapClip(d.id); return; }
       if (d.main) {
         const t = timeAt(e.clientX);
         const others = mainTrack(d.base).clips.filter((c) => c.id !== d.id);
@@ -129,7 +137,9 @@ export function Timeline() {
         const start = Math.max(0, snap(f.clip.start + d.dx / live.current.zoom, d.id, d.base));
         const row = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-track]');
         const trackId = row?.dataset.kind === f.track.kind ? row.dataset.track : f.track.id;
-        s.commit((dr) => moveClip(dr, d.id, start, trackId));
+        // In multi-select, dragging one picked clip moves all picked free clips by the same amount.
+        if (s.multi?.includes(d.id)) s.commit((dr) => moveClipsBy(dr, s.multi!, start - f.clip.start));
+        else s.commit((dr) => moveClip(dr, d.id, start, trackId));
       }
     };
     const onMove = (e: PointerEvent) => {
@@ -161,7 +171,7 @@ export function Timeline() {
         if (d.mode === 'move' && e.type === 'pointerup') finishMove(d, e);
         return;
       }
-      if (p && e.type === 'pointerup' && p.pointerId === e.pointerId) useEditor.getState().select(p.id);
+      if (p && e.type === 'pointerup' && p.pointerId === e.pointerId) tapClip(p.id);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -182,7 +192,7 @@ export function Timeline() {
         if (press.current !== p) return;
         press.current = null;
         navigator.vibrate?.(8);
-        useEditor.getState().select(c.id);
+        if (!useEditor.getState().multi) useEditor.getState().select(c.id);
         setDrag({ mode: 'move', id: c.id, x0: p.x, y0: p.y, dx: 0, dy: 0, main: p.main, base: useEditor.getState().project! });
       }, LONG_PRESS_MS);
     }
@@ -207,7 +217,7 @@ export function Timeline() {
         return (
           <div
             key={c.id}
-            className={`clip clip-${c.kind} ${c.id === selection ? 'sel' : ''} ${moving ? 'dragging' : ''}`}
+            className={`clip clip-${c.kind} ${c.id === selection && !multi ? 'sel' : ''} ${multi?.includes(c.id) ? 'picked' : ''} ${moving ? 'dragging' : ''}`}
             style={{ left: x(c.start), width: Math.max(2, c.duration * zoom), transform: moving ? `translate(${drag.dx}px, ${drag.dy}px)` : undefined }}
             onPointerDown={(e) => onClipDown(e, c, track)}
             data-clip={c.id}
