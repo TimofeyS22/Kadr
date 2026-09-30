@@ -37,7 +37,10 @@ export const TRANSITION_TYPES = [
 export type TransitionType = (typeof TRANSITION_TYPES)[number];
 export interface Transition { type: TransitionType; duration: number }
 
-export type FontId = 'inter' | 'anton' | 'bebas' | 'pacifico' | 'playfair' | 'mono';
+export const FONT_IDS = [
+  'inter', 'montserrat', 'rubik', 'raleway', 'exo', 'comfortaa', 'unbounded', 'oswald', 'anton', 'bebas', 'russo', 'rubikMono', 'pixel', 'playfair', 'lora', 'ptSerif', 'yeseva', 'pacifico', 'lobster', 'caveat', 'marck', 'amatic', 'mono',
+] as const;
+export type FontId = (typeof FONT_IDS)[number];
 export interface TextStyle {
   font: FontId;
   /** Font size as a fraction of canvas height. */

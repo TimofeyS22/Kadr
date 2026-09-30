@@ -211,7 +211,9 @@ h1, h2, h3 { margin: 0; }
 @media (max-width: 899px) {
   .sheet { height: 46dvh; max-height: 46dvh; }
   .editor.sheet-open { padding-bottom: 46dvh; }
-  .editor.sheet-open .timeline, .editor.sheet-open .toolbar { display: none; }
+  .editor.sheet-open .toolbar { display: none; }
+  /* Collapsed, not display:none: removing the box would reset the timeline's scroll (and so the playhead). */
+  .editor.sheet-open .timeline { height: 0; min-height: 0; overflow: hidden; visibility: hidden; border: 0; }
 }
 
 /* ---------- Desktop ---------- */
@@ -333,3 +335,8 @@ h1, h2, h3 { margin: 0; }
   padding: 12px 12px calc(12px + var(--safe-bottom)); background: linear-gradient(transparent, rgba(0, 0, 0, 0.7)); }
 .camera-bar .rec-time { min-width: 48px; color: #fff; font-variant-numeric: tabular-nums; }
 .rec-dot { display: block; width: 26px; height: 26px; border-radius: 50%; background: #ff3b30; }
+
+/* Long option lists (fonts, text styles) scroll in one row */
+.chips.scroll { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+.chips.scroll::-webkit-scrollbar { display: none; }
+.chips.scroll .chip { flex: 0 0 auto; }

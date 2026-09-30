@@ -1,11 +1,4 @@
-import '@fontsource/inter/400.css';
-import '@fontsource/inter/700.css';
-import '@fontsource/inter/900.css';
-import '@fontsource/anton/400.css';
-import '@fontsource/bebas-neue/400.css';
-import '@fontsource/pacifico/400.css';
-import '@fontsource/playfair-display/400.css';
-import '@fontsource/playfair-display/700.css';
+import './fonts';
 import './ui/styles.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

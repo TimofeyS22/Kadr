@@ -50,15 +50,21 @@ export default defineConfig({
         icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg}', '**/inter-*.woff2'],
         // On-device AI (speech model runtime, noise reduction) is large: cache it on first use instead of up front.
         globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision_bundle-*.js', 'mediapipe/**', 'models/**'],
         maximumFileSizeToCacheInBytes: 4_000_000,
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => /^\/(mediapipe|models)\//.test(url.pathname) || /\/assets\/(rnnoise|asr\.worker|vision_bundle|ort-wasm)[-.]/.test(url.pathname),
+            urlPattern: ({ url }) => /\/(mediapipe|models)\//.test(url.pathname) || /\/assets\/(rnnoise|asr\.worker|vision_bundle|ort-wasm)[-.]/.test(url.pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'kadr-ai', expiration: { maxEntries: 16 } },
+          },
+          {
+            // Text fonts download when first used and then work offline.
+            urlPattern: ({ url }) => /\.woff2$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: { cacheName: 'kadr-fonts', expiration: { maxEntries: 120 } },
           },
         ],
       },

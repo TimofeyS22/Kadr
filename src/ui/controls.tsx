@@ -53,11 +53,14 @@ export function Slider({ label, value, min, max, step = 0.01, format, onChange, 
   );
 }
 
-export function Chips<T extends string | number>({ options, value, onChange, render }: {
+export function Chips<T extends string | number>({ options, value, onChange, render, scroll, label }: {
   options: readonly T[]; value: T | null; onChange: (v: T) => void; render?: (v: T) => ReactNode;
+  /** One horizontally scrolling row instead of wrapping (long lists such as fonts). */
+  scroll?: boolean;
+  label?: string;
 }) {
   return (
-    <div className="chips" role="radiogroup">
+    <div className={`chips ${scroll ? 'scroll' : ''}`} role="radiogroup" aria-label={label}>
       {options.map((o) => (
         <button key={String(o)} role="radio" aria-checked={o === value} className={`chip ${o === value ? 'on' : ''}`} onClick={() => onChange(o)}>
           {chipLabel(o, render)}

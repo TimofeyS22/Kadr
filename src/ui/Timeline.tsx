@@ -70,6 +70,9 @@ export function Timeline() {
   // Scroll position → time (user scrubbing).
   const onScroll = () => {
     const el = scroller.current!;
+    // Hidden behind an open sheet (display: none) the browser resets scrollLeft to 0; that is not a scrub.
+    // Used to throw the playhead back to 0:00 after every export. Showing the timeline again re-applies the time.
+    if (!el.clientWidth) return;
     if (Math.abs(el.scrollLeft - ignoreScroll.current) < 1.5) return;
     ignoreScroll.current = Number.NaN;
     const t = Math.min(duration, Math.max(0, el.scrollLeft / zoom));

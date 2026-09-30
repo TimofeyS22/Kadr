@@ -11,7 +11,7 @@ import {
   type AdjustKey, type AspectId, type BlendMode, type Clip, type FontId, type SoundClip, type TextAnimType, type TextClip,
   type Transform, type Transition, type TransitionType,
 } from '../core/types';
-import { FONTS } from '../engine/text';
+import { FONTS, fontWeight } from '../engine/text';
 import { errorMessage } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound } from './actions';
@@ -224,13 +224,13 @@ function TextBody({ clip }: { clip: TextClip }) {
   const s = clip.style;
   return (
     <>
-      <Chips options={TEXT_PRESETS.map((p) => p.id)} value={null}
+      <Chips options={TEXT_PRESETS.map((p) => p.id)} value={null} scroll label={t('Style')}
         render={(id) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; return <span style={{ fontFamily: FONTS[pr.style.font].family }}>{t(pr.name)}</span>; }}
         onChange={(id) => e((c) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; c.style = { ...pr.style }; if (pr.animIn) c.animIn = { ...pr.animIn }; })} />
       <textarea className="text-input" value={clip.text} rows={2} maxLength={500} aria-label={t('Text')}
         onChange={(ev) => e((c) => { c.text = ev.target.value; }, 'txt')} />
-      <Chips options={FONT_IDS} value={s.font} onChange={(f) => e((c) => { c.style.font = f; })}
-        render={(f) => <span style={{ fontFamily: FONTS[f].family }}>{FONTS[f].label}</span>} />
+      <Chips options={FONT_IDS} value={s.font} scroll label={t('Font')} onChange={(f) => e((c) => { c.style.font = f; })}
+        render={(f) => <span style={{ fontFamily: FONTS[f].family, fontWeight: fontWeight(f, 700) }}>{FONTS[f].label}</span>} />
       <Slider label={t('Size')} value={s.size} min={0.02} max={0.2} step={0.001} format={(v) => `${Math.round(v * 1000) / 10}`} reset={0.055}
         onChange={(v) => e((c) => { c.style.size = v; }, 'tsize')} />
       <Chips options={[400, 700, 900] as const} value={s.weight} render={(w) => (w === 400 ? t('Regular') : w === 700 ? t('Bold') : t('Black'))}

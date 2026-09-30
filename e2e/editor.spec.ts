@@ -250,8 +250,11 @@ const sheet = (page: Page) => page.locator('.sheet');
 const mainVideo = (page: Page) => page.locator('.tl-row.main .clip-video').first();
 /** Selects a timeline clip (a tap on an already selected clip would deselect it). */
 async function selectClip(page: Page, clip: ReturnType<Page['locator']>) {
-  if (!(await clip.getAttribute('class'))?.includes(' sel')) await clip.click();
-  await expect(clip).toHaveClass(/ sel/);
+  // Retried: right after an edit the clip element can be re-rendered under the pointer.
+  await expect(async () => {
+    if (!(await clip.getAttribute('class'))?.includes(' sel')) await clip.click();
+    await expect(clip).toHaveClass(/ sel/, { timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
 }
 
 
@@ -625,4 +628,33 @@ test('camera with teleprompter records a clip onto the main track and releases t
   const pr = await probe(file);
   expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
   expect(Number(pr.format.duration)).toBeGreaterThan(1.5);
+});
+
+test('Russian text renders in each chosen font, not a fallback', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await tool(page, 'Text').click();
+  await page.getByRole('textbox', { name: 'Text', exact: true }).fill('Привет, мир! Съешь ещё');
+  const shots: Buffer[] = [];
+  const at = await time(page);
+  for (const font of ['Montserrat', 'Lobster', 'Caveat', 'Pixel', 'Anton']) {
+    if (!(await sheet(page).isVisible())) await tool(page, 'Edit text').click();
+    await page.getByRole('radiogroup', { name: 'Font' }).getByRole('radio', { name: font, exact: true }).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+    shots.push(await photo(page, info));
+    expect(await time(page), 'opening the export sheet must not move the playhead').toBe(at);
+  }
+  // Two script fonts share the same generic fallback: if Cyrillic fell back, they would look identical.
+  for (let i = 0; i < shots.length; i++) for (let j = i + 1; j < shots.length; j++) expect(changed(shots[i], shots[j], 30), `${i} vs ${j}`).toBeGreaterThan(0.001);
+  expect(await page.evaluate(() => ['400 32px "Lobster"', '700 32px "Caveat"', '400 32px "Oswald"'].every((f) => document.fonts.check(f, 'Привет')))).toBe(true);
+});
+
+test('scrolling the timeline by hand still scrubs the playhead', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const before = await time(page);
+  // A user scroll: an input event (wheel) followed by the scroll it causes.
+  await page.locator('.tl-scroll').evaluate((el) => { el.dispatchEvent(new WheelEvent('wheel', { deltaX: 120, bubbles: true })); el.scrollLeft += 120; });
+  await expect.poll(() => time(page)).not.toBe(before);
 });

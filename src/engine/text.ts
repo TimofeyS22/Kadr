@@ -8,22 +8,63 @@ export interface Drawable {
   faces?: import('../core/types').Rect[];
 }
 
-export const FONTS: Record<FontId, { label: string; family: string }> = {
-  inter: { label: 'Inter', family: '"Inter", system-ui, sans-serif' },
-  anton: { label: 'Anton', family: '"Anton", Impact, sans-serif' },
-  bebas: { label: 'Bebas', family: '"Bebas Neue", Impact, sans-serif' },
-  pacifico: { label: 'Pacifico', family: '"Pacifico", cursive' },
-  playfair: { label: 'Playfair', family: '"Playfair Display", Georgia, serif' },
-  mono: { label: 'Mono', family: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace' },
+export type FontGroup = 'sans' | 'display' | 'serif' | 'script' | 'mono';
+
+/** Bundled fonts (all with Cyrillic; Anton and Bebas borrow Cyrillic letters from Oswald). */
+export const FONTS: Record<FontId, { label: string; family: string; weights: readonly number[]; group: FontGroup }> = {
+  inter: { label: 'Inter', family: '"Inter", system-ui, sans-serif', weights: [400, 700, 900], group: 'sans' },
+  montserrat: { label: 'Montserrat', family: '"Montserrat", system-ui, sans-serif', weights: [400, 700, 900], group: 'sans' },
+  rubik: { label: 'Rubik', family: '"Rubik", system-ui, sans-serif', weights: [400, 700, 900], group: 'sans' },
+  raleway: { label: 'Raleway', family: '"Raleway", system-ui, sans-serif', weights: [400, 700, 900], group: 'sans' },
+  exo: { label: 'Exo 2', family: '"Exo 2", system-ui, sans-serif', weights: [400, 700, 900], group: 'sans' },
+  comfortaa: { label: 'Comfortaa', family: '"Comfortaa", system-ui, sans-serif', weights: [400, 700], group: 'sans' },
+  unbounded: { label: 'Unbounded', family: '"Unbounded", Impact, sans-serif', weights: [400, 700, 900], group: 'display' },
+  oswald: { label: 'Oswald', family: '"Oswald", Impact, sans-serif', weights: [400, 700], group: 'display' },
+  anton: { label: 'Anton', family: '"Anton", "Oswald", Impact, sans-serif', weights: [400], group: 'display' },
+  bebas: { label: 'Bebas', family: '"Bebas Neue", "Oswald", Impact, sans-serif', weights: [400], group: 'display' },
+  russo: { label: 'Russo One', family: '"Russo One", Impact, sans-serif', weights: [400], group: 'display' },
+  rubikMono: { label: 'Rubik Mono', family: '"Rubik Mono One", Impact, sans-serif', weights: [400], group: 'display' },
+  pixel: { label: 'Pixel', family: '"Press Start 2P", Impact, sans-serif', weights: [400], group: 'display' },
+  playfair: { label: 'Playfair', family: '"Playfair Display", Georgia, serif', weights: [400, 700], group: 'serif' },
+  lora: { label: 'Lora', family: '"Lora", Georgia, serif', weights: [400, 700], group: 'serif' },
+  ptSerif: { label: 'PT Serif', family: '"PT Serif", Georgia, serif', weights: [400, 700], group: 'serif' },
+  yeseva: { label: 'Yeseva', family: '"Yeseva One", Georgia, serif', weights: [400], group: 'serif' },
+  pacifico: { label: 'Pacifico', family: '"Pacifico", cursive', weights: [400], group: 'script' },
+  lobster: { label: 'Lobster', family: '"Lobster", cursive', weights: [400], group: 'script' },
+  caveat: { label: 'Caveat', family: '"Caveat", cursive', weights: [400, 700], group: 'script' },
+  marck: { label: 'Marck', family: '"Marck Script", cursive', weights: [400], group: 'script' },
+  amatic: { label: 'Amatic', family: '"Amatic SC", cursive', weights: [400, 700], group: 'script' },
+  mono: { label: 'Mono', family: '"Roboto Mono", ui-monospace, monospace', weights: [400, 700], group: 'mono' },
 };
 
-export const fontCss = (s: TextStyle, px: number): string =>
-  `${s.italic ? 'italic ' : ''}${s.weight} ${px}px ${FONTS[s.font].family}`;
+const fontOf = (id: FontId) => FONTS[id] ?? FONTS.inter; // unknown ids (e.g. from a newer version) fall back safely
 
-/** Resolves when the bundled fonts are usable by canvas text rendering. */
+/** The available weight closest to the requested one, so browsers never fake bold. */
+export function fontWeight(id: FontId, wanted: number): number {
+  return fontOf(id).weights.reduce((best, w) => (Math.abs(w - wanted) < Math.abs(best - wanted) ? w : best));
+}
+
+export const fontCss = (s: TextStyle, px: number): string =>
+  `${s.italic ? 'italic ' : ''}${fontWeight(s.font, s.weight)} ${px}px ${fontOf(s.font).family}`;
+
+const loaded = new Set<string>();
+/**
+ * Loads exactly the font files a text needs (Latin and/or Cyrillic subset) before it is drawn on canvas;
+ * canvas drawing alone does not load web fonts, so without this the first frame would use a fallback font.
+ */
+export async function ensureFont(style: TextStyle, text: string): Promise<void> {
+  const css = fontCss(style, 32);
+  const key = `${css}|${/[\u0400-\u04ff]/.test(text) ? 'c' : ''}${/[a-z]/i.test(text) ? 'l' : ''}`;
+  if (loaded.has(key)) return;
+  await document.fonts.load(css, text || 'Aa').catch(() => undefined);
+  loaded.add(key);
+}
+
+/** Resolves when the UI font is usable. */
 export function loadFonts(): Promise<unknown> {
-  const specs = ['400 32px "Inter"', '700 32px "Inter"', '900 32px "Inter"', '32px "Anton"', '32px "Bebas Neue"', '32px "Pacifico"', '400 32px "Playfair Display"', '700 32px "Playfair Display"'];
-  return Promise.all(specs.map((s) => document.fonts.load(s).catch(() => undefined)));
+  // Only the UI font up front; text fonts load on demand (ensureFont) so startup stays fast.
+  const specs = ['400 32px "Inter"', '700 32px "Inter"', '900 32px "Inter"'];
+  return Promise.all(specs.map((s) => document.fonts.load(s, 'Aa Яя').catch(() => undefined)));
 }
 
 /** Word-wraps paragraphs; returns lines as lists of word indices into `words`. */

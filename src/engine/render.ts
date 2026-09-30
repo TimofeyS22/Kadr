@@ -3,7 +3,7 @@ import { slotOf } from './compositor';
 import type { MediaPool } from './media';
 import { faceBoxes } from './faces';
 import { personMask } from './segment';
-import type { Drawable, TextRasterizer } from './text';
+import { ensureFont, type Drawable, type TextRasterizer } from './text';
 
 /** Fetches every texture a frame needs (video frames decode in parallel across clips). */
 export async function resolveDrawables(
@@ -24,9 +24,11 @@ export async function resolveDrawables(
         const b = await pool.image(s.assetId);
         out.set(slot, { image: b, w: b.width, h: b.height, key: s.assetId });
       } else if (s.kind === 'text') {
+        await ensureFont(s.clip.style, s.clip.text);
         const d = text.get(s.clip, s.chars, W, H);
         if (d) out.set(slot, d);
       } else if (s.kind === 'caption') {
+        await ensureFont(s.clip.style, s.words.join(' '));
         const d = text.getCaption(s.clip, s.words, s.active, W, H);
         if (d) out.set(slot, d);
       }

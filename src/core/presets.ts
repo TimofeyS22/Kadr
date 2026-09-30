@@ -16,6 +16,14 @@ export const TEXT_PRESETS: TextPreset[] = [
   { id: 'neon', name: 'Neon', style: { ...base, weight: 900, color: '#ff4fa3', shadowColor: '#ff4fa3' } },
   { id: 'script', name: 'Script', style: { ...base, font: 'pacifico', weight: 400, size: 0.06 } },
   { id: 'serif', name: 'Serif', style: { ...base, font: 'playfair', italic: true, size: 0.06 } },
+  { id: 'headline', name: 'Headline', style: { ...base, font: 'montserrat', weight: 900, size: 0.06, uppercase: true } },
+  { id: 'wide', name: 'Wide', style: { ...base, font: 'unbounded', weight: 700, size: 0.05, uppercase: true, color: '#ffffff', shadowColor: '#7c5cff' } },
+  { id: 'condensed', name: 'Condensed', style: { ...base, font: 'oswald', weight: 700, size: 0.075, uppercase: true, color: '#ffd23f', stroke: { color: '#000000', width: 0.06 } } },
+  { id: 'chunky', name: 'Chunky', style: { ...base, font: 'rubikMono', weight: 400, size: 0.05, color: '#ffffff', stroke: { color: '#ff4fa3', width: 0.1 }, shadow: false } },
+  { id: 'pixel', name: 'Pixel', style: { ...base, font: 'pixel', weight: 400, size: 0.035, color: '#7CFC00', background: { color: '#000000', opacity: 0.7 }, shadow: false } },
+  { id: 'hand', name: 'Handwritten', style: { ...base, font: 'caveat', weight: 700, size: 0.075 } },
+  { id: 'vintage', name: 'Vintage', style: { ...base, font: 'lobster', weight: 400, size: 0.065, color: '#ffe8c2', shadowColor: '#7a3b12' } },
+  { id: 'elegant', name: 'Elegant', style: { ...base, font: 'yeseva', weight: 400, size: 0.06 } },
   { id: 'terminal', name: 'Terminal', style: { ...base, font: 'mono', weight: 400, size: 0.04, color: '#3bd16f', background: { color: '#000000', opacity: 0.85 }, shadow: false }, animIn: { type: 'typewriter', duration: 1 } },
 ];
 
