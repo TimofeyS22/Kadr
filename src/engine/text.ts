@@ -4,6 +4,8 @@ import type { CaptionClip, FontId, TextClip, TextStyle } from '../core/types';
 export interface SegMask { data: Uint8Array; w: number; h: number; key: string }
 export interface Drawable {
   image: TexImageSource; w: number; h: number; key: string; seg?: SegMask;
+  /** A stand-in frame (keyframe while scrubbing); the exact frame is rendered next. */
+  approx?: boolean;
   /** Detected faces in UV space (for layers that hide faces). */
   faces?: import('../core/types').Rect[];
 }

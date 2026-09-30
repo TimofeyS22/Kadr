@@ -241,7 +241,8 @@ test('crop, filters and cutout tools work on a photo', async ({ page }) => {
   await page.getByRole('radio', { name: 'Noir' }).click();
   await page.getByRole('button', { name: 'Done' }).click();
   await tool(page, 'Cutout').click();
-  await expect(page.getByText('Background removed', { exact: false })).toBeVisible({ timeout: 60_000 });
+  // The state, not the 3-second toast: in software-rendered CI the first segmentation can outlast the toast.
+  await expect(tool(page, 'Cutout')).toHaveAttribute('aria-pressed', 'true', { timeout: 60_000 });
 });
 
 // ---------- Every tool, end to end ----------

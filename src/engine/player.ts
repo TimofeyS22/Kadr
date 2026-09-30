@@ -6,6 +6,7 @@ import { AudioEngine } from './audio';
 import { Compositor, type LayerBounds } from './compositor';
 import { MediaPool } from './media';
 import { resolveDrawables } from './render';
+import { frameDrawn } from '../lib/perf';
 import { TextRasterizer } from './text';
 
 const PREVIEW_MAX_DIM = 1280;
@@ -19,6 +20,8 @@ export class Player {
   private project: Project | null = null;
   private rendering = false;
   private pending: number | null = null;
+  /** The next render follows a seek while paused: keyframes are fine, the exact frame comes right after. */
+  private fast = false;
   private raf = 0;
   private frameListeners = new Set<() => void>();
   private thumbWaiters: ((url: string | null) => void)[] = [];
@@ -34,6 +37,8 @@ export class Player {
 
   attach(canvas: HTMLCanvasElement): void {
     this.compositor = new Compositor(canvas);
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 300));
+    idle(() => this.audio.warm());
     this.audio.onError = (e) => this.onError?.(e);
     this.requestRender();
   }
@@ -102,6 +107,7 @@ export class Player {
 
   seek(t: number): void {
     this.time = clamp(t, 0, this.duration);
+    this.fast = !this.playing;
     if (this.playing && this.project) this.audio.start(this.project, this.time, this.pool);
     this.requestRender(this.time);
   }
@@ -134,12 +140,18 @@ export class Player {
   private async renderAt(t: number): Promise<void> {
     const p = this.project, comp = this.compositor;
     if (!p || !comp) { for (const w of this.thumbWaiters.splice(0)) w(null); return; }
+    const started = performance.now();
     const tt = Math.max(0, Math.min(t, this.duration - 1e-3));
     const desc = buildFrame(p, tt);
     const { width, height } = comp.canvas;
-    const sources = await resolveDrawables(desc, this.pool, this.text, width, height);
+    const fast = this.fast;
+    this.fast = false;
+    const sources = await resolveDrawables(desc, this.pool, this.text, width, height, fast);
     if (this.compositor !== comp) return;
     this.bounds = comp.draw(desc, sources);
+    const approx = [...sources.values()].some((d) => d.approx);
+    frameDrawn(tt, performance.now() - started, !approx);
+    if (approx && this.pending === null) this.pending = tt; // refine to the exact frame unless scrubbing moved on
     if (this.thumbWaiters.length) this.flushThumb(comp.canvas);
     for (const fn of this.frameListeners) fn();
 

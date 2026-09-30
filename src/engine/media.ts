@@ -1,9 +1,11 @@
 // Media access on top of Mediabunny/WebCodecs: probing, per-clip decoding streams, thumbnails, waveforms.
 import {
-  ALL_FORMATS, AudioBufferSink, BlobSource, CanvasSink, Input,
-  type InputAudioTrack, type InputVideoTrack, type WrappedCanvas,
+  ALL_FORMATS, AudioBufferSink, BlobSource, EncodedPacketSink, Input, VideoSampleSink,
+  type InputAudioTrack, type InputVideoTrack, type VideoSample,
 } from 'mediabunny';
 import type { AssetKind } from '../core/types';
+import { mark } from '../lib/perf';
+import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
 import { getBlob, getPeaks, putPeaks } from '../storage/db';
 
 /** Error with a user-facing English message (a translation key); `vars` fill its {placeholders}. */
@@ -53,47 +55,93 @@ function fitSize(w: number, h: number, maxDim: number): [number, number] {
  * Sequential frame reader for one clip. Forward reads reuse the running decoder; backward or far
  * jumps restart it at the nearest keyframe. Calls are serialized, so concurrent callers are safe.
  */
+/** A decoded frame ready to draw: a canvas in display orientation, reused by the stream. */
+export interface StreamFrame { canvas: HTMLCanvasElement; timestamp: number; /** false: a keyframe shown while scrubbing */ exact: boolean }
+
+/**
+ * Sequential per-clip decoding (docs/04, H4). Frames the preview skips are closed without being drawn: only the
+ * frame actually shown is converted to a canvas. Converting every decoded frame used to take ~90% of the main
+ * thread during playback and made long projects play at ~1 fps.
+ */
 class VideoStream {
   lastUsed = 0;
-  private it: AsyncGenerator<WrappedCanvas, void, unknown> | null = null;
-  private cur: WrappedCanvas | null = null;
-  private nxt: WrappedCanvas | null = null;
+  private it: AsyncGenerator<VideoSample, void, unknown> | null = null;
+  private cur: VideoSample | null = null;
+  private nxt: VideoSample | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   private closed = false;
+  // Two canvases alternate so a frame being uploaded is never overwritten by the next one.
+  private readonly canvases: HTMLCanvasElement[];
+  private flip = 0;
+  private shown: StreamFrame | null = null;
 
-  constructor(private sink: CanvasSink) {}
+  constructor(private sink: VideoSampleSink, private packets: EncodedPacketSink, width: number, height: number) {
+    this.canvases = [0, 1].map(() => Object.assign(document.createElement('canvas'), { width, height }));
+  }
 
-  frameAt(t: number): Promise<WrappedCanvas | null> {
-    const run = this.queue.then(() => this.read(t));
+  frameAt(t: number, fast = false): Promise<StreamFrame | null> {
+    const run = this.queue.then(() => this.read(t, fast));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
-  private async pull(): Promise<WrappedCanvas | null> {
+  private async pull(): Promise<VideoSample | null> {
     const r = await this.it!.next();
     return r.done ? null : r.value;
   }
 
-  private async read(t: number): Promise<WrappedCanvas | null> {
+  private drop(): void {
+    this.cur?.close();
+    this.nxt?.close();
+    this.cur = this.nxt = null;
+  }
+
+  private show(s: VideoSample, exact: boolean): StreamFrame {
+    if (this.shown?.timestamp !== s.timestamp || this.shown.exact !== exact) {
+      const canvas = this.canvases[(this.flip ^= 1)];
+      const ctx = canvas.getContext('2d')!;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      s.drawWithFit(ctx, { fit: 'contain' }); // applies the rotation of phone videos
+      this.shown = { canvas, timestamp: s.timestamp, exact };
+    }
+    return this.shown;
+  }
+
+  private async read(t: number, fast: boolean): Promise<StreamFrame | null> {
     if (this.closed) return null;
     const cur = this.cur;
-    if (!this.it || !cur || t < cur.timestamp - 1e-4 || t > cur.timestamp + 2.5) {
+    const far = !this.it || !cur || t < cur.timestamp - 1e-4 || t > cur.timestamp + 2.5;
+    if (far && fast) {
+      // Scrubbing: show the nearest keyframe right away (one decode); the exact frame follows when asked.
+      const key = await this.packets.getKeyPacket(t);
+      const s = await this.sink.getSample(key?.timestamp ?? t);
+      if (!s || this.closed) { s?.close(); return this.shown; }
+      const f = this.show(s, false);
+      s.close();
+      return f;
+    }
+    if (far) {
       await this.it?.return();
-      this.it = this.sink.canvases(t);
+      this.drop();
+      this.it = this.sink.samples(t);
       this.cur = await this.pull();
       this.nxt = this.cur ? await this.pull() : null;
     }
     while (this.nxt && this.nxt.timestamp <= t + 1e-4) {
+      this.cur!.close(); // skipped: never drawn
       this.cur = this.nxt;
       this.nxt = await this.pull();
     }
-    return this.cur;
+    const c = this.cur;
+    if (!c || this.closed) return null;
+    return this.show(c, true);
   }
 
   close(): void {
     this.closed = true;
     void this.it?.return().catch(() => undefined);
     this.it = null;
+    this.drop();
   }
 }
 
@@ -136,7 +184,7 @@ export class MediaPool {
     return p;
   }
 
-  async frame(clipId: string, assetId: string, t: number): Promise<WrappedCanvas | null> {
+  async frame(clipId: string, assetId: string, t: number, fast = false): Promise<StreamFrame | null> {
     let s = this.streams.get(clipId);
     if (!s) {
       const h = await this.handle(assetId);
@@ -144,12 +192,12 @@ export class MediaPool {
       s = this.streams.get(clipId); // another caller may have created it meanwhile
       if (!s) {
         const [width, height] = fitSize(await h.video.getDisplayWidth(), await h.video.getDisplayHeight(), this.maxDim);
-        s = new VideoStream(new CanvasSink(h.video, { width, height, fit: 'contain', poolSize: 3 }));
+        s = new VideoStream(new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height);
         this.streams.set(clipId, s);
       }
     }
     s.lastUsed = performance.now();
-    return s.frameAt(t);
+    return s.frameAt(t, fast);
   }
 
   async audioSink(assetId: string): Promise<AudioBufferSink | null> {
@@ -181,6 +229,29 @@ export class MediaPool {
 export interface Thumb { t: number; bmp: ImageBitmap }
 const thumbCache = new Map<string, Promise<Thumb[]>>();
 
+let thumbWorker: Worker | null | undefined;
+let nextJob = 0;
+const waiting = new Map<number, { out: Thumb[]; resolve: (t: Thumb[]) => void; reject: (e: Error) => void }>();
+
+/** The shared thumbnail worker, or null where workers can't decode (then thumbnails render on this thread). */
+function worker(): Worker | null {
+  if (thumbWorker !== undefined) return thumbWorker;
+  try {
+    if (typeof OffscreenCanvas === 'undefined' || typeof VideoDecoder === 'undefined') throw new Error('no worker decoding');
+    thumbWorker = new Worker(new URL('./thumbs.worker.ts', import.meta.url), { type: 'module' });
+    thumbWorker.onmessage = (e: MessageEvent<ThumbReply>) => {
+      const r = e.data, w = waiting.get(r.id);
+      if (!w) return;
+      if ('bmp' in r) w.out.push({ t: r.t, bmp: r.bmp });
+      else { waiting.delete(r.id); if (r.error) w.reject(new Error(r.error)); else w.resolve(w.out); }
+    };
+    thumbWorker.onerror = () => { thumbWorker = null; for (const w of waiting.values()) w.reject(new Error('thumbnail worker failed')); waiting.clear(); };
+  } catch {
+    thumbWorker = null;
+  }
+  return thumbWorker;
+}
+
 export function thumbnails(assetId: string, duration: number, height = 96): Promise<Thumb[]> {
   let p = thumbCache.get(assetId);
   if (!p) {
@@ -192,24 +263,13 @@ export function thumbnails(assetId: string, duration: number, height = 96): Prom
         const bmp = await createImageBitmap(blob, { resizeHeight: height, resizeQuality: 'medium' }).catch(() => createImageBitmap(blob));
         return [{ t: 0, bmp }];
       }
-      const input = openInput(blob);
-      try {
-        const video = await input.getPrimaryVideoTrack();
-        if (!video) return [];
-        const aspect = (await video.getDisplayWidth()) / (await video.getDisplayHeight());
-        const sink = new CanvasSink(video, { width: Math.round(height * aspect), height, fit: 'cover' });
-        const n = Math.min(40, Math.max(2, Math.ceil(duration / 1.5)));
-        const times = Array.from({ length: n }, (_, i) => ((i + 0.5) * duration) / n);
-        const out: Thumb[] = [];
-        let i = 0;
-        for await (const wc of sink.canvasesAtTimestamps(times)) {
-          if (wc) out.push({ t: times[i], bmp: await createImageBitmap(wc.canvas) });
-          i++;
-        }
-        return out;
-      } finally {
-        input.dispose();
-      }
+      const job: ThumbJob = { id: ++nextJob, blob, duration, height, count: Math.min(40, Math.max(2, Math.ceil(duration / 1.5))) };
+      const w = worker();
+      const out = w
+        ? await new Promise<Thumb[]>((resolve, reject) => { waiting.set(job.id, { out: [], resolve, reject }); w.postMessage(job); })
+        : await (async () => { const list: Thumb[] = []; await renderThumbs(job, (t, bmp) => list.push({ t, bmp }), document.createElement('canvas')); return list; })();
+      mark(`thumbs:${assetId}`);
+      return out;
     })();
     p.catch(() => thumbCache.delete(assetId));
     thumbCache.set(assetId, p);
@@ -244,6 +304,7 @@ export function waveform(assetId: string): Promise<Float32Array> {
           }
         }
         await putPeaks(assetId, peaks);
+        mark(`wave:${assetId}`);
         return peaks;
       } finally {
         input.dispose();

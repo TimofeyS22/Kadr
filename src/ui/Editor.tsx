@@ -13,6 +13,9 @@ import { Preview } from './Preview';
 import { Sheets } from './sheets';
 import { Timeline } from './Timeline';
 import { Toolbar } from './Toolbar';
+import { PerfOverlay, perfOverlayEnabled } from './PerfOverlay';
+
+const showPerf = perfOverlayEnabled();
 import { t } from '../lib/i18n';
 
 const snapshot = () => Promise.race([player.snapshot(), new Promise<null>((r) => setTimeout(() => r(null), 800))]);
@@ -129,6 +132,7 @@ export function Editor({ id }: { id: string }) {
       <Preview />
       <Transport />
       <Timeline />
+      {showPerf && <PerfOverlay />}
       <Toolbar />
       <Sheets />
       <BusyOverlay />

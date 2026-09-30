@@ -7,7 +7,7 @@ import { ensureFont, type Drawable, type TextRasterizer } from './text';
 
 /** Fetches every texture a frame needs (video frames decode in parallel across clips). */
 export async function resolveDrawables(
-  desc: FrameDesc, pool: MediaPool, text: TextRasterizer, W: number, H: number,
+  desc: FrameDesc, pool: MediaPool, text: TextRasterizer, W: number, H: number, fast = false,
 ): Promise<Map<string, Drawable>> {
   const out = new Map<string, Drawable>();
   const jobs = new Map<string, Promise<void>>();
@@ -18,8 +18,8 @@ export async function resolveDrawables(
     const s = l.source;
     jobs.set(slot, (async () => {
       if (s.kind === 'video') {
-        const f = await pool.frame(s.clipId, s.assetId, s.time);
-        if (f) out.set(slot, { image: f.canvas, w: f.canvas.width, h: f.canvas.height, key: `${s.clipId}:${f.timestamp}` });
+        const f = await pool.frame(s.clipId, s.assetId, s.time, fast);
+        if (f) out.set(slot, { image: f.canvas, w: f.canvas.width, h: f.canvas.height, key: `${s.clipId}:${f.timestamp}:${f.exact ? 1 : 0}`, approx: !f.exact });
       } else if (s.kind === 'image') {
         const b = await pool.image(s.assetId);
         out.set(slot, { image: b, w: b.width, h: b.height, key: s.assetId });

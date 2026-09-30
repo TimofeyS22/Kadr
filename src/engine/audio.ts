@@ -73,6 +73,7 @@ interface ScheduleOpts {
   /** Timeline time → context time. */
   at: (tl: number) => number;
   keep: (n: AudioNode) => void;
+  drop?: (n: AudioNode) => void;
   pace?: (tl: number) => Promise<void>;
   signal?: AbortSignal;
   ducks?: [number, number][];
@@ -118,6 +119,7 @@ async function scheduleClip(o: ScheduleOpts): Promise<void> {
     node.start(when, offset);
     node.stop(end);
     o.keep(node);
+    node.onended = () => o.drop?.(node); // one node per decoded buffer: release them as they finish
   }
 }
 
@@ -134,17 +136,24 @@ export class AudioEngine {
   private startTl = 0;
   onError: ((e: unknown) => void) | null = null;
 
+  /**
+   * Creates the context ahead of time (it starts suspended). Creating it can block the main thread for a
+   * noticeable moment, so it happens while the editor is idle, not inside the Play tap (docs/04).
+   */
+  warm(): void {
+    if (this.ctx) return;
+    this.ctx = new AudioContext({ latencyHint: 'interactive' });
+    this.master = this.ctx.createGain();
+    this.master.connect(this.ctx.destination);
+  }
+
   /** Must run synchronously inside a user gesture (iOS/Chrome autoplay rules). */
   unlock(): void {
-    if (!this.ctx) {
-      this.ctx = new AudioContext({ latencyHint: 'interactive' });
-      this.master = this.ctx.createGain();
-      this.master.connect(this.ctx.destination);
-      // Play through the iOS silent switch, like video apps do.
-      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
-      if (session) session.type = 'playback';
-    }
-    if (this.ctx.state !== 'running') void this.ctx.resume();
+    this.warm();
+    // Play through the iOS silent switch, like video apps do.
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session) session.type = 'playback';
+    if (this.ctx!.state !== 'running') void this.ctx!.resume();
   }
 
   now(): number {
@@ -171,7 +180,7 @@ export class AudioEngine {
         const sink = await pool.audioSink(soundAssetId(entry.clip));
         const ducks = entry.duck > 0 ? await duckRanges(p) : undefined;
         if (!sink || ac.signal.aborted) return;
-        await scheduleClip({ ctx, out: master, sink, entry, from: t, to: Infinity, at, keep: (n) => this.nodes.add(n), pace, signal: ac.signal, ducks });
+        await scheduleClip({ ctx, out: master, sink, entry, from: t, to: Infinity, at, keep: (n) => this.nodes.add(n), drop: (n) => { n.disconnect(); this.nodes.delete(n); }, pace, signal: ac.signal, ducks });
       })().catch((e) => { if (!ac.signal.aborted) this.onError?.(e); });
     }
   }

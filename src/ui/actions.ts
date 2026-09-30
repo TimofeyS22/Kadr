@@ -16,6 +16,7 @@ import { importFile, importFiles, pickFiles } from '../engine/importer';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
+import { mark } from '../lib/perf';
 import { t } from '../lib/i18n';
 
 export type AddTarget = 'main' | 'overlay' | 'audio';
@@ -31,6 +32,7 @@ export async function addFiles(files: File[], target: AddTarget): Promise<void> 
   const s = editor();
   const busy = (i: number) => useEditor.setState({ busy: { label: t('Adding {i} of {n}…', { i: i + 1, n: files.length }), progress: i / files.length } });
   busy(0);
+  mark('import:start');
   let assets: Asset[] = [];
   try {
     assets = await importFiles(files, (name, e) => s.toast(t('Could not add {name}: {error}', { name, error: errorMessage(e) }), 'error'), busy);

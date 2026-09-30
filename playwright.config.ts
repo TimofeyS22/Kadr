@@ -18,7 +18,10 @@ export default defineConfig({
     timeout: 240_000,
   },
   projects: [
-    { name: 'iphone-webkit', use: { ...devices['iPhone 15'] } },
-    { name: 'android-chromium', use: { ...devices['Pixel 7'] } },
+    { name: 'iphone-webkit', use: { ...devices['iPhone 15'] }, testIgnore: /perf\.spec/ },
+    { name: 'android-chromium', use: { ...devices['Pixel 7'] }, testIgnore: /perf\.spec/ },
+    // `npm run perf`: the 4-minute benchmark from docs/04 (Chromium, CPU slowed 4× like a mid-range phone).
+    // Real GPU (headless defaults to software SwiftShader, which inflates frame costs far beyond any phone).
+    { name: 'perf', use: { ...devices['Pixel 7'], launchOptions: { args: ['--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] } }, testMatch: /perf\.spec/ },
   ],
 });
