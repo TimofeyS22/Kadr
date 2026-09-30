@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createImageClip, createProject, createTextClip } from './defaults';
 import { punchScale, seedOf, shake } from './effects';
-import { buildFrame } from './frame';
+import { applyTransition, buildFrame } from './frame';
 import { fromBase64, parseCube, toBase64 } from './lut';
-import { clipEnd, deleteClips, duplicateClips, findClip, insertMain, mainTrack, moveClipsBy, placeClip } from './timeline';
-import type { Asset, ImageClip } from './types';
+import { applyTransitionToAll, clipEnd, deleteClips, duplicateClips, findClip, insertMain, mainTrack, moveClipsBy, placeClip } from './timeline';
+import { TRANSITION_TYPES, type Asset, type ImageClip } from './types';
 
 const cube = (size: number, f: (r: number, g: number, b: number) => number[], head = '') => {
   const lines = [head, `LUT_3D_SIZE ${size}`];
@@ -129,5 +129,49 @@ describe('group operations (multi-select)', () => {
     moveClipsBy(p, [t1.id, t2.id], -10);
     expect(findClip(p, t1.id)!.clip.start).toBe(0);
     expect(findClip(p, t2.id)!.clip.start).toBeCloseTo(3, 6);
+  });
+});
+
+describe('transitions (v0.7)', () => {
+  const layer = () => setupLayer();
+  function setupLayer() {
+    const p = createProject('t', '9:16');
+    const a: Asset = { id: 'a', kind: 'image', name: 'a.png', mime: 'image/png', size: 1, duration: 0, width: 100, height: 100, hasAudio: false };
+    p.assets.a = a;
+    const c = createImageClip(a, 0);
+    placeClip(p, c);
+    return buildFrame(p, 0.1).layers.find((l) => l.id === c.id)!;
+  }
+  const visible = (l: ReturnType<typeof layer>) => l.opacity > 0.5 && (!l.wipe || l.wipe[2] > 0.9) && Math.abs(l.x) < 0.1 && Math.abs(l.y) < 0.1;
+  it.each(TRANSITION_TYPES)('%s starts on the outgoing shot and ends on the incoming one', (type) => {
+    const a0 = layer(), b0 = layer();
+    const dip0 = applyTransition(type, 0.01, a0, b0);
+    expect(a0.opacity).toBeGreaterThan(0.5);
+    const hidden = b0.opacity * (b0.wipe ? b0.wipe[2] : 1) < 0.5 || Math.abs(b0.x) > 0.9 || Math.abs(b0.y) > 0.9; // or still off-screen (slides)
+    expect(hidden, `${type} starts on the outgoing shot`).toBe(true);
+    expect(dip0 === null || dip0.opacity < 0.2).toBe(true);
+    const a1 = layer(), b1 = layer();
+    const dip1 = applyTransition(type, 0.99, a1, b1);
+    expect(visible(b1), `${type} ends on the incoming shot`).toBe(true);
+    expect(dip1 === null || dip1.opacity < 0.2).toBe(true);
+    // Deterministic: same input, same output (WYSIWYG between preview and export).
+    const a2 = layer(), b2 = layer();
+    applyTransition(type, 0.37, a2, b2);
+    const a3 = layer(), b3 = layer();
+    applyTransition(type, 0.37, a3, b3);
+    const strip = (l: ReturnType<typeof layer>) => ({ ...l, id: '' });
+    expect([a3, b3].map(strip)).toEqual([a2, b2].map(strip));
+  });
+  it('apply to all puts one transition on every cut in one step', () => {
+    const p = createProject('t', '9:16');
+    const img: Asset = { id: 'i', kind: 'image', name: 'i.png', mime: 'image/png', size: 1, duration: 0, width: 10, height: 10, hasAudio: false };
+    p.assets.i = img;
+    for (let i = 0; i < 4; i++) insertMain(p, createImageClip(img, 0), Infinity);
+    applyTransitionToAll(p, { type: 'circle', duration: 0.4 });
+    const cs = mainTrack(p).clips;
+    expect(cs[0].kind !== 'audio' && 'transitionIn' in cs[0] ? cs[0].transitionIn : undefined).toBeUndefined();
+    expect(cs.slice(1).map((c) => (c.kind === 'image' ? c.transitionIn?.type : null))).toEqual(['circle', 'circle', 'circle']);
+    applyTransitionToAll(p, null);
+    expect(cs.slice(1).every((c) => c.kind === 'image' && !c.transitionIn)).toBe(true);
   });
 });

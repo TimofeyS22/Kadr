@@ -48,6 +48,7 @@ uniform vec3 uWipe;
 uniform int uHasWipe;
 uniform float uSeed;
 uniform int uFx;
+uniform vec2 uRes;
 uniform float uFxAmt, uFxTime, uFxSeed, uFxLod;
 uniform highp sampler3D uLut;
 uniform int uHasLut;
@@ -123,6 +124,14 @@ void main() {
     src = unpremul(src / 25.0);
     src.rgb *= 0.75;
   } else if (uFx == 3) src = blurAt(uv, uFxLod);
+  else if (uFx == 5) { // horizontal motion blur (whip pan, spin)
+    src = vec4(0.0);
+    for (int i = -4; i <= 4; i++) src += texture(uTex, uv + vec2(float(i) * 0.014 * uFxAmt, 0.0));
+    src = unpremul(src / 9.0);
+  } else if (uFx == 6) { // mosaic that grows with the amount
+    vec2 blk = uTexel * max(1.0, uFxAmt * 56.0);
+    src = unpremul(texture(uTex, (floor(uv / blk) + 0.5) * blk));
+  }
   else src = unpremul(texture(uTex, uv));
   if (uSolid == 0 && !hide) {
     float split = uFx == 4 ? 0.012 * uFxAmt * (0.6 + 0.4 * sin(t * 5.0)) : uFx == 2 ? 0.004 * uFxAmt : uFx == 1 ? 0.02 * uFxAmt * gOn : 0.0;
@@ -170,7 +179,10 @@ void main() {
   if (uHasSeg == 1) a *= smoothstep(0.3, 0.7, texture(uSegTex, vUv).r);
   if (uMaskShape > 0) a *= shapeMask(vQuad);
   if (uHasWipe == 1) {
-    float s = uWipe.x > 0.5 ? vCanvas.x : uWipe.x < -0.5 ? 1.0 - vCanvas.x : uWipe.y > 0.5 ? vCanvas.y : 1.0 - vCanvas.y;
+    vec2 asp = vec2(uRes.x / uRes.y, 1.0);
+    float s = uWipe.y > 2.5 ? abs(vCanvas.x - 0.5) * 2.0 // doors: opens from the centre
+      : uWipe.y > 1.5 ? length((vCanvas - 0.5) * asp) / (0.5 * length(asp)) // circle (iris) from the centre
+      : uWipe.x > 0.5 ? vCanvas.x : uWipe.x < -0.5 ? 1.0 - vCanvas.x : uWipe.y > 0.5 ? vCanvas.y : 1.0 - vCanvas.y;
     a *= 1.0 - smoothstep(uWipe.z - 0.01, uWipe.z + 0.01, s);
   }
   a *= uOpacity;

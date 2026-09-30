@@ -33,6 +33,8 @@ export type BlendMode = 'normal' | 'screen' | 'multiply' | 'add';
 
 export const TRANSITION_TYPES = [
   'fade', 'black', 'white', 'slideLeft', 'slideRight', 'slideUp', 'slideDown', 'wipeLeft', 'wipeRight', 'zoom',
+  // v0.7
+  'whip', 'spin', 'blur', 'glitch', 'flash', 'circle', 'doors', 'pixelate', 'zoomOut', 'shake',
 ] as const;
 export type TransitionType = (typeof TRANSITION_TYPES)[number];
 export interface Transition { type: TransitionType; duration: number }

@@ -659,3 +659,33 @@ test('scrolling the timeline by hand still scrubs the playhead', async ({ page }
   await page.locator('.tl-scroll').evaluate((el) => { el.dispatchEvent(new WheelEvent('wheel', { deltaX: 120, bubbles: true })); el.scrollLeft += 120; });
   await expect.poll(() => time(page)).not.toBe(before);
 });
+
+test('new transitions render mid-cut and "Apply to all cuts" sets every cut', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png', 'person.jpg', 'photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(3);
+  const cuts = page.getByRole('button', { name: 'Transition' });
+  await expect(cuts).toHaveCount(2);
+  // Mid-cut frame: the playhead goes to the middle of the first cut (clip 2 starts 0.5 s early, transition 0.5 s).
+  // Photos last 3 s; with a 0.5 s transition clip 2 starts at 2.5 s, so 2.75 s is mid-cut (60 px per second).
+  const midCut = () => page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 2.75 * 60; });
+  await cuts.first().click();
+  await page.getByRole('radio', { name: 'None' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await midCut();
+  const plain = await photo(page, info);
+  for (const name of ['Whip pan', 'Circle', 'Pixelate', 'Flash']) {
+    await cuts.first().click();
+    await page.getByRole('radio', { name, exact: true }).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+    await midCut();
+    expect(changed(plain, await photo(page, info), 20), name).toBeGreaterThan(0.02);
+  }
+  await cuts.first().click();
+  await page.getByRole('radio', { name: 'Spin', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply to all cuts' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await cuts.nth(1).click();
+  await expect(page.getByRole('radio', { name: 'Spin', exact: true })).toBeChecked();
+});

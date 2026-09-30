@@ -159,6 +159,50 @@ export function applyTransition(type: TransitionType, p: number, a: Layer, b: La
     case 'wipeLeft': b.wipe = [-1, 0, s]; return null;
     case 'wipeRight': b.wipe = [1, 0, s]; return null;
     case 'zoom': a.scale *= 1 + s; a.opacity *= 1 - p; b.opacity *= p; b.scale *= 1.2 - 0.2 * s; return null;
+    // v0.7: hard cut in the middle, disguised by motion, blur or a flash (deterministic in p).
+    case 'whip': {
+      const v = 1 - Math.abs(2 * p - 1); // speed: 0 → 1 → 0
+      if (p < 0.5) { b.opacity = 0; a.x -= s * 0.9; } else { a.opacity = 0; b.x += (1 - s) * 0.9; }
+      for (const l of [a, b]) l.fx = { code: 5, amount: v, time: 0, seed: 0 };
+      return null;
+    }
+    case 'spin': {
+      const k = p < 0.5 ? smooth(p * 2) : 1 - smooth((p - 0.5) * 2);
+      if (p < 0.5) { b.opacity = 0; a.rotation += k * 180; a.scale *= 1 + 0.4 * k; } else { a.opacity = 0; b.rotation -= k * 180; b.scale *= 1 + 0.4 * k; }
+      for (const l of [a, b]) l.fx = { code: 5, amount: k * 0.6, time: 0, seed: 0 };
+      return null;
+    }
+    case 'blur': {
+      const k = 1 - Math.abs(2 * p - 1);
+      b.opacity *= s;
+      for (const l of [a, b]) l.fx = { code: 3, amount: k, time: 0, seed: 0 };
+      return null;
+    }
+    case 'glitch': {
+      const k = 1 - Math.abs(2 * p - 1);
+      if (p < 0.5) b.opacity = 0; else a.opacity = 0;
+      for (const l of [a, b]) l.fx = { code: 1, amount: Math.min(1, k * 1.6), time: p * 4, seed: 0.37 };
+      return null;
+    }
+    case 'flash':
+      if (p < 0.5) b.opacity = 0; else a.opacity = 0;
+      return solid('#ffffff', Math.exp(-(((p - 0.5) / 0.18) ** 2)));
+    case 'circle': b.wipe = [0, 2, s]; return null;
+    case 'doors': b.wipe = [0, 3, s]; return null;
+    case 'pixelate': {
+      const k = 1 - Math.abs(2 * p - 1);
+      if (p < 0.5) b.opacity = 0; else a.opacity = 0;
+      for (const l of [a, b]) l.fx = { code: 6, amount: k, time: 0, seed: 0 };
+      return null;
+    }
+    case 'zoomOut': a.scale *= 1 - 0.35 * s; a.opacity *= 1 - p; b.opacity *= p; b.scale *= 1.35 - 0.35 * s; return null;
+    case 'shake': {
+      const k = 1 - Math.abs(2 * p - 1);
+      if (p < 0.5) b.opacity = 0; else a.opacity = 0;
+      const sh = shake(p * 2, k, 0.5);
+      for (const l of [a, b]) { l.x += sh.dx * 2; l.y += sh.dy * 2; l.rotation += sh.rot; l.scale *= 1 + 0.08 * k; }
+      return null;
+    }
   }
 }
 

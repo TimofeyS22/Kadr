@@ -4,7 +4,7 @@ import { TEXT_PRESETS } from '../core/presets';
 import { ASPECTS, defaultAdjust, defaultTransform } from '../core/defaults';
 import { FILTERS, adjustRange } from '../core/filters';
 import { CURVE_PRESETS } from '../core/speed';
-import { expectedAudioKey, findClip, setCurve, setSpeed, setTransition } from '../core/timeline';
+import { applyTransitionToAll, expectedAudioKey, findClip, setCurve, setSpeed, setTransition } from '../core/timeline';
 import { CurveEditor } from './CurveEditor';
 import {
   ADJUST_KEYS, TRANSITION_TYPES,
@@ -269,6 +269,8 @@ function TextBody({ clip }: { clip: TextClip }) {
 const TRANSITION_LABELS: Record<TransitionType, string> = {
   fade: 'Dissolve', black: 'Dip to black', white: 'Dip to white', slideLeft: 'Slide ←', slideRight: 'Slide →',
   slideUp: 'Slide ↑', slideDown: 'Slide ↓', wipeLeft: 'Wipe ←', wipeRight: 'Wipe →', zoom: 'Zoom',
+  whip: 'Whip pan', spin: 'Spin', blur: 'Blur', glitch: 'Glitch', flash: 'Flash', circle: 'Circle', doors: 'Doors',
+  pixelate: 'Pixelate', zoomOut: 'Zoom out', shake: 'Shake',
 };
 
 function TransitionBody() {
@@ -284,6 +286,7 @@ function TransitionBody() {
         onChange={(t) => commit(t === 'none' ? null : { type: t, duration: tr?.duration ?? 0.5 })} />
       {tr && <Slider label={t('Duration')} value={tr.duration} min={0.1} max={2} step={0.05} format={secs} reset={0.5}
         onChange={(v) => commit({ ...tr, duration: v }, `trd:${clip.id}`)} />}
+      <button className="btn" onClick={() => useEditor.getState().commit((d) => applyTransitionToAll(d, tr ?? null))}>{t('Apply to all cuts')}</button>
     </>
   );
 }

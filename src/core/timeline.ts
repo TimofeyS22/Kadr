@@ -353,6 +353,11 @@ export function setTransition(p: Project, id: string, tr: Transition | null): vo
   packMain(f.track);
 }
 
+/** Puts the same transition (or none) on every cut of the main track: one undo step. */
+export function applyTransitionToAll(p: Project, tr: Transition | null): void {
+  for (const c of mainTrack(p).clips.slice(1)) setTransition(p, c.id, tr);
+}
+
 /** Copies a video clip's sound to an audio track and mutes the video clip. Returns the audio clip id. */
 export function detachAudio(p: Project, id: string): string | null {
   const f = findClip(p, id);
