@@ -103,7 +103,8 @@ function VolumeBody({ clip }: { clip: Clip }) {
       <Slider label={t('Fade in')} value={clip.fadeIn} min={0} max={maxFade} step={0.05} format={secs} reset={0} onChange={(v) => e((c) => { c.fadeIn = v; }, 'fi')} />
       <Slider label={t('Fade out')} value={clip.fadeOut} min={0} max={maxFade} step={0.05} format={secs} reset={0} onChange={(v) => e((c) => { c.fadeOut = v; }, 'fo')} />
       <Toggle label={t('Mute')} value={clip.muted} onChange={(v) => e((c) => { c.muted = v; }, 'mute')} />
-      <DenoiseToggle clip={clip} />
+      <EnhanceToggle clip={clip} />
+      {!clip.enhance && <DenoiseToggle clip={clip} />}
       {clip.kind === 'audio' && (
         <>
           <Toggle label={t('Lower when others speak')} value={(clip.duck ?? 0) > 0} onChange={(v) => e((c) => { c.duck = v ? 0.7 : 0; }, 'duck')} />
@@ -335,6 +336,12 @@ function useSoundJob(clipId: string) {
     </div>
   );
   return { run, progress };
+}
+
+/** One-tap voice enhancement: noise reduction, voice EQ, compression and even loudness (on device). */
+function EnhanceToggle({ clip }: { clip: SoundClip }) {
+  const { run, progress } = useSoundJob(clip.id);
+  return progress ?? <Toggle label={t('Enhance voice')} value={!!clip.enhance} onChange={(v) => void run((c) => { c.enhance = v; })} />;
 }
 
 /** Noise reduction (RNNoise, on device); the processed sound is cached per source file. */

@@ -398,3 +398,78 @@ test('home: sample, backup, restore, rename, delete and every template', async (
     await page.getByRole('button', { name: 'Back to projects' }).click();
   }
 });
+
+// ---------- v0.6: sound and export formats ----------
+
+/** Runs an export of the given format from the export sheet and returns the saved file path. */
+async function exportAs(page: Page, info: { outputPath: (n: string) => string }, format: 'Video' | 'Photo' | 'GIF' | 'Audio', button: string, opts: { loudness?: boolean } = {}) {
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('radio', { name: format, exact: true }).click();
+  if (format === 'Video') await page.getByRole('radio', { name: 'Small file' }).click();
+  if (opts.loudness === false) await page.getByRole('switch', { name: /Even loudness/ }).uncheck();
+  await page.getByRole('button', { name: button }).click();
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  const file = info.outputPath((await dl).suggestedFilename());
+  await (await dl).saveAs(file);
+  await page.getByRole('button', { name: 'Done' }).click();
+  return file;
+}
+
+/** Integrated loudness and sample peak measured by ffmpeg's EBU R128 filter. */
+async function loudnessOf(file: string) {
+  const { spawnSync } = await import('node:child_process');
+  const out = spawnSync('ffmpeg', ['-nostats', '-i', file, '-filter_complex', 'ebur128=peak=sample', '-f', 'null', '-'], { encoding: 'utf8' }).stderr;
+  const summary = out.slice(out.lastIndexOf('Summary:'));
+  return { lufs: Number(/I:\s+(-?[\d.]+) LUFS/.exec(summary)![1]), peak: Number(/Peak:\s+(-?[\d.]+) dBFS/.exec(summary)![1]) };
+}
+
+async function probe(file: string) {
+  const { execFileSync } = await import('node:child_process');
+  return JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-show_entries', 'stream=codec_name,codec_type,width,height,nb_read_frames:format=duration', '-of', 'json', file]).toString()) as {
+    streams: { codec_name: string; codec_type: string; width?: number; height?: number; nb_read_frames?: string }[]; format: { duration?: string };
+  };
+}
+
+test('enhance voice: processed to -16 LUFS; exports normalize to -14 LUFS', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Audio', ['noisy_en.m4a']);
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1);
+  await page.locator('.tl-row.audio .clip').click();
+  await tool(page, 'Volume').click();
+  await page.getByRole('switch', { name: 'Enhance voice' }).check();
+  await expect(page.getByRole('switch', { name: 'Enhance voice' })).toBeChecked({ timeout: 120_000 });
+  await expect(page.getByRole('switch', { name: 'Reduce background noise' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Done' }).click();
+  const raw = await loudnessOf(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  expect(raw.lufs).toBeGreaterThan(-17.5);
+  expect(raw.lufs).toBeLessThan(-14.5);
+  expect(raw.peak).toBeLessThanOrEqual(-0.9);
+  const video = await loudnessOf(await exportAs(page, info, 'Video', 'Export video'));
+  expect(Math.abs(video.lufs + 14)).toBeLessThan(1);
+  expect(video.peak).toBeLessThanOrEqual(-0.9);
+  // Undo returns to the plain sound in one step.
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await page.locator('.tl-row.audio .clip').click();
+  await tool(page, 'Volume').click();
+  await expect(page.getByRole('switch', { name: 'Enhance voice' })).not.toBeChecked();
+});
+
+test('exports a photo of the current frame and a looping GIF', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const photo = await probe(await exportAs(page, info, 'Photo', 'Save photo'));
+  expect(photo.streams[0].codec_name).toBe('mjpeg');
+  expect([photo.streams[0].width, photo.streams[0].height]).toEqual([1080, 1920]);
+  const gif = await probe(await exportAs(page, info, 'GIF', 'Export GIF'));
+  expect(gif.streams[0].codec_name).toBe('gif');
+  expect([gif.streams[0].width, gif.streams[0].height]).toEqual([270, 480]);
+  expect(Number(gif.streams[0].nb_read_frames)).toBe(72); // 6 s × 12 fps
+});

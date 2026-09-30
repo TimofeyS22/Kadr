@@ -46,7 +46,7 @@ export const rateAt = (c: MediaClip, t: number): number =>
 
 /** What the clip's processed sound must contain: d = noise-reduced, p<speed> = pitch-compensated. */
 export const expectedAudioKey = (c: SoundClip): string =>
-  `${c.denoise ? 'd' : ''}${c.keepPitch && c.speed !== 1 && !c.curve ? `p${c.speed}` : ''}`;
+  `${c.enhance ? 'e' : c.denoise ? 'd' : ''}${c.keepPitch && c.speed !== 1 && !c.curve ? `p${c.speed}` : ''}`;
 
 /** Asset to play for a clip's sound: the processed one if it matches the clip's settings, else the source. */
 export function soundAssetId(c: SoundClip): string {

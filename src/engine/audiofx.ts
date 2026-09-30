@@ -3,6 +3,7 @@
 import {
   AudioBufferSource, BufferTarget, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, getFirstEncodableAudioCodec,
 } from 'mediabunny';
+import { Limiter, LoudnessMeter, normalizeGain, voiceChain } from '../core/dsp';
 import { expectedAudioKey } from '../core/timeline';
 import type { Asset, AudioClip, Project, SoundClip } from '../core/types';
 import { renderAudioWindow } from './audio';
@@ -19,6 +20,33 @@ interface Processor {
   dispose(): void;
 }
 
+/** Renders an asset's sound in 10 s windows (mono = average of L and R) and hands each window to `fn`. */
+async function eachWindow(
+  p: Project, assetId: string, channels: 1 | 2, fn: (input: Float32Array[], done: number) => Promise<void> | void, signal: AbortSignal,
+): Promise<void> {
+  const src = p.assets[assetId];
+  if (!src?.hasAudio) throw new MediaError('This clip has no sound');
+  const clip: AudioClip = { kind: 'audio', id: '__fx', assetId, start: 0, duration: src.duration, in: 0, speed: 1, volume: 1, muted: false, fadeIn: 0, fadeOut: 0 };
+  const solo: Project = { ...p, tracks: [{ id: '__t', kind: 'audio', clips: [clip] }] };
+  const pool = new MediaPool(16);
+  const total = Math.round(src.duration * SR);
+  try {
+    for (let i = 0; i < total; i += SR * WINDOW_S) {
+      if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      const j = Math.min(total, i + SR * WINDOW_S);
+      const mix = await renderAudioWindow(solo, pool, i / SR, j / SR, SR);
+      const l = mix.getChannelData(0), r = mix.getChannelData(1);
+      let input: Float32Array[];
+      if (channels === 2) input = [l.slice(), r.slice()];
+      else { const m = new Float32Array(l.length); for (let k = 0; k < l.length; k++) m[k] = (l[k] + r[k]) / 2; input = [m]; }
+      await fn(input, j / total);
+      await new Promise((res) => setTimeout(res, 0));
+    }
+  } finally {
+    pool.dispose();
+  }
+}
+
 async function processAssetAudio(
   p: Project, assetId: string, name: string, proc: Processor, onProgress: (f: number) => void, signal: AbortSignal,
 ): Promise<Asset> {
@@ -30,9 +58,6 @@ async function processAssetAudio(
   const output = new Output({ format: mp4 ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new BufferTarget() });
   const source = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
   output.addAudioTrack(source);
-  const clip: AudioClip = { kind: 'audio', id: '__fx', assetId, start: 0, duration: src.duration, in: 0, speed: 1, volume: 1, muted: false, fadeIn: 0, fadeOut: 0 };
-  const solo: Project = { ...p, tracks: [{ id: '__t', kind: 'audio', clips: [clip] }] };
-  const pool = new MediaPool(16);
   const total = Math.round(src.duration * SR);
   let emitted = 0;
   const emit = async (chans: Float32Array[]) => {
@@ -45,18 +70,7 @@ async function processAssetAudio(
   };
   try {
     await output.start();
-    for (let i = 0; i < total; i += SR * WINDOW_S) {
-      if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-      const j = Math.min(total, i + SR * WINDOW_S);
-      const mix = await renderAudioWindow(solo, pool, i / SR, j / SR, SR);
-      const l = mix.getChannelData(0), r = mix.getChannelData(1);
-      let input: Float32Array[];
-      if (proc.channels === 2) input = [l.slice(), r.slice()];
-      else { const m = new Float32Array(l.length); for (let k = 0; k < l.length; k++) m[k] = (l[k] + r[k]) / 2; input = [m]; }
-      await emit(proc.process(input));
-      onProgress(j / total);
-      await new Promise((res) => setTimeout(res, 0));
-    }
+    await eachWindow(p, assetId, proc.channels, async (input, done) => { await emit(proc.process(input)); onProgress(done); }, signal);
     await emit(proc.flush());
     if (emitted < total) await emit(Array.from({ length: proc.channels }, () => new Float32Array(total - emitted))); // keep exact length
     source.close();
@@ -68,8 +82,31 @@ async function processAssetAudio(
     throw e;
   } finally {
     proc.dispose();
-    pool.dispose();
   }
+}
+
+export const VOICE_TARGET_LUFS = -16;
+
+/**
+ * "Enhance voice" on an already noise-reduced sound: voice EQ and compression, then loudness to -16 LUFS
+ * with a -1 dBFS limiter. Two passes: the first measures the processed loudness, the second applies it.
+ */
+export async function enhanceAsset(p: Project, assetId: string, onProgress: (f: number) => void, signal: AbortSignal): Promise<Asset> {
+  // Measured as heard: the mono voice plays on both stereo channels (dual mono is +3 dB vs one channel).
+  const meter = new LoudnessMeter(2, SR);
+  let chain = voiceChain(SR);
+  await eachWindow(p, assetId, 1, ([m], done) => { chain(m); meter.push([m, m]); onProgress(done * 0.3); }, signal);
+  onProgress(0.3);
+  const gain = normalizeGain(meter.integrated(), VOICE_TARGET_LUFS, 18);
+  chain = voiceChain(SR);
+  const limiter = new Limiter(1, SR, gain, -1);
+  const name = (p.assets[assetId]?.name ?? 'sound').replace(/ \(clean\)$/, '');
+  return processAssetAudio(p, assetId, `${name} (enhanced)`, {
+    channels: 1,
+    process: ([m]) => { chain(m); return limiter.process([m]); },
+    flush: () => limiter.flush(),
+    dispose: () => undefined,
+  }, (f) => onProgress(0.3 + f * 0.7), signal);
 }
 
 /** Voice noise reduction with RNNoise (mono, 48 kHz, 480-sample frames). */
@@ -140,7 +177,7 @@ export async function pitchCompensatedAsset(p: Project, assetId: string, speed: 
   }, onProgress, signal);
 }
 
-export interface PreparedSound { key: string; assetId: string | null; created: Asset[]; derived: { denoise?: string; pitch?: Record<string, string> } }
+export interface PreparedSound { key: string; assetId: string | null; created: Asset[]; derived: NonNullable<Asset['derived']> }
 
 /**
  * Builds (or reuses) the processed sound a clip needs for its settings: noise reduction, then pitch
@@ -149,25 +186,41 @@ export interface PreparedSound { key: string; assetId: string | null; created: A
 export async function prepareClipSound(p: Project, clip: SoundClip, onProgress: (f: number) => void, signal: AbortSignal): Promise<PreparedSound> {
   const key = expectedAudioKey(clip);
   const src = p.assets[clip.assetId];
-  const derived = { denoise: src?.derived?.denoise, pitch: { ...src?.derived?.pitch } };
+  const derived = { denoise: src?.derived?.denoise, enhance: src?.derived?.enhance, pitch: { ...src?.derived?.pitch } };
   const created: Asset[] = [];
   if (!key || !src) return { key, assetId: null, created, derived };
   let proj = p;
   const add = (a: Asset) => { created.push(a); proj = { ...proj, assets: { ...proj.assets, [a.id]: a } }; };
   const needPitch = !!clip.keepPitch && clip.speed !== 1;
+  const clean = !!clip.denoise || !!clip.enhance;
+  const pk = `${clip.enhance ? 'e' : clip.denoise ? 'd' : ''}p${clip.speed}`;
+  const has = (id: string | undefined) => !!id && !!proj.assets[id];
+  // Progress is split evenly over the steps that actually have to run.
+  const steps = [clean && !has(derived.denoise), !!clip.enhance && !has(derived.enhance), needPitch && !has(derived.pitch[pk])].filter(Boolean).length;
+  let step = 0;
+  const progress = (f: number) => onProgress(Math.min(1, (step + f) / Math.max(1, steps)));
   let base = clip.assetId;
-  if (clip.denoise) {
-    if (!derived.denoise || !proj.assets[derived.denoise]) {
-      const a = await denoiseAsset(proj, clip.assetId, (f) => onProgress(needPitch ? f / 2 : f), signal);
+  if (clean) {
+    if (!has(derived.denoise)) {
+      const a = await denoiseAsset(proj, clip.assetId, progress, signal);
       add(a);
       derived.denoise = a.id;
+      step++;
     }
-    base = derived.denoise;
+    base = derived.denoise!;
+  }
+  if (clip.enhance) {
+    if (!has(derived.enhance)) {
+      const a = await enhanceAsset(proj, base, progress, signal);
+      add(a);
+      derived.enhance = a.id;
+      step++;
+    }
+    base = derived.enhance!;
   }
   if (needPitch) {
-    const pk = `${clip.denoise ? 'd' : ''}p${clip.speed}`;
-    if (!derived.pitch[pk] || !proj.assets[derived.pitch[pk]]) {
-      const a = await pitchCompensatedAsset(proj, base, clip.speed, (f) => onProgress(clip.denoise ? 0.5 + f / 2 : f), signal);
+    if (!has(derived.pitch[pk])) {
+      const a = await pitchCompensatedAsset(proj, base, clip.speed, progress, signal);
       add(a);
       derived.pitch[pk] = a.id;
     }

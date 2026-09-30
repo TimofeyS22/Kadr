@@ -72,6 +72,8 @@ interface Sound {
   /** What audioAssetId contains (see soundAssetId); a stale key falls back to the source sound. */
   audioKey?: string;
   denoise?: boolean;
+  /** Enhance voice (v0.6): noise reduction + voice EQ + compression + loudness -16 LUFS. Implies denoise. */
+  enhance?: boolean;
   /** Keep natural pitch when speed != 1 (pre-shifted sound, see engine/audiofx). */
   keepPitch?: boolean;
   /** Auto-ducking depth 0..1: lower this clip while speech plays in other clips. */
@@ -131,7 +133,7 @@ export interface Asset {
   height: number;
   hasAudio: boolean;
   /** Cache of processed versions of this asset's sound, e.g. { denoise: assetId }. */
-  derived?: { denoise?: string; pitch?: Record<string, string> };
+  derived?: { denoise?: string; enhance?: string; pitch?: Record<string, string> };
   /** Beat grid of the asset's sound, in source seconds. */
   beats?: { bpm: number; times: number[] };
 }

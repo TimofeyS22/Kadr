@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { projectDuration } from '../core/timeline';
-import { exportProject, outputSize, saveFile, supportedResolutions, type ExportResult, type Resolution } from '../engine/exporter';
+import {
+  MAX_GIF_S, exportAudio, exportFrame, exportGif, exportProject, gifSize, outputSize, saveFile, supportedResolutions, type ExportResult, type Resolution,
+} from '../engine/exporter';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
-import { Chips, Sheet } from './controls';
+import { Chips, Sheet, Toggle } from './controls';
 import { t } from '../lib/i18n';
+
+type Format = 'video' | 'photo' | 'gif' | 'audio';
+const FORMATS: Record<Format, string> = { video: 'Video', photo: 'Photo', gif: 'GIF', audio: 'Audio' };
 
 type Phase = { kind: 'setup' } | { kind: 'running'; progress: number } | { kind: 'done'; result: ExportResult } | { kind: 'error'; message: string };
 
@@ -24,6 +29,8 @@ export function ExportSheet() {
   const [fps, setFps] = useState(project.settings.fps);
   const [quality, setQuality] = useState<'standard' | 'high'>('high');
   const [phase, setPhase] = useState<Phase>({ kind: 'setup' });
+  const [format, setFormat] = useState<Format>('video');
+  const [loudness, setLoudness] = useState(true);
   const abort = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -46,12 +53,14 @@ export function ExportSheet() {
     // Keep the screen on: a phone going to sleep is the most common way long exports die.
     const lock = await (navigator as Navigator & { wakeLock?: { request(t: 'screen'): Promise<{ release(): Promise<void> }> } })
       .wakeLock?.request('screen').catch(() => null);
-    track('export_started', { resolution, fps, quality, duration: Math.round(duration) });
+    track('export_started', { format, resolution, fps, quality, loudness, duration: Math.round(duration) });
     try {
       let last = 0;
-      const result = await exportProject(project, { resolution, fps, quality }, (f) => {
-        if (f - last > 0.005 || f === 1) { last = f; setPhase({ kind: 'running', progress: f }); }
-      }, ac.signal);
+      const progress = (f: number) => { if (f - last > 0.005 || f === 1) { last = f; setPhase({ kind: 'running', progress: f }); } };
+      const result = format === 'photo' ? await exportFrame(project, player.time, resolution)
+        : format === 'gif' ? await exportGif(project, progress, ac.signal)
+        : format === 'audio' ? await exportAudio(project, loudness, progress, ac.signal)
+        : await exportProject(project, { resolution, fps, quality, loudness }, progress, ac.signal);
       setPhase({ kind: 'done', result });
       track('export_completed', { resolution, fps, seconds: Math.round(result.seconds), mb: Math.round(result.blob.size / 1e6) });
     } catch (e) {
@@ -67,6 +76,32 @@ export function ExportSheet() {
   return (
     <Sheet title={t('Export')}>
       {phase.kind === 'setup' && (
+        <Chips options={Object.keys(FORMATS) as Format[]} value={format} onChange={setFormat} render={(f) => t(FORMATS[f])} />
+      )}
+      {phase.kind === 'setup' && format === 'photo' && (
+        <>
+          <h3>{t('Resolution')}</h3>
+          {supported && <Chips options={supported} value={resolution} onChange={setResolution} render={(r) => LABEL[r]} />}
+          <p className="hint">{t('The frame at the playhead as a {w}×{h} JPEG.', { w, h })}</p>
+          <button className="btn primary big" disabled={duration <= 0} onClick={run}>{t('Save photo')}</button>
+        </>
+      )}
+      {phase.kind === 'setup' && format === 'gif' && (
+        <>
+          <p className="hint">{duration > MAX_GIF_S + 0.05
+            ? t('GIF works for videos up to {n} s. Trim the project or export a video.', { n: MAX_GIF_S })
+            : t('{w}×{h}, 12 fps, loops forever. No sound in GIF.', { w: gifSize(project.settings)[0], h: gifSize(project.settings)[1] })}</p>
+          <button className="btn primary big" disabled={duration <= 0 || duration > MAX_GIF_S + 0.05} onClick={run}>{t('Export GIF')}</button>
+        </>
+      )}
+      {phase.kind === 'setup' && format === 'audio' && (
+        <>
+          <Toggle label={t('Even loudness for TikTok and YouTube (−14 LUFS)')} value={loudness} onChange={setLoudness} />
+          <p className="hint">{t('The whole soundtrack, {s} s.', { s: duration.toFixed(1) })}</p>
+          <button className="btn primary big" disabled={duration <= 0} onClick={run}>{t('Export audio')}</button>
+        </>
+      )}
+      {phase.kind === 'setup' && format === 'video' && (
         <>
           <Chips options={PRESETS.map((p) => p.id)} render={(id) => PRESETS.find((p) => p.id === id)!.label}
             value={PRESETS.find((p) => p.resolution === resolution && p.fps === fps && p.quality === quality)?.id ?? null}
@@ -83,6 +118,7 @@ export function ExportSheet() {
           <Chips options={[24, 25, 30, 60] as const} value={fps} onChange={setFps} render={(f) => `${f}`} />
           <h3>{t('Quality')}</h3>
           <Chips options={['standard', 'high'] as const} value={quality} onChange={setQuality} render={(q) => (q === 'high' ? t('High') : t('Standard'))} />
+          <Toggle label={t('Even loudness for TikTok and YouTube (−14 LUFS)')} value={loudness} onChange={setLoudness} />
           <p className="hint">{t('{w}×{h}, {s} s, about {mb} MB. Rendered on this device, nothing is uploaded.', { w, h, s: duration.toFixed(1), mb: estMb < 1 ? 1 : Math.round(estMb) })}</p>
           <button className="btn primary big" disabled={!supported?.length || duration <= 0} onClick={run}>{t('Export video')}</button>
         </>
