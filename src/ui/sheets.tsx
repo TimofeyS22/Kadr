@@ -17,6 +17,7 @@ import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
 import { ExportSheet } from './ExportSheet';
+import { EffectsBody, LutSection, PrivacyBody } from './FxSheets';
 import { CaptionEditBody, CaptionsBody, CropBody, StickersBody, VoiceoverBody } from './ToolSheets';
 import { BeatsBody, MaskBody, PausesBody, SfxBody } from './MoreSheets';
 import { t } from '../lib/i18n';
@@ -29,7 +30,7 @@ const TITLES: Record<SheetId, string> = {
   speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform & keyframes',
   text: 'Text', transition: 'Transition', canvas: 'Canvas', export: 'Export',
   crop: 'Crop', captions: 'Auto captions', captionEdit: 'Captions', voiceover: 'Voice-over', stickers: 'Stickers',
-  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat',
+  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces',
 };
 
 export function Sheets() {
@@ -57,6 +58,8 @@ export function Sheets() {
       {sheet === 'pauses' && (clip.kind === 'video' || clip.kind === 'audio') && <PausesBody clip={clip} />}
       {sheet === 'mask' && (clip.kind === 'video' || clip.kind === 'image') && <MaskBody clip={clip} />}
       {sheet === 'beats' && clip.kind === 'audio' && <BeatsBody clip={clip} />}
+      {sheet === 'effects' && (clip.kind === 'video' || clip.kind === 'image') && <EffectsBody clip={clip} />}
+      {sheet === 'privacy' && (clip.kind === 'video' || clip.kind === 'image') && <PrivacyBody clip={clip} />}
     </Sheet>
   );
 }
@@ -151,6 +154,7 @@ function FiltersBody({ clip }: { clip: Clip }) {
         <Slider label={t('Intensity')} value={clip.filter.intensity} min={0} max={1} format={pct} reset={0.8}
           onChange={(v) => editClip(clip.id, (c) => { if ('filter' in c && c.filter) c.filter.intensity = v; }, `fint:${clip.id}`)} />
       )}
+      <LutSection clip={clip} />
     </>
   );
 }

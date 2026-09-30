@@ -1,6 +1,7 @@
 import type { FrameDesc } from '../core/frame';
 import { slotOf } from './compositor';
 import type { MediaPool } from './media';
+import { faceBoxes } from './faces';
 import { personMask } from './segment';
 import type { Drawable, TextRasterizer } from './text';
 
@@ -36,6 +37,12 @@ export async function resolveDrawables(
   await Promise.all([...cutout].map(async (slot) => {
     const d = slot ? out.get(slot) : undefined;
     if (d) d.seg = (await personMask(d.key, d.image).catch(() => null)) ?? undefined;
+  }));
+  // Face boxes for layers that hide faces (cached per frame, like person masks).
+  const faces = new Set(desc.layers.filter((l) => l.privacy?.faces).map(slotOf));
+  await Promise.all([...faces].map(async (slot) => {
+    const d = slot ? out.get(slot) : undefined;
+    if (d) d.faces = await faceBoxes(d.key, d.image, d.w, d.h).catch(() => []);
   }));
   return out;
 }

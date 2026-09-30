@@ -473,3 +473,89 @@ test('exports a photo of the current frame and a looping GIF', async ({ page }, 
   expect([gif.streams[0].width, gif.streams[0].height]).toEqual([270, 480]);
   expect(Number(gif.streams[0].nb_read_frames)).toBe(72); // 6 s × 12 fps
 });
+
+// ---------- v0.6: effects, LUTs, hiding faces ----------
+
+/** Exported frame as 270×480 grayscale pixels. */
+async function gray(file: string): Promise<Buffer> {
+  const { execFileSync } = await import('node:child_process');
+  return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', 'scale=270:480', '-f', 'rawvideo', '-pix_fmt', 'gray', '-']);
+}
+/** Share of pixels that differ by more than `thr` levels. */
+const changed = (a: Buffer, b: Buffer, thr: number) => { let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > thr) n++; return n / a.length; };
+const photo = async (page: Page, info: { outputPath: (n: string) => string }) => gray(await exportAs(page, info, 'Photo', 'Save photo'));
+
+test('video effects change the exported picture', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['person.jpg']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const base = await photo(page, info);
+  for (const name of ['Blur', 'VHS', 'RGB split', 'Zoom punch']) {
+    await selectClip(page, page.locator('.tl-row.main .clip').first());
+    await tool(page, 'Effects').click();
+    await page.getByRole('radio', { name, exact: true }).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+    expect(changed(base, await photo(page, info), 8), name).toBeGreaterThan(0.02);
+  }
+});
+
+test('LUT import: identity keeps the picture, invert inverts it', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  const fs = await import('node:fs');
+  const cube = (name: string, f: (v: number[]) => number[]) => {
+    const lines = ['TITLE "' + name + '"', 'LUT_3D_SIZE 9'];
+    for (let b = 0; b < 9; b++) for (let g = 0; g < 9; g++) for (let r = 0; r < 9; r++) lines.push(f([r / 8, g / 8, b / 8]).join(' '));
+    const file = info.outputPath(`${name}.cube`);
+    fs.writeFileSync(file, lines.join('\n'));
+    return file;
+  };
+  const importLut = async (file: string) => {
+    await selectClip(page, page.locator('.tl-row.main .clip').first());
+    await tool(page, 'Filters').click();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Import LUT (.cube)' }).click();
+    await (await chooser).setFiles(file);
+    await expect(page.getByRole('radio', { name: file.split('/').pop()!.replace('.cube', '') })).toBeChecked();
+    await page.getByRole('button', { name: 'Done' }).click();
+  };
+  await newProject(page);
+  await importFiles(page, 'Media', ['person.jpg']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const base = await photo(page, info);
+  await importLut(cube('identity', (v) => v));
+  expect(changed(base, await photo(page, info), 6)).toBeLessThan(0.01);
+  await importLut(cube('invert', (v) => v.map((x) => 1 - x)));
+  const inv = await photo(page, info);
+  let err = 0, n = 0;
+  for (let i = 0; i < base.length; i++) {
+    if (base[i] < 3 && inv[i] < 3) continue; // letterbox bars are canvas background, not the clip
+    err += Math.abs(base[i] + inv[i] - 255);
+    n++;
+  }
+  expect(n / base.length).toBeGreaterThan(0.3);
+  expect(err / n).toBeLessThan(10);
+});
+
+test('hide faces automatically and with an area', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['person.jpg']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const base = await photo(page, info);
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Hide faces').click();
+  await page.getByRole('switch', { name: 'Hide faces automatically' }).click(); // switches after the detector loads
+  await expect(page.getByRole('switch', { name: 'Hide faces automatically' })).toBeChecked({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Done' }).click();
+  const hidden = await photo(page, info);
+  const faces = changed(base, hidden, 20);
+  expect(faces).toBeGreaterThan(0.004); // the face is hidden…
+  expect(faces).toBeLessThan(0.2); // …and only the face
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Hide faces').click();
+  await page.getByRole('radio', { name: 'Pixelate' }).click();
+  await page.getByRole('button', { name: 'Add area' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  expect(changed(hidden, await photo(page, info), 20)).toBeGreaterThan(0.01); // the area hides more
+});

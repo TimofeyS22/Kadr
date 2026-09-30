@@ -18,4 +18,10 @@ if (!existsSync(model)) {
   if (!res.ok) throw new Error(`model download failed: ${res.status}`);
   writeFileSync(model, Buffer.from(await res.arrayBuffer()));
 }
+const faceModel = 'public/models/blaze_face_short_range.tflite';
+if (!existsSync(faceModel)) {
+  const res = await fetch('https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite');
+  if (!res.ok) throw new Error(`face model download failed: ${res.status}`);
+  writeFileSync(faceModel, Buffer.from(await res.arrayBuffer()));
+}
 console.log(`assets ready (${dev ? 'dev' : 'build'})`);

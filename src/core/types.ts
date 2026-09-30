@@ -87,8 +87,20 @@ export interface Mask {
   x: number; y: number; w: number; h: number;
   rotation: number; feather: number; roundness: number; invert: boolean;
 }
+export const EFFECT_IDS = ['glitch', 'shake', 'zoomPunch', 'vhs', 'blur', 'rgbSplit'] as const;
+export type EffectId = (typeof EFFECT_IDS)[number];
+/** Video effect (v0.6); amount 0..1. Deterministic in time, so preview and export match. */
+export interface Effect { id: EffectId; amount: number }
+/** A hidden (blurred/pixelated) area in layer space: center x, y and size w, h as fractions of the layer. */
+export interface PrivacyArea { x: Anim; y: Anim; w: number; h: number }
+export interface Privacy { faces: boolean; areas: PrivacyArea[]; style: 'blur' | 'pixelate' }
+/** Imported 3D LUT (.cube), resampled to at most 33³, RGB8, red fastest, base64. */
+export interface LutData { name: string; size: number; data: string }
+export interface LutRef { id: string; intensity: number }
+
 interface Look {
   adjust: Adjustments; filter: FilterRef | null; chroma: ChromaKey; crop?: Rect; mask?: Mask;
+  effect?: Effect; lut?: LutRef; privacy?: Privacy;
   /** Remove the background behind people (on-device segmentation). */
   removeBg?: boolean;
 }
@@ -157,4 +169,6 @@ export interface Project {
   /** Compositing order bottom → top. Exactly one main track. */
   tracks: Track[];
   assets: Record<string, Asset>;
+  /** Imported LUTs by id (v0.6), referenced by clips' `lut`. */
+  luts?: Record<string, LutData>;
 }

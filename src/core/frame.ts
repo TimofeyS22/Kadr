@@ -2,10 +2,11 @@
 // Shared by preview and export, so what you see is what you export.
 import { evalAnim } from './anim';
 import { captionAt } from './captions';
+import { effectCode, punchScale, seedOf, shake } from './effects';
 import { resolveAdjust } from './filters';
 import { clamp, clipEnd, mainTrack, sourceTime } from './timeline';
 import type {
-  Adjustments, BlendMode, CaptionClip, ChromaKey, Clip, Mask, Project, Rect, TextAnim, TextClip, TransitionType, VisualClip,
+  Adjustments, BlendMode, CaptionClip, ChromaKey, Clip, LutData, Mask, Project, Rect, TextAnim, TextClip, TransitionType, VisualClip,
 } from './types';
 
 export type LayerSource =
@@ -37,6 +38,12 @@ export interface Layer {
   /** Reveal mask in canvas space: direction (dx, dy) and progress 0..1. */
   wipe: [number, number, number] | null;
   selectable: boolean;
+  /** Shader effect: code (see core/effects), amount 0..1, clip-local time, per-clip seed. */
+  fx: { code: number; amount: number; time: number; seed: number } | null;
+  /** 3D LUT applied after color adjustments. */
+  lut: { id: string; lut: LutData; intensity: number } | null;
+  /** Areas to hide, in layer space [cx, cy, w, h]; `faces` asks the renderer to detect faces too. */
+  privacy: { areas: [number, number, number, number][]; faces: boolean; pixelate: boolean } | null;
 }
 
 export interface FrameDesc { t: number; background: string; layers: Layer[] }
@@ -78,6 +85,9 @@ export function visualLayer(p: Project, c: VisualClip, t: number): Layer {
     blur: false,
     wipe: null,
     selectable: true,
+    fx: null,
+    lut: null,
+    privacy: null,
   };
   if (c.kind === 'text') {
     layer.fit = 'native';
@@ -97,6 +107,26 @@ export function visualLayer(p: Project, c: VisualClip, t: number): Layer {
   layer.crop = c.crop ?? null;
   layer.mask = c.mask ?? null;
   layer.removeBg = !!c.removeBg;
+  const ef = c.effect;
+  if (ef && ef.amount > 0) {
+    const seed = seedOf(c.id);
+    if (ef.id === 'shake') {
+      const s = shake(local, ef.amount, seed);
+      layer.x += s.dx; layer.y += s.dy; layer.rotation += s.rot;
+      layer.scale *= 1 + 0.05 * ef.amount; // hide the moving edges
+    } else if (ef.id === 'zoomPunch') layer.scale *= punchScale(local, ef.amount);
+    else layer.fx = { code: effectCode(ef.id), amount: ef.amount, time: local, seed };
+  }
+  const lut = c.lut && p.luts?.[c.lut.id];
+  if (lut && c.lut!.intensity > 0) layer.lut = { id: c.lut!.id, lut, intensity: c.lut!.intensity };
+  const pv = c.privacy;
+  if (pv && (pv.faces || pv.areas.length)) {
+    layer.privacy = {
+      faces: pv.faces,
+      pixelate: pv.style === 'pixelate',
+      areas: pv.areas.map((a) => [evalAnim(a.x, local), evalAnim(a.y, local), a.w, a.h]),
+    };
+  }
   if (c.kind === 'image') layer.source = { kind: 'image', assetId: c.assetId };
   else {
     const dur = p.assets[c.assetId]?.duration ?? Infinity;
@@ -109,6 +139,7 @@ function solid(color: string, opacity: number): Layer {
   return {
     id: '__dip', source: { kind: 'solid', color }, fit: 'cover', x: 0, y: 0, scale: 1, rotation: 0, opacity,
     adjust: null, chroma: null, crop: null, mask: null, removeBg: false, blend: 'normal', blur: false, wipe: null, selectable: false,
+    fx: null, lut: null, privacy: null,
   };
 }
 
@@ -149,7 +180,7 @@ export function buildFrame(p: Project, t: number): FrameDesc {
     primary = prog < 0.5 ? a : b;
   }
   if (background.mode === 'blur' && primary && primary.source.kind !== 'solid') {
-    layers.push({ ...primary, id: '__bg', fit: 'cover', x: 0, y: 0, scale: 1.05, rotation: 0, opacity: 1, blend: 'normal', blur: true, wipe: null, chroma: null, mask: null, removeBg: false, selectable: false });
+    layers.push({ ...primary, id: '__bg', fit: 'cover', x: 0, y: 0, scale: 1.05, rotation: 0, opacity: 1, blend: 'normal', blur: true, wipe: null, chroma: null, mask: null, removeBg: false, selectable: false, fx: null });
   }
   layers.push(...mainLayers);
   if (extra) layers.push(extra);

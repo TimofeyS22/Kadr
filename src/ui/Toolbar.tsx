@@ -1,5 +1,5 @@
 import {
-  Activity, AudioLines, Bell, ScanFace, Captions, CircleDashed, Copy, Crop, Film, Frame, Gauge, Layers, Mic, Move, Music, PersonStanding, Rewind, Scissors,
+  Activity, AudioLines, Bell, EyeOff, Zap, ScanFace, Captions, CircleDashed, Copy, Crop, Film, Frame, Gauge, Layers, Mic, Move, Music, PersonStanding, Rewind, Scissors,
   SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Volume2, WandSparkles, X,
   type LucideIcon,
 } from 'lucide-react';
@@ -28,6 +28,8 @@ export function Toolbar() {
   const crop: Tool = { icon: Crop, label: t('Crop'), run: sheet('crop') };
   const pauses: Tool = { icon: WandSparkles, label: t('Remove pauses'), run: sheet('pauses') };
   const mask: Tool = { icon: CircleDashed, label: t('Mask'), run: sheet('mask'), on: !!(clip && 'mask' in clip && clip.mask) };
+  const fx: Tool = { icon: Zap, label: t('Effects'), run: sheet('effects'), on: !!(clip && 'effect' in clip && clip.effect) };
+  const hide: Tool = { icon: EyeOff, label: t('Hide faces'), run: sheet('privacy'), on: !!(clip && 'privacy' in clip && clip.privacy && (clip.privacy.faces || clip.privacy.areas.length)) };
   const cutout: Tool = { icon: PersonStanding, label: t('Cutout'), run: () => void toggleCutout(), on: !!(clip && 'removeBg' in clip && clip.removeBg) };
   const sound: Tool[] = [
     { icon: Gauge, label: t('Speed'), run: sheet('speed') },
@@ -36,10 +38,10 @@ export function Toolbar() {
 
   let tools: Tool[];
   switch (kind) {
-    case 'video': tools = [split, ...sound, pauses, crop, { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() }, ...look, mask, cutout, { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() },
+    case 'video': tools = [split, ...sound, pauses, crop, { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() }, ...look, fx, mask, hide, cutout, { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() },
       { icon: Rewind, label: t('Reverse'), run: () => void reverseSelected(), on: !!(clip?.kind === 'video' && clip.reversedFrom) },
       { icon: AudioLines, label: t('Extract audio'), run: detachSelectedAudio }, dup, del]; break;
-    case 'image': tools = [split, crop, ...look, mask, cutout, dup, del]; break;
+    case 'image': tools = [split, crop, ...look, fx, mask, hide, cutout, dup, del]; break;
     case 'audio': tools = [split, ...sound, { icon: Activity, label: t('Beat'), run: sheet('beats'), on: !!clip && clip.kind === 'audio' && !!useEditor.getState().project?.assets[clip.assetId]?.beats }, pauses, dup, del]; break;
     case 'text': tools = [{ icon: Type, label: t('Edit text'), run: sheet('text') }, look[2], split, dup, del]; break;
     case 'caption': tools = [{ icon: Captions, label: t('Edit captions'), run: sheet('captionEdit') }, look[2], split, del]; break;

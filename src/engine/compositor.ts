@@ -1,6 +1,7 @@
 // WebGL2 compositor: draws a FrameDesc with transforms, color grading, chroma key, wipes and blend modes.
 import type { FrameDesc, Layer } from '../core/frame';
-import { ADJUST_KEYS, type BlendMode } from '../core/types';
+import { fromBase64 } from '../core/lut';
+import { ADJUST_KEYS, type BlendMode, type LutData } from '../core/types';
 import type { Drawable } from './text';
 
 const VS = `#version 300 es
@@ -46,11 +47,27 @@ uniform float uKeySoft;
 uniform vec3 uWipe;
 uniform int uHasWipe;
 uniform float uSeed;
+uniform int uFx;
+uniform float uFxAmt, uFxTime, uFxSeed, uFxLod;
+uniform highp sampler3D uLut;
+uniform int uHasLut;
+uniform float uLutAmt, uLutSize;
+uniform vec4 uPriv[8];
+uniform int uPrivN, uPrivPix;
+uniform float uPrivLod;
+uniform vec2 uPrivBlk;
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec2 chroma(vec3 c) { return vec2(dot(c, vec3(-0.169, -0.331, 0.5)), dot(c, vec3(0.5, -0.419, -0.081))); }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + uSeed) * 43758.5453); }
 vec4 unpremul(vec4 s) { return vec4(s.a > 0.0 ? s.rgb / s.a : vec3(0.0), s.a); }
+float hash1(float n) { return fract(sin(n * 12.9898 + uFxSeed * 78.233) * 43758.5453); }
+vec4 blurAt(vec2 uv, float lod) {
+  vec4 acc = vec4(0.0);
+  vec2 r = uTexel * exp2(lod) * 0.6;
+  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) acc += textureLod(uTex, uv + vec2(float(i), float(j)) * r, lod);
+  return unpremul(acc / 9.0);
+}
 
 // Shape mask in layer space: 1 = circle/ellipse, 2 = rounded rectangle, 3 = linear gradient edge.
 float shapeMask(vec2 q) {
@@ -75,16 +92,45 @@ float shapeMask(vec2 q) {
 }
 
 void main() {
+  // Hidden areas (faces, number plates): layer-space rectangles [cx, cy, w, h].
+  bool hide = false;
+  for (int i = 0; i < 8; i++) {
+    if (i >= uPrivN) break;
+    vec2 d = abs(vQuad - uPriv[i].xy) - uPriv[i].zw * 0.5;
+    if (max(d.x, d.y) <= 0.0) hide = true;
+  }
+  // Effects that move the sampling position.
+  vec2 uv = vUv;
+  float t = uFxTime, gOn = 0.0;
+  if (uFx == 1) {
+    float slot = floor(t * 12.0);
+    gOn = step(1.0 - 0.45 * uFxAmt, hash1(slot));
+    float band = floor(vUv.y * mix(8.0, 40.0, hash1(slot + 3.0)));
+    uv.x += (hash1(band + slot * 7.0) - 0.5) * 0.12 * uFxAmt * gOn * step(0.55, hash1(band * 1.7 + slot));
+  } else if (uFx == 2) {
+    uv.x += sin(vUv.y * 40.0 + t * 6.0) * 0.0015 * uFxAmt + (hash1(floor(vUv.y * 240.0) + floor(t * 30.0)) - 0.5) * 0.002 * uFxAmt;
+  }
   vec4 src;
   if (uSolid == 1) src = uColor;
-  else if (uBlurLod > 0.0) {
+  else if (hide) {
+    if (uPrivPix == 1) src = unpremul(textureLod(uTex, (floor(uv / uPrivBlk) + 0.5) * uPrivBlk, uPrivLod));
+    else src = blurAt(uv, uPrivLod + 1.0);
+  } else if (uBlurLod > 0.0) {
     src = vec4(0.0);
     vec2 r = uTexel * exp2(uBlurLod);
     for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++)
-      src += textureLod(uTex, vUv + vec2(float(i), float(j)) * r * 0.6, uBlurLod);
+      src += textureLod(uTex, uv + vec2(float(i), float(j)) * r * 0.6, uBlurLod);
     src = unpremul(src / 25.0);
     src.rgb *= 0.75;
-  } else src = unpremul(texture(uTex, vUv));
+  } else if (uFx == 3) src = blurAt(uv, uFxLod);
+  else src = unpremul(texture(uTex, uv));
+  if (uSolid == 0 && !hide) {
+    float split = uFx == 4 ? 0.012 * uFxAmt * (0.6 + 0.4 * sin(t * 5.0)) : uFx == 2 ? 0.004 * uFxAmt : uFx == 1 ? 0.02 * uFxAmt * gOn : 0.0;
+    if (split > 0.0) {
+      src.r = unpremul(texture(uTex, uv + vec2(split, 0.0))).r;
+      src.b = unpremul(texture(uTex, uv - vec2(split, 0.0))).b;
+    }
+  }
   vec3 c = src.rgb;
   float a = src.a;
   if (uHasAdj == 1) {
@@ -106,6 +152,15 @@ void main() {
     c += (hash(vUv * 1024.0) - 0.5) * uAdj[11] * 0.22;
     c = clamp(c, 0.0, 1.0);
   }
+  if (uHasLut == 1) {
+    vec3 lc = clamp(c, 0.0, 1.0) * ((uLutSize - 1.0) / uLutSize) + 0.5 / uLutSize;
+    c = mix(c, texture(uLut, lc).rgb, uLutAmt);
+  }
+  if (uFx == 2) {
+    c *= 1.0 - 0.12 * uFxAmt * (0.5 + 0.5 * sin(gl_FragCoord.y * 1.5));
+    c = mix(c, vec3(luma(c)), 0.15 * uFxAmt) + vec3(0.02, 0.0, -0.02) * uFxAmt;
+    c += (hash(vUv * 512.0 + t) - 0.5) * 0.06 * uFxAmt;
+  } else if (uFx == 1) c += gOn * uFxAmt * vec3(0.04, -0.02, 0.05);
   if (uHasKey == 1) {
     float d = distance(chroma(c), chroma(uKey.rgb));
     float k = smoothstep(uKey.a * 0.4, uKey.a * 0.4 + max(0.002, uKeySoft * 0.3), d);
@@ -148,6 +203,8 @@ export class Compositor {
   private prog!: WebGLProgram;
   private u = new Map<string, WebGLUniformLocation | null>();
   private slots = new Map<string, Slot>();
+  private luts = new Map<string, WebGLTexture>();
+  private emptyLut: WebGLTexture | null = null;
   private frameNo = 0;
   lost = false;
 
@@ -186,6 +243,13 @@ export class Compositor {
     gl.enable(gl.BLEND);
     this.u.clear();
     this.slots.clear();
+    this.luts.clear();
+    // Something must always be bound to the 3D sampler unit, even when no layer uses a LUT.
+    this.emptyLut = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_3D, this.emptyLut);
+    this.upload3d(1, new Uint8Array(3));
+    gl.activeTexture(gl.TEXTURE0);
     this.lost = false;
   }
 
@@ -225,6 +289,30 @@ export class Compositor {
     return s;
   }
 
+  /** Fills the bound 3D texture. WebGL2 rejects ArrayBufferView uploads while UNPACK_PREMULTIPLY_ALPHA is on. */
+  private upload3d(size: number, data: Uint8Array): void {
+    const gl = this.gl;
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB8, size, size, size, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_3D, k, v);
+  }
+
+  /** Uploads a LUT once per id as an RGB8 3D texture (red fastest, as in .cube files). */
+  private lutTexture(id: string, lut: LutData): WebGLTexture {
+    const gl = this.gl;
+    let tex = this.luts.get(id);
+    gl.activeTexture(gl.TEXTURE2);
+    if (!tex) {
+      tex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_3D, tex);
+      this.upload3d(lut.size, fromBase64(lut.data));
+      this.luts.set(id, tex);
+    } else gl.bindTexture(gl.TEXTURE_3D, tex);
+    gl.activeTexture(gl.TEXTURE0);
+    return tex;
+  }
+
   private blend(mode: BlendMode): void {
     const gl = this.gl;
     switch (mode) {
@@ -249,7 +337,8 @@ export class Compositor {
     gl.uniform1f(this.loc('uSeed'), (desc.t * 60) % 97);
     gl.uniform1i(this.loc('uTex'), 0);
     gl.uniform1i(this.loc('uSegTex'), 1);
-    const needMips = new Set(desc.layers.filter((l) => l.blur).map(slotOf));
+    gl.uniform1i(this.loc('uLut'), 2);
+    const needMips = new Set(desc.layers.filter((l) => l.blur || l.privacy || l.fx?.code === 3).map(slotOf));
     const bounds: LayerBounds[] = [];
 
     for (const l of desc.layers) {
@@ -297,6 +386,38 @@ export class Compositor {
         gl.uniform4f(this.loc('uMaskRect'), mk.x, mk.y, mk.w, mk.h);
         gl.uniform4f(this.loc('uMaskParams'), (mk.rotation * Math.PI) / 180, mk.feather, mk.roundness, mk.invert ? 1 : 0);
       }
+      const fx = d ? l.fx : null;
+      gl.uniform1i(this.loc('uFx'), fx?.code ?? 0);
+      if (fx) {
+        gl.uniform1f(this.loc('uFxAmt'), fx.amount);
+        gl.uniform1f(this.loc('uFxTime'), fx.time);
+        gl.uniform1f(this.loc('uFxSeed'), fx.seed);
+        gl.uniform1f(this.loc('uFxLod'), fx.amount * Math.max(0, Math.log2(Math.max(sw, sh) / 24)));
+      }
+      gl.uniform1i(this.loc('uHasLut'), d && l.lut ? 1 : 0);
+      if (d && l.lut) {
+        this.lutTexture(l.lut.id, l.lut.lut);
+        gl.uniform1f(this.loc('uLutAmt'), l.lut.intensity);
+        gl.uniform1f(this.loc('uLutSize'), l.lut.lut.size);
+      } else {
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_3D, this.emptyLut);
+        gl.activeTexture(gl.TEXTURE0);
+      }
+      // Hidden areas: user areas are in layer space; detected faces (source UV) are mapped through the crop.
+      const pv = d ? l.privacy : null;
+      const rects = pv ? [
+        ...pv.areas,
+        ...(d?.faces ?? []).map((f) => [(f.x + f.w / 2 - cr.x) / cr.w, (f.y + f.h / 2 - cr.y) / cr.h, f.w / cr.w, f.h / cr.h] as const),
+      ].slice(0, 8) : [];
+      gl.uniform1i(this.loc('uPrivN'), rects.length);
+      if (rects.length && d) {
+        gl.uniform4fv(this.loc('uPriv'), rects.flat());
+        const blockPx = Math.max(6, Math.min(sw, sh) / 20);
+        gl.uniform1i(this.loc('uPrivPix'), pv!.pixelate ? 1 : 0);
+        gl.uniform1f(this.loc('uPrivLod'), Math.log2(blockPx));
+        gl.uniform2f(this.loc('uPrivBlk'), blockPx / d.w, blockPx / d.h);
+      }
       gl.uniform1i(this.loc('uHasWipe'), l.wipe ? 1 : 0);
       gl.uniform3f(this.loc('uWipe'), ...(l.wipe ?? [0, 0, 0]));
       this.blend(l.blend);
@@ -310,8 +431,10 @@ export class Compositor {
 
   /** Frees textures; `loseContext` also releases the GPU context (only for canvases that are thrown away). */
   dispose(loseContext = false): void {
-    for (const s of this.slots.values()) this.gl.deleteTexture(s.tex);
+    for (const s of this.slots.values()) { this.gl.deleteTexture(s.tex); if (s.seg) this.gl.deleteTexture(s.seg); }
+    for (const tex of this.luts.values()) this.gl.deleteTexture(tex);
     this.slots.clear();
+    this.luts.clear();
     if (loseContext) this.gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }

@@ -2,7 +2,11 @@ import type { CaptionClip, FontId, TextClip, TextStyle } from '../core/types';
 
 /** Single-channel alpha mask (e.g. person segmentation) aligned with the drawable's pixels. */
 export interface SegMask { data: Uint8Array; w: number; h: number; key: string }
-export interface Drawable { image: TexImageSource; w: number; h: number; key: string; seg?: SegMask }
+export interface Drawable {
+  image: TexImageSource; w: number; h: number; key: string; seg?: SegMask;
+  /** Detected faces in UV space (for layers that hide faces). */
+  faces?: import('../core/types').Rect[];
+}
 
 export const FONTS: Record<FontId, { label: string; family: string }> = {
   inter: { label: 'Inter', family: '"Inter", system-ui, sans-serif' },

@@ -1,6 +1,7 @@
 // User-level editing actions shared by the toolbar, sheets and keyboard shortcuts.
 import { captionPages, parseSubtitles, toSrt } from '../core/captions';
-import { anim, createAudioClip, createCaptionClip, createImageClip, createTextClip, createVideoClip } from '../core/defaults';
+import { anim, createAudioClip, createCaptionClip, createImageClip, createTextClip, createVideoClip, uid } from '../core/defaults';
+import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
 import { CAPTION_PRESETS } from '../core/presets';
 import {
   clipEnd, deleteClip, detachAudio, duplicateClip, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
@@ -10,7 +11,7 @@ import type { Asset, CaptionClip, CaptionWord, Clip, SoundClip } from '../core/t
 import { prepareClipSound } from '../engine/audiofx';
 import { coverScale, reframeKeys } from '../core/reframe';
 import { saveFile } from '../engine/exporter';
-import { captureFrame } from '../engine/media';
+import { MediaError, captureFrame } from '../engine/media';
 import { importFile, importFiles, pickFiles } from '../engine/importer';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
@@ -287,6 +288,40 @@ export async function reverseSelected(): Promise<void> {
     delete g.clip.audioKey;
   });
   track('clip_reversed', { seconds: Math.round(rev.duration) });
+}
+
+/** Turns automatic face hiding on (loading the on-device detector first) or off. */
+export async function setHideFaces(clipId: string, on: boolean): Promise<void> {
+  if (on) {
+    const ok = await withBusy(t('Preparing face detection…'), async () => { await (await import('../engine/faces')).warmFaces(); return true; });
+    if (!ok) return;
+  }
+  editClip(clipId, (c) => {
+    if (c.kind !== 'video' && c.kind !== 'image') return;
+    c.privacy ??= { faces: false, areas: [], style: 'blur' };
+    c.privacy.faces = on;
+  });
+  track('hide_faces', { on });
+}
+
+/** Imports a .cube LUT into the project and applies it to the clip. */
+export async function importLut(clipId: string): Promise<void> {
+  // No accept filter: iOS greys out files whose extension it does not know, and .cube is one of them.
+  const [file] = await pickFiles('', false);
+  if (!file) return;
+  try {
+    if (file.size > MAX_CUBE_BYTES) throw new MediaError('This LUT file is too large (over 10 MB)');
+    const lut = parseCube(await file.text());
+    const id = uid();
+    editor().commit((d) => {
+      d.luts = { ...d.luts, [id]: { name: (lut.title || file.name.replace(/\.cube$/i, '')).slice(0, 40), size: lut.size, data: toBase64(lut.data) } };
+      const f = findClip(d, clipId);
+      if (f && (f.clip.kind === 'video' || f.clip.kind === 'image')) f.clip.lut = { id, intensity: 1 };
+    });
+    track('lut_imported', { size: lut.size });
+  } catch (e) {
+    editor().toast(t('Could not import the LUT: {error}', { error: errorMessage(e) }), 'error');
+  }
 }
 
 export async function toggleCutout(): Promise<void> {
