@@ -11,7 +11,7 @@ export const RU: Record<string, string> = {
   'Your projects': 'Ваши проекты',
   'Loading…': 'Загрузка…',
   'No projects yet. Start a new one or try the sample.': 'Проектов пока нет. Создайте новый или откройте пример.',
-  'Projects and media are stored in this browser. Kadr v0.8.0': 'Проекты и медиа хранятся в этом браузере. Kadr v0.8.0',
+  'Projects and media are stored in this browser. Kadr v0.8.1': 'Проекты и медиа хранятся в этом браузере. Kadr v0.8.1',
   'Project {n}': 'Проект {n}',
   'Project name': 'Название проекта',
   'Open {name}': 'Открыть «{name}»',
@@ -525,4 +525,6 @@ export const RU: Record<string, string> = {
   'This font file is too large (over 15 MB)': 'Файл шрифта слишком большой (больше 15 МБ)',
   'This file is not a font (TTF, OTF, WOFF or WOFF2)': 'Это не файл шрифта (нужен TTF, OTF, WOFF или WOFF2)',
   'The font file is missing from this device': 'Файла шрифта нет на этом устройстве',
+  'Add {label} keyframe': 'Добавить ключевой кадр: {label}',
+  'Remove {label} keyframe': 'Убрать ключевой кадр: {label}',
 };

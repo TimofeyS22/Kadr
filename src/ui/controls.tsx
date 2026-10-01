@@ -44,7 +44,7 @@ export function Slider({ label, value, min, max, step = 0.01, format, onChange, 
         <button
           className={`kf-btn ${keyframe.active ? 'on' : ''} ${keyframe.animated ? 'animated' : ''}`}
           disabled={keyframe.disabled} onClick={keyframe.toggle}
-          aria-label={keyframe.active ? `Remove ${label} keyframe` : `Add ${label} keyframe`}
+          aria-label={keyframe.active ? t('Remove {label} keyframe', { label }) : t('Add {label} keyframe', { label })}
         >
           <Diamond size={16} fill={keyframe.active ? 'currentColor' : 'none'} />
         </button>

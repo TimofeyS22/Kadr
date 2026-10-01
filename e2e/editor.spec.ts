@@ -667,6 +667,7 @@ test('new transitions render mid-cut and "Apply to all cuts" sets every cut', as
   await newProject(page);
   await importFiles(page, 'Media', ['photo.png', 'person.jpg', 'photo.png']);
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Close tools' }).click(); // a selected clip hides the cut buttons at its edges
   const cuts = page.getByRole('button', { name: 'Transition' });
   await expect(cuts).toHaveCount(2);
   // Mid-cut frame: the playhead goes to the middle of the first cut (clip 2 starts 0.5 s early, transition 0.5 s).
@@ -787,4 +788,278 @@ test('background removal leaves clean edges (no light halo around dark clothes)'
     }
   }
   expect(halo).toBeLessThan(400);
+});
+
+// ---------- Full functional sweep (everything not covered above) ----------
+
+test('timeline: trim, reorder main clips and move an overlay by dragging', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png', 'person.jpg']);
+  const main = page.locator('.tl-row.main .clip');
+  await expect(main).toHaveCount(2);
+  const ids = await main.evaluateAll((els) => els.map((e) => e.getAttribute('data-clip')));
+  // Trim the end of the selected first clip by ~1 s (60 px per second).
+  await selectClip(page, main.first());
+  const w0 = (await main.first().boundingBox())!.width;
+  const h = (await main.first().getByLabel('Trim end').boundingBox())!;
+  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(h.x + h.width / 2 - 60, h.y + h.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await main.first().boundingBox())!.width).toBeLessThan(w0 - 40);
+  // Drag the first clip past the second: the order swaps.
+  const b = (await main.first().boundingBox())!, b2 = (await main.nth(1).boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b2.x + b2.width - 4, b.y + b.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => main.evaluateAll((els) => els.map((e) => e.getAttribute('data-clip')))).toEqual([ids[1], ids[0]]);
+  // A text clip on an overlay track moves in time.
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Text').click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const text = page.locator('.clip-text');
+  const t0 = (await text.boundingBox())!;
+  await page.mouse.move(t0.x + t0.width / 2, t0.y + t0.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(t0.x + t0.width / 2 + 60, t0.y + t0.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await text.boundingBox())!.x - t0.x).toBeGreaterThan(40);
+});
+
+test('sound effects and a voice-over from the Record sheet', async ({ page }) => {
+  await page.addInitScript(() => {
+    MediaDevices.prototype.getUserMedia = async function () {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const dest = ctx.createMediaStreamDestination();
+      osc.connect(dest);
+      osc.start();
+      return dest.stream;
+    };
+  });
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Sounds').click();
+  await page.getByRole('button', { name: 'Add Whoosh at the playhead' }).click();
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Record').click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(1500);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(2, { timeout: 30_000 });
+});
+
+test('remove pauses shortens speech; speed 2× halves a clip', async ({ page }) => {
+  test.setTimeout(120_000);
+  await newProject(page);
+  await importFiles(page, 'Audio', ['speech_pauses.m4a']);
+  const audio = page.locator('.tl-row.audio .clip');
+  await expect(audio).toHaveCount(1);
+  const before = (await audio.first().boundingBox())!.width;
+  await selectClip(page, audio.first());
+  await tool(page, 'Remove pauses').click();
+  await sheet(page).getByRole('button', { name: 'Remove pauses' }).click({ timeout: 60_000 });
+  await expect(page.getByText(/Removed \d+ pauses/)).toBeVisible();
+  await expect.poll(async () => (await audio.evaluateAll((els) => els.reduce((s, e) => s + e.getBoundingClientRect().width, 0)))).toBeLessThan(before - 20);
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  const video = page.locator('.tl-row.main .clip-video');
+  await expect(video).toHaveCount(1);
+  const w = (await video.boundingBox())!.width;
+  await selectClip(page, video);
+  await tool(page, 'Speed').click();
+  await page.getByRole('radio', { name: '2×' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect.poll(async () => (await video.boundingBox())!.width / w).toBeLessThan(0.55);
+});
+
+test('auto reframe follows a walking person in a vertical project', async ({ page }) => {
+  test.setTimeout(120_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['walk.mp4']);
+  const clip = page.locator('.tl-row.main .clip-video');
+  await expect(clip).toHaveCount(1);
+  await selectClip(page, clip);
+  await tool(page, 'Auto reframe').click();
+  await expect(page.getByText(/Reframed/)).toBeVisible({ timeout: 90_000 });
+  await tool(page, 'Transform').click();
+  await expect(page.getByRole('button', { name: /Position X keyframe/ })).toHaveClass(/animated/);
+});
+
+test('keyframes, chroma key and a mask change the picture', async ({ page }, info) => {
+  test.setTimeout(150_000);
+  await newProject(page);
+  // Half pure green screen, half red: a working chroma key removes about half of the picture.
+  const { execFileSync } = await import('node:child_process');
+  const gs = info.outputPath('greenscreen.png');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=0x00ff00:s=540x960,drawbox=x=0:y=480:w=540:h=480:color=0xd02020:t=fill', '-frames:v', '1', gs]);
+  const chooser = page.waitForEvent('filechooser');
+  await tool(page, 'Media').click();
+  await (await chooser).setFiles(gs);
+  const clip = page.locator('.tl-row.main .clip').first();
+  await expect(clip).toHaveCount(1);
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0.5 * 60; });
+  const base = await photo(page, info);
+  await selectClip(page, clip);
+  await tool(page, 'Transform').click();
+  await page.getByRole('switch', { name: 'Remove color (green screen)' }).check();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const keyed = await photo(page, info);
+  const removed = changed(base, keyed, 20);
+  expect(removed, 'chroma key removes the green half').toBeGreaterThan(0.4);
+  expect(removed, 'and keeps the red half').toBeLessThan(0.6);
+  await selectClip(page, clip);
+  await tool(page, 'Mask').click();
+  await sheet(page).getByRole('radio', { name: 'Circle' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  expect(changed(keyed, await photo(page, info), 20), 'mask').toBeGreaterThan(0.05);
+  // Keyframes: X at 0.5 s stays, X at 2.5 s moves → the two times look different.
+  await selectClip(page, clip);
+  await tool(page, 'Transform').click();
+  await page.getByRole('button', { name: 'Add Position X keyframe' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 2.5 * 60; });
+  await selectClip(page, clip);
+  await tool(page, 'Transform').click();
+  const x = sheet(page).locator('input[type=range]').first();
+  await x.focus();
+  for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowRight');
+  await page.getByRole('button', { name: 'Done' }).click();
+  const late = await photo(page, info);
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0.5 * 60; });
+  expect(changed(late, await photo(page, info), 20), 'keyframed position').toBeGreaterThan(0.02);
+});
+
+test('canvas: aspect ratio and blurred background; safe zones overlay', async ({ page }, info) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Show TikTok, Reels and Shorts safe zones' }).click();
+  await expect(page.locator('.safe-zones')).toBeVisible();
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Canvas').click();
+  await sheet(page).getByRole('radio', { name: 'Blur' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const g = await photo(page, info); // 9:16 with a 16:9 video: the top band shows the blurred video, not black
+  let top = 0;
+  for (let i = 0; i < 270 * 60; i++) top += g[i];
+  expect(top / (270 * 60)).toBeGreaterThan(12);
+  const close = page.getByRole('button', { name: 'Close tools' });
+  if (await close.isVisible()) await close.click();
+  await tool(page, 'Canvas').click();
+  await sheet(page).getByRole('radio', { name: '16:9' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect.poll(async () => { const b = (await page.locator('.preview-canvas').boundingBox())!; return Math.round((b.width / b.height) * 100) / 100; }).toBeCloseTo(1.78, 1);
+});
+
+test('noise reduction processes; ducking lowers music under speech', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['speech_en.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Audio', ['beat120.m4a']);
+  const music = page.locator('.tl-row.audio .clip').first();
+  await expect(music).toHaveCount(1);
+  const { execFileSync } = await import('node:child_process');
+  const pcm = (file: string) => { const b = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', '8000', '-f', 'f32le', '-']); return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4); };
+  const plain = pcm(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  await selectClip(page, music);
+  await tool(page, 'Volume').click();
+  await page.getByRole('switch', { name: 'Lower when others speak' }).check();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const ducked = pcm(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  // The music changes while the speech plays (first ~5 s) and is untouched after it (from 8 s).
+  const diff = (a: number, b: number) => { let s = 0; for (let i = a * 8000; i < b * 8000; i++) s += (plain[i] - ducked[i]) ** 2; return Math.sqrt(s / ((b - a) * 8000)); };
+  expect(diff(1, 4)).toBeGreaterThan(0.01);
+  expect(diff(8, 11)).toBeLessThan(diff(1, 4) / 10);
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Volume').click();
+  await page.getByRole('switch', { name: 'Reduce background noise' }).check();
+  await expect(page.getByRole('switch', { name: 'Reduce background noise' })).toBeChecked({ timeout: 120_000 });
+  await page.getByRole('button', { name: 'Done' }).click();
+  const pr = await probe(await exportAs(page, info, 'Audio', 'Export audio'));
+  expect(pr.streams.some((s) => s.codec_type === 'audio')).toBe(true);
+});
+
+test('works offline after the first visit (service worker)', async ({ page, context, browserName }, info) => {
+  test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+  test.skip(!!process.env.E2E_URL?.includes('localhost:51'), 'dev server has no service worker');
+  await page.goto('./');
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.reload(); // now controlled by the service worker
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.waitForTimeout(1000); // autosave
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
+  const pr = await probe(await exportAs(page, info, 'Photo', 'Save photo'));
+  expect(pr.streams[0].codec_name).toBe('mjpeg');
+  await context.setOffline(false);
+});
+
+test('Russian interface: home, toolbar and sheets are translated', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru'));
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Новый проект' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  const bar = page.getByRole('navigation', { name: 'Инструменты' });
+  await expect(bar).toBeVisible();
+  const labels = await bar.locator('.tool span').allTextContents();
+  for (const en of ['Media', 'Overlay', 'Audio', 'Music', 'Camera', 'Record', 'Text', 'Captions', 'Stickers', 'Sounds', 'Canvas']) expect(labels).not.toContain(en);
+  await bar.getByRole('button', { name: 'Текст' }).click();
+  await expect(page.getByRole('dialog', { name: 'Текст' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Стиль' }).getByRole('radio', { name: 'Классика' })).toBeVisible();
+});
+
+test('drag and drop import, keyboard shortcuts, first-run tips and the ?perf overlay', async ({ page }) => {
+  await page.addInitScript(() => { if (!sessionStorage.getItem('tipsOnce')) { sessionStorage.setItem('tipsOnce', '1'); localStorage.removeItem('kadr.tips'); } });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  await expect(page.locator('.preview-canvas')).toBeVisible();
+  // Drop a PNG made in the page onto the editor.
+  await page.evaluate(async () => {
+    const c = Object.assign(document.createElement('canvas'), { width: 320, height: 240 });
+    c.getContext('2d')!.fillRect(0, 0, 320, 240);
+    const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/png'));
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], 'dropped.png', { type: 'image/png' }));
+    const target = document.querySelector('.editor')!;
+    for (const type of ['dragenter', 'dragover', 'drop']) target.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 20_000 });
+  // First-run tips appear once there is a clip; walk through and close them.
+  const close = page.getByRole('button', { name: 'Close tools' });
+  if (await close.isVisible()) await close.click();
+  const coach = page.locator('.coach');
+  await expect(coach).toBeVisible();
+  while (await coach.isVisible()) await coach.getByRole('button').click();
+  // Shortcuts: S splits at the playhead, Ctrl/Cmd+Z undoes, Space plays and pauses.
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 1.5 * 60; });
+  await page.locator('body').click({ position: { x: 5, y: 5 } }).catch(() => undefined);
+  await page.keyboard.press('s');
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.keyboard.press(' ');
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.keyboard.press(' ');
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  // ?perf overlay: on with ?perf, off with ?perf=0.
+  await page.goto('./?perf');
+  await page.locator('.project-open').first().click();
+  await expect(page.locator('.perf-overlay')).toContainText('fps');
+  await page.goto('./?perf=0');
+  await page.locator('.project-open').first().click();
+  await expect(page.locator('.perf-overlay')).toHaveCount(0);
 });

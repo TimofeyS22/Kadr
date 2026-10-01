@@ -236,7 +236,8 @@ export function Timeline() {
           </div>
         );
       })}
-      {track.kind === 'main' && track.clips.slice(1).map((c) => (
+      {/* Cut buttons sit on clip edges; while a clip is selected its edges belong to the trim handles. */}
+      {track.kind === 'main' && track.clips.slice(1).map((c, i) => (selection === c.id || selection === track.clips[i].id) ? null : (
         <button key={`tr-${c.id}`} className={`tr-btn ${'transitionIn' in c && c.transitionIn ? 'on' : ''}`}
           style={{ left: x(c.start + ('transitionIn' in c && c.transitionIn ? c.transitionIn.duration / 2 : 0)) }}
           onClick={() => useEditor.getState().openSheet('transition', c.id)} aria-label={t('Transition')}>
