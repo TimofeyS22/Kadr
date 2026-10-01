@@ -83,6 +83,8 @@ interface Sound {
   keepPitch?: boolean;
   /** Auto-ducking depth 0..1: lower this clip while speech plays in other clips. */
   duck?: number;
+  /** Guide track (v0.8): heard while editing, never exported (edit to a trending sound, add it in the app you post to). */
+  guide?: boolean;
 }
 /** Normalized source rectangle (0..1). */
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -153,6 +155,8 @@ export interface Asset {
   derived?: { denoise?: string; enhance?: string; pitch?: Record<string, string> };
   /** Beat grid of the asset's sound, in source seconds. */
   beats?: { bpm: number; times: number[] };
+  /** From the built-in music library (v0.8): license proof for the user. */
+  library?: { id: string; title: string; artist: string; license: string; licenseUrl: string; source: string };
 }
 
 export type AspectId = '9:16' | '16:9' | '1:1' | '4:5' | '3:4';

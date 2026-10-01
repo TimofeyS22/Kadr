@@ -2,6 +2,7 @@
 import { captionPages, parseSubtitles, toSrt } from '../core/captions';
 import { anim, createAudioClip, createCaptionClip, createImageClip, createTextClip, createVideoClip, uid } from '../core/defaults';
 import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
+import { fitTrack, type LibraryTrack } from '../core/music';
 import { CAPTION_PRESETS } from '../core/presets';
 import {
   clipEnd, deleteClip, deleteClips, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
@@ -357,6 +358,51 @@ export async function importLut(clipId: string): Promise<void> {
   } catch (e) {
     editor().toast(t('Could not import the LUT: {error}', { error: errorMessage(e) }), 'error');
   }
+}
+
+export const musicUrl = (path: string): string => new URL(`${import.meta.env.BASE_URL}music/${path}`, location.origin).href;
+
+/** Downloads a library track (with progress), imports it with its beat grid and puts it under the video. */
+export async function addLibraryTrack(tr: LibraryTrack): Promise<void> {
+  const asset = await withBusy(t('Adding “{title}”…', { title: tr.title }), async (progress, signal) => {
+    const res = await fetch(musicUrl(tr.file), { signal });
+    if (!res.ok || !res.body) throw new MediaError('Could not download the track. Check the connection and try again.');
+    const reader = res.body.getReader();
+    const parts: Uint8Array<ArrayBuffer>[] = [];
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value as Uint8Array<ArrayBuffer>);
+      got += value.length;
+      progress(Math.min(0.95, got / tr.bytes));
+    }
+    const a = await importFile(new File(parts, `${tr.title}.m4a`, { type: 'audio/mp4' }), `${tr.title} — ${tr.artist}`);
+    return {
+      ...a,
+      beats: tr.bpm && tr.beats ? { bpm: tr.bpm, times: tr.beats } : undefined,
+      library: { id: tr.id, title: tr.title, artist: tr.artist, license: tr.license, licenseUrl: tr.licenseUrl, source: tr.source },
+    } satisfies Asset;
+  });
+  if (!asset) return;
+  const s = editor();
+  const p = s.project;
+  if (!p) return;
+  const videoS = mainTrack(p).clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
+  const fit = fitTrack(asset.duration, videoS);
+  let id = '';
+  s.commit((d) => {
+    d.assets[asset.id] = asset;
+    const c = createAudioClip(asset, 0);
+    c.duration = fit.duration;
+    c.fadeOut = fit.fadeOut;
+    placeClip(d, c);
+    id = c.id;
+  });
+  s.select(id);
+  s.openSheet(null);
+  s.toast(t('Added “{title}”. Free to use anywhere, no credit needed.', { title: tr.title }));
+  track('music_added', { mood: tr.mood, bpm: Math.round(tr.bpm ?? 0) });
 }
 
 export async function toggleCutout(): Promise<void> {

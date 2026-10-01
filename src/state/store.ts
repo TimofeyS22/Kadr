@@ -5,7 +5,7 @@ import type { Project } from '../core/types';
 
 export type SheetId =
   | 'speed' | 'volume' | 'adjust' | 'filters' | 'transform' | 'text' | 'transition' | 'canvas' | 'export'
-  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera';
+  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera' | 'music';
 
 export interface Toast { id: number; text: string; kind: 'info' | 'error' }
 /** A long on-device job (reverse, cutout model load…) shown as a progress bar with Cancel. */

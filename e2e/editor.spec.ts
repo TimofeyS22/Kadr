@@ -426,7 +426,9 @@ async function loudnessOf(file: string) {
   const { spawnSync } = await import('node:child_process');
   const out = spawnSync('ffmpeg', ['-nostats', '-i', file, '-filter_complex', 'ebur128=peak=sample', '-f', 'null', '-'], { encoding: 'utf8' }).stderr;
   const summary = out.slice(out.lastIndexOf('Summary:'));
-  return { lufs: Number(/I:\s+(-?[\d.]+) LUFS/.exec(summary)![1]), peak: Number(/Peak:\s+(-?[\d.]+) dBFS/.exec(summary)![1]) };
+  // Pure silence reads as -inf (or -70) LUFS.
+  const num = (re: RegExp) => { const m = re.exec(summary)?.[1]; return m === undefined || m.includes('inf') ? -Infinity : Number(m); };
+  return { lufs: num(/I:\s+(-?[\d.]+|-inf) LUFS/), peak: num(/Peak:\s+(-?[\d.]+|-inf) dBFS/) };
 }
 
 async function probe(file: string) {
@@ -688,4 +690,36 @@ test('new transitions render mid-cut and "Apply to all cuts" sets every cut', as
   await page.getByRole('button', { name: 'Done' }).click();
   await cuts.nth(1).click();
   await expect(page.getByRole('radio', { name: 'Spin', exact: true })).toBeChecked();
+});
+
+test('music library: track fits the video, beat is ready, guide track is not exported', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']); // 3 s, no sound of its own
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Music').click();
+  await page.getByRole('radiogroup', { name: 'Mood' }).getByRole('radio', { name: 'Energetic' }).click();
+  const row = page.locator('.music-row', { hasText: 'BPM' }).first();
+  await row.getByRole('button', { name: 'Listen to', exact: false }).click();
+  await expect(row).toHaveClass(/on/);
+  await row.getByRole('button', { name: 'Add', exact: false }).click();
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 60_000 });
+  // Fitted to the 3 s video with a fade-out; loudness-normalized library audio.
+  const plain = await probe(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  expect(Math.abs(Number(plain.format.duration) - 3)).toBeLessThan(0.15);
+  // Beat grid came with the track: no analysis step.
+  await page.locator('.tl-row.audio .clip').click();
+  await tool(page, 'Beat').click();
+  await expect(page.locator('.beat-bpm b')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Find the beat' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Done' }).click();
+  // Guide track: heard while editing, silent in the file.
+  await tool(page, 'Volume').click();
+  await page.getByRole('switch', { name: /Guide track/ }).check();
+  await expect(page.getByRole('button', { name: 'Copy license' })).toBeVisible();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.tl-row.audio .clip')).toContainText('Guide');
+  const guided = await loudnessOf(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  expect(guided.lufs).toBeLessThan(-60);
 });

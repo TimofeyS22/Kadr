@@ -14,3 +14,4 @@ fixtures/*.wav
 fixtures/*.aiff
 test-results
 playwright-report
+scripts/.music-cache/

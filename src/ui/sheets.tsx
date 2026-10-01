@@ -17,6 +17,8 @@ import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
 import { CameraSheet } from './CameraSheet';
+import { licenseText } from '../core/music';
+import { MusicBody } from './MusicSheet';
 import { ExportSheet } from './ExportSheet';
 import { EffectsBody, LutSection, PrivacyBody } from './FxSheets';
 import { CaptionEditBody, CaptionsBody, CropBody, StickersBody, VoiceoverBody } from './ToolSheets';
@@ -31,7 +33,7 @@ const TITLES: Record<SheetId, string> = {
   speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform & keyframes',
   text: 'Text', transition: 'Transition', canvas: 'Canvas', export: 'Export',
   crop: 'Crop', captions: 'Auto captions', captionEdit: 'Captions', voiceover: 'Voice-over', stickers: 'Stickers',
-  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera',
+  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music',
 };
 
 export function Sheets() {
@@ -40,6 +42,7 @@ export function Sheets() {
   if (!sheet) return null;
   if (sheet === 'export') return <ExportSheet />;
   if (sheet === 'camera') return <CameraSheet />;
+  if (sheet === 'music') return <Sheet title={TITLES.music}><MusicBody /></Sheet>;
   if (sheet === 'canvas') return <Sheet title={TITLES.canvas}><CanvasBody /></Sheet>;
   if (sheet === 'transition') return <Sheet title={TITLES.transition}><TransitionBody /></Sheet>;
   if (sheet === 'captions') return <Sheet title={TITLES.captions}><CaptionsBody /></Sheet>;
@@ -116,6 +119,9 @@ function VolumeBody({ clip }: { clip: Clip }) {
           {(clip.duck ?? 0) > 0 && (
             <Slider label={t('How much')} value={clip.duck ?? 0.7} min={0.2} max={0.95} format={pct} reset={0.7} onChange={(v) => e((c) => { c.duck = v; }, 'duckd')} />
           )}
+          <Toggle label={t('Guide track: plays while editing, not exported')} value={!!clip.guide} onChange={(v) => e((c) => { c.guide = v; }, 'guide')} />
+          {clip.guide && <p className="hint">{t('Edit to any song, even a trending one, then add it in TikTok or Instagram: there it is licensed.')}</p>}
+          <LicenseButton assetId={clip.assetId} />
         </>
       )}
       {clip.kind === 'video' && <button className="btn" onClick={detachSelectedAudio}>{t('Extract audio to its own track')}</button>}
@@ -345,6 +351,15 @@ function useSoundJob(clipId: string) {
     </div>
   );
   return { run, progress };
+}
+
+/** Copies the license proof of a library track (for a Content ID dispute or a video description). */
+function LicenseButton({ assetId }: { assetId: string }) {
+  const lib = useEditor((s) => s.project?.assets[assetId]?.library);
+  if (!lib) return null;
+  const copy = () => navigator.clipboard?.writeText(licenseText(lib))
+    .then(() => editor().toast(t('License copied: paste it into a copyright dispute or the description')), () => editor().toast(licenseText(lib)));
+  return <button className="btn" onClick={() => void copy()}>{t('Copy license')}</button>;
 }
 
 /** One-tap voice enhancement: noise reduction, voice EQ, compression and even loudness (on device). */

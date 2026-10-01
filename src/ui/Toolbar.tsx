@@ -1,5 +1,5 @@
 import {
-  Activity, ArrowRightToLine, AudioLines, Bell, Check, CopyCheck, EyeOff, Zap, ScanFace, Captions, CircleDashed, Copy, Crop, Film, Frame, Gauge, Layers, Mic, Move, Music, PersonStanding, Rewind, Scissors,
+  Activity, ArrowRightToLine, AudioLines, Bell, Check, CopyCheck, Disc3, EyeOff, Zap, ScanFace, Captions, CircleDashed, Copy, Crop, Film, Frame, Gauge, Layers, Mic, Move, Music, PersonStanding, Rewind, Scissors,
   SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Video, Volume2, WandSparkles, X,
   type LucideIcon,
 } from 'lucide-react';
@@ -67,6 +67,7 @@ export function Toolbar() {
     default: tools = [
       { icon: Film, label: t('Media'), run: () => void addMedia('main') },
       { icon: Layers, label: t('Overlay'), run: () => void addMedia('overlay') },
+      { icon: Disc3, label: t('Music'), run: sheet('music') },
       { icon: Music, label: t('Audio'), run: () => void addMedia('audio') },
       { icon: Video, label: t('Camera'), run: sheet('camera') },
       { icon: Mic, label: t('Record'), run: sheet('voiceover') },

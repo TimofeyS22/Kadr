@@ -6,6 +6,7 @@ import {
 } from 'mediabunny';
 import { Limiter, LoudnessMeter, normalizeGain } from '../core/dsp';
 import { buildFrame } from '../core/frame';
+import { withoutGuides } from '../core/music';
 import { projectDuration } from '../core/timeline';
 import type { Project, ProjectSettings } from '../core/types';
 import { renderAudioWindow } from './audio';
@@ -170,7 +171,7 @@ export async function exportProject(
   output.addVideoTrack(video, { frameRate: opts.fps });
   const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, bitrate: QUALITY_HIGH }) : null;
   if (audio) output.addAudioTrack(audio);
-  const mix = new MixStream(p, frames.pool, duration);
+  const mix = new MixStream(withoutGuides(p), frames.pool, duration); // guide tracks are for editing only
   // Loudness pre-pass takes the first 5% of the progress bar (audio renders far faster than video).
   const pre = audio && opts.loudness !== false ? 0.05 : 0;
 
@@ -216,7 +217,7 @@ export async function exportAudio(p: Project, loudness: boolean, onProgress: (f:
   const audio = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
   output.addAudioTrack(audio);
   const pool = new MediaPool(16);
-  const mix = new MixStream(p, pool, duration);
+  const mix = new MixStream(withoutGuides(p), pool, duration);
   const pre = loudness ? 0.4 : 0;
   try {
     await output.start();

@@ -24,3 +24,11 @@ if command -v say >/dev/null; then
   ff -i en.aiff -f lavfi -i "anoisesrc=color=pink:amplitude=0.08:d=12" -filter_complex "[0:a]aresample=48000,apad=pad_dur=2[s];[1:a]aresample=48000[n];[s][n]amix=inputs=2:duration=shortest:normalize=0" -c:a aac noisy_en.m4a
 fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
+
+# Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.
+for i in 1 2 3 4; do
+  [ -f long_$i.mp4 ] || ffmpeg -v error -f lavfi -i "testsrc2=s=1920x1080:r=30:d=60" -f lavfi -i "sine=f=$((200*i)):d=60" -filter_complex "[0:v]noise=alls=20:allf=t+u,format=yuv420p[v]" -map "[v]" -map 1:a -c:v libx264 -preset ultrafast -b:v 8M -maxrate 8M -bufsize 16M -g 30 -c:a aac -b:a 128k -shortest long_$i.mp4
+done
+if [ -n "$PERF_S2" ] && [ ! -f long_15m.mp4 ]; then
+  ffmpeg -v error -f lavfi -i "testsrc2=s=1280x720:r=30:d=900" -f lavfi -i "sine=f=330:d=900" -filter_complex "[0:v]noise=alls=12:allf=t+u,format=yuv420p[v]" -map "[v]" -map 1:a -c:v libx264 -preset ultrafast -b:v 2500k -maxrate 2500k -bufsize 5M -g 30 -c:a aac -b:a 96k -shortest long_15m.mp4
+fi

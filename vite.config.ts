@@ -61,6 +61,18 @@ export default defineConfig({
             options: { cacheName: 'kadr-ai', expiration: { maxEntries: 16 } },
           },
           {
+            // Music library: the list refreshes in the background; tracks are kept once heard or added. Range
+            // requests (audio preview streaming) go to the network: a cached full response can't answer them.
+            urlPattern: ({ url }) => /\/music\/music\.json$/.test(url.pathname),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'kadr-music-list' },
+          },
+          {
+            urlPattern: ({ url, request }) => /\/music\/tracks\//.test(url.pathname) && !request.headers.has('range'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'kadr-music', expiration: { maxEntries: 60 } },
+          },
+          {
             // Text fonts download when first used and then work offline.
             urlPattern: ({ url }) => /\.woff2$/.test(url.pathname),
             handler: 'CacheFirst',

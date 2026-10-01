@@ -312,6 +312,7 @@ const ClipFace = memo(function ClipFace({ clip, asset, zoom, height }: { clip: C
       {label && <span className="clip-label">{label}</span>}
       <span className="clip-badges">
         {speed !== 1 && <b>{speed}×</b>}
+        {'guide' in clip && clip.guide && <b>{t('Guide')}</b>}
         {'muted' in clip && clip.muted && <VolumeX size={12} />}
       </span>
     </>
