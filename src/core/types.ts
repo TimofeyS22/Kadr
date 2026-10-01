@@ -43,8 +43,10 @@ export const FONT_IDS = [
   'inter', 'montserrat', 'rubik', 'raleway', 'exo', 'comfortaa', 'unbounded', 'oswald', 'anton', 'bebas', 'russo', 'rubikMono', 'pixel', 'playfair', 'lora', 'ptSerif', 'yeseva', 'pacifico', 'lobster', 'caveat', 'marck', 'amatic', 'mono',
 ] as const;
 export type FontId = (typeof FONT_IDS)[number];
+/** A font the user added (v0.8): `custom:<id>` keyed into `Project.fonts`. */
+export type CustomFontId = `custom:${string}`;
 export interface TextStyle {
-  font: FontId;
+  font: FontId | CustomFontId;
   /** Font size as a fraction of canvas height. */
   size: number;
   weight: 400 | 700 | 900;
@@ -180,4 +182,6 @@ export interface Project {
   assets: Record<string, Asset>;
   /** Imported LUTs by id (v0.6), referenced by clips' `lut`. */
   luts?: Record<string, LutData>;
+  /** Fonts the user added (v0.8): the file is a blob in local storage under `blobId`. */
+  fonts?: Record<string, { name: string; blobId: string }>;
 }

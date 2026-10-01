@@ -18,7 +18,7 @@ export async function exportBackup(p: Project, onProgress?: (f: number) => void)
   const meta = new ZipPassThrough('project.json');
   zip.add(meta);
   meta.push(strToU8(JSON.stringify(p)), true);
-  const ids = Object.keys(p.assets);
+  const ids = [...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)]; // media and the user's fonts
   for (let i = 0; i < ids.length; i++) {
     const blob = await getBlob(ids[i]);
     if (!blob) continue;
@@ -75,6 +75,7 @@ export async function importBackup(file: Blob): Promise<Project> {
   const ids = new Map<string, string>();
   const idFor = (old: string) => { if (!ids.has(old)) ids.set(old, uid()); return ids.get(old)!; };
   remapAssets(p, idFor);
+  for (const f of Object.values(p.fonts ?? {})) f.blobId = idFor(f.blobId);
   for (const [old, id] of ids) {
     const blob = files.get(`media/${old}`);
     if (blob) await putBlob(id, new Blob([blob], { type: p.assets[id]?.mime ?? '' }));

@@ -30,6 +30,7 @@ in vec2 vQuad;
 out vec4 outColor;
 uniform sampler2D uSegTex;
 uniform int uHasSeg;
+uniform vec2 uSegTexel;
 uniform int uMaskShape;
 uniform vec4 uMaskRect;
 uniform vec4 uMaskParams;
@@ -176,7 +177,26 @@ void main() {
     a *= k;
     c = mix(vec3(luma(c)), c, k);
   }
-  if (uHasSeg == 1) a *= smoothstep(0.3, 0.7, texture(uSegTex, vUv).r);
+  if (uHasSeg == 1) {
+    // Edge matting (docs/05 M4). The person mask is low-res (256 px), so on its soft edge a pixel's alpha comes
+    // from its colour instead: compared with the nearest confident person and background colours around it,
+    // whichever it is closer to wins. Sharp, halo-free outlines; interior pixels skip the work.
+    float m0 = texture(uSegTex, vUv).r;
+    float alpha = m0 < 0.04 ? 0.0 : m0 > 0.96 ? 1.0 : -1.0;
+    if (alpha < 0.0) {
+      vec3 c0 = unpremul(texture(uTex, vUv)).rgb;
+      float dF = 9.0, dB = 9.0;
+      for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) {
+        vec2 o = vec2(float(i), float(j)) * uSegTexel;
+        float m = texture(uSegTex, vUv + o).r;
+        float dc = distance(unpremul(texture(uTex, vUv + o)).rgb, c0);
+        if (m > 0.75) dF = min(dF, dc); else if (m < 0.25) dB = min(dB, dc);
+      }
+      alpha = dF > 8.0 || dB > 8.0 ? smoothstep(0.5, 0.78, m0) // one side missing nearby: trust the mask
+        : smoothstep(0.45, 0.8, dB / (dF + dB + 1e-4));
+    }
+    a *= alpha;
+  }
   if (uMaskShape > 0) a *= shapeMask(vQuad);
   if (uHasWipe == 1) {
     vec2 asp = vec2(uRes.x / uRes.y, 1.0);
@@ -375,6 +395,7 @@ export class Compositor {
         const s = this.upload(slotId, d, needMips.has(slotId));
         const seg = l.removeBg && d.seg && s.seg ? s.seg : null;
         gl.uniform1i(this.loc('uHasSeg'), seg ? 1 : 0);
+        if (seg && d.seg) gl.uniform2f(this.loc('uSegTexel'), 1 / d.seg.w, 1 / d.seg.h);
         if (seg) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, seg); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, s.tex); }
         gl.uniform1i(this.loc('uSolid'), 0);
         gl.uniform2f(this.loc('uTexel'), 1 / s.w, 1 / s.h);

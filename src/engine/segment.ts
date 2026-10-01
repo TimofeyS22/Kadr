@@ -33,6 +33,24 @@ function getSegmenter(): Promise<ImageSegmenter> {
 export const warmSegmenter = (): Promise<unknown> => getSegmenter();
 
 const cache = new Map<string, SegMask>();
+const previous = new Map<string, { t: number; w: number; h: number; data: Uint8Array }>();
+
+/**
+ * Video frames (keys `clipId:time:…`): blend with the previous frame's mask so the cut-out edge doesn't shimmer
+ * (docs/05 M4). Only consecutive frames (≤ 0.1 s apart) blend, so a seek never drags in a stale mask; playback
+ * and export both run frames in order, so they get the same result.
+ */
+function smoothInTime(key: string, data: Uint8Array, w: number, h: number): void {
+  const [clip, ts] = key.split(':');
+  const t = Number(ts);
+  if (!clip || !Number.isFinite(t)) return;
+  const p = previous.get(clip);
+  if (p && p.w === w && p.h === h && t > p.t && t - p.t <= 0.1) {
+    for (let i = 0; i < data.length; i++) data[i] = Math.round(data[i] * 0.65 + p.data[i] * 0.35);
+  }
+  previous.set(clip, { t, w, h, data });
+  if (previous.size > 8) previous.delete(previous.keys().next().value!);
+}
 
 /** Person mask for an image; `key` identifies the exact frame so paused previews don't recompute. */
 export async function personMask(key: string, image: TexImageSource): Promise<SegMask | null> {
@@ -47,6 +65,7 @@ export async function personMask(key: string, image: TexImageSource): Promise<Se
     const f = m.getAsFloat32Array();
     const data = new Uint8Array(f.length);
     for (let i = 0; i < f.length; i++) data[i] = Math.round(Math.min(1, Math.max(0, f[i])) * 255);
+    smoothInTime(key, data, m.width, m.height);
     const mask: SegMask = { data, w: m.width, h: m.height, key };
     cache.set(key, mask);
     if (cache.size > 12) cache.delete(cache.keys().next().value!);

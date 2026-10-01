@@ -14,6 +14,7 @@ import { coverScale, reframeKeys } from '../core/reframe';
 import { saveFile } from '../engine/exporter';
 import { MediaError, captureFrame } from '../engine/media';
 import { importFile, importFiles, pickFiles } from '../engine/importer';
+import { putBlob } from '../storage/db';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
@@ -357,6 +358,30 @@ export async function importLut(clipId: string): Promise<void> {
     track('lut_imported', { size: lut.size });
   } catch (e) {
     editor().toast(t('Could not import the LUT: {error}', { error: errorMessage(e) }), 'error');
+  }
+}
+
+/** Adds a font file (TTF/OTF/WOFF/WOFF2) to the project and applies it to the text clip. */
+export async function addCustomFont(clipId: string): Promise<void> {
+  // No accept filter: iOS greys out font files it does not know.
+  const [file] = await pickFiles('', false);
+  if (!file) return;
+  try {
+    const { validateFont, registerFont } = await import('../engine/customFonts');
+    await validateFont(file);
+    const id = uid();
+    await putBlob(id, file);
+    await registerFont(id, id);
+    const name = file.name.replace(/\.(ttf|otf|woff2?)$/i, '').slice(0, 32) || 'Font';
+    editor().commit((d) => {
+      d.fonts = { ...d.fonts, [id]: { name, blobId: id } };
+      const f = findClip(d, clipId);
+      if (f && f.clip.kind === 'text') f.clip.style.font = `custom:${id}`;
+    });
+    editor().toast(t('Font added: {name}. Check that it has the letters you need.', { name }));
+    track('font_added');
+  } catch (e) {
+    editor().toast(t('Could not add the font: {error}', { error: errorMessage(e) }), 'error');
   }
 }
 

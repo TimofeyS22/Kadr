@@ -7,14 +7,14 @@ import { CURVE_PRESETS } from '../core/speed';
 import { applyTransitionToAll, expectedAudioKey, findClip, setCurve, setSpeed, setTransition } from '../core/timeline';
 import { CurveEditor } from './CurveEditor';
 import {
-  ADJUST_KEYS, TRANSITION_TYPES,
-  type AdjustKey, type AspectId, type BlendMode, type Clip, type FontId, type SoundClip, type TextAnimType, type TextClip,
+  ADJUST_KEYS, FONT_IDS as FONT_ID_LIST, TRANSITION_TYPES,
+  type AdjustKey, type AspectId, type BlendMode, type Clip, type FontId, type SoundClip, type TextAnimType, type TextClip, type TextStyle,
   type Transform, type Transition, type TransitionType,
 } from '../core/types';
-import { FONTS, fontWeight } from '../engine/text';
+import { fontOf, fontWeight, type AnyFontId } from '../engine/text';
 import { errorMessage } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
-import { detachSelectedAudio, editClip, updateClipSound } from './actions';
+import { addCustomFont, detachSelectedAudio, editClip, updateClipSound } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
 import { CameraSheet } from './CameraSheet';
 import { licenseText } from '../core/music';
@@ -223,20 +223,38 @@ function ChromaControls({ clip }: { clip: Extract<Clip, { chroma: unknown }> }) 
 }
 
 const ANIMS: readonly TextAnimType[] = ['none', 'fade', 'rise', 'pop', 'typewriter'];
-const FONT_IDS = Object.keys(FONTS) as FontId[];
+const FONT_IDS = FONT_ID_LIST as readonly FontId[];
+
+const rgba = (hex: string, a: number) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`; };
+
+/** A text style drawn as itself on its button: font, colour, outline, background, glow. */
+function StyleSwatch({ style: st, label }: { style: TextStyle; label: string }) {
+  return (
+    <span className="style-swatch" style={{
+      fontFamily: fontOf(st.font).family, fontWeight: fontWeight(st.font, st.weight), fontStyle: st.italic ? 'italic' : undefined,
+      color: st.color, textTransform: st.uppercase ? 'uppercase' : undefined,
+      background: st.background ? rgba(st.background.color, st.background.opacity) : undefined,
+      WebkitTextStroke: st.stroke ? `${Math.max(0.6, st.stroke.width * 8)}px ${st.stroke.color}` : undefined, paintOrder: 'stroke fill',
+      textShadow: st.shadowColor ? `0 0 6px ${st.shadowColor}` : st.shadow ? '0 1px 3px rgba(0, 0, 0, 0.8)' : undefined,
+    }}>{label}</span>
+  );
+}
 
 function TextBody({ clip }: { clip: TextClip }) {
+  const fonts = useEditor((st) => st.project?.fonts);
   const e = (fn: (c: TextClip) => void, key?: string) => editClip(clip.id, (c) => { if (c.kind === 'text') fn(c); }, key && `${key}:${clip.id}`);
   const s = clip.style;
   return (
     <>
       <Chips options={TEXT_PRESETS.map((p) => p.id)} value={null} scroll label={t('Style')}
-        render={(id) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; return <span style={{ fontFamily: FONTS[pr.style.font].family }}>{t(pr.name)}</span>; }}
+        render={(id) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; return <StyleSwatch style={pr.style} label={t(pr.name)} />; }}
         onChange={(id) => e((c) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; c.style = { ...pr.style }; if (pr.animIn) c.animIn = { ...pr.animIn }; })} />
       <textarea className="text-input" value={clip.text} rows={2} maxLength={500} aria-label={t('Text')}
         onChange={(ev) => e((c) => { c.text = ev.target.value; }, 'txt')} />
-      <Chips options={FONT_IDS} value={s.font} scroll label={t('Font')} onChange={(f) => e((c) => { c.style.font = f; })}
-        render={(f) => <span style={{ fontFamily: FONTS[f].family, fontWeight: fontWeight(f, 700) }}>{FONTS[f].label}</span>} />
+      <Chips options={[...Object.keys(fonts ?? {}).map((id): AnyFontId => `custom:${id}`), ...FONT_IDS]} value={s.font} scroll label={t('Font')}
+        onChange={(f) => e((c) => { c.style.font = f; })}
+        render={(f) => <span style={{ fontFamily: fontOf(f).family, fontWeight: fontWeight(f, 700) }}>{f.startsWith('custom:') ? fonts?.[f.slice(7)]?.name : fontOf(f).label}</span>} />
+      <button className="btn" onClick={() => void addCustomFont(clip.id)}>{t('Add font')}</button>
       <Slider label={t('Size')} value={s.size} min={0.02} max={0.2} step={0.001} format={(v) => `${Math.round(v * 1000) / 10}`} reset={0.055}
         onChange={(v) => e((c) => { c.style.size = v; }, 'tsize')} />
       <Chips options={[400, 700, 900] as const} value={s.weight} render={(w) => (w === 400 ? t('Regular') : w === 700 ? t('Bold') : t('Black'))}

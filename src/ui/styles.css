@@ -350,3 +350,6 @@ h1, h2, h3 { margin: 0; }
 .music-meta { min-width: 0; display: grid; }
 .music-meta b, .music-meta small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .music-meta small { color: var(--muted); }
+
+/* Text style buttons show the style itself (v0.8) */
+.style-swatch { display: inline-block; padding: 1px 6px; border-radius: 6px; font-size: 15px; line-height: 1.3; }

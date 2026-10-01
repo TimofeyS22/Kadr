@@ -42,7 +42,7 @@ export async function saveProject(p: Project, thumb?: string): Promise<void> {
 
 export async function deleteProject(id: string): Promise<void> {
   const p = await loadProject(id);
-  if (p) await Promise.all(Object.keys(p.assets).map(deleteMedia));
+  if (p) await Promise.all([...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)].map(deleteMedia));
   await del(`p:${id}`, store);
   await withIndex((index) => index.filter((m) => m.id !== id));
 }

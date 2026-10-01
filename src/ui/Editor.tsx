@@ -40,6 +40,8 @@ export function Editor({ id }: { id: string }) {
       if (!alive) return;
       if (!p) { setMissing(true); return; }
       useEditor.getState().open(produce(p, (d) => { normalizeProject(d); }));
+      // The user's own fonts: register, then redraw text that may have used a fallback meanwhile.
+      if (p.fonts) void import('../engine/customFonts').then((m) => m.registerProjectFonts(p)).then(() => { player.text.clear(); player.requestRender(); });
       track('project_opened', { clips: p.tracks.reduce((n, t) => n + t.clips.length, 0) });
     }).catch((e) => useEditor.getState().toast(errorMessage(e), 'error'));
     return () => { alive = false; };

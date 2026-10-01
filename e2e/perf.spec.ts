@@ -135,3 +135,36 @@ test(S2 ? 'S2: one 15-minute clip' : 'S1: four 1-minute 1080p clips', async ({ p
   expect.soft(r.tapToSheetMs, 'tap to sheet').toBeLessThanOrEqual(100);
   writeFileSync(info.outputPath('perf.json'), JSON.stringify(report, null, 2));
 });
+
+// S3: background removal on a walking person (docs/05 M4): playback rate and frame cost with segmentation on.
+test('S3: cutout playback', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.locale', 'en'); });
+  const cdp = await page.context().newCDPSession(page);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '16:9' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Media', exact: true }).click();
+  await (await chooser).setFiles(fx('walk.mp4'));
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.locator('.tl-row.main .clip').click();
+  await page.getByRole('button', { name: 'Cutout', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Cutout', exact: true })).toHaveAttribute('aria-pressed', 'true', { timeout: 60_000 });
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  let p = await probe(page);
+  const d0 = p.drawn, lt0 = p.longTasks.length;
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.waitForTimeout(3000); // walk.mp4 is 5 s long
+  const pause = page.getByRole('button', { name: 'Pause', exact: true });
+  if (await pause.isVisible()) await pause.click();
+  p = await probe(page);
+  const report = {
+    fps: Math.round(((p.drawn - d0) / 3) * 10) / 10,
+    drawP95Ms: round(pct(p.drawMs.slice(-(p.drawn - d0)), 0.95)),
+    tbtMs: round(sum(p.longTasks.slice(lt0).map((d) => Math.max(0, d - 50)))),
+  };
+  console.log('PERF cutout', JSON.stringify(report));
+  writeFileSync(info.outputPath('cutout.json'), JSON.stringify(report));
+});

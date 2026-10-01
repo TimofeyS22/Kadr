@@ -22,6 +22,7 @@ export default defineConfig({
     { name: 'android-chromium', use: { ...devices['Pixel 7'] }, testIgnore: /perf\.spec/ },
     // `npm run perf`: the 4-minute benchmark from docs/04 (Chromium, CPU slowed 4× like a mid-range phone).
     // Real GPU (headless defaults to software SwiftShader, which inflates frame costs far beyond any phone).
-    { name: 'perf', use: { ...devices['Pixel 7'], launchOptions: { args: ['--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] } }, testMatch: /perf\.spec/ },
+    // Only with `npm run perf` (PERF=1), so a plain `playwright test` stays functional.
+    ...(process.env.PERF ? [{ name: 'perf', use: { ...devices['Pixel 7'], launchOptions: { args: ['--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] } }, testMatch: /perf\.spec/ }] : []),
   ],
 });

@@ -1,4 +1,4 @@
-import type { CaptionClip, FontId, TextClip, TextStyle } from '../core/types';
+import type { CaptionClip, CustomFontId, FontId, TextClip, TextStyle } from '../core/types';
 
 /** Single-channel alpha mask (e.g. person segmentation) aligned with the drawable's pixels. */
 export interface SegMask { data: Uint8Array; w: number; h: number; key: string }
@@ -39,10 +39,18 @@ export const FONTS: Record<FontId, { label: string; family: string; weights: rea
   mono: { label: 'Mono', family: '"Roboto Mono", ui-monospace, monospace', weights: [400, 700], group: 'mono' },
 };
 
-const fontOf = (id: FontId) => FONTS[id] ?? FONTS.inter; // unknown ids (e.g. from a newer version) fall back safely
+export type AnyFontId = FontId | CustomFontId;
+export const customFamily = (id: string): string => `Kadr Custom ${id}`;
+const CUSTOM = { weights: [100, 200, 300, 400, 500, 600, 700, 800, 900], group: 'sans' as FontGroup };
+
+/** Font face info; user fonts map to their registered family, unknown ids (e.g. from a newer version) fall back. */
+export function fontOf(id: AnyFontId): { label: string; family: string; weights: readonly number[]; group: FontGroup } {
+  if (id.startsWith('custom:')) return { label: 'Custom', family: `"${customFamily(id.slice(7))}", system-ui, sans-serif`, ...CUSTOM };
+  return FONTS[id as FontId] ?? FONTS.inter;
+}
 
 /** The available weight closest to the requested one, so browsers never fake bold. */
-export function fontWeight(id: FontId, wanted: number): number {
+export function fontWeight(id: AnyFontId, wanted: number): number {
   return fontOf(id).weights.reduce((best, w) => (Math.abs(w - wanted) < Math.abs(best - wanted) ? w : best));
 }
 

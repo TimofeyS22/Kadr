@@ -723,3 +723,68 @@ test('music library: track fits the video, beat is ready, guide track is not exp
   const guided = await loudnessOf(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
   expect(guided.lufs).toBeLessThan(-60);
 });
+
+test('text style pack and a custom font that survives backup and restore', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  const fs = await import('node:fs');
+  const fontFile = info.outputPath('MyFont.woff2');
+  fs.copyFileSync(path.join(import.meta.dirname, '..', 'node_modules/@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff2'), fontFile);
+  page.on('dialog', (d) => void d.accept());
+  await newProject(page);
+  await tool(page, 'Text').click();
+  await page.getByRole('textbox', { name: 'Text', exact: true }).fill('Kadr 2026');
+  const styles = page.getByRole('radiogroup', { name: 'Style' }).getByRole('radio');
+  expect(await styles.count()).toBeGreaterThanOrEqual(40);
+  await page.getByRole('button', { name: 'Done' }).click();
+  const plain = await photo(page, info);
+  await tool(page, 'Edit text').click();
+  await page.getByRole('radiogroup', { name: 'Style' }).getByRole('radio', { name: 'Comic' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  expect(changed(plain, await photo(page, info), 30), 'Comic style').toBeGreaterThan(0.002);
+  // Custom font
+  await tool(page, 'Edit text').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Add font' }).click();
+  await (await chooser).setFiles(fontFile);
+  await expect(page.getByRole('radiogroup', { name: 'Font' }).getByRole('radio', { name: 'MyFont' })).toBeChecked();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const custom = await photo(page, info);
+  expect(changed(plain, custom, 30), 'custom font').toBeGreaterThan(0.002);
+  // Backup → restore: the font comes back with the project
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: /^Save a backup of/ }).first().click();
+  const backup = info.outputPath((await dl).suggestedFilename());
+  await (await dl).saveAs(backup);
+  const c2 = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Restore backup' }).click();
+  await (await c2).setFiles(backup);
+  await expect(page.locator('.clip-text')).toHaveCount(1, { timeout: 60_000 });
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0.6 * 60; });
+  const restored = await photo(page, info);
+  expect(changed(custom, restored, 30), 'restored text uses the custom font').toBeLessThan(0.002);
+});
+
+test('background removal leaves clean edges (no light halo around dark clothes)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['person.jpg']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Cutout').click();
+  await expect(tool(page, 'Cutout')).toHaveAttribute('aria-pressed', 'true', { timeout: 60_000 });
+  const { execFileSync } = await import('node:child_process');
+  const w = 540, h = 960;
+  const g = execFileSync('ffmpeg', ['-v', 'error', '-i', await exportAs(page, info, 'Photo', 'Save photo'), '-vf', `scale=${w}:${h}`, '-f', 'rawvideo', '-pix_fmt', 'gray', '-']);
+  // Halo: a light pixel between the black background and the dark suit (within 3 px). 578 before the
+  // edge matting of docs/05 M4, ~260 after.
+  let halo = 0;
+  for (let y = 3; y < h - 3; y++) for (let x = 3; x < w - 3; x++) {
+    if (g[y * w + x] <= 110) continue;
+    for (const d of [1, w]) {
+      const a = g[y * w + x - 3 * d], b = g[y * w + x + 3 * d];
+      if ((a < 8 && b >= 8 && b < 80) || (b < 8 && a >= 8 && a < 80)) { halo++; break; }
+    }
+  }
+  expect(halo).toBeLessThan(400);
+});
