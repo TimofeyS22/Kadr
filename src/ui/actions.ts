@@ -70,8 +70,8 @@ const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform 
 const IOS_TIP_KEY = 'kadr.iosVideoTip';
 
 /**
- * iOS converts videos picked from Photos ("Automatic" format) before the browser gets them: slow, and the copy can be
- * softer than the original. Kadr itself stores the file untouched, so the fix is in the picker; said once per device.
+ * WebKit on iOS always re-encodes videos picked from the photo library to H.264 (whatever the picker's format option):
+ * slow, and the copy can be softer. Files picked through the Files app arrive untouched; said once per device.
  */
 function iosVideoTip(): void {
   if (!IOS) return;
@@ -79,7 +79,7 @@ function iosVideoTip(): void {
     if (localStorage.getItem(IOS_TIP_KEY)) return;
     localStorage.setItem(IOS_TIP_KEY, '1');
   } catch { return; }
-  editor().toast(t('Tip: iPhone converts videos from Photos before Kadr gets them — that is slow and can lower quality. In the picker tap Options → Current to add the original.'), 'info', 12000);
+  editor().toast(t('Tip: Safari on iPhone re-encodes videos picked from Photos — that is slow and can lower quality. To add the original: in Photos tap Share → Save to Files, then in Kadr choose “Choose Files”.'), 'info', 12000);
 }
 
 function clipFor(a: Asset, target: AddTarget): Clip | null {
