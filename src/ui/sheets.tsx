@@ -11,7 +11,7 @@ import {
   type AdjustKey, type AspectId, type BlendMode, type Clip, type FontId, type SoundClip, type TextAnimType, type TextClip, type TextStyle,
   type Transform, type Transition, type TransitionType,
 } from '../core/types';
-import { fontOf, fontWeight, type AnyFontId } from '../engine/text';
+import { TEXT_BG_PADDING, TEXT_LINE_HEIGHT, fontOf, fontWeight, type AnyFontId } from '../engine/text';
 import { errorMessage } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { addCustomFont, detachSelectedAudio, editClip, updateClipSound } from './actions';
@@ -261,6 +261,11 @@ function TextBody({ clip }: { clip: TextClip }) {
         onChange={(w) => e((c) => { c.style.weight = w; })} />
       <Chips options={['left', 'center', 'right'] as const} value={s.align} onChange={(a) => e((c) => { c.style.align = a; })} />
       <Toggle label={t('Italic')} value={s.italic} onChange={(v) => e((c) => { c.style.italic = v; })} />
+      <h3>{t('Spacing')}</h3>
+      <Slider label={t('Letter spacing')} value={s.letterSpacing ?? 0} min={-0.1} max={0.6} step={0.01} format={(v) => `${Math.round(v * 100)}`} reset={0}
+        onChange={(v) => e((c) => { c.style.letterSpacing = v; }, 'tls')} />
+      <Slider label={t('Line spacing')} value={s.lineHeight ?? TEXT_LINE_HEIGHT} min={0.8} max={2.5} step={0.05} format={(v) => `${v.toFixed(2)}×`} reset={TEXT_LINE_HEIGHT}
+        onChange={(v) => e((c) => { c.style.lineHeight = v; }, 'tlh')} />
       <h3>{t('Color')}</h3>
       <Swatches label={t('Text color')} value={s.color} onChange={(col) => e((c) => { c.style.color = col; })} />
       <Toggle label={t('Outline')} value={!!s.stroke} onChange={(v) => e((c) => { c.style.stroke = v ? { color: '#000000', width: 0.08 } : null; })} />
@@ -277,6 +282,8 @@ function TextBody({ clip }: { clip: TextClip }) {
           <Swatches label={t('Background color')} value={s.background.color} onChange={(col) => e((c) => { if (c.style.background) c.style.background.color = col; })} />
           <Slider label={t('Opacity')} value={s.background.opacity} min={0.05} max={1} format={pct} reset={0.6}
             onChange={(v) => e((c) => { if (c.style.background) c.style.background.opacity = v; }, 'bgo')} />
+          <Slider label={t('Padding')} value={s.background.padding ?? TEXT_BG_PADDING} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}`} reset={TEXT_BG_PADDING}
+            onChange={(v) => e((c) => { if (c.style.background) c.style.background.padding = v; }, 'bgp')} />
         </>
       )}
       <Toggle label={t('Shadow')} value={s.shadow} onChange={(v) => e((c) => { c.style.shadow = v; })} />

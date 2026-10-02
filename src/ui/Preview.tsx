@@ -10,6 +10,13 @@ import { t } from '../lib/i18n';
 
 const PREVIEW_MAX_PX = 1280;
 const SNAP_PX = 8; // screen pixels within which a layer snaps to a guide
+const SNAP_DEG = 4; // degrees within which a rotation snaps to a multiple of 45°
+
+/** Snaps an angle to the nearest multiple of 45° when it is within SNAP_DEG of it. */
+export function snapAngle(deg: number): { deg: number; snapped: boolean } {
+  const target = Math.round(deg / 45) * 45;
+  return Math.abs(deg - target) <= SNAP_DEG ? { deg: target, snapped: true } : { deg, snapped: false };
+}
 
 /**
  * Snaps a layer's center coordinate (canvas-normalized, 0 = middle) so that its center meets the canvas middle
@@ -49,6 +56,8 @@ export function Preview() {
   const zones = useRef<HTMLDivElement>(null);
   const guideV = useRef<HTMLDivElement>(null);
   const guideH = useRef<HTMLDivElement>(null);
+  const angleTag = useRef<HTMLDivElement>(null);
+  const angleSnap = useRef(false);
   const snapped = useRef('');
   const safeZones = useEditor((s) => s.safeZones);
   const vertical = aspect < 0.7;
@@ -58,6 +67,15 @@ export function Preview() {
   useEffect(() => {
     player.attach(canvas.current!);
     return () => player.detach();
+  }, []);
+
+  // iOS pans the page under a finger (most visibly while the keyboard is up) despite touch-action: none, so moves
+  // on the preview are cancelled natively; pointer events still arrive. Taps and double taps are unaffected.
+  useEffect(() => {
+    const w = wrap.current!;
+    const stop = (e: TouchEvent) => { if (e.cancelable) e.preventDefault(); };
+    w.addEventListener('touchmove', stop, { passive: false });
+    return () => w.removeEventListener('touchmove', stop);
   }, []);
 
   useLayoutEffect(() => {
@@ -118,6 +136,9 @@ export function Preview() {
   };
 
   const onDown = (e: RPointerEvent) => {
+    // Typing in a sheet leaves the keyboard up; touching the preview puts it away, so the layer can be moved.
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.matches('input, textarea')) active.blur();
     wrap.current!.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.current.size === 1) {
@@ -149,9 +170,7 @@ export function Preview() {
     let scale = gs.start.scale, rotation = gs.start.rotation;
     if (ps.length >= 2 && gs.anchor.dist > 0) {
       scale = Math.min(10, Math.max(0.05, gs.start.scale * (Math.hypot(ps[1].x - ps[0].x, ps[1].y - ps[0].y) / gs.anchor.dist)));
-      rotation = gs.start.rotation + ((Math.atan2(ps[1].y - ps[0].y, ps[1].x - ps[0].x) - gs.anchor.angle) * 180) / Math.PI;
-      const snapped = Math.round(rotation / 90) * 90;
-      if (Math.abs(rotation - snapped) < 3) rotation = snapped;
+      rotation = showAngle(gs.start.rotation + ((Math.atan2(ps[1].y - ps[0].y, ps[1].x - ps[0].x) - gs.anchor.angle) * 180) / Math.PI);
     }
     // Axis-aligned extent of the (possibly rotated) layer, scaled to the size it will have after this move.
     const lb = player.bounds.find((b) => b.id === gs.id);
@@ -189,6 +208,22 @@ export function Preview() {
     if (y !== null) { h.style.width = `${c.clientWidth}px`; h.style.transform = `translate(${c.offsetLeft}px, ${c.offsetTop + Math.min(c.clientHeight - 1, (0.5 + y) * c.clientHeight)}px)`; }
   };
 
+  // While rotating: snaps to 0°, 45°, 90°… and shows the angle above the layer; a short vibration marks a snap.
+  const showAngle = <T extends number | null>(deg: T): T => {
+    const tag = angleTag.current;
+    if (deg === null) { if (tag) tag.style.display = 'none'; angleSnap.current = false; return deg; }
+    const r = snapAngle(deg);
+    if (r.snapped && !angleSnap.current) navigator.vibrate?.(8);
+    angleSnap.current = r.snapped;
+    if (tag) {
+      const norm = ((Math.round(r.deg) % 360) + 540) % 360 - 180; // -180 … 179
+      tag.textContent = `${norm}°`;
+      tag.style.display = 'block';
+      tag.classList.toggle('snapped', r.snapped);
+    }
+    return r.deg as T;
+  };
+
   // Corner handle: drag to scale and rotate the selected layer around its center (mouse or one finger).
   const onHandleDown = (e: RPointerEvent) => {
     e.stopPropagation();
@@ -206,9 +241,7 @@ export function Preview() {
     (e.target as Element).setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => {
       const scale = Math.min(10, Math.max(0.05, (s0 * Math.hypot(ev.clientX - cx, ev.clientY - cy)) / d0));
-      let rotation = r0 + ((Math.atan2(ev.clientY - cy, ev.clientX - cx) - a0) * 180) / Math.PI;
-      const snapped = Math.round(rotation / 90) * 90;
-      if (Math.abs(rotation - snapped) < 3) rotation = snapped;
+      const rotation = showAngle(r0 + ((Math.atan2(ev.clientY - cy, ev.clientX - cx) - a0) * 180) / Math.PI);
       useEditor.getState().commit((d) => {
         const g2 = findClip(d, id);
         if (!g2 || g2.clip.kind === 'audio') return;
@@ -216,7 +249,7 @@ export function Preview() {
         setAnim(g2.clip.transform.rotation, local, rotation);
       }, `handle:${id}`, base);
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+    const up = () => { showAngle(null); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
@@ -237,6 +270,7 @@ export function Preview() {
     if (gs && !gs.moved && !gs.id) useEditor.getState().select(null);
     g.current = null;
     showGuides(null, null);
+    showAngle(null);
   };
 
   return (
@@ -244,6 +278,7 @@ export function Preview() {
       <canvas ref={canvas} className="preview-canvas" />
       <div ref={guideV} className="guide v" aria-hidden />
       <div ref={guideH} className="guide h" aria-hidden />
+      <div ref={angleTag} className="angle-tag" aria-live="polite" />
       <div ref={box} className="sel-box">
         <div className="sel-handle" onPointerDown={onHandleDown} role="button" aria-label={t('Drag to resize and rotate')} />
       </div>

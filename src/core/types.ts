@@ -54,11 +54,15 @@ export interface TextStyle {
   color: string;
   align: 'left' | 'center' | 'right';
   stroke: { color: string; width: number } | null;
-  background: { color: string; opacity: number } | null;
+  /** `padding` (v0.9, optional): space around the text, as a fraction of the font size. */
+  background: { color: string; opacity: number; padding?: number } | null;
   shadow: boolean;
   /** Optional (added in v0.2): render in upper case; shadow/glow color. */
   uppercase?: boolean;
   shadowColor?: string;
+  /** Optional (v0.9): extra space between letters (fraction of the font size), line height (× font size). */
+  letterSpacing?: number;
+  lineHeight?: number;
 }
 export type TextAnimType = 'none' | 'fade' | 'rise' | 'pop' | 'typewriter';
 export interface TextAnim { type: TextAnimType; duration: number }

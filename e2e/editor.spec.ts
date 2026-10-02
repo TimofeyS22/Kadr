@@ -1073,3 +1073,53 @@ test('drag and drop import, keyboard shortcuts, first-run tips and the ?perf ove
   await page.locator('.project-open').first().click();
   await expect(page.locator('.perf-overlay')).toHaveCount(0);
 });
+
+test('text: trim handles sit outside the clip, spacing sliders resize the text, rotation snaps and shows degrees', async ({ page }) => {
+  await newProject(page);
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Text', exact: true }).fill('First line\nSecond line');
+  // Letter and line spacing change the rendered block (seen through the selection box).
+  const b0 = await stableBox(page);
+  await page.getByRole('slider', { name: 'Letter spacing' }).fill('0.3');
+  await expect.poll(async () => (await selBox(page).boundingBox())!.width).toBeGreaterThan(b0.width * 1.2);
+  await page.getByRole('slider', { name: 'Line spacing' }).fill('2');
+  await expect.poll(async () => (await selBox(page).boundingBox())!.height).toBeGreaterThan(b0.height * 1.3);
+  await page.getByRole('button', { name: 'Done' }).click();
+  // The clip body is exactly its duration on screen: handles start where the clip ends.
+  const clip = page.locator('.tl-row .clip-text');
+  const c = (await clip.boundingBox())!, end = (await clip.getByLabel('Trim end').boundingBox())!, start = (await clip.getByLabel('Trim start').boundingBox())!;
+  expect(end.x).toBeGreaterThanOrEqual(c.x + c.width - 3);
+  expect(start.x + start.width).toBeLessThanOrEqual(c.x + 3);
+  // Rotating with the corner handle near 45° snaps to exactly 45° and shows the angle while dragging.
+  const box = await stableBox(page);
+  const h = (await page.locator('.sel-handle').boundingBox())!;
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  const hx = h.x + h.width / 2, hy = h.y + h.height / 2;
+  const a0 = Math.atan2(hy - cy, hx - cx), r = Math.hypot(hx - cx, hy - cy);
+  const a = a0 + (43 * Math.PI) / 180;
+  await page.mouse.move(hx, hy);
+  await page.mouse.down();
+  await page.mouse.move(cx + r * Math.cos(a), cy + r * Math.sin(a), { steps: 10 });
+  await expect(page.locator('.angle-tag')).toHaveText('45°');
+  await expect(page.locator('.angle-tag')).toHaveClass(/snapped/);
+  await page.mouse.up();
+  await expect(page.locator('.angle-tag')).toBeHidden();
+  await tool(page, 'Transform').click();
+  await expect(page.getByRole('slider', { name: 'Rotation' })).toHaveValue('45');
+});
+
+test('dragging text on a touch screen moves the text, not the page', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'touch injection needs the Chromium DevTools protocol');
+  await newProject(page);
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Text', exact: true }).focus();
+  const b = await stableBox(page);
+  const cdp = await page.context().newCDPSession(page);
+  const x0 = b.x + b.width / 2, y0 = b.y + b.height / 2;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+  for (let k = 1; k <= 12; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + k * 3, y: y0 + k * 5 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect.poll(async () => (await selBox(page).boundingBox())!.y).toBeGreaterThan(b.y + 30);
+  expect(await page.evaluate(() => [window.scrollY, document.scrollingElement?.scrollTop ?? 0, visualViewport?.offsetTop ?? 0])).toEqual([0, 0, 0]);
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('TEXTAREA'); // the keyboard went away
+});

@@ -127,7 +127,8 @@ h1, h2, h3 { margin: 0; }
 .clip-text { background: var(--c-text); }
 .clip-audio { background: var(--c-audio); }
 .clip-caption { background: var(--c-caption); }
-.clip.sel { border: 2px solid #fff; z-index: 2; }
+/* Selected: trim handles sit outside the clip (like CapCut), so the clip body spans exactly its time on screen. */
+.clip.sel { border: 2px solid #fff; z-index: 2; overflow: visible; }
 .clip.dragging { opacity: 0.85; z-index: 5; pointer-events: none; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6); }
 .clip-canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.9; pointer-events: none; }
 .clip-label {
@@ -139,8 +140,8 @@ h1, h2, h3 { margin: 0; }
   position: absolute; top: 0; bottom: 0; width: 16px; background: #fff; touch-action: none; cursor: ew-resize; z-index: 3;
 }
 .handle::after { content: ''; position: absolute; left: 7px; top: 30%; bottom: 30%; width: 2px; border-radius: 2px; background: #555; }
-.handle.l { left: 0; }
-.handle.r { right: 0; }
+.handle.l { left: -16px; border-radius: 7px 0 0 7px; }
+.handle.r { right: -16px; border-radius: 0 7px 7px 0; }
 .tr-btn {
   position: absolute; top: 50%; z-index: 4; width: 26px; height: 26px; transform: translate(-50%, -50%);
   display: grid; place-items: center; border-radius: 7px; border: 0; background: #e8e8ee; color: #222;
@@ -310,6 +311,11 @@ h1, h2, h3 { margin: 0; }
 .guide { position: absolute; left: 0; top: 0; display: none; pointer-events: none; background: #ff3b8d; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.35); }
 .guide.v { width: 1px; }
 .guide.h { height: 1px; }
+.angle-tag {
+  display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 4; pointer-events: none;
+  padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.angle-tag.snapped { background: var(--accent); color: var(--on-accent); }
 .sel-handle { position: absolute; right: -22px; bottom: -22px; width: 44px; height: 44px; pointer-events: auto; touch-action: none; cursor: nwse-resize; }
 .sel-handle::after { content: ''; position: absolute; inset: 12px; border-radius: 999px; background: var(--text); border: 2px solid var(--bg); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
 

@@ -77,8 +77,26 @@ export function loadFonts(): Promise<unknown> {
   return Promise.all(specs.map((s) => document.fonts.load(s, 'Aa Яя').catch(() => undefined)));
 }
 
+export const TEXT_LINE_HEIGHT = 1.25;
+export const TEXT_BG_PADDING = 0.35;
+
+/** Width of a word with `ls` extra pixels between its letters (letters are then drawn one by one). */
+function wordWidth(ctx: CanvasRenderingContext2D, w: string, ls: number): number {
+  if (!ls) return ctx.measureText(w).width;
+  const chars = [...w];
+  return chars.reduce((a, ch) => a + ctx.measureText(ch).width, 0) + ls * (chars.length - 1);
+}
+
+function drawWord(ctx: CanvasRenderingContext2D, w: string, x: number, y: number, ls: number, stroke: boolean): void {
+  if (!ls) { if (stroke) ctx.strokeText(w, x, y); else ctx.fillText(w, x, y); return; }
+  for (const ch of w) {
+    if (stroke) ctx.strokeText(ch, x, y); else ctx.fillText(ch, x, y);
+    x += ctx.measureText(ch).width + ls;
+  }
+}
+
 /** Word-wraps paragraphs; returns lines as lists of word indices into `words`. */
-function layout(ctx: CanvasRenderingContext2D, paragraphs: string[][], maxW: number): { words: string[]; lines: number[][] } {
+function layout(ctx: CanvasRenderingContext2D, paragraphs: string[][], maxW: number, ls: number): { words: string[]; lines: number[][] } {
   const words: string[] = [];
   const lines: number[][] = [];
   for (const para of paragraphs) {
@@ -86,7 +104,7 @@ function layout(ctx: CanvasRenderingContext2D, paragraphs: string[][], maxW: num
     let text = '';
     for (const w of para) {
       const next = text ? `${text} ${w}` : w;
-      if (line.length && ctx.measureText(next).width > maxW) { lines.push(line); line = []; text = w; }
+      if (line.length && wordWidth(ctx, next, ls) > maxW) { lines.push(line); line = []; text = w; }
       else text = next;
       line.push(words.length);
       words.push(w);
@@ -140,16 +158,20 @@ export class TextRasterizer {
     const canvas = document.createElement('canvas');
     let ctx = canvas.getContext('2d')!;
     ctx.font = fontCss(s, px);
-    const { words, lines } = layout(ctx, paras, W * 0.9);
-    const space = ctx.measureText(' ').width;
-    const wordW = words.map((w) => ctx.measureText(w).width);
+    const ls = (s.letterSpacing ?? 0) * px;
+    const bgPad = s.background ? px * (s.background.padding ?? TEXT_BG_PADDING) : 0;
+    // A wide background padding narrows the lines, so the block still fits the frame.
+    const { words, lines } = layout(ctx, paras, Math.max(px * 2, W * 0.9 - 2 * Math.max(0, bgPad - px * TEXT_BG_PADDING)), ls);
+    const space = ctx.measureText(' ').width + ls * 2;
+    const wordW = words.map((w) => wordWidth(ctx, w, ls));
     const lineW = lines.map((l) => l.reduce((a, i) => a + wordW[i], 0) + space * Math.max(0, l.length - 1));
-    const lineH = px * 1.25;
+    const lineH = px * (s.lineHeight ?? TEXT_LINE_HEIGHT);
     const stroke = s.stroke ? s.stroke.width * px : 0;
     const glow = s.shadow && !!s.shadowColor;
-    const pad = (s.background ? px * 0.35 : px * 0.2) + stroke + (glow ? px * 0.3 : 0);
+    const pad = (s.background ? bgPad : px * 0.2) + stroke + (glow ? px * 0.3 : 0);
     const w = Math.ceil(Math.max(1, ...lineW) + pad * 2);
-    const h = Math.ceil(lines.length * lineH + pad * 2);
+    const vpad = pad + Math.max(0, (px * TEXT_LINE_HEIGHT - lineH) / 2); // tight lines still fit their glyphs
+    const h = Math.ceil(lines.length * lineH + vpad * 2);
     canvas.width = w;
     canvas.height = h;
     ctx = canvas.getContext('2d')!; // resizing resets context state
@@ -167,13 +189,13 @@ export class TextRasterizer {
     }
     const positions = lines.flatMap((l, li) => {
       let x = s.align === 'left' ? pad : s.align === 'right' ? w - pad - lineW[li] : (w - lineW[li]) / 2;
-      const y = pad + lineH * (li + 0.5);
+      const y = vpad + lineH * (li + 0.5);
       return l.map((i) => { const p = { i, x, y }; x += wordW[i] + space; return p; });
     });
     if (s.stroke && stroke > 0) {
       ctx.strokeStyle = s.stroke.color;
       ctx.lineWidth = stroke * 2;
-      for (const p of positions) ctx.strokeText(words[p.i], p.x, p.y);
+      for (const p of positions) drawWord(ctx, words[p.i], p.x, p.y, ls, true);
     }
     if (s.shadow && !s.background) {
       ctx.shadowColor = s.shadowColor ?? 'rgba(0,0,0,0.55)';
@@ -182,7 +204,7 @@ export class TextRasterizer {
     }
     for (const p of positions) {
       ctx.fillStyle = p.i === active && highlight ? highlight : s.color;
-      ctx.fillText(words[p.i], p.x, p.y);
+      drawWord(ctx, words[p.i], p.x, p.y, ls, false);
     }
     return { image: canvas, w, h, key: '' };
   }

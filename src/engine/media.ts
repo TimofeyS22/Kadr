@@ -15,6 +15,7 @@ export class MediaError extends Error {
 
 export interface Probe { kind: AssetKind; duration: number; width: number; height: number; hasAudio: boolean }
 
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const openInput = (blob: Blob) => new Input({ formats: ALL_FORMATS, source: new BlobSource(blob) });
 
 export async function probe(file: Blob): Promise<Probe> {
@@ -80,14 +81,42 @@ class VideoStream {
   }
 
   frameAt(t: number, fast = false): Promise<StreamFrame | null> {
-    const run = this.queue.then(() => this.read(t, fast));
+    const run = this.queue.then(() => this.readSafe(t, fast));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
+  /** The next decoded sample; null once the stream is closed (a sample that arrives late is closed, not kept). */
   private async pull(): Promise<VideoSample | null> {
-    const r = await this.it!.next();
-    return r.done ? null : r.value;
+    const it = this.it;
+    if (!it || this.closed) return null;
+    const r = await it.next();
+    if (r.done) return null;
+    if (this.closed || it !== this.it) { r.value.close(); return null; }
+    return r.value;
+  }
+
+  /** Stops the running decoder and forgets its samples; the next read seeks afresh. */
+  private async reset(): Promise<void> {
+    const it = this.it;
+    this.it = null;
+    this.drop();
+    await it?.return().catch(() => undefined);
+  }
+
+  /**
+   * A sample can be closed under us: the browser reclaims a phone's hardware decoder, or Mediabunny's iterator closes
+   * the last frame of a clip on cleanup. That used to surface as "VideoSample is closed"; now decoding restarts once.
+   */
+  private async readSafe(t: number, fast: boolean): Promise<StreamFrame | null> {
+    try {
+      return await this.read(t, fast);
+    } catch (e) {
+      if (this.closed) return null;
+      if (!/closed/i.test(errorText(e))) throw e;
+      await this.reset();
+      return await this.read(t, fast);
+    }
   }
 
   private drop(): void {
@@ -121,15 +150,16 @@ class VideoStream {
       return f;
     }
     if (far) {
-      await this.it?.return();
-      this.drop();
+      await this.reset();
+      if (this.closed) return null;
       this.it = this.sink.samples(t);
       this.cur = await this.pull();
       this.nxt = this.cur ? await this.pull() : null;
     }
     while (this.nxt && this.nxt.timestamp <= t + 1e-4) {
-      this.cur!.close(); // skipped: never drawn
+      this.cur?.close(); // skipped: never drawn
       this.cur = this.nxt;
+      this.nxt = null;
       this.nxt = await this.pull();
     }
     const c = this.cur;
@@ -139,9 +169,7 @@ class VideoStream {
 
   close(): void {
     this.closed = true;
-    void this.it?.return().catch(() => undefined);
-    this.it = null;
-    this.drop();
+    void this.reset();
   }
 }
 
