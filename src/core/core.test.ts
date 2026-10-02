@@ -138,7 +138,9 @@ describe('timeline', () => {
     const id = clips(p)[0].id;
     p = edit(p, (d) => { trimClip(d, id, 'end', 12); });
     expect(clips(p)[0].duration).toBe(12);
-    p = edit(p, (d) => { placeClip(d, { ...createTextClip(0), id: 'tx' }); splitClip(d, 'tx', 1); });
+    const plain = createTextClip(0);
+    expect([plain.animIn.type, plain.animOut.type]).toEqual(['none', 'none']); // new text has no effects
+    p = edit(p, (d) => { placeClip(d, { ...createTextClip(0), id: 'tx', animIn: { type: 'fade', duration: 0.3 }, animOut: { type: 'fade', duration: 0.3 } }); splitClip(d, 'tx', 1); });
     const texts = p.tracks.find((t) => t.kind === 'overlay')!.clips;
     expect(texts.map((c) => c.kind === 'text' && [c.animIn.type, c.animOut.type])).toEqual([['fade', 'none'], ['none', 'fade']]);
   });

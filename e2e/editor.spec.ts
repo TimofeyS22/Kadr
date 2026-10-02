@@ -747,6 +747,8 @@ test('text style pack and a custom font that survives backup and restore', async
   const styles = page.getByRole('radiogroup', { name: 'Style' }).getByRole('radio');
   expect(await styles.count()).toBeGreaterThanOrEqual(40);
   await page.getByRole('button', { name: 'Done' }).click();
+  // Every photo at 0.6 s: past any style's entrance animation, the same moment the restored project is checked at.
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0.6 * 60; });
   const plain = await photo(page, info);
   await tool(page, 'Edit text').click();
   await page.getByRole('radiogroup', { name: 'Style' }).getByRole('radio', { name: 'Comic' }).click();

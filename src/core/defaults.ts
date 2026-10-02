@@ -76,8 +76,9 @@ export function createTextClip(start = 0, text = 'Your text'): TextClip {
       font: 'inter', size: 0.055, weight: 700, italic: false, color: '#ffffff', align: 'center',
       stroke: null, background: null, shadow: true,
     },
-    animIn: { type: 'fade', duration: 0.3 },
-    animOut: { type: 'fade', duration: 0.3 },
+    // No effects by default: the text simply appears and disappears (animations are opt-in in the Text sheet).
+    animIn: { type: 'none', duration: 0.3 },
+    animOut: { type: 'none', duration: 0.3 },
     transform: defaultTransform(),
     blend: 'normal',
   };

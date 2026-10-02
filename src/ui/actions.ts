@@ -80,7 +80,7 @@ export function addText(): void {
     id = c.id;
   });
   editor().select(id);
-  showFrom(player.time + 0.35); // past the fade-in, so the new text is visible
+  showFrom(player.time); // the new text has no fade-in, so it is visible right where it starts
   editor().openSheet('text');
 }
 
