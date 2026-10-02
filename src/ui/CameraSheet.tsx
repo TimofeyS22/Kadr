@@ -31,11 +31,27 @@ function cameraError(e: unknown): string {
 const pickMime = () => ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
   .find((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m));
 
+/** The front camera is recorded the way the preview shows it: frames are flipped on a canvas, the microphone passes through. */
+function mirrored(s: MediaStream, v: HTMLVideoElement): { stream: MediaStream; stop: () => void } {
+  const c = Object.assign(document.createElement('canvas'), { width: v.videoWidth || 1280, height: v.videoHeight || 720 });
+  const g = c.getContext('2d')!;
+  g.setTransform(-1, 0, 0, 1, c.width, 0);
+  let alive = true;
+  const next = () => { if (!alive) return; if ('requestVideoFrameCallback' in v) v.requestVideoFrameCallback(draw); else requestAnimationFrame(draw); };
+  const draw = () => { if (!alive) return; g.drawImage(v, 0, 0, c.width, c.height); next(); };
+  draw();
+  const out = c.captureStream(30);
+  return {
+    stream: new MediaStream([...out.getVideoTracks(), ...s.getAudioTracks()]),
+    stop: () => { alive = false; stopAll(out); },
+  };
+}
+
 export function CameraSheet() {
   const video = useRef<HTMLVideoElement>(null);
   const prompter = useRef<HTMLDivElement>(null);
   const stream = useRef<MediaStream | null>(null);
-  const rec = useRef<{ recorder: MediaRecorder; chunks: Blob[]; lock: WakeLock | null } | null>(null);
+  const rec = useRef<{ recorder: MediaRecorder; chunks: Blob[]; lock: WakeLock | null; mirror: { stop: () => void } | null } | null>(null);
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
   const [state, setState] = useState<State>('starting');
   const [error, setError] = useState('');
@@ -74,7 +90,7 @@ export function CameraSheet() {
   // Leaving the screen mid-recording discards the take and frees everything.
   useEffect(() => () => {
     const r = rec.current;
-    if (r) { r.recorder.ondataavailable = null; if (r.recorder.state !== 'inactive') r.recorder.stop(); void r.lock?.release().catch(() => undefined); }
+    if (r) { r.recorder.ondataavailable = null; if (r.recorder.state !== 'inactive') r.recorder.stop(); r.mirror?.stop(); void r.lock?.release().catch(() => undefined); }
   }, []);
 
   // Countdown → recording.
@@ -89,11 +105,12 @@ export function CameraSheet() {
   useEffect(() => {
     if (state !== 'recording') return;
     const t0 = performance.now();
-    let last = t0, raf = 0;
+    let last = t0, raf = 0, pos = 0; // pos keeps the fractional scroll: scrollTop rounds small per-frame steps away
     const tick = (now: number) => {
       const s = (now - t0) / 1000;
       setElapsed(s);
-      if (prompter.current) prompter.current.scrollTop += ((now - last) / 1000) * speed * size * 1.3;
+      pos += ((now - last) / 1000) * speed * size * 1.3;
+      if (prompter.current) prompter.current.scrollTop = pos;
       last = now;
       if (s >= MAX_S) { void stop(); return; }
       raf = requestAnimationFrame(tick);
@@ -115,16 +132,17 @@ export function CameraSheet() {
     if (!s) return;
     try {
       const mime = pickMime();
-      const recorder = new MediaRecorder(s, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
+      const mirror = facing === 'user' && video.current ? mirrored(s, video.current) : null;
+      const recorder = new MediaRecorder(mirror?.stream ?? s, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
       const chunks: Blob[] = [];
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
       recorder.start(1000); // 1 s chunks: memory stays flat and a crash loses at most a second
-      rec.current = { recorder, chunks, lock: null };
+      rec.current = { recorder, chunks, lock: null, mirror };
       const wl = (navigator as Navigator & { wakeLock?: { request(t: 'screen'): Promise<WakeLock> } }).wakeLock;
       void wl?.request('screen').then((l) => { if (rec.current) rec.current.lock = l; else void l.release(); }, () => undefined);
       setElapsed(0);
       setState('recording');
-      track('camera_recording_started', { facing, script: script.length > 0 });
+      track('camera_recording_started', { facing, mirrored: !!mirror, script: script.length > 0 });
     } catch (e) {
       setError(cameraError(e));
       setState('error');
@@ -136,6 +154,7 @@ export function CameraSheet() {
     if (!r) return;
     setState('saving');
     await new Promise<void>((res) => { r.recorder.onstop = () => res(); r.recorder.stop(); });
+    r.mirror?.stop();
     void r.lock?.release().catch(() => undefined);
     rec.current = null;
     const type = r.recorder.mimeType || r.chunks[0]?.type || 'video/webm';

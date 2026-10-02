@@ -595,9 +595,9 @@ test('multi-select: pick clips on several tracks, delete, undo, duplicate', asyn
   await expect(page.locator('.clip.picked')).toHaveCount(0);
 });
 
-test('camera with teleprompter records a clip onto the main track and releases the camera', async ({ page }, info) => {
+test('camera with teleprompter scrolls the script, records a mirrored clip onto the main track and releases the camera', async ({ page }, info) => {
   test.setTimeout(120_000);
-  // A synthetic camera: a moving canvas plus a tone, so the test runs headless on both engines.
+  // A synthetic camera: white left half, black right half, a moving strip on top, plus a tone, so the test runs headless.
   await page.addInitScript(() => {
     const w = window as unknown as { __tracks: MediaStreamTrack[] };
     w.__tracks = [];
@@ -605,7 +605,11 @@ test('camera with teleprompter records a clip onto the main track and releases t
       const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
       const g = c.getContext('2d')!;
       let f = 0;
-      setInterval(() => { g.fillStyle = `hsl(${(f++ * 7) % 360} 70% 50%)`; g.fillRect(0, 0, 640, 360); }, 33);
+      setInterval(() => {
+        g.fillStyle = '#000'; g.fillRect(0, 0, 640, 360);
+        g.fillStyle = '#fff'; g.fillRect(0, 0, 320, 360);
+        g.fillStyle = `hsl(${(f++ * 7) % 360} 70% 50%)`; g.fillRect(0, 0, 640, 20);
+      }, 33);
       const ctx = new AudioContext();
       const osc = ctx.createOscillator();
       const dest = ctx.createMediaStreamDestination();
@@ -624,6 +628,7 @@ test('camera with teleprompter records a clip onto the main track and releases t
   await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
   await expect(page.getByLabel('Teleprompter')).toContainText('teleprompter test');
   await page.waitForTimeout(2500);
+  expect(await page.getByLabel('Teleprompter').evaluate((el) => el.scrollTop), 'the script scrolls while recording').toBeGreaterThan(20);
   await page.getByRole('button', { name: 'Stop recording' }).click();
   await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
   expect(await page.evaluate(() => (window as unknown as { __tracks: MediaStreamTrack[] }).__tracks.every((tr) => tr.readyState === 'ended'))).toBe(true);
@@ -631,6 +636,11 @@ test('camera with teleprompter records a clip onto the main track and releases t
   const pr = await probe(file);
   expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
   expect(Number(pr.format.duration)).toBeGreaterThan(1.5);
+  // The front camera is recorded as the mirrored preview shows it: the white half ends up on the right.
+  const { execFileSync } = await import('node:child_process');
+  const g = execFileSync('ffmpeg', ['-v', 'error', '-ss', '1', '-i', file, '-frames:v', '1', '-vf', 'scale=90:160', '-f', 'rawvideo', '-pix_fmt', 'gray', '-']);
+  const mean = (x0: number, x1: number) => { let sum = 0; for (let x = x0; x < x1; x++) sum += g[80 * 90 + x]; return sum / (x1 - x0); };
+  expect(mean(55, 85), 'right side is the white half').toBeGreaterThan(mean(5, 35) + 100);
 });
 
 test('Russian text renders in each chosen font, not a fallback', async ({ page }, info) => {
