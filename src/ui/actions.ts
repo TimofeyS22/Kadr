@@ -63,6 +63,23 @@ export async function addFiles(files: File[], target: AddTarget): Promise<void> 
   });
   if (first) editor().select(first);
   track('media_imported', { count: assets.length, target });
+  if (assets.some((a) => a.kind === 'video')) iosVideoTip();
+}
+
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IOS_TIP_KEY = 'kadr.iosVideoTip';
+
+/**
+ * iOS converts videos picked from Photos ("Automatic" format) before the browser gets them: slow, and the copy can be
+ * softer than the original. Kadr itself stores the file untouched, so the fix is in the picker; said once per device.
+ */
+function iosVideoTip(): void {
+  if (!IOS) return;
+  try {
+    if (localStorage.getItem(IOS_TIP_KEY)) return;
+    localStorage.setItem(IOS_TIP_KEY, '1');
+  } catch { return; }
+  editor().toast(t('Tip: iPhone converts videos from Photos before Kadr gets them — that is slow and can lower quality. In the picker tap Options → Current to add the original.'), 'info', 12000);
 }
 
 function clipFor(a: Asset, target: AddTarget): Clip | null {

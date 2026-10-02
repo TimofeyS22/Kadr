@@ -53,7 +53,7 @@ export interface EditorState {
   setTime(t: number): void;
   setPlaying(b: boolean): void;
   setZoom(z: number): void;
-  toast(text: string, kind?: Toast['kind']): void;
+  toast(text: string, kind?: Toast['kind'], ms?: number): void;
   dismiss(id: number): void;
 }
 
@@ -123,10 +123,10 @@ export const useEditor = create<EditorState>()((set, get) => ({
   setTime: (time) => set({ time }),
   setPlaying: (playing) => set({ playing }),
   setZoom: (zoom) => set({ zoom: Math.min(600, Math.max(8, zoom)) }),
-  toast(text, kind = 'info') {
+  toast(text, kind = 'info', ms) {
     const id = ++toastId;
     set((s) => ({ toasts: [...s.toasts.slice(-2), { id, text, kind }] }));
-    setTimeout(() => get().dismiss(id), kind === 'error' ? 6000 : 3000);
+    setTimeout(() => get().dismiss(id), ms ?? (kind === 'error' ? 6000 : 3000));
   },
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }));

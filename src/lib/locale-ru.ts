@@ -193,6 +193,7 @@ export const RU: Record<string, string> = {
   'Scale': 'Масштаб',
   'Rotation': 'Поворот',
   'Spacing': 'Интервалы',
+  'Tip: iPhone converts videos from Photos before Kadr gets them — that is slow and can lower quality. In the picker tap Options → Current to add the original.': 'Совет: iPhone перекодирует видео из «Фото», прежде чем отдать его Kadr. Это долго и может снизить качество. В окне выбора нажмите «Параметры» → «Текущий», чтобы добавить оригинал.',
   'Letter spacing': 'Между буквами',
   'Line spacing': 'Между строками',
   'Padding': 'Отступ от края',
