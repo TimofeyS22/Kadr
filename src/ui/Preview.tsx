@@ -34,6 +34,8 @@ function snapAxis(v: number, half: number, tol: number): { v: number; guide: num
 
 interface Gesture {
   id: string | null;
+  /** The selected layer is being moved from a touch outside it: a tap (no movement) means "done", deselect. */
+  sticky: boolean;
   base: Project | null;
   local: number;
   moved: boolean;
@@ -145,14 +147,26 @@ export function Preview() {
       const c = canvas.current!, r = c.getBoundingClientRect();
       const k = c.width / r.width;
       const px = (e.clientX - r.left) * k, py = (e.clientY - r.top) * k;
-      const sel = useEditor.getState().selection;
+      const { selection: sel, project } = useEditor.getState();
       const hits = player.bounds.filter((b) => inside(b, px, py));
-      // Visible layers win; an invisible one (e.g. text mid fade-in) is picked only when nothing visible is there.
-      const hit = hits.find((b) => b.id === sel) ?? hits.filter((b) => !b.hidden).at(-1) ?? hits.at(-1);
-      const clip = hit ? findClip(useEditor.getState().project!, hit.id)?.clip : undefined;
-      g.current = { id: hit?.id ?? null, base: null, local: clip ? player.time - clip.start : 0, moved: false, anchor: { x: 0, y: 0, dist: 0, angle: 0 }, start: { x: 0, y: 0, scale: 1, rotation: 0 } };
-      if (hit && hit.id !== sel) useEditor.getState().select(hit.id);
-      if (player.playing && hit) player.pause();
+      // Who the finger moves (CapCut-like, but forgiving):
+      //  1. the selected layer when the touch is on it;
+      //  2. another floating layer (text, sticker, overlay) under the finger takes over;
+      //  3. otherwise the selected layer still moves, from anywhere in the frame (no hunting for thin letters);
+      //  4. with nothing selected, whatever is under the finger (the main video included).
+      // Visible layers win; an invisible one (e.g. text mid fade-in) only when nothing visible is there.
+      const isMain = (id: string) => !!project && findClip(project, id)?.track.kind === 'main';
+      const pick = (bs: LayerBounds[]) => bs.filter((b) => !b.hidden).at(-1) ?? bs.at(-1);
+      const selected = sel && player.bounds.some((b) => b.id === sel) ? sel : null;
+      let id: string | null, sticky = false;
+      if (selected && hits.some((b) => b.id === selected)) id = selected;
+      else if (pick(hits.filter((b) => !isMain(b.id)))) id = pick(hits.filter((b) => !isMain(b.id)))!.id;
+      else if (selected) { id = selected; sticky = true; }
+      else id = pick(hits)?.id ?? null;
+      const clip = id && project ? findClip(project, id)?.clip : undefined;
+      g.current = { id, sticky, base: null, local: clip ? player.time - clip.start : 0, moved: false, anchor: { x: 0, y: 0, dist: 0, angle: 0 }, start: { x: 0, y: 0, scale: 1, rotation: 0 } };
+      if (id && id !== sel) useEditor.getState().select(id);
+      if (player.playing && id) player.pause();
     }
     begin();
   };
@@ -267,7 +281,8 @@ export function Preview() {
     pointers.current.delete(e.pointerId);
     const gs = g.current;
     if (pointers.current.size > 0) { begin(); return; } // continue with the remaining finger without a jump
-    if (gs && !gs.moved && !gs.id) useEditor.getState().select(null);
+    // A tap on empty space (or on the video while another layer is selected) finishes editing.
+    if (gs && !gs.moved && (!gs.id || gs.sticky)) useEditor.getState().select(null);
     g.current = null;
     showGuides(null, null);
     showAngle(null);

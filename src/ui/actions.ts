@@ -99,6 +99,16 @@ export function addText(): void {
   editor().select(id);
   showFrom(player.time); // the new text has no fade-in, so it is visible right where it starts
   editor().openSheet('text');
+  moveHintOnce();
+}
+
+/** First time a text or sticker appears: how to move it (it follows the finger from anywhere in the frame). */
+function moveHintOnce(): void {
+  try {
+    if (localStorage.getItem('kadr.hint.move')) return;
+    localStorage.setItem('kadr.hint.move', '1');
+  } catch { return; }
+  editor().toast(t('Drag anywhere in the frame to move it. Tap an empty spot when you are done.'));
 }
 
 /** Splits the selected clip, or the main-track clip under the playhead. */
@@ -234,6 +244,7 @@ export function addSticker(emoji: string): void {
   });
   editor().select(id);
   showFrom(player.time + 0.36);
+  moveHintOnce();
   editor().openSheet(null);
   track('sticker_added');
 }

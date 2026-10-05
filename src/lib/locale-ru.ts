@@ -532,4 +532,5 @@ export const RU: Record<string, string> = {
   'The font file is missing from this device': 'Файла шрифта нет на этом устройстве',
   'Add {label} keyframe': 'Добавить ключевой кадр: {label}',
   'Remove {label} keyframe': 'Убрать ключевой кадр: {label}',
+  'Drag anywhere in the frame to move it. Tap an empty spot when you are done.': 'Тяните в любом месте кадра, чтобы двигать. Нажмите на пустое место, когда закончите.',
 };

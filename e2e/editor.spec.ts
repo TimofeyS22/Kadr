@@ -9,6 +9,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('kadr.tips', '99');
     localStorage.setItem('kadr.locale', 'en');
+    localStorage.setItem('kadr.hint.move', '1');
     // Headless WebKit has no share sheet (share() never settles): take the download path like desktop browsers.
     Object.defineProperty(navigator, 'canShare', { value: undefined });
   });
@@ -1124,4 +1125,38 @@ test('dragging text on a touch screen moves the text, not the page', async ({ pa
   await expect.poll(async () => (await selBox(page).boundingBox())!.y).toBeGreaterThan(b.y + 30);
   expect(await page.evaluate(() => [window.scrollY, document.scrollingElement?.scrollTop ?? 0, visualViewport?.offsetTop ?? 0])).toEqual([0, 0, 0]);
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('TEXTAREA'); // the keyboard went away
+});
+
+test('a new text follows the finger from anywhere; a tap on empty space finishes, then the frame moves', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Text').click();
+  await page.getByRole('textbox', { name: 'Text', exact: true }).fill('Hello');
+  await page.getByRole('button', { name: 'Done' }).click();
+  const before = await stableBox(page);
+  const pv = (await page.locator('.preview-canvas').boundingBox())!;
+  // Drag from the left edge of the frame, well away from the letters: the text moves, not the video.
+  const from = { x: pv.x + 12, y: pv.y + pv.height * 0.5 + 30 };
+  expect(from.x).toBeLessThan(before.x - 10);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 50, from.y - 60, { steps: 8 });
+  await page.mouse.up();
+  const after = await stableBox(page);
+  expect(after.x - before.x).toBeGreaterThan(40);
+  expect(after.y - before.y).toBeLessThan(-45);
+  await expect(tool(page, 'Edit text')).toBeVisible(); // still editing the text
+  // A tap on the video (no movement) finishes: nothing is selected.
+  await page.mouse.click(from.x, from.y);
+  await expect(tool(page, 'Media')).toBeVisible();
+  await expect(selBox(page)).toBeHidden();
+  // Now a drag on the frame takes the video itself.
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 30, from.y, { steps: 6 });
+  await page.mouse.up();
+  await expect(tool(page, 'Crop')).toBeVisible();
+  await expect(selBox(page)).toBeVisible();
 });
