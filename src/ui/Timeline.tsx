@@ -24,10 +24,14 @@ function tapClip(id: string): void {
   else s.select(id);
 }
 const SNAP_PX = 10;
+/** Auto-scroll while dragging: a finger this close to a timeline edge scrolls it, faster towards the edge. */
+const EDGE_PX = 56;
+const EDGE_SPEED = 15; // px per frame at the very edge (≈ 900 px/s)
 
+/** `s0` is the timeline's scrollLeft when the drag began: offsets add the auto-scroll, so the clip stays under the finger. */
 type Drag =
-  | { mode: 'trim'; id: string; edge: 'start' | 'end'; x0: number; t0: number; base: Project }
-  | { mode: 'move'; id: string; x0: number; y0: number; dx: number; dy: number; main: boolean; base: Project };
+  | { mode: 'trim'; id: string; edge: 'start' | 'end'; x0: number; s0: number; t0: number; base: Project }
+  | { mode: 'move'; id: string; x0: number; y0: number; s0: number; dx: number; dy: number; main: boolean; base: Project };
 
 interface Press { id: string; x: number; y: number; pointerId: number; touch: boolean; main: boolean; timer: number }
 
@@ -77,7 +81,7 @@ export function Timeline() {
     ignoreScroll.current = Number.NaN;
     const t = Math.min(duration, Math.max(0, el.scrollLeft / zoom));
     if (player.playing) player.pause();
-    player.seek(t);
+    if (dragRef.current?.mode !== 'trim') player.seek(t); // while trimming, the preview shows the trimmed edge
     useEditor.setState({ time: t });
   };
 
@@ -145,21 +149,55 @@ export function Timeline() {
         else s.commit((dr) => moveClip(dr, d.id, start, trackId));
       }
     };
+    const last = { x: 0, y: 0 };
+    let raf = 0;
+    /** Applies the active drag for a finger at (x, y), including how far the timeline auto-scrolled since it began. */
+    const update = (x: number, y: number) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const dx = x - d.x0 + (scroller.current!.scrollLeft - d.s0);
+      if (d.mode === 'trim') {
+        const t = snap(d.t0 + dx / live.current.zoom, d.id, d.base);
+        const s = useEditor.getState();
+        s.commit((dr) => trimClip(dr, d.id, d.edge, t), `trim:${d.id}`, d.base);
+        // CapCut-style: the preview shows the frame at the edge being trimmed, not the one under the playhead.
+        const f = findClip(useEditor.getState().project!, d.id);
+        if (f) player.seek(d.edge === 'start' ? f.clip.start + 1e-3 : Math.max(f.clip.start, clipEnd(f.clip) - 1 / 30));
+      } else {
+        setDrag({ ...d, dx, dy: y - d.y0 });
+      }
+    };
+    /** Near an edge the timeline scrolls by itself (only during a drag), and the dragged item follows. */
+    const autoScroll = () => {
+      raf = 0;
+      const d = dragRef.current;
+      if (!d) return;
+      const el = scroller.current!, r = el.getBoundingClientRect();
+      // Not before the finger has actually moved: a drag that starts near an edge must not run away on its own.
+      const v = Math.abs(last.x - d.x0) < 12 ? 0 : last.x < r.left + EDGE_PX ? -(r.left + EDGE_PX - last.x) / EDGE_PX : last.x > r.right - EDGE_PX ? (last.x - (r.right - EDGE_PX)) / EDGE_PX : 0;
+      if (v) {
+        const before = el.scrollLeft;
+        el.scrollLeft += Math.max(-1, Math.min(1, v)) * EDGE_SPEED;
+        if (el.scrollLeft !== before) update(last.x, last.y);
+      }
+      raf = requestAnimationFrame(autoScroll);
+    };
     const onMove = (e: PointerEvent) => {
       const d = dragRef.current;
-      if (d?.mode === 'trim') {
-        const t = snap(d.t0 + (e.clientX - d.x0) / live.current.zoom, d.id, d.base);
-        useEditor.getState().commit((dr) => trimClip(dr, d.id, d.edge, t), `trim:${d.id}`, d.base);
+      if (d) {
+        last.x = e.clientX;
+        last.y = e.clientY;
+        update(e.clientX, e.clientY);
+        if (!raf) raf = requestAnimationFrame(autoScroll);
         return;
       }
-      if (d?.mode === 'move') { setDrag({ ...d, dx: e.clientX - d.x0, dy: e.clientY - d.y0 }); return; }
       const p = press.current;
       if (!p || p.pointerId !== e.pointerId) return;
       const moved = Math.hypot(e.clientX - p.x, e.clientY - p.y);
       if (!p.touch && moved > 4) {
         clearTimeout(p.timer);
         press.current = null;
-        setDrag({ mode: 'move', id: p.id, x0: p.x, y0: p.y, dx: 0, dy: 0, main: p.main, base: useEditor.getState().project! });
+        setDrag({ mode: 'move', id: p.id, x0: p.x, y0: p.y, s0: scroller.current!.scrollLeft, dx: 0, dy: 0, main: p.main, base: useEditor.getState().project! });
       } else if (p.touch && moved > 8) {
         clearTimeout(p.timer); // it is a scroll, not a press
         press.current = null;
@@ -171,7 +209,10 @@ export function Timeline() {
       press.current = null;
       if (d) {
         setDrag(null);
+        cancelAnimationFrame(raf);
+        raf = 0;
         if (d.mode === 'move' && e.type === 'pointerup') finishMove(d, e);
+        if (d.mode === 'trim') player.seek(useEditor.getState().time); // back to the playhead
         return;
       }
       if (p && e.type === 'pointerup' && p.pointerId === e.pointerId) tapClip(p.id);
@@ -180,6 +221,7 @@ export function Timeline() {
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
@@ -196,7 +238,7 @@ export function Timeline() {
         press.current = null;
         navigator.vibrate?.(8);
         if (!useEditor.getState().multi) useEditor.getState().select(c.id);
-        setDrag({ mode: 'move', id: c.id, x0: p.x, y0: p.y, dx: 0, dy: 0, main: p.main, base: useEditor.getState().project! });
+        setDrag({ mode: 'move', id: c.id, x0: p.x, y0: p.y, s0: scroller.current!.scrollLeft, dx: 0, dy: 0, main: p.main, base: useEditor.getState().project! });
       }, LONG_PRESS_MS);
     }
     press.current = p;
@@ -205,23 +247,33 @@ export function Timeline() {
   const onTrimDown = (e: RPointerEvent, c: Clip, edge: 'start' | 'end') => {
     e.stopPropagation();
     if (player.playing) player.pause();
-    setDrag({ mode: 'trim', id: c.id, edge, x0: e.clientX, t0: edge === 'start' ? c.start : clipEnd(c), base: useEditor.getState().project! });
+    setDrag({ mode: 'trim', id: c.id, edge, x0: e.clientX, s0: scroller.current!.scrollLeft, t0: edge === 'start' ? c.start : clipEnd(c), base: useEditor.getState().project! });
   };
 
   const x = (t: number) => pad + t * zoom;
+  // Trimming the start of a main-track clip: the magnetic track already closed the gap in the model, so the clip and
+  // everything after it are drawn shifted back by the trimmed amount until release. The left edge follows the finger
+  // and the right edge stays put (it used to be the other way round, which read as "trimming the left trims the right").
+  let shiftFrom = -1, shiftPx = 0;
+  if (drag?.mode === 'trim' && drag.edge === 'start') {
+    const before = findClip(drag.base, drag.id), now = findClip(project, drag.id);
+    if (before && now && now.track.kind === 'main') { shiftFrom = now.index; shiftPx = (before.clip.duration - now.clip.duration) * zoom; }
+  }
+  const shifted = (track: Track, i: number) => (track.kind === 'main' && shiftFrom >= 0 && i >= shiftFrom ? shiftPx : 0);
   const overlays = project.tracks.filter((t) => t.kind === 'overlay').reverse();
   const main = mainTrack(project);
   const audios = project.tracks.filter((t) => t.kind === 'audio');
 
   const row = (track: Track) => (
     <div key={track.id} className={`tl-row ${track.kind}`} style={{ height: ROW_H[track.kind] }} data-track={track.id} data-kind={track.kind}>
-      {track.clips.map((c) => {
+      {track.clips.map((c, i) => {
         const moving = drag?.mode === 'move' && drag.id === c.id;
+        const shift = shifted(track, i);
         return (
           <div
             key={c.id}
             className={`clip clip-${c.kind} ${c.id === selection && !multi ? 'sel' : ''} ${multi?.includes(c.id) ? 'picked' : ''} ${moving ? 'dragging' : ''}`}
-            style={{ left: x(c.start), width: Math.max(2, c.duration * zoom), transform: moving ? `translate(${drag.dx}px, ${drag.dy}px)` : undefined }}
+            style={{ left: x(c.start) + shift, width: Math.max(2, c.duration * zoom), transform: moving ? `translate(${drag.dx}px, ${drag.dy}px)` : undefined }}
             onPointerDown={(e) => onClipDown(e, c, track)}
             data-clip={c.id}
           >
@@ -239,7 +291,7 @@ export function Timeline() {
       {/* Cut buttons sit on clip edges; while a clip is selected its edges belong to the trim handles. */}
       {track.kind === 'main' && track.clips.slice(1).map((c, i) => (selection === c.id || selection === track.clips[i].id) ? null : (
         <button key={`tr-${c.id}`} className={`tr-btn ${'transitionIn' in c && c.transitionIn ? 'on' : ''}`}
-          style={{ left: x(c.start + ('transitionIn' in c && c.transitionIn ? c.transitionIn.duration / 2 : 0)) }}
+          style={{ left: x(c.start + ('transitionIn' in c && c.transitionIn ? c.transitionIn.duration / 2 : 0)) + shifted(track, i + 1) }}
           onClick={() => useEditor.getState().openSheet('transition', c.id)} aria-label={t('Transition')}>
           <Blend size={14} />
         </button>
@@ -259,7 +311,8 @@ export function Timeline() {
         className="tl-scroll" ref={scroller} onScroll={onScroll}
         onClick={(e) => { if (!(e.target as HTMLElement).closest('.clip, button')) useEditor.getState().select(null); }}
       >
-        <div className="tl-content" style={{ width: duration * zoom + vw }}>
+        {/* While dragging, extra room past the end lets a clip be carried (and auto-scrolled) beyond the last one. */}
+        <div className="tl-content" style={{ width: duration * zoom + vw + (drag ? vw / 2 : 0) }}>
           <Ruler duration={duration} zoom={zoom} pad={pad} />
           {overlays.map(row)}
           {row(main)}

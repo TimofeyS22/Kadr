@@ -44,9 +44,12 @@ export function timelineTimeOf(c: MediaClip, s: number): number {
 export const rateAt = (c: MediaClip, t: number): number =>
   c.curve ? c.speed * curveAt(c.curve, timeFractionToU(c.curve, (t - c.start) / c.duration)) : c.speed;
 
+/** Natural voice at any speed is the default (v1.0); only an explicit `keepPitch: false` lets the pitch follow the speed. */
+export const keepsPitch = (c: SoundClip): boolean => c.keepPitch !== false;
+
 /** What the clip's processed sound must contain: d = noise-reduced, p<speed> = pitch-compensated. */
 export const expectedAudioKey = (c: SoundClip): string =>
-  `${c.enhance ? 'e' : c.denoise ? 'd' : ''}${c.keepPitch && c.speed !== 1 && !c.curve ? `p${c.speed}` : ''}`;
+  `${c.enhance ? 'e' : c.denoise ? 'd' : ''}${keepsPitch(c) && c.speed !== 1 && !c.curve ? `p${c.speed}` : ''}`;
 
 /** Asset to play for a clip's sound: the processed one if it matches the clip's settings, else the source. */
 export function soundAssetId(c: SoundClip): string {

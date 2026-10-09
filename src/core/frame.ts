@@ -13,7 +13,7 @@ export type LayerSource =
   | { kind: 'video'; clipId: string; assetId: string; time: number }
   | { kind: 'image'; assetId: string }
   | { kind: 'text'; clip: TextClip; chars: number }
-  | { kind: 'caption'; clip: CaptionClip; words: string[]; active: number }
+  | { kind: 'caption'; clip: CaptionClip; words: string[]; active: number; /** words drawn (reveal layout) */ shown: number }
   | { kind: 'solid'; color: string };
 
 export interface Layer {
@@ -51,6 +51,7 @@ export interface FrameDesc { t: number; background: string; layers: Layer[] }
 const active = (c: Clip, t: number) => t >= c.start && t < clipEnd(c);
 const smooth = (p: number) => p * p * (3 - 2 * p);
 const backOut = (p: number) => 1 + 2.70158 * (p - 1) ** 3 + 1.70158 * (p - 1) ** 2;
+const WORD_POP_S = 0.16;
 
 function textAnim(a: TextAnim, p: number, layer: Layer, clip: TextClip): void {
   if (a.type === 'none' || p >= 1) return;
@@ -99,7 +100,10 @@ export function visualLayer(p: Project, c: VisualClip, t: number): Layer {
   if (c.kind === 'caption') {
     const at = captionAt(c, local);
     layer.fit = 'native';
-    layer.source = { kind: 'caption', clip: c, words: at?.words ?? [], active: at?.active ?? -1 };
+    const words = at?.words ?? [];
+    layer.source = { kind: 'caption', clip: c, words, active: at?.active ?? -1, shown: c.reveal ? (at?.shown ?? 0) : words.length };
+    // One word at a time: each word pops in (CapCut's "bounce"), so the rhythm of speech is visible.
+    if (at && c.wordsPerPage === 1 && !c.reveal && at.since < WORD_POP_S) layer.scale *= 0.75 + 0.25 * backOut(at.since / WORD_POP_S);
     return layer;
   }
   layer.adjust = resolveAdjust(c.adjust, c.filter);

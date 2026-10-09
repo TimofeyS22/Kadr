@@ -129,10 +129,11 @@ export class TextRasterizer {
     return this.cached([text, clip.style, W, H], () => this.render(paragraphs, clip.style, W, H, -1, null));
   }
 
-  getCaption(clip: CaptionClip, words: string[], active: number, W: number, H: number): Drawable | null {
-    if (!words.length) return null;
+  getCaption(clip: CaptionClip, words: string[], active: number, shown: number, W: number, H: number): Drawable | null {
+    if (!words.length || shown <= 0) return null;
     const hl = clip.highlight;
-    return this.cached([words, hl ? active : -1, clip.style, hl, W, H], () => this.render([words], clip.style, W, H, active, hl));
+    const n = Math.min(shown, words.length);
+    return this.cached([words, hl ? active : -1, n, clip.style, hl, W, H], () => this.render([words], clip.style, W, H, active, hl, n));
   }
 
   private cached(keyParts: unknown[], make: () => Drawable | null): Drawable | null {
@@ -150,7 +151,8 @@ export class TextRasterizer {
     return d;
   }
 
-  private render(paragraphs: string[][], s: TextStyle, W: number, H: number, active: number, highlight: string | null): Drawable | null {
+  /** `shown`: only the first words are drawn (the rest keep their place in the layout, so the line never jumps). */
+  private render(paragraphs: string[][], s: TextStyle, W: number, H: number, active: number, highlight: string | null, shown = Infinity): Drawable | null {
     if (!paragraphs.some((p) => p.length)) return null;
     const px = Math.max(4, s.size * H);
     const upper = (w: string) => (s.uppercase ? w.toLocaleUpperCase() : w);
@@ -195,7 +197,7 @@ export class TextRasterizer {
     if (s.stroke && stroke > 0) {
       ctx.strokeStyle = s.stroke.color;
       ctx.lineWidth = stroke * 2;
-      for (const p of positions) drawWord(ctx, words[p.i], p.x, p.y, ls, true);
+      for (const p of positions) if (p.i < shown) drawWord(ctx, words[p.i], p.x, p.y, ls, true);
     }
     if (s.shadow && !s.background) {
       ctx.shadowColor = s.shadowColor ?? 'rgba(0,0,0,0.55)';
@@ -203,6 +205,7 @@ export class TextRasterizer {
       ctx.shadowOffsetY = glow ? 0 : px * 0.05;
     }
     for (const p of positions) {
+      if (p.i >= shown) continue;
       ctx.fillStyle = p.i === active && highlight ? highlight : s.color;
       drawWord(ctx, words[p.i], p.x, p.y, ls, false);
     }

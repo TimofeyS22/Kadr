@@ -4,11 +4,11 @@ import { TEXT_PRESETS } from '../core/presets';
 import { ASPECTS, defaultAdjust, defaultTransform } from '../core/defaults';
 import { FILTERS, adjustRange } from '../core/filters';
 import { CURVE_PRESETS } from '../core/speed';
-import { applyTransitionToAll, expectedAudioKey, findClip, setCurve, setSpeed, setTransition } from '../core/timeline';
+import { applyTransitionToAll, expectedAudioKey, findClip, keepsPitch, setCurve, setSpeed, setTransition } from '../core/timeline';
 import { CurveEditor } from './CurveEditor';
 import {
   ADJUST_KEYS, FONT_IDS as FONT_ID_LIST, TRANSITION_TYPES,
-  type AdjustKey, type AspectId, type BlendMode, type Clip, type FontId, type SoundClip, type TextAnimType, type TextClip, type TextStyle,
+  type AdjustKey, type AspectId, type BlendMode, type Clip, type FontId, type SoundClip, type TextAnimType, type TextClip,
   type Transform, type Transition, type TransitionType,
 } from '../core/types';
 import { TEXT_BG_PADDING, TEXT_LINE_HEIGHT, fontOf, fontWeight, type AnyFontId } from '../engine/text';
@@ -16,6 +16,7 @@ import { errorMessage } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { addCustomFont, detachSelectedAudio, editClip, updateClipSound } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
+import { StyleSwatch } from './swatch';
 import { CameraSheet } from './CameraSheet';
 import { licenseText } from '../core/music';
 import { MusicBody } from './MusicSheet';
@@ -69,7 +70,7 @@ export function Sheets() {
   );
 }
 
-const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 4] as const;
+const SPEEDS = [0.25, 0.5, 1, 1.25, 1.5, 2, 4] as const;
 const toPos = (s: number) => Math.log(s / 0.1) / Math.log(100);
 const fromPos = (p: number) => Math.round(0.1 * 100 ** p * 100) / 100;
 
@@ -224,21 +225,6 @@ function ChromaControls({ clip }: { clip: Extract<Clip, { chroma: unknown }> }) 
 
 const ANIMS: readonly TextAnimType[] = ['none', 'fade', 'rise', 'pop', 'typewriter'];
 const FONT_IDS = FONT_ID_LIST as readonly FontId[];
-
-const rgba = (hex: string, a: number) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`; };
-
-/** A text style drawn as itself on its button: font, colour, outline, background, glow. */
-function StyleSwatch({ style: st, label }: { style: TextStyle; label: string }) {
-  return (
-    <span className="style-swatch" style={{
-      fontFamily: fontOf(st.font).family, fontWeight: fontWeight(st.font, st.weight), fontStyle: st.italic ? 'italic' : undefined,
-      color: st.color, textTransform: st.uppercase ? 'uppercase' : undefined,
-      background: st.background ? rgba(st.background.color, st.background.opacity) : undefined,
-      WebkitTextStroke: st.stroke ? `${Math.max(0.6, st.stroke.width * 8)}px ${st.stroke.color}` : undefined, paintOrder: 'stroke fill',
-      textShadow: st.shadowColor ? `0 0 6px ${st.shadowColor}` : st.shadow ? '0 1px 3px rgba(0, 0, 0, 0.8)' : undefined,
-    }}>{label}</span>
-  );
-}
 
 function TextBody({ clip }: { clip: TextClip }) {
   const fonts = useEditor((st) => st.project?.fonts);
@@ -402,11 +388,11 @@ function DenoiseToggle({ clip }: { clip: SoundClip }) {
 /** Keeps natural pitch at any speed; re-processes (debounced) after the speed changes. */
 function KeepPitchToggle({ clip }: { clip: SoundClip }) {
   const { run, progress } = useSoundJob(clip.id);
-  const stale = !!clip.keepPitch && clip.speed !== 1 && clip.audioKey !== expectedAudioKey(clip);
+  const stale = keepsPitch(clip) && clip.speed !== 1 && clip.audioKey !== expectedAudioKey(clip);
   useEffect(() => {
     if (!stale) return;
     const t = setTimeout(() => void run(() => undefined), 800);
     return () => clearTimeout(t);
   }, [stale, clip.speed]);
-  return progress ?? <Toggle label={t('Keep natural voice pitch')} value={!!clip.keepPitch} onChange={(v) => void run((c) => { c.keepPitch = v; })} />;
+  return progress ?? <Toggle label={t('Keep natural voice pitch')} value={keepsPitch(clip)} onChange={(v) => void run((c) => { c.keepPitch = v; })} />;
 }

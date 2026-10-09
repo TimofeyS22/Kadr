@@ -61,6 +61,7 @@ export function CameraSheet() {
   const [speed, setSpeed] = useState(() => Number(load(`${SCRIPT_KEY}.speed`)) || 1);
   const [size, setSize] = useState(() => Number(load(`${SCRIPT_KEY}.size`)) || 26);
   const [editing, setEditing] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
   // Opens (or re-opens after a flip) the camera; the cleanup stops every track.
   useEffect(() => {
@@ -101,17 +102,14 @@ export function CameraSheet() {
     return () => clearTimeout(id);
   }, [state, count]);
 
-  // Timer, auto-stop at the limit, and the teleprompter scroll (about `speed` lines per second).
+  // Timer and auto-stop at the limit.
   useEffect(() => {
     if (state !== 'recording') return;
     const t0 = performance.now();
-    let last = t0, raf = 0, pos = 0; // pos keeps the fractional scroll: scrollTop rounds small per-frame steps away
+    let raf = 0;
     const tick = (now: number) => {
       const s = (now - t0) / 1000;
       setElapsed(s);
-      pos += ((now - last) / 1000) * speed * size * 1.3;
-      if (prompter.current) prompter.current.scrollTop = pos;
-      last = now;
       if (s >= MAX_S) { void stop(); return; }
       raf = requestAnimationFrame(tick);
     };
@@ -119,9 +117,31 @@ export function CameraSheet() {
     return () => cancelAnimationFrame(raf);
   }, [state]);
 
+  // Teleprompter scroll, about `speed` lines per second: while recording, and as a live preview of the chosen speed
+  // (looping) before it. Changing speed or size mid-preview continues from where the text is.
+  const scrolling = state === 'recording' || (previewing && state === 'ready');
+  useEffect(() => {
+    if (!scrolling) return;
+    let last = performance.now(), raf = 0;
+    let pos = prompter.current?.scrollTop ?? 0; // fractional: scrollTop rounds small per-frame steps away
+    const tick = (now: number) => {
+      pos += ((now - last) / 1000) * speed * size * 1.3;
+      last = now;
+      const el = prompter.current;
+      if (el) {
+        if (state !== 'recording' && pos >= el.scrollHeight - el.clientHeight) pos = 0;
+        el.scrollTop = pos;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [scrolling, speed, size]);
+
   function start() {
     if (!stream.current) return;
     setEditing(false);
+    setPreviewing(false);
     if (prompter.current) prompter.current.scrollTop = 0;
     setCount(3);
     setState('countdown');
@@ -172,7 +192,7 @@ export function CameraSheet() {
   return (
     <section className="camera" role="dialog" aria-label={t('Camera')}>
       <video ref={video} className={`camera-video ${facing === 'user' ? 'mirror' : ''}`} muted playsInline autoPlay />
-      {script && !editing && (
+      {script && (
         <div ref={prompter} className="prompter" style={{ fontSize: size }} aria-label={t('Teleprompter')}>
           <p>{script}</p>
         </div>
@@ -188,11 +208,15 @@ export function CameraSheet() {
             onChange={(v) => { setSpeed(v); save(`${SCRIPT_KEY}.speed`, String(v)); }} />
           <Slider label={t('Text size')} value={size} min={16} max={48} step={1} format={(v) => `${v}`} reset={26}
             onChange={(v) => { setSize(v); save(`${SCRIPT_KEY}.size`, String(v)); }} />
+          <button className="btn" disabled={!script || state !== 'ready'} aria-pressed={previewing}
+            onClick={() => { if (previewing && prompter.current) prompter.current.scrollTop = 0; setPreviewing((x) => !x); }}>
+            {previewing ? t('Stop the test') : t('Test the speed')}
+          </button>
         </div>
       )}
       <div className="camera-bar">
         <button className="icon-btn" onClick={close} disabled={state === 'saving'} aria-label={t('Close camera')}><X size={24} /></button>
-        <button className="icon-btn" onClick={() => setEditing((e) => !e)} disabled={recording || state === 'countdown'} aria-pressed={editing} aria-label={t('Edit script')}><Pencil size={22} /></button>
+        <button className="icon-btn" onClick={() => { setEditing((e) => !e); setPreviewing(false); }} disabled={recording || state === 'countdown'} aria-pressed={editing} aria-label={t('Edit script')}><Pencil size={22} /></button>
         {recording ? (
           <button className="rec-btn on" onClick={() => void stop()} aria-label={t('Stop recording')}><Square size={26} fill="currentColor" /></button>
         ) : (

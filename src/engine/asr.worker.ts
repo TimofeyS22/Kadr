@@ -3,7 +3,7 @@
 // only the model files are downloaded once (and cached by the browser).
 import { AutoModel, Tensor, env, pipeline, type AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 
-export type AsrModel = 'tiny' | 'base';
+export type AsrModel = 'tiny' | 'base' | 'small';
 export type AsrRequest =
   | { type: 'load'; model: AsrModel }
   | { type: 'transcribe'; id: number; audio: Float32Array; language: string | null }

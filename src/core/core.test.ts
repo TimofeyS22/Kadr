@@ -5,7 +5,7 @@ import { createImageClip, createProject, createTextClip, createVideoClip } from 
 import { buildFrame } from './frame';
 import { resolveAdjust } from './filters';
 import {
-  deleteClip, detachAudio, duplicateClip, findClip, insertMain, mainTrack, moveClip, placeClip, projectDuration,
+  deleteClip, detachAudio, duplicateClip, expectedAudioKey, findClip, insertMain, mainTrack, moveClip, placeClip, projectDuration,
   reorderMain, setSpeed, setTransition, splitClip, trimClip,
 } from './timeline';
 import { defaultAdjust } from './defaults';
@@ -138,6 +138,9 @@ describe('timeline', () => {
     const id = clips(p)[0].id;
     p = edit(p, (d) => { trimClip(d, id, 'end', 12); });
     expect(clips(p)[0].duration).toBe(12);
+    const v = createVideoClip(asset('v', 4));
+    expect(expectedAudioKey({ ...v, speed: 1.25 })).toBe('p1.25'); // natural voice by default (v1.0)
+    expect(expectedAudioKey({ ...v, speed: 1.25, keepPitch: false })).toBe('');
     const plain = createTextClip(0);
     expect([plain.animIn.type, plain.animOut.type]).toEqual(['none', 'none']); // new text has no effects
     p = edit(p, (d) => { placeClip(d, { ...createTextClip(0), id: 'tx', animIn: { type: 'fade', duration: 0.3 }, animOut: { type: 'fade', duration: 0.3 } }); splitClip(d, 'tx', 1); });

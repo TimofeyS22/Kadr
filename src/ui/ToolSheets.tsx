@@ -1,12 +1,12 @@
 import { Mic, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { captionPages, wordsFromSegment } from '../core/captions';
+import { CAPTION_LAYOUTS, captionLayout, captionPages, setCaptionLayout, wordsFromSegment, type CaptionLayout } from '../core/captions';
 import { fillerIndices } from '../core/reframe';
 import { wordCutRange } from '../core/silence';
 import { clipEnd, cutTimelineRanges, mainTrack, soundAssetId, sourceTime, timelineTimeOf } from '../core/timeline';
 import { PEAKS_PER_SEC, waveform } from '../engine/media';
 import { createAudioClip } from '../core/defaults';
-import { CAPTION_PRESETS, STICKERS } from '../core/presets';
+import { CAPTION_ACCENT, CAPTION_PRESETS, STICKERS } from '../core/presets';
 import { placeClip } from '../core/timeline';
 import type { CaptionClip, ImageClip, Rect, VideoClip } from '../core/types';
 import { soundEntries } from '../engine/audio';
@@ -19,7 +19,8 @@ import { editor, useEditor } from '../state/store';
 import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles } from './actions';
 import { Chips, Slider, Swatches, Toggle, pct } from './controls';
 import { formatTime } from './format';
-import { t } from '../lib/i18n';
+import { t, useLocale } from '../lib/i18n';
+import { StyleSwatch } from './swatch';
 
 // ---------- Crop ----------
 
@@ -178,7 +179,6 @@ export function StickersBody() {
 
 // ---------- Auto captions ----------
 
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 function progressLabel(p: CaptionProgress): [string, number] {
   if (p.phase === 'download') return [t('Getting the speech model ({mb} MB, once)…', { mb: p.mb }), p.fraction];
@@ -187,10 +187,34 @@ function progressLabel(p: CaptionProgress): [string, number] {
   return [t('Recognizing speech…'), p.fraction];
 }
 
+const LAYOUT_LABELS: Record<CaptionLayout, string> = { phrase: 'Phrase', word: 'Word by word', highlight: 'Highlight the word', reveal: 'Words appear' };
+
+/** Speech language to start with: the interface language, else the device's, else auto-detect. */
+function defaultLanguage(): string {
+  const tag = useLocale.getState().locale === 'ru' ? 'ru' : (navigator.language || '').slice(0, 2).toLowerCase();
+  const byTag: Record<string, string> = { ru: 'russian', en: 'english', es: 'spanish', pt: 'portuguese', de: 'german', fr: 'french', it: 'italian', uk: 'ukrainian', tr: 'turkish', hi: 'hindi', ja: 'japanese' };
+  return byTag[tag] ?? '';
+}
+
+/** Caption look: layout chips plus styles drawn as themselves. Shared by "create" and "edit". */
+function CaptionLook({ layout, preset, onLayout, onPreset }: { layout: CaptionLayout; preset: string | null; onLayout: (l: CaptionLayout) => void; onPreset: (id: string) => void }) {
+  return (
+    <>
+      <h3>{t('Layout')}</h3>
+      <Chips options={CAPTION_LAYOUTS} value={layout} onChange={onLayout} render={(l) => t(LAYOUT_LABELS[l])} />
+      <h3>{t('Style')}</h3>
+      <Chips options={CAPTION_PRESETS.map((x) => x.id)} value={preset} onChange={onPreset} scroll label={t('Style')}
+        render={(id) => { const pr = CAPTION_PRESETS.find((x) => x.id === id)!; return <StyleSwatch style={pr.style} label={t(pr.name)} />; }} />
+    </>
+  );
+}
+
 export function CaptionsBody() {
-  const [model, setModel] = useState<AsrModel>(isIOS ? 'tiny' : 'base');
-  const [lang, setLang] = useState('');
+  // "Accurate" everywhere (v1.0): on Russian speech tiny made 2× the errors of base (eval in docs/02); tiny stays a choice.
+  const [model, setModel] = useState<AsrModel>('base');
+  const [lang, setLang] = useState(defaultLanguage);
   const [preset, setPreset] = useState('pop');
+  const [layout, setLayout] = useState<CaptionLayout>('highlight');
   const [progress, setProgress] = useState<CaptionProgress | null>(null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
@@ -205,8 +229,8 @@ export function CaptionsBody() {
     const started = performance.now();
     try {
       const words = await transcribeProject(p, model, lang || null, setProgress, ac.signal);
-      track('captions_generated', { model, lang: lang || 'auto', words: words.length, seconds: Math.round((performance.now() - started) / 1000) });
-      addCaptions(words, preset);
+      track('captions_generated', { model, lang: lang || 'auto', layout, words: words.length, seconds: Math.round((performance.now() - started) / 1000) });
+      addCaptions(words, preset, layout);
     } catch (e) {
       if ((e as Error).name !== 'AbortError') editor().toast(t('Captions failed: {error}', { error: errorMessage(e) }), 'error');
     } finally {
@@ -232,9 +256,8 @@ export function CaptionsBody() {
       </select>
       <p className="hint">{t('Pick the language if the video mixes languages or the result looks wrong.')}</p>
       <h3>{t('Recognition')}</h3>
-      <Chips options={['tiny', 'base'] as const} value={model} onChange={setModel} render={(m) => `${t(ASR_MODELS[m].label)}, ${ASR_MODELS[m].mb} MB`} />
-      <h3>{t('Style')}</h3>
-      <Chips options={CAPTION_PRESETS.map((x) => x.id)} value={preset} onChange={setPreset} render={(id) => CAPTION_PRESETS.find((x) => x.id === id)!.name} />
+      <Chips options={['tiny', 'base', 'small'] as const} value={model} onChange={setModel} render={(m) => `${t(ASR_MODELS[m].label)}, ${ASR_MODELS[m].mb} MB`} />
+      <CaptionLook layout={layout} preset={preset} onLayout={setLayout} onPreset={setPreset} />
       <p className="hint">{t('Speech is recognized on this device and your audio is never uploaded. The model downloads once and is kept in this browser.')}</p>
       <button className="btn primary big" onClick={() => void run()}>{t('Create captions')}</button>
       <button className="btn" onClick={() => void importSubtitles()}>{t('Import .srt or .vtt')}</button>
@@ -257,10 +280,14 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
 
   return (
     <>
-      <Chips options={CAPTION_PRESETS.map((x) => x.id)} value={clip.preset ?? null} render={(id) => CAPTION_PRESETS.find((x) => x.id === id)!.name}
-        onChange={(id) => e((c) => {
+      <CaptionLook layout={captionLayout(clip)} preset={clip.preset ?? null}
+        onLayout={(l) => e((c) => { setCaptionLayout(c, l, CAPTION_PRESETS.find((x) => x.id === c.preset)?.highlight ?? CAPTION_ACCENT); })}
+        onPreset={(id) => e((c) => {
+          // A new style keeps the chosen layout (phrase, word by word…), only the look changes.
           const pr = CAPTION_PRESETS.find((x) => x.id === id)!;
-          Object.assign(c, { style: { ...pr.style }, highlight: pr.highlight, wordsPerPage: pr.wordsPerPage, preset: pr.id });
+          const l = captionLayout(c);
+          Object.assign(c, { style: { ...pr.style }, preset: pr.id, highlight: c.highlight ? pr.highlight ?? CAPTION_ACCENT : null });
+          setCaptionLayout(c, l, pr.highlight ?? CAPTION_ACCENT);
         })} />
       <Slider label={t('Words at once')} value={clip.wordsPerPage} min={1} max={12} step={1} format={(v) => String(v)} reset={4}
         onChange={(v) => e((c) => { c.wordsPerPage = v; }, 'wpp')} />

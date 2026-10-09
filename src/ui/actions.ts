@@ -1,14 +1,14 @@
 // User-level editing actions shared by the toolbar, sheets and keyboard shortcuts.
-import { captionPages, parseSubtitles, toSrt } from '../core/captions';
+import { captionPages, parseSubtitles, setCaptionLayout, toSrt, type CaptionLayout } from '../core/captions';
 import { anim, createAudioClip, createCaptionClip, createImageClip, createTextClip, createVideoClip, uid } from '../core/defaults';
 import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
 import { fitTrack, type LibraryTrack } from '../core/music';
-import { CAPTION_PRESETS } from '../core/presets';
+import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
   clipEnd, deleteClip, deleteClips, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
   sourceTime, splitClip,
 } from '../core/timeline';
-import type { Asset, CaptionClip, CaptionWord, Clip, SoundClip } from '../core/types';
+import type { Asset, CaptionClip, CaptionWord, Clip, Project, SoundClip } from '../core/types';
 import { prepareClipSound } from '../engine/audiofx';
 import { coverScale, reframeKeys } from '../core/reframe';
 import { saveFile } from '../engine/exporter';
@@ -250,12 +250,13 @@ export function addSticker(emoji: string): void {
 }
 
 /** Adds a caption clip from words in timeline time. */
-export function addCaptions(words: CaptionWord[], presetId = 'pop', wordsPerPage?: number): void {
+export function addCaptions(words: CaptionWord[], presetId = 'pop', layout?: CaptionLayout | { wordsPerPage: number }): void {
   if (!words.length) { editor().toast(t('No speech was found in this video')); return; }
   const preset = CAPTION_PRESETS.find((x) => x.id === presetId) ?? CAPTION_PRESETS[0];
   let id = '';
   editor().commit((d) => {
-    const c = createCaptionClip(words, wordsPerPage ? { ...preset, wordsPerPage } : preset);
+    const c = createCaptionClip(words, typeof layout === 'object' ? { ...preset, ...layout } : preset);
+    if (typeof layout === 'string') setCaptionLayout(c, layout, preset.highlight ?? CAPTION_ACCENT);
     placeClip(d, c);
     id = c.id;
   });
@@ -268,7 +269,7 @@ export async function importSubtitles(): Promise<void> {
   if (!file) return;
   const words = parseSubtitles(await file.text());
   if (!words.length) { editor().toast(t('No subtitles found in this file'), 'error'); return; }
-  addCaptions(words, 'clean', 16); // imported cues keep their own lines
+  addCaptions(words, 'clean', { wordsPerPage: 16 }); // imported cues keep their own lines
   track('subtitles_imported', { words: words.length });
 }
 
@@ -307,6 +308,22 @@ export async function updateClipSound(clipId: string, change: (c: SoundClip) => 
     if (r?.assetId) { g.clip.audioAssetId = r.assetId; g.clip.audioKey = key; }
     else { delete g.clip.audioAssetId; delete g.clip.audioKey; }
   });
+}
+
+/** Clips whose processed sound (natural pitch, noise reduction, voice enhance) is missing or out of date. */
+export const staleSoundClips = (p: Project): SoundClip[] =>
+  p.tracks.flatMap((tr) => tr.clips.filter(isSound)).filter((c) => {
+    const key = expectedAudioKey(c);
+    return key !== '' && !(c.audioKey === key && c.audioAssetId && p.assets[c.audioAssetId]);
+  });
+
+/** Prepares every stale sound (e.g. natural pitch after a speed change), so the export sounds like the settings say. */
+export async function prepareStaleSounds(onProgress: (f: number) => void, signal: AbortSignal): Promise<Project | null> {
+  const stale = staleSoundClips(editor().project!);
+  for (const [i, c] of stale.entries()) {
+    await updateClipSound(c.id, () => undefined, (f) => onProgress((i + f) / stale.length), signal);
+  }
+  return editor().project;
 }
 
 /** Runs a long on-device job with the shared progress overlay; returns null if cancelled. */

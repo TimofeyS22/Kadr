@@ -1160,3 +1160,97 @@ test('a new text follows the finger from anywhere; a tap on empty space finishes
   await expect(tool(page, 'Crop')).toBeVisible();
   await expect(selBox(page)).toBeVisible();
 });
+
+test('trimming the start of a main clip: the left edge follows the finger, the gap closes on release', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4', 'portrait.mp4']);
+  const clip = page.locator('.tl-row.main .clip').nth(1);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Close tools' }).click().catch(() => undefined);
+  await selectClip(page, clip);
+  const b0 = (await clip.boundingBox())!;
+  const h = (await clip.getByLabel('Trim start').boundingBox())!;
+  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(h.x + h.width / 2 + 60, h.y + h.height / 2, { steps: 6 });
+  const mid = (await clip.boundingBox())!;
+  expect(Math.abs(mid.x - (b0.x + 60))).toBeLessThan(4); // left edge under the finger
+  expect(Math.abs(mid.x + mid.width - (b0.x + b0.width))).toBeLessThan(4); // right edge stays
+  await page.mouse.up();
+  await expect.poll(async () => (await clip.boundingBox())!.x).toBeLessThan(b0.x + 3); // gap closed
+  expect((await clip.boundingBox())!.width).toBeLessThan(b0.width - 50);
+});
+
+test('dragging a clip to the edge of the timeline scrolls it', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['long_1.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click().catch(() => undefined);
+  await tool(page, 'Text').click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const text = page.locator('.tl-row .clip-text');
+  const scroller = page.locator('.tl-scroll');
+  const s0 = await scroller.evaluate((el) => el.scrollLeft);
+  const leftOf = () => text.evaluate((el) => parseFloat((el as HTMLElement).style.left)); // timeline (content) px
+  const l0 = await leftOf();
+  const b = (await text.boundingBox())!, view = (await scroller.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(view.x + view.width - 8, b.y + b.height / 2, { steps: 8 }); // into the right edge zone
+  await page.waitForTimeout(1200);
+  const s1 = await scroller.evaluate((el) => el.scrollLeft);
+  expect(s1 - s0).toBeGreaterThan(300); // auto-scrolled
+  const carried = (await text.boundingBox())!;
+  expect(Math.abs(carried.x + carried.width / 2 - (view.x + view.width - 8))).toBeLessThan(20); // under the finger (≤ one frame of scroll behind)
+  await page.mouse.up();
+  // It landed where it was dropped: the finger's own travel plus the auto-scroll, far past what the finger alone allows.
+  const finger = view.x + view.width - 8 - (b.x + b.width / 2);
+  await expect.poll(leftOf).toBeGreaterThan(l0 + finger + 250);
+});
+
+test('speed 1.25× keeps the natural voice pitch by default, also when exporting right away', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']); // 440 Hz tone
+  const video = page.locator('.tl-row.main .clip-video');
+  await selectClip(page, video);
+  await tool(page, 'Speed').click();
+  await page.getByRole('radio', { name: '1.25×' }).click();
+  await expect(page.getByRole('switch', { name: 'Keep natural voice pitch' })).toBeChecked();
+  await page.getByRole('button', { name: 'Done' }).click(); // closed before the sound is processed: export must do it
+  const file = await exportAs(page, info, 'Video', 'Export video');
+  const { execFileSync } = await import('node:child_process');
+  const b = execFileSync('ffmpeg', ['-v', 'error', '-ss', '1', '-t', '2', '-i', file, '-ac', '1', '-ar', '48000', '-f', 'f32le', '-']);
+  const pcm = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
+  let crossings = 0;
+  for (let i = 1; i < pcm.length; i++) if ((pcm[i - 1] < 0) !== (pcm[i] < 0)) crossings++;
+  const hz = crossings / 2 / (pcm.length / 48000);
+  expect(Math.abs(hz - 440)).toBeLessThan(440 * 0.03); // not 550 Hz (pitched up by 1.25×)
+});
+
+test('teleprompter: visible while editing the script, size applies live, speed can be tested', async ({ page }) => {
+  await page.addInitScript(() => {
+    MediaDevices.prototype.getUserMedia = async function () {
+      const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
+      const g = c.getContext('2d')!;
+      setInterval(() => { g.fillStyle = '#345'; g.fillRect(0, 0, 640, 360); }, 33);
+      const ctx = new AudioContext();
+      const dest = ctx.createMediaStreamDestination();
+      ctx.createOscillator().connect(dest);
+      return new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    };
+  });
+  await newProject(page);
+  await tool(page, 'Camera').click();
+  await page.getByRole('button', { name: 'Edit script' }).click();
+  await page.getByRole('textbox', { name: 'Script' }).fill(Array.from({ length: 30 }, (_, i) => `Line number ${i + 1} of the script.`).join('\n'));
+  const prompter = page.getByLabel('Teleprompter');
+  await expect(prompter).toBeVisible(); // not hidden behind the editor any more
+  await page.getByRole('slider', { name: 'Text size' }).fill('40');
+  await expect.poll(() => prompter.evaluate((el) => getComputedStyle(el).fontSize)).toBe('40px');
+  await expect(page.getByRole('button', { name: 'Start recording' })).toBeEnabled({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Test the speed' }).click();
+  await expect.poll(() => prompter.evaluate((el) => el.scrollTop)).toBeGreaterThan(30);
+  await page.getByRole('button', { name: 'Stop the test' }).click();
+  await expect.poll(() => prompter.evaluate((el) => el.scrollTop)).toBe(0);
+});

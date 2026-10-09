@@ -29,7 +29,7 @@ export async function resolveDrawables(
         if (d) out.set(slot, d);
       } else if (s.kind === 'caption') {
         await ensureFont(s.clip.style, s.words.join(' '));
-        const d = text.getCaption(s.clip, s.words, s.active, W, H);
+        const d = text.getCaption(s.clip, s.words, s.active, s.shown, W, H);
         if (d) out.set(slot, d);
       }
     })());

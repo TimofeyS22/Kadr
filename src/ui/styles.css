@@ -335,8 +335,9 @@ h1, h2, h3 { margin: 0; }
 .prompter p { margin: 0 0 34dvh; }
 .countdown { position: absolute; inset: 0; display: grid; place-items: center; font-size: 120px; font-weight: 800; color: #fff; text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6); pointer-events: none; }
 .camera-error { position: absolute; left: 16px; right: 16px; top: 40%; margin: 0; padding: 14px; border-radius: 12px; background: var(--panel); text-align: center; }
-.script-editor { position: absolute; left: 12px; right: 12px; top: calc(12px + var(--safe-top)); display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: var(--panel); }
-.script-editor textarea { min-height: 28dvh; resize: vertical; font: inherit; font-size: 16px; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.script-editor { position: absolute; left: 12px; right: 12px; bottom: calc(96px + var(--safe-bottom)); display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: var(--panel); max-height: calc(60dvh - 96px); overflow-y: auto; }
+.script-editor .btn { margin: 0; }
+.script-editor textarea { min-height: 16dvh; resize: vertical; font: inherit; font-size: 16px; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
 .camera-bar { grid-row: 2; grid-column: 1; z-index: 1; display: flex; align-items: center; justify-content: space-around; gap: 8px;
   padding: 12px 12px calc(12px + var(--safe-bottom)); background: linear-gradient(transparent, rgba(0, 0, 0, 0.7)); }
 .camera-bar .rec-time { min-width: 48px; color: #fff; font-variant-numeric: tabular-nums; }

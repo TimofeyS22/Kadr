@@ -4,7 +4,7 @@ import {
   AudioBufferSource, BufferTarget, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, getFirstEncodableAudioCodec,
 } from 'mediabunny';
 import { Limiter, LoudnessMeter, normalizeGain, voiceChain } from '../core/dsp';
-import { expectedAudioKey } from '../core/timeline';
+import { expectedAudioKey, keepsPitch } from '../core/timeline';
 import type { Asset, AudioClip, Project, SoundClip } from '../core/types';
 import { renderAudioWindow } from './audio';
 import { importFile } from './importer';
@@ -191,7 +191,7 @@ export async function prepareClipSound(p: Project, clip: SoundClip, onProgress: 
   if (!key || !src) return { key, assetId: null, created, derived };
   let proj = p;
   const add = (a: Asset) => { created.push(a); proj = { ...proj, assets: { ...proj.assets, [a.id]: a } }; };
-  const needPitch = !!clip.keepPitch && clip.speed !== 1;
+  const needPitch = keepsPitch(clip) && clip.speed !== 1;
   const clean = !!clip.denoise || !!clip.enhance;
   const pk = `${clip.enhance ? 'e' : clip.denoise ? 'd' : ''}p${clip.speed}`;
   const has = (id: string | undefined) => !!id && !!proj.assets[id];

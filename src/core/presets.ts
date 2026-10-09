@@ -54,12 +54,20 @@ export const TEXT_PRESETS: TextPreset[] = [
 
 export interface CaptionPreset { id: string; name: string; style: TextStyle; highlight: string | null; wordsPerPage: number }
 
+/** Highlight color for layouts that need one when the style has none. */
+export const CAPTION_ACCENT = '#ffd23f';
+
 export const CAPTION_PRESETS: CaptionPreset[] = [
   { id: 'pop', name: 'Pop', style: { ...base, font: 'anton', weight: 400, size: 0.07, uppercase: true, stroke: { color: '#000000', width: 0.1 }, shadow: false }, highlight: '#ffd23f', wordsPerPage: 3 },
   { id: 'clean', name: 'Clean', style: { ...base, size: 0.05 }, highlight: null, wordsPerPage: 6 },
   { id: 'box', name: 'Box', style: { ...base, size: 0.045, background: { color: '#000000', opacity: 0.6 }, shadow: false }, highlight: '#ff5a36', wordsPerPage: 6 },
   { id: 'karaoke', name: 'Karaoke', style: { ...base, weight: 900, size: 0.055, stroke: { color: '#000000', width: 0.06 }, shadow: false }, highlight: '#3bd16f', wordsPerPage: 4 },
   { id: 'minimal', name: 'Minimal', style: { ...base, weight: 400, size: 0.04 }, highlight: null, wordsPerPage: 8 },
+  // v1.0: the looks short-form creators use most.
+  { id: 'bold', name: 'Bold', style: { ...base, font: 'montserrat', weight: 900, size: 0.06, uppercase: true, stroke: { color: '#000000', width: 0.12 }, shadow: false }, highlight: '#ffd23f', wordsPerPage: 3 },
+  { id: 'green', name: 'Green', style: { ...base, font: 'rubik', weight: 900, size: 0.06, uppercase: true, stroke: { color: '#000000', width: 0.1 }, shadow: false }, highlight: '#3bd16f', wordsPerPage: 3 },
+  { id: 'neon', name: 'Neon', style: { ...base, font: 'exo', weight: 700, size: 0.055, color: '#ffffff', shadowColor: '#00b3ff' }, highlight: '#7df9ff', wordsPerPage: 4 },
+  { id: 'bubble', name: 'Bubble', style: { ...base, font: 'rubik', weight: 700, size: 0.05, color: '#111111', background: { color: '#ffffff', opacity: 1, padding: 0.3 }, shadow: false }, highlight: '#e5322d', wordsPerPage: 5 },
 ];
 
 export const STICKERS = ['😂', '🔥', '❤️', '😍', '👍', '🎉', '✨', '😎', '🤯', '😭', '👀', '💯', '🙌', '👏', '🥳', '😱', '🤔', '💥', '⭐', '✅', '❌', '⚡', '🎵', '📍', '👉', '👇', '💡', '🚀', '🌈', '☀️', '🍕', '☕'] as const;

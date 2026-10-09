@@ -20,18 +20,43 @@ export function captionPages(words: CaptionWord[], maxWords: number, maxGap = 0.
   return pages;
 }
 
-/** Page shown at clip-local time `t` and the index of the word being spoken (-1 between words). */
-export function captionAt(c: Pick<CaptionClip, 'words' | 'wordsPerPage'>, t: number): { words: string[]; active: number } | null {
+/**
+ * Page shown at clip-local time `t`: its words, the index of the word being spoken (-1 between words), how many of its
+ * words have started (`shown`, for word-by-word reveal) and the seconds since the page appeared (`since`).
+ */
+export function captionAt(c: Pick<CaptionClip, 'words' | 'wordsPerPage'>, t: number): { words: string[]; active: number; shown: number; since: number } | null {
   const pages = captionPages(c.words, Math.max(1, c.wordsPerPage));
   for (let i = 0; i < pages.length; i++) {
     const p = pages[i];
     const next = pages[i + 1];
     const end = Math.min(p[p.length - 1].t1 + 0.5, next ? next[0].t0 : Infinity);
     if (t >= p[0].t0 && t < end) {
-      return { words: p.map((w) => w.text), active: p.findIndex((w) => t >= w.t0 && t < w.t1) };
+      return {
+        words: p.map((w) => w.text), active: p.findIndex((w) => t >= w.t0 && t < w.t1),
+        shown: p.filter((w) => w.t0 <= t).length, since: t - p[0].t0,
+      };
     }
   }
   return null;
+}
+
+/** How captions appear (v1.0), chosen before and after generating: CapCut-style layouts. */
+export type CaptionLayout = 'phrase' | 'word' | 'highlight' | 'reveal';
+export const CAPTION_LAYOUTS: readonly CaptionLayout[] = ['phrase', 'word', 'highlight', 'reveal'];
+const PHRASE_WORDS = 6, HIGHLIGHT_WORDS = 4;
+
+export function captionLayout(c: Pick<CaptionClip, 'wordsPerPage' | 'highlight' | 'reveal'>): CaptionLayout {
+  if (c.reveal) return 'reveal';
+  if (c.wordsPerPage === 1) return 'word';
+  return c.highlight ? 'highlight' : 'phrase';
+}
+
+/** Applies a layout; `accent` is the highlight color used by the highlight and reveal layouts. */
+export function setCaptionLayout(c: Pick<CaptionClip, 'wordsPerPage' | 'highlight' | 'reveal'>, layout: CaptionLayout, accent: string): void {
+  c.wordsPerPage = layout === 'word' ? 1 : layout === 'phrase' ? PHRASE_WORDS : HIGHLIGHT_WORDS;
+  c.highlight = layout === 'highlight' || layout === 'reveal' ? (c.highlight ?? accent) : null;
+  if (layout === 'reveal') c.reveal = true;
+  else delete c.reveal;
 }
 
 /** Spreads a phrase over [t0, t1] proportionally to word length (for SRT import and plain segments). */
@@ -96,6 +121,8 @@ export function splitWords(words: CaptionWord[], at: number): [CaptionWord[], Ca
 }
 
 export interface VadOptions { on: number; off: number; minSpeech: number; minSilence: number; pad: number }
+// Measured in v1.0 (docs/02, caption eval): lenient thresholds (0.35/0.2, wider padding) made speech under loud music
+// worse (base, RU: WER 28.6% vs 16.9%), because music then reaches Whisper as "speech". These stay.
 export const DEFAULT_VAD: VadOptions = { on: 0.5, off: 0.35, minSpeech: 0.25, minSilence: 0.3, pad: 0.2 };
 
 /** Speech segments (seconds) from per-frame speech probabilities, with hysteresis and padding. */
@@ -128,6 +155,38 @@ export function speechWindows(segments: [number, number][], max = 28): [number, 
     }
   }
   return out;
+}
+
+const normWord = (s: string) => s.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]/gu, '');
+/** Phrases Whisper is known to invent (subtitle credits from its training data); never real speech in a video. */
+const ARTIFACTS = [
+  'субтитры сделал dimatorzok', 'субтитры создавал dimatorzok', 'субтитры делал dimatorzok', 'субтитры подогнал dimatorzok',
+  'редактор субтитров а синецкая корректор а егорова', 'субтитры создавались сообществом amara org',
+  'subtitles by the amara org community', 'transcription by castingwords',
+].map((p) => p.split(' '));
+
+/**
+ * Removes Whisper artifacts: known credit lines and decoding loops (the same 1–6 words repeated, more than three
+ * times for a single word or more than twice for a phrase, is cut back to one occurrence).
+ */
+export function dropArtifacts(words: CaptionWord[]): CaptionWord[] {
+  const keys = words.map((w) => normWord(w.text));
+  const drop = new Set<number>();
+  for (let i = 0; i < words.length; i++) {
+    for (const a of ARTIFACTS) {
+      if (a.every((tok, k) => keys[i + k] !== undefined && (keys[i + k] === tok || (tok === 'dimatorzok' && keys[i + k].startsWith('dima'))))) for (let k = 0; k < a.length; k++) drop.add(i + k);
+    }
+  }
+  for (let n = 1; n <= 6; n++) {
+    for (let i = 0; i + n <= words.length; i++) {
+      const gram = keys.slice(i, i + n).join(' ');
+      if (!gram.trim()) continue;
+      let reps = 1;
+      while (keys.slice(i + reps * n, i + (reps + 1) * n).join(' ') === gram) reps++;
+      if (reps > (n === 1 ? 3 : 2)) { for (let k = i + n; k < i + reps * n; k++) drop.add(k); i += reps * n - 1; }
+    }
+  }
+  return words.filter((_, i) => !drop.has(i));
 }
 
 /** Keeps words whose middle falls inside speech (drops text invented over music or silence). */

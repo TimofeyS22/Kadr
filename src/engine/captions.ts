@@ -1,6 +1,6 @@
 // Auto-captions client: mixes the timeline sound to 16 kHz mono, cuts it into ≤30 s chunks at the
 // quietest moments (so words are not split), and transcribes the chunks in the ASR worker.
-import { alignToSpeech, speechOnset, speechWindows, vadSegments, wordsInSpeech } from '../core/captions';
+import { alignToSpeech, dropArtifacts, speechOnset, speechWindows, vadSegments, wordsInSpeech } from '../core/captions';
 import { projectDuration } from '../core/timeline';
 import type { CaptionWord, Project } from '../core/types';
 import type { AsrModel, AsrRequest, AsrResponse } from './asr.worker';
@@ -11,6 +11,7 @@ export type { AsrModel };
 export const ASR_MODELS: Record<AsrModel, { label: string; mb: number }> = {
   tiny: { label: 'Fast', mb: 41 },
   base: { label: 'Accurate', mb: 77 },
+  small: { label: 'Most accurate', mb: 249 },
 };
 
 export const CAPTION_LANGUAGES: { id: string | null; label: string }[] = [
@@ -117,7 +118,7 @@ export async function transcribeProject(
     for (const x of r.words) words.push({ t0: x.t0 + a0, t1: Math.max(x.t0 + 0.05, x.t1) + a0, text: x.text });
   }
   onProgress({ phase: 'transcribe', fraction: 1 });
-  return alignToSpeech(wordsInSpeech(words, speech), speech, speech.map(([a, b]) => speechOnset(audio, SR, a, b)));
+  return alignToSpeech(dropArtifacts(wordsInSpeech(words, speech)), speech, speech.map(([a, b]) => speechOnset(audio, SR, a, b)));
 }
 
 /** Frees the model memory (the files stay cached for next time). */

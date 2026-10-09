@@ -6,13 +6,14 @@ import {
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
+import { prepareStaleSounds, staleSoundClips } from './actions';
 import { Chips, Sheet, Toggle } from './controls';
 import { t } from '../lib/i18n';
 
 type Format = 'video' | 'photo' | 'gif' | 'audio';
 const FORMATS: Record<Format, string> = { video: 'Video', photo: 'Photo', gif: 'GIF', audio: 'Audio' };
 
-type Phase = { kind: 'setup' } | { kind: 'running'; progress: number } | { kind: 'done'; result: ExportResult } | { kind: 'error'; message: string };
+type Phase = { kind: 'setup' } | { kind: 'running'; progress: number; label?: string } | { kind: 'done'; result: ExportResult } | { kind: 'error'; message: string };
 
 const QUALITY_MBPS: Record<Resolution, number> = { 720: 5, 1080: 10, 1440: 18, 2160: 35 };
 const LABEL: Record<Resolution, string> = { 720: '720p', 1080: '1080p', 1440: '2K', 2160: '4K' };
@@ -57,10 +58,14 @@ export function ExportSheet() {
     try {
       let last = 0;
       const progress = (f: number) => { if (f - last > 0.005 || f === 1) { last = f; setPhase({ kind: 'running', progress: f }); } };
-      const result = format === 'photo' ? await exportFrame(project, player.time, resolution)
-        : format === 'gif' ? await exportGif(project, progress, ac.signal)
-        : format === 'audio' ? await exportAudio(project, loudness, progress, ac.signal)
-        : await exportProject(project, { resolution, fps, quality, loudness }, progress, ac.signal);
+      // Sound with natural pitch (or noise reduction) that is not ready yet is made first, so the file matches the settings.
+      const withSound = format === 'video' || format === 'audio';
+      const p = withSound && staleSoundClips(project).length ? await prepareStaleSounds((f) => setPhase({ kind: 'running', progress: f, label: t('Preparing the sound…') }), ac.signal) : project;
+      if (!p) return;
+      const result = format === 'photo' ? await exportFrame(p, player.time, resolution)
+        : format === 'gif' ? await exportGif(p, progress, ac.signal)
+        : format === 'audio' ? await exportAudio(p, loudness, progress, ac.signal)
+        : await exportProject(p, { resolution, fps, quality, loudness }, progress, ac.signal);
       setPhase({ kind: 'done', result });
       track('export_completed', { resolution, fps, seconds: Math.round(result.seconds), mb: Math.round(result.blob.size / 1e6) });
     } catch (e) {
@@ -126,7 +131,7 @@ export function ExportSheet() {
       {phase.kind === 'running' && (
         <div className="export-progress">
           <div className="progress"><div style={{ width: `${phase.progress * 100}%` }} /></div>
-          <p>{t('{p}% — keep this screen open', { p: Math.round(phase.progress * 100) })}</p>
+          <p>{phase.label && `${phase.label} `}{t('{p}% — keep this screen open', { p: Math.round(phase.progress * 100) })}</p>
           <button className="btn" onClick={() => abort.current?.abort()}>{t('Cancel')}</button>
         </div>
       )}

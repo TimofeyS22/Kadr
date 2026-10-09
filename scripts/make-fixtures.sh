@@ -23,6 +23,20 @@ if command -v say >/dev/null; then
   ff -i en.aiff -f lavfi -t 1.2 -i anullsrc=r=22050:cl=mono -i ru.aiff -filter_complex "[0:a]aresample=48000[a];[1:a]aresample=48000[b];[2:a]aresample=48000[c];[a][b][c]concat=n=3:v=0:a=1" -c:a aac speech_pauses.m4a
   ff -i en.aiff -f lavfi -i "anoisesrc=color=pink:amplitude=0.08:d=12" -filter_complex "[0:a]aresample=48000,apad=pad_dur=2[s];[1:a]aresample=48000[n];[s][n]amix=inputs=2:duration=shortest:normalize=0" -c:a aac noisy_en.m4a
 fi
+# Caption eval (docs/06 M5): a ~40 s vlog read by TTS, clean and under music at about -10 dB (texts in e2e/eval/texts.json).
+if command -v say >/dev/null && [ ! -f eval_ru_music.mp4 ]; then
+  bed=$(ls ../public/music/tracks/*.m4a | head -1)
+  for l in ru en; do
+    v=$([ $l = ru ] && echo Milena || echo Samantha)
+    python3 -c "import json,sys; sys.stdout.write(json.load(open('../e2e/eval/texts.json'))['$l'])" > eval_$l.txt
+    say -v $v -o eval_$l.aiff -f eval_$l.txt
+    d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 eval_$l.aiff)
+    ff -f lavfi -i "color=c=0x223344:s=720x1280:r=30:d=$d" -i eval_$l.aiff -c:v libx264 -pix_fmt yuv420p -c:a aac -ar 48000 -shortest eval_$l.mp4
+    ff -f lavfi -i "color=c=0x223344:s=720x1280:r=30:d=$d" -i eval_$l.aiff -stream_loop -1 -i "$bed" -filter_complex "[1:a]aresample=48000[s];[2:a]aresample=48000,volume=0.35[m];[s][m]amix=inputs=2:duration=first:normalize=0[a]" -map 0:v -map "[a]" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest eval_${l}_music.mp4
+    [ $l = ru ] && ff -f lavfi -i "color=c=0x223344:s=720x1280:r=30:d=$d" -i eval_$l.aiff -stream_loop -1 -i "$bed" -filter_complex "[1:a]aresample=48000[s];[2:a]aresample=48000,volume=1.0[m];[s][m]amix=inputs=2:duration=first:normalize=0[a]" -map 0:v -map "[a]" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest eval_ru_loud.mp4
+    rm -f eval_$l.txt
+  done
+fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
 
 # Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.

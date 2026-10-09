@@ -86,6 +86,7 @@ interface Sound {
   /** Enhance voice (v0.6): noise reduction + voice EQ + compression + loudness -16 LUFS. Implies denoise. */
   enhance?: boolean;
   /** Keep natural pitch when speed != 1 (pre-shifted sound, see engine/audiofx). */
+  /** Natural voice pitch at any speed; on unless explicitly false (default changed in v1.0). */
   keepPitch?: boolean;
   /** Auto-ducking depth 0..1: lower this clip while speech plays in other clips. */
   duck?: number;
@@ -136,6 +137,8 @@ export type CaptionClip = ClipBase & Visual & {
   highlight: string | null;
   wordsPerPage: number;
   preset?: string;
+  /** v1.0: words appear one by one as they are spoken (the line keeps its final layout, so nothing jumps). */
+  reveal?: boolean;
 };
 export type Clip = VideoClip | ImageClip | AudioClip | TextClip | CaptionClip;
 export type VisualClip = VideoClip | ImageClip | TextClip | CaptionClip;

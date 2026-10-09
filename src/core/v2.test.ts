@@ -1,6 +1,6 @@
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
-import { captionAt, captionPages, parseSubtitles, toSrt, wordsFromSegment } from './captions';
+import { CAPTION_LAYOUTS, DEFAULT_VAD, captionAt, dropArtifacts, captionLayout, captionPages, parseSubtitles, setCaptionLayout, toSrt, wordsFromSegment } from './captions';
 import { createCaptionClip, createProject, createVideoClip } from './defaults';
 import { buildFrame } from './frame';
 import { CAPTION_PRESETS } from './presets';
@@ -18,10 +18,29 @@ describe('caption pages', () => {
 
   it('shows the page and the spoken word, and nothing in long gaps', () => {
     const c = { words, wordsPerPage: 5 };
-    expect(captionAt(c, 0.5)).toEqual({ words: ['Hello', 'there.'], active: 1 });
-    expect(captionAt(c, 1.1)).toEqual({ words: ['Hello', 'there.'], active: -1 }); // held 0.5 s after last word
+    expect(captionAt(c, 0.5)).toMatchObject({ words: ['Hello', 'there.'], active: 1, shown: 2 });
+    expect(captionAt(c, 1.1)).toMatchObject({ words: ['Hello', 'there.'], active: -1 }); // held 0.5 s after last word
     expect(captionAt(c, 1.6)).toBeNull();
     expect(captionAt(c, 2.4)?.active).toBe(1);
+  });
+
+  it('layouts: phrase, word by word, highlight, reveal (v1.0)', () => {
+    const c: { wordsPerPage: number; highlight: string | null; reveal?: boolean } = { wordsPerPage: 3, highlight: '#ff0000' };
+    for (const l of CAPTION_LAYOUTS) { setCaptionLayout(c, l, '#00ff00'); expect(captionLayout(c)).toBe(l); }
+    setCaptionLayout(c, 'word', '#00ff00');
+    expect([c.wordsPerPage, c.highlight, c.reveal]).toEqual([1, null, undefined]);
+    setCaptionLayout(c, 'reveal', '#00ff00');
+    expect(c.highlight).toBe('#00ff00');
+    // Reveal: only the words already spoken are counted as shown.
+    expect(captionAt({ words, wordsPerPage: 5 }, words[0].t0 + 0.01)?.shown).toBe(1);
+  });
+
+  it('drops Whisper artifacts: credit lines and decoding loops, keeps real repeats', () => {
+    const w = (s: string) => s.split(' ').map((text, i) => ({ t0: i, t1: i + 0.5, text }));
+    expect(dropArtifacts(w('Привет всем. Субтитры сделал DimaTorzok')).map((x) => x.text)).toEqual(['Привет', 'всем.']);
+    expect(dropArtifacts(w('ну да да да да да ладно')).map((x) => x.text)).toEqual(['ну', 'да', 'ладно']);
+    expect(dropArtifacts(w('да да да')).length).toBe(3); // a real "yes yes yes" stays
+    expect(dropArtifacts(w('I am here I am here I am here I am here')).map((x) => x.text)).toEqual(['I', 'am', 'here']);
   });
 
   it('spreads a phrase over its time proportionally to word length', () => {
@@ -278,8 +297,8 @@ describe('speech detection for captions', () => {
     probs[70] = 0.9; // single frame blip → dropped (too short)
     const seg = vadSegments(probs, f);
     expect(seg.length).toBe(1);
-    expect(seg[0][0]).toBeCloseTo(10 * f - 0.2, 5);
-    expect(seg[0][1]).toBeCloseTo(45 * f + 0.2, 5);
+    expect(seg[0][0]).toBeCloseTo(10 * f - DEFAULT_VAD.pad, 5);
+    expect(seg[0][1]).toBeCloseTo(45 * f + DEFAULT_VAD.pad, 5);
   });
 
   it('groups speech into ≤ 28 s windows and filters words outside speech', () => {
