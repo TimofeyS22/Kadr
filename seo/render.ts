@@ -153,6 +153,9 @@ ${urls.map((u) => `<url><loc>${u}</loc></url>`).join('\n')}
   return files;
 }
 
+/** The app's own <title> (index.html), the same as its Open Graph title. */
+export const APP_TITLE = UI.en.hubTitle;
+
 /** Title, description and Open Graph for the app's own index.html. */
 export function appMeta(site: string): string {
   const ui = UI.en;

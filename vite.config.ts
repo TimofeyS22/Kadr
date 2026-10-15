@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { DEFAULT_SITE, appMeta, buildSite } from './seo/render.ts';
+import { APP_TITLE, DEFAULT_SITE, appMeta, buildSite } from './seo/render.ts';
 
 // Dev-only e2e hook: lets browser tests save an exported file into fixtures/ for ffprobe checks.
 const e2eUpload: Plugin = {
@@ -35,7 +35,7 @@ const site = process.env.KADR_SITE ?? DEFAULT_SITE;
 const taskPages: Plugin = {
   name: 'kadr-task-pages',
   apply: 'build',
-  transformIndexHtml: (html) => html.replace('<title>Kadr</title>', `<title>Kadr — free video editor in your browser</title>\n    ${appMeta(site)}`),
+  transformIndexHtml: (html) => html.replace('<title>Kadr</title>', `<title>${APP_TITLE}</title>\n    ${appMeta(site)}`),
   generateBundle() {
     for (const [fileName, source] of Object.entries(buildSite(site))) this.emitFile({ type: 'asset', fileName, source });
   },
