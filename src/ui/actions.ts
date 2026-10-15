@@ -2,7 +2,7 @@
 import { captionPages, parseSubtitles, setCaptionLayout, toSrt, type CaptionLayout } from '../core/captions';
 import { anim, createAudioClip, createCaptionClip, createImageClip, createTextClip, createVideoClip, uid } from '../core/defaults';
 import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
-import { fitTrack, type LibraryTrack } from '../core/music';
+import { fitTrack, type LibraryTrack, type MusicManifest } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
   clipEnd, deleteClip, deleteClips, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
@@ -433,27 +433,40 @@ export async function addCustomFont(clipId: string): Promise<void> {
 export const musicUrl = (path: string): string => new URL(`${import.meta.env.BASE_URL}music/${path}`, location.origin).href;
 
 /** Downloads a library track (with progress), imports it with its beat grid and puts it under the video. */
-export async function addLibraryTrack(tr: LibraryTrack): Promise<void> {
-  const asset = await withBusy(t('Adding “{title}”…', { title: tr.title }), async (progress, signal) => {
-    const res = await fetch(musicUrl(tr.file), { signal });
-    if (!res.ok || !res.body) throw new MediaError('Could not download the track. Check the connection and try again.');
-    const reader = res.body.getReader();
-    const parts: Uint8Array<ArrayBuffer>[] = [];
-    let got = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      parts.push(value as Uint8Array<ArrayBuffer>);
-      got += value.length;
-      progress(Math.min(0.95, got / tr.bytes));
-    }
-    const a = await importFile(new File(parts, `${tr.title}.m4a`, { type: 'audio/mp4' }), `${tr.title} — ${tr.artist}`);
-    return {
-      ...a,
-      beats: tr.bpm && tr.beats ? { bpm: tr.bpm, times: tr.beats } : undefined,
-      library: { id: tr.id, title: tr.title, artist: tr.artist, license: tr.license, licenseUrl: tr.licenseUrl, source: tr.source },
-    } satisfies Asset;
+let manifest: Promise<MusicManifest> | null = null;
+export function loadManifest(): Promise<MusicManifest> {
+  manifest ??= fetch(musicUrl('music.json')).then((r) => {
+    if (!r.ok) throw new Error('The music library is not available right now');
+    return r.json() as Promise<MusicManifest>;
   });
+  manifest.catch(() => { manifest = null; });
+  return manifest;
+}
+
+/** Downloads a library track (cached by the service worker afterwards) and stores it as a project asset. */
+export async function downloadLibraryTrack(tr: LibraryTrack, progress: (f: number) => void, signal: AbortSignal): Promise<Asset> {
+  const res = await fetch(musicUrl(tr.file), { signal });
+  if (!res.ok || !res.body) throw new MediaError('Could not download the track. Check the connection and try again.');
+  const reader = res.body.getReader();
+  const parts: Uint8Array<ArrayBuffer>[] = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value as Uint8Array<ArrayBuffer>);
+    got += value.length;
+    progress(Math.min(0.95, got / tr.bytes));
+  }
+  const a = await importFile(new File(parts, `${tr.title}.m4a`, { type: 'audio/mp4' }), `${tr.title} — ${tr.artist}`);
+  return {
+    ...a,
+    beats: tr.bpm && tr.beats ? { bpm: tr.bpm, times: tr.beats } : undefined,
+    library: { id: tr.id, title: tr.title, artist: tr.artist, license: tr.license, licenseUrl: tr.licenseUrl, source: tr.source },
+  } satisfies Asset;
+}
+
+export async function addLibraryTrack(tr: LibraryTrack): Promise<void> {
+  const asset = await withBusy(t('Adding “{title}”…', { title: tr.title }), (progress, signal) => downloadLibraryTrack(tr, progress, signal));
   if (!asset) return;
   const s = editor();
   const p = s.project;

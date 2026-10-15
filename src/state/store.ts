@@ -5,7 +5,7 @@ import type { Project } from '../core/types';
 
 export type SheetId =
   | 'speed' | 'volume' | 'adjust' | 'filters' | 'transform' | 'text' | 'transition' | 'canvas' | 'export'
-  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera' | 'music';
+  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera' | 'music' | 'reel';
 
 export interface Toast { id: number; text: string; kind: 'info' | 'error' }
 /** A long on-device job (reverse, cutout model load…) shown as a progress bar with Cancel. */
@@ -26,6 +26,10 @@ export interface EditorState {
   /** Clip whose incoming transition the transition sheet edits. */
   transitionFor: string | null;
   sheet: SheetId | null;
+  /** Task to start once the next project loads (home card, deep link, share target), see ui/tasks.ts. */
+  startTask: import('../ui/tasks').TaskId | null;
+  /** The sheet that opens should run by itself (the reel). */
+  startAuto: boolean;
   time: number;
   playing: boolean;
   /** Timeline zoom, px per second. */
@@ -71,6 +75,8 @@ export const useEditor = create<EditorState>()((set, get) => ({
   selection: null,
   transitionFor: null,
   sheet: null,
+  startTask: null,
+  startAuto: false,
   time: 0,
   playing: false,
   zoom: 60,

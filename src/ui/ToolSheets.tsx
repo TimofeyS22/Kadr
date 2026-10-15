@@ -190,7 +190,7 @@ function progressLabel(p: CaptionProgress): [string, number] {
 const LAYOUT_LABELS: Record<CaptionLayout, string> = { phrase: 'Phrase', word: 'Word by word', highlight: 'Highlight the word', reveal: 'Words appear' };
 
 /** Speech language to start with: the interface language, else the device's, else auto-detect. */
-function defaultLanguage(): string {
+export function defaultLanguage(): string {
   const tag = useLocale.getState().locale === 'ru' ? 'ru' : (navigator.language || '').slice(0, 2).toLowerCase();
   const byTag: Record<string, string> = { ru: 'russian', en: 'english', es: 'spanish', pt: 'portuguese', de: 'german', fr: 'french', it: 'italian', uk: 'ukrainian', tr: 'turkish', hi: 'hindi', ja: 'japanese' };
   return byTag[tag] ?? '';

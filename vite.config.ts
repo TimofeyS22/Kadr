@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { DEFAULT_SITE, appMeta, buildSite } from './seo/render.ts';
 
 // Dev-only e2e hook: lets browser tests save an exported file into fixtures/ for ffprobe checks.
 const e2eUpload: Plugin = {
@@ -29,6 +30,17 @@ const dropDevOrt: Plugin = {
   closeBundle() { rmSync(join(import.meta.dirname, 'dist', 'ort'), { recursive: true, force: true }); },
 };
 
+// Task pages, sitemap and robots.txt (docs/08 C) next to the app, plus the app's own description and Open Graph.
+const site = process.env.KADR_SITE ?? DEFAULT_SITE;
+const taskPages: Plugin = {
+  name: 'kadr-task-pages',
+  apply: 'build',
+  transformIndexHtml: (html) => html.replace('<title>Kadr</title>', `<title>Kadr — free video editor in your browser</title>\n    ${appMeta(site)}`),
+  generateBundle() {
+    for (const [fileName, source] of Object.entries(buildSite(site))) this.emitFile({ type: 'asset', fileName, source });
+  },
+};
+
 export default defineConfig({
   // GitHub Pages serves the app from /<repo>/; CI sets KADR_BASE=/Kadr/.
   base: process.env.KADR_BASE ?? '/',
@@ -36,6 +48,7 @@ export default defineConfig({
     react(),
     e2eUpload,
     dropDevOrt,
+    taskPages,
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
@@ -48,11 +61,19 @@ export default defineConfig({
         display: 'standalone',
         orientation: 'portrait',
         icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
+        // Android: "Share → Kadr" from the gallery (installed PWA). Handled by public/share-target.js (docs/08 B).
+        share_target: {
+          action: 'share-target', method: 'POST', enctype: 'multipart/form-data',
+          params: { files: [{ name: 'media', accept: ['video/*', 'image/*', 'audio/*'] }] },
+        },
       },
       workbox: {
+        importScripts: ['share-target.js'],
         globPatterns: ['**/*.{js,css,html,svg}', '**/inter-*.woff2'],
         // On-device AI (speech model runtime, noise reduction) is large: cache it on first use instead of up front.
-        globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision_bundle-*.js', 'mediapipe/**', 'models/**'],
+        globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision_bundle-*.js', 'mediapipe/**', 'models/**', 'ru/**', 'en/**'],
+        // Task pages are plain pages from the network, never the app shell.
+        navigateFallbackDenylist: [/\/(ru|en)\//],
         maximumFileSizeToCacheInBytes: 4_000_000,
         runtimeCaching: [
           {
@@ -84,5 +105,5 @@ export default defineConfig({
   ],
   // Pre-bundle lazily imported packages so the dev server doesn't reload the page when they are first used.
   optimizeDeps: { include: ['@huggingface/transformers', '@soundtouchjs/core', '@mediapipe/tasks-vision', '@shiguredo/rnnoise-wasm', 'fflate'] },
-  test: { include: ['src/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.ts', 'seo/**/*.test.ts'] },
 });

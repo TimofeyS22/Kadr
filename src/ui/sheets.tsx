@@ -20,6 +20,7 @@ import { StyleSwatch } from './swatch';
 import { CameraSheet } from './CameraSheet';
 import { licenseText } from '../core/music';
 import { MusicBody } from './MusicSheet';
+import { ReelBody } from './ReelSheet';
 import { ExportSheet } from './ExportSheet';
 import { EffectsBody, LutSection, PrivacyBody } from './FxSheets';
 import { CaptionEditBody, CaptionsBody, CropBody, StickersBody, VoiceoverBody } from './ToolSheets';
@@ -34,7 +35,7 @@ const TITLES: Record<SheetId, string> = {
   speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform & keyframes',
   text: 'Text', transition: 'Transition', canvas: 'Canvas', export: 'Export',
   crop: 'Crop', captions: 'Auto captions', captionEdit: 'Captions', voiceover: 'Voice-over', stickers: 'Stickers',
-  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music',
+  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap',
 };
 
 export function Sheets() {
@@ -44,6 +45,7 @@ export function Sheets() {
   if (sheet === 'export') return <ExportSheet />;
   if (sheet === 'camera') return <CameraSheet />;
   if (sheet === 'music') return <Sheet title={TITLES.music}><MusicBody /></Sheet>;
+  if (sheet === 'reel') return <Sheet title={TITLES.reel}><ReelBody /></Sheet>;
   if (sheet === 'canvas') return <Sheet title={TITLES.canvas}><CanvasBody /></Sheet>;
   if (sheet === 'transition') return <Sheet title={TITLES.transition}><TransitionBody /></Sheet>;
   if (sheet === 'captions') return <Sheet title={TITLES.captions}><CaptionsBody /></Sheet>;

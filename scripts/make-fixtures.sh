@@ -37,6 +37,15 @@ if command -v say >/dev/null && [ ! -f eval_ru_music.mp4 ]; then
     rm -f eval_$l.txt
   done
 fi
+# Reel in one tap (docs/08 A): talking with long pauses, an "эээ" and a repeated word; 1.5 s of silence at the start.
+if command -v say >/dev/null && [ ! -f reel_ru.mp4 ]; then
+  python3 -c "import json,sys; sys.stdout.write(json.load(open('../e2e/eval/texts.json'))['reel_ru_say'])" > reel_ru.txt
+  say -v Milena -o reel_ru.aiff -f reel_ru.txt
+  ff -f lavfi -t 1.5 -i anullsrc=r=22050:cl=mono -i reel_ru.aiff -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1,aresample=48000[a]" -map "[a]" reel_ru.wav
+  d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 reel_ru.wav)
+  ff -f lavfi -i "testsrc2=s=720x1280:r=30:d=$d" -i reel_ru.wav -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest reel_ru.mp4
+  rm -f reel_ru.txt reel_ru.wav
+fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
 
 # Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.

@@ -1,4 +1,4 @@
-import { ArchiveRestore, Download, Lock, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { ArchiveRestore, Clapperboard, Download, Lock, Pencil, Plus, Smartphone, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { produce } from 'immer';
 import { ASPECTS, createProject } from '../core/defaults';
@@ -9,6 +9,43 @@ import { useEditor } from '../state/store';
 import { deleteProject, listProjects, loadProject, requestPersistence, saveProject, type ProjectMeta } from '../storage/db';
 import { formatTime } from './format';
 import { t, useLocale } from '../lib/i18n';
+import { useInstall } from './install';
+import { TASKS, isTask, openWithTask, projectFromAssets, type TaskId } from './tasks';
+
+/** The task from a deep link (#/start/<task>, the task pages) or "share" (Android share target, #/share). */
+function useStartRoute(): TaskId | 'share' | null {
+  const read = (): TaskId | 'share' | null => {
+    if (location.hash === '#/share') return 'share';
+    const task = /^#\/start\/([\w-]+)$/.exec(location.hash)?.[1];
+    return isTask(task) ? task : null;
+  };
+  const [r, setR] = useState(read);
+  useEffect(() => {
+    const f = () => setR(read());
+    window.addEventListener('hashchange', f);
+    return () => window.removeEventListener('hashchange', f);
+  }, []);
+  return r;
+}
+
+/** Files shared from another app (parked by public/share-target.js), as File objects; the cache is emptied. */
+let taking = false; // React StrictMode runs effects twice in development; the shared files are taken once
+/** null: another call is already taking them. */
+async function takeSharedFiles(): Promise<File[] | null> {
+  if (taking) return null;
+  if (!('caches' in window)) return [];
+  taking = true;
+  const cache = await caches.open('kadr-share');
+  const keys = await cache.keys();
+  const files: File[] = [];
+  for (const k of keys) {
+    const res = await cache.match(k);
+    if (res) files.push(new File([await res.blob()], decodeURIComponent(res.headers.get('x-file-name') ?? 'shared'), { type: res.headers.get('content-type') ?? '' }));
+    await cache.delete(k);
+  }
+  taking = false;
+  return files;
+}
 
 const ASPECT_HINT: Record<AspectId, string> = {
   '9:16': 'TikTok · Reels · Shorts', '16:9': 'YouTube', '1:1': 'Square', '4:5': 'Instagram feed', '3:4': 'Portrait',
@@ -27,8 +64,47 @@ export function Home() {
   const { locale, setLocale } = useLocale();
   const supported = browserSupported();
 
+  const route = useStartRoute();
+  const install = useInstall();
   const refresh = () => listProjects().then(setProjects).catch((e) => toast(errorMessage(e), 'error'));
   useEffect(() => { void refresh(); void requestPersistence(); }, []);
+  useEffect(() => { if (isTask(route ?? undefined)) track('deeplink_task', { task: route! }); }, [route]);
+
+  /** Media in → a vertical project → the task's tool (shared by the reel card, task links and the share target). */
+  async function fromFiles(files: File[], task: TaskId | null, name: string) {
+    const { importFiles } = await import('../engine/importer');
+    const onError = (n: string, e: unknown) => toast(`${n}: ${errorMessage(e)}`, 'error');
+    setBusy(t('Adding {i} of {n}…', { i: 1, n: files.length }));
+    try {
+      const assets = await importFiles(files, onError, (i, n) => setBusy(t('Adding {i} of {n}…', { i: i + 1, n })));
+      if (assets.length) await openWithTask(projectFromAssets(name, assets), task);
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function startTask(task: TaskId, fromLink = false) {
+    const spec = TASKS[task];
+    track(fromLink ? 'deeplink_started' : 'task_started', { task });
+    if (!spec.accept) { await openWithTask(createProject(t(spec.title), '9:16'), task); return; }
+    const { pickFiles } = await import('../engine/importer');
+    const files = await pickFiles(spec.accept);
+    if (files.length) await fromFiles(files, task, t(spec.title));
+  }
+
+  // Android "Share → Kadr": the files are waiting in the cache.
+  useEffect(() => {
+    if (route !== 'share') return;
+    history.replaceState(null, '', location.pathname + location.hash); // drop ?shared=N
+    void takeSharedFiles().then((files) => {
+      if (!files) return;
+      track('share_target_received', { files: files.length, kinds: [...new Set(files.map((f) => f.type.split('/')[0]))].join(',') });
+      if (files.length) void fromFiles(files, null, t('Shared video'));
+      else { history.replaceState(null, '', location.pathname); toast(t('Nothing to add was shared')); }
+    }).catch((e) => toast(errorMessage(e), 'error'));
+  }, [route]);
 
   async function create(aspect: AspectId) {
     const p = createProject(t('Project {n}', { n: (projects?.length ?? 0) + 1 }), aspect);
@@ -153,13 +229,32 @@ export function Home() {
         </div>
       )}
 
+      {isTask(route ?? undefined) && !busy && (
+        <div className="task-banner">
+          <b>{t(TASKS[route as TaskId].title)}</b>
+          <button className="btn primary big" disabled={!supported} onClick={() => void startTask(route as TaskId, true)}>
+            {TASKS[route as TaskId].accept ? t('Choose a video') : t('Open')}
+          </button>
+          <button className="btn" onClick={() => { location.hash = ''; }}>{t('Not now')}</button>
+        </div>
+      )}
+
+      {!busy && !isTask(route ?? undefined) && (
+        <button className="reel-card" disabled={!supported} onClick={() => void startTask('reel')}>
+          <Clapperboard size={28} aria-hidden />
+          <span><b>{t('Reel in 1 tap')}</b><small>{t('Pick a video of you talking: pauses and “um”s go, captions, zooms and music come.')}</small></span>
+        </button>
+      )}
+
       {busy ? <div className="banner">{busy}</div> : (
         <div className="home-actions">
           <button className="btn primary big" disabled={!supported} onClick={() => setPicking((v) => !v)}><Plus size={20} /> {t('New project')}</button>
           <button className="btn big" disabled={!supported} onClick={() => void sample()}><Sparkles size={18} /> {t('Try a sample')}</button>
           <button className="btn big" onClick={() => void restore()}><ArchiveRestore size={18} /> {t('Restore backup')}</button>
+          {install && <button className="btn big" onClick={() => void install()}><Smartphone size={18} /> {t('Install Kadr')}</button>}
         </div>
       )}
+      {install && !busy && <p className="hint">{t('Installed, Kadr shows up in “Share” in your gallery: send a video straight to the editor.')}</p>}
 
       {picking && !busy && (
         <div className="aspect-grid" role="list">

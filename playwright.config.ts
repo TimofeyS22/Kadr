@@ -18,13 +18,13 @@ export default defineConfig({
     timeout: 600_000, // the production build can take minutes on a busy Mac
   },
   projects: [
-    { name: 'iphone-webkit', use: { ...devices['iPhone 15'] }, testIgnore: /perf\.spec|captions-eval/ },
-    { name: 'android-chromium', use: { ...devices['Pixel 7'] }, testIgnore: /perf\.spec|captions-eval/ },
+    { name: 'iphone-webkit', use: { ...devices['iPhone 15'] }, testIgnore: /perf\.spec|-eval\.spec/ },
+    { name: 'android-chromium', use: { ...devices['Pixel 7'] }, testIgnore: /perf\.spec|-eval\.spec/ },
     // `npm run perf`: the 4-minute benchmark from docs/04 (Chromium, CPU slowed 4× like a mid-range phone).
     // Real GPU (headless defaults to software SwiftShader, which inflates frame costs far beyond any phone).
     // Only with `npm run perf` (PERF=1), so a plain `playwright test` stays functional.
-    // `EVAL=1 npx playwright test --project eval`: caption quality per speech model (docs/06 M5).
-    ...(process.env.EVAL ? [{ name: 'eval', use: { ...devices['Pixel 7'] }, testMatch: /captions-eval\.spec/ }] : []),
+    // `EVAL=1 npx playwright test --project eval`: caption quality per speech model (docs/06 M5) and the reel (docs/08 A).
+    ...(process.env.EVAL ? [{ name: 'eval', use: { ...devices['Pixel 7'] }, testMatch: /-eval\.spec/ }] : []),
     ...(process.env.PERF ? [{ name: 'perf', use: { ...devices['Pixel 7'], launchOptions: { args: ['--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] } }, testMatch: /perf\.spec/ }] : []),
   ],
 });

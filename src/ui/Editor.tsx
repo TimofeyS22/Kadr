@@ -1,6 +1,7 @@
 import { produce } from 'immer';
 import { ChevronLeft, Pause, Play, Redo2, Smartphone, Undo2, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { runStartTask } from './tasks';
 import { normalizeProject, projectDuration } from '../core/timeline';
 import type { Project } from '../core/types';
 import { player } from '../engine/player';
@@ -40,6 +41,8 @@ export function Editor({ id }: { id: string }) {
       if (!alive) return;
       if (!p) { setMissing(true); return; }
       useEditor.getState().open(produce(p, (d) => { normalizeProject(d); }));
+      const task = useEditor.getState().startTask;
+      if (task) { useEditor.setState({ startTask: null }); runStartTask(task); }
       // The user's own fonts: register, then redraw text that may have used a fallback meanwhile.
       if (p.fonts) void import('../engine/customFonts').then((m) => m.registerProjectFonts(p)).then(() => { player.text.clear(); player.requestRender(); });
       track('project_opened', { clips: p.tracks.reduce((n, t) => n + t.clips.length, 0) });

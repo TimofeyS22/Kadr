@@ -1,28 +1,18 @@
 // Built-in music library (docs/05 M1): public-domain tracks by mood, one-tap preview, add under the video.
 import { Play, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { MOODS, type LibraryTrack, type Mood, type MusicManifest } from '../core/music';
+import { MOODS, type LibraryTrack, type Mood } from '../core/music';
 import { player } from '../engine/player';
 import { t } from '../lib/i18n';
 import { errorMessage } from '../lib/telemetry';
-import { addLibraryTrack, musicUrl } from './actions';
+import { addLibraryTrack, loadManifest, musicUrl } from './actions';
 import { Chips } from './controls';
 import { formatTime } from './format';
 
-const MOOD_LABEL: Record<Mood | 'all', string> = {
+export const MOOD_LABEL: Record<Mood | 'all', string> = {
   all: 'All', lofi: 'Lo-fi', energetic: 'Energetic', phonk: 'Phonk', cinematic: 'Cinematic',
   calm: 'Calm', happy: 'Happy', game: 'Game', electronic: 'Electronic',
 };
-
-let manifest: Promise<MusicManifest> | null = null;
-function loadManifest(): Promise<MusicManifest> {
-  manifest ??= fetch(musicUrl('music.json')).then((r) => {
-    if (!r.ok) throw new Error('The music library is not available right now');
-    return r.json() as Promise<MusicManifest>;
-  });
-  manifest.catch(() => { manifest = null; });
-  return manifest;
-}
 
 export function MusicBody() {
   const [tracks, setTracks] = useState<LibraryTrack[] | null>(null);

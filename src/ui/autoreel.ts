@@ -1,0 +1,139 @@
+// "Reel in one tap" (docs/08 A): runs the plan from core/autoreel on the open project. Every change is its own
+// history step, so "Undo all" (and plain undo) walks it back; a cancel mid-way restores the project as it was.
+import { fillerCuts, fitWordsToPauses, hookClip, hookText, jumpZoom, pauseCuts, soundMainClips, withoutIndices } from '../core/autoreel';
+import { setCaptionLayout } from '../core/captions';
+import { createAudioClip, createCaptionClip } from '../core/defaults';
+import { fitTrack, type Mood } from '../core/music';
+import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
+import { cutTimelineRanges, mainTrack, placeClip, projectDuration, soundAssetId } from '../core/timeline';
+import type { CaptionWord, Project } from '../core/types';
+import type { AsrModel, CaptionProgress } from '../engine/captions';
+import { MediaError, PEAKS_PER_SEC, waveform } from '../engine/media';
+import { player } from '../engine/player';
+import { t } from '../lib/i18n';
+import { errorMessage, track } from '../lib/telemetry';
+import { editor, useEditor } from '../state/store';
+import { downloadLibraryTrack, loadManifest } from './actions';
+
+export interface ReelOptions {
+  pauses: boolean; fillers: boolean; captions: boolean; preset: string; zoom: boolean; hook: boolean;
+  music: Mood | null; language: string; model: AsrModel;
+}
+export const DEFAULT_REEL: ReelOptions = {
+  pauses: true, fillers: true, captions: true, preset: 'bold', zoom: true, hook: true, music: 'calm', language: '', model: 'base',
+};
+
+export interface ReelReport {
+  steps: number; before: number; after: number; pauses: number; fillers: number; words: number; zoomed: number;
+  hook: string | null; music: string | null; musicError: string | null; noSpeech: boolean; seconds: number;
+}
+
+function speechLabel(p: CaptionProgress): [string, number | null] {
+  if (p.phase === 'download') return [t('Getting the speech model ({mb} MB, once)…', { mb: p.mb }), p.fraction];
+  if (p.phase === 'prepare') return [t('Preparing the sound…'), null];
+  if (p.phase === 'listen') return [t('Finding speech…'), null];
+  return [t('Recognizing speech…'), p.fraction];
+}
+
+/** Runs the reel plan. Throws AbortError on cancel, after undoing whatever it had already changed. */
+export async function makeReel(o: ReelOptions, onProgress: (label: string, f: number | null) => void, signal: AbortSignal): Promise<ReelReport> {
+  const s = editor();
+  const p0 = s.project;
+  if (!p0 || !mainTrack(p0).clips.length) throw new MediaError('Add a video with speech first');
+  player.pause();
+  const started = performance.now();
+  const r: ReelReport = { steps: 0, before: projectDuration(p0), after: 0, pauses: 0, fillers: 0, words: 0, zoomed: 0, hook: null, music: null, musicError: null, noSpeech: false, seconds: 0 };
+  /** One history step; counted only when it changed the project. */
+  const step = (fn: (d: Project) => void) => {
+    const before = editor().project;
+    editor().commit(fn);
+    if (editor().project !== before) r.steps++;
+  };
+  const check = () => { if (signal.aborted) throw new DOMException('Cancelled', 'AbortError'); };
+  track('reel_started', { ...o, music: o.music ?? 'none', clips: mainTrack(p0).clips.length, seconds: Math.round(r.before) });
+  try {
+    const clips = soundMainClips(p0);
+    let words: CaptionWord[] = [];
+    if ((o.captions || o.fillers || o.hook) && clips.length) {
+      const { transcribeProject } = await import('../engine/captions');
+      words = await transcribeProject(p0, o.model, o.language || null, (pr) => onProgress(...speechLabel(pr)), signal);
+    }
+    r.noSpeech = !words.length;
+    check();
+    onProgress(t('Finding pauses…'), null);
+    const peaks = new Map<string, Float32Array>();
+    for (const c of clips) peaks.set(c.id, await waveform(soundAssetId(c)));
+    check();
+    const filler = o.fillers && words.length
+      ? fillerCuts(words, clips, (c) => peaks.get(c.id), PEAKS_PER_SEC)
+      : { ranges: [] as [number, number][], indices: [] as number[] };
+    // All cut ranges are planned on the untouched timeline, before anything moves.
+    const pauseRanges = o.pauses ? clips.flatMap((c) => pauseCuts(c, peaks.get(c.id)!, PEAKS_PER_SEC)) : [];
+    const spoken = fitWordsToPauses(withoutIndices(words, filler.indices), pauseRanges);
+
+    if (o.captions && spoken.length) {
+      const preset = CAPTION_PRESETS.find((x) => x.id === o.preset) ?? CAPTION_PRESETS[0];
+      step((d) => {
+        const c = createCaptionClip(spoken, preset);
+        setCaptionLayout(c, 'highlight', preset.highlight ?? CAPTION_ACCENT);
+        placeClip(d, c);
+      });
+      r.words = spoken.length;
+    }
+    if (pauseRanges.length || filler.ranges.length) {
+      step((d) => { cutTimelineRanges(d, [...pauseRanges, ...filler.ranges]); }); // captions move with the cuts
+      r.pauses = pauseRanges.length;
+      r.fillers = filler.indices.length;
+    }
+    if (o.zoom) step((d) => { r.zoomed = jumpZoom(d); });
+    const hook = o.hook ? hookText(spoken) : null;
+    if (hook) { step((d) => { placeClip(d, hookClip(hook)); }); r.hook = hook; }
+    check();
+
+    if (o.music) {
+      // Music is a bonus: if it can't be fetched (offline), the reel is still done.
+      try {
+        onProgress(t('Adding music…'), 0);
+        const dur = projectDuration(editor().project!);
+        const pool = (await loadManifest()).tracks.filter((x) => x.mood === o.music);
+        const tr = pool.find((x) => x.duration >= dur) ?? [...pool].sort((a, b) => b.duration - a.duration)[0];
+        if (tr) {
+          const asset = await downloadLibraryTrack(tr, (f) => onProgress(t('Adding music…'), f), signal);
+          step((d) => {
+            d.assets[asset.id] = asset;
+            const c = createAudioClip(asset, 0);
+            const fit = fitTrack(asset.duration, dur);
+            c.duration = fit.duration;
+            c.fadeOut = fit.fadeOut;
+            c.volume = 0.5;
+            c.duck = 0.8; // lowered under the voice
+            placeClip(d, c);
+          });
+          r.music = tr.title;
+        }
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') throw e;
+        r.musicError = errorMessage(e);
+      }
+    }
+    r.after = projectDuration(editor().project!);
+    r.seconds = (performance.now() - started) / 1000;
+    track('reel_done', {
+      steps: r.steps, seconds: Math.round(r.seconds), before: Math.round(r.before), after: Math.round(r.after),
+      pauses: r.pauses, fillers: r.fillers, words: r.words, zoomed: r.zoomed, music: !!r.music, noSpeech: r.noSpeech,
+    });
+    editor().select(null);
+    player.seek(0);
+    useEditor.setState({ time: 0 });
+    return r;
+  } catch (e) {
+    undoSteps(r.steps);
+    if ((e as Error).name === 'AbortError') track('reel_cancelled', { steps: r.steps });
+    throw e;
+  }
+}
+
+/** Walks back the reel's own history steps (it made nothing else in between). */
+export function undoSteps(n: number): void {
+  for (let i = 0; i < n; i++) editor().undo();
+}

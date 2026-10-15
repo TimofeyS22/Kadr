@@ -1254,3 +1254,95 @@ test('teleprompter: visible while editing the script, size applies live, speed c
   await page.getByRole('button', { name: 'Stop the test' }).click();
   await expect.poll(() => prompter.evaluate((el) => el.scrollTop)).toBe(0);
 });
+
+test('reel in one tap: from the home card to a shorter reel with captions, title, zooms and music; undo all', async ({ page }, info) => {
+  test.setTimeout(400_000);
+  // Russian speech under the English interface: the speech language comes from the saved reel options.
+  await page.addInitScript(() => localStorage.setItem('kadr.reel', JSON.stringify({ language: 'russian' })));
+  await page.goto('./');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
+  await (await chooser).setFiles(fx('reel_ru.mp4')); // 18.7 s: 1.5 s of silence, long pauses, "эээ", a repeat
+  const done = page.locator('.reel-done');
+  await expect(done).toBeVisible({ timeout: 300_000 }); // started by itself
+  await expect(done).toContainText('0:18');
+  await expect(done).toContainText(/Pauses removed: \d+/);
+  const main = page.locator('.tl-row.main .clip');
+  expect(await main.count()).toBeGreaterThan(2); // cut into pieces
+  await expect(page.locator('.clip-caption')).toHaveCount(1);
+  await expect(page.locator('.tl-row .clip-text')).toHaveCount(1); // the hook title
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1); // music
+  const shorter = Number((await done.locator('.reel-length b').nth(1).textContent())!.split(':')[1]);
+  expect(shorter).toBeLessThan(15);
+  // Undo all: back to the single untouched clip.
+  await page.getByRole('button', { name: 'Undo all' }).click();
+  await expect(main).toHaveCount(1);
+  await expect(page.locator('.clip-caption')).toHaveCount(0);
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(0);
+  // Again, then check it in the editor and in the exported file.
+  await page.getByRole('button', { name: 'Make the reel' }).click();
+  await expect(done).toBeVisible({ timeout: 300_000 });
+  await page.getByRole('button', { name: 'Watch the reel' }).click();
+  await expect(page.locator('.sheet')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Pause' }).click(); // it played from the start
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  await selectClip(page, main.nth(1));
+  await tool(page, 'Transform').click();
+  expect(Number(await page.getByRole('slider', { name: 'Scale' }).inputValue())).toBeCloseTo(1.12, 2); // jump zoom
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: 'Close tools' }).click().catch(() => undefined);
+  await selectClip(page, page.locator('.clip-caption'));
+  await tool(page, 'Edit captions').click();
+  const lines = (await page.locator('.caption-row input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).join(' ').toLowerCase();
+  expect(lines).toContain('смонтировать');
+  expect(lines).not.toMatch(/\bэ{2,}\b/);
+  await page.getByRole('button', { name: 'Done' }).click();
+  const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  expect(Number(pr.format.duration)).toBeLessThan(15);
+  expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
+});
+
+// ---------- v1.1: share target and task pages (docs/08 B, C) ----------
+
+test('share to Kadr (Android): a shared video lands on the timeline of a new project; the share cache is emptied', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Web Share Target is Android Chrome only');
+  await page.goto('./');
+  // The installed service worker (with share-target.js) must control the page, as in the installed PWA.
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await expect.poll(async () => { await page.reload(); return page.evaluate(() => !!navigator.serviceWorker.controller); }).toBe(true);
+  // What Android does on "Share → Kadr": a multipart POST navigation to the manifest's share_target action.
+  await page.evaluate(() => {
+    const f = Object.assign(document.createElement('form'), { method: 'POST', action: 'share-target', enctype: 'multipart/form-data' });
+    f.innerHTML = '<input type="file" name="media" id="shared-media" multiple>';
+    document.body.append(f);
+  });
+  await page.setInputFiles('#shared-media', fx('portrait.mp4'));
+  await page.evaluate(() => (document.querySelector('form[action="share-target"]') as HTMLFormElement).submit());
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
+  expect(new URL(page.url()).search).toBe('');
+  expect(page.url()).toMatch(/#\/p\//);
+  expect(await page.evaluate(async () => (await (await caches.open('kadr-share')).keys()).length)).toBe(0);
+});
+
+test('task pages: a static page leads into Kadr with the task banner, and the picked video opens in the right tool', async ({ page }) => {
+  await page.goto('./en/add-captions-to-video/');
+  await expect(page).toHaveTitle(/captions/i);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  expect(await page.locator('script:not([type="application/ld+json"])').count()).toBe(0);
+  await page.getByRole('link', { name: 'Open Kadr' }).click();
+  await expect(page).toHaveURL(/#\/start\/captions$/);
+  const banner = page.locator('.task-banner');
+  await expect(banner).toContainText('Add captions to a video');
+  const chooser = page.waitForEvent('filechooser');
+  await banner.getByRole('button', { name: 'Choose a video' }).click();
+  await (await chooser).setFiles(fx('speech_en.mp4'));
+  await expect(page.locator('.sheet')).toContainText('Auto captions');
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  // A clip tool: the clip is selected and its sheet is open.
+  await page.goto('./#/start/pauses');
+  const chooser2 = page.waitForEvent('filechooser');
+  await page.locator('.task-banner').getByRole('button', { name: 'Choose a video' }).click();
+  await (await chooser2).setFiles(fx('speech_en.mp4'));
+  await expect(page.locator('.sheet')).toContainText('Remove pauses');
+  await expect(page.locator('.tl-row.main .clip.sel')).toHaveCount(1);
+});

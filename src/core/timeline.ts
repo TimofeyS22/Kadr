@@ -564,8 +564,13 @@ export function cutTimelineRanges(p: Project, ranges: [number, number][]): numbe
         if (c.start >= b) { c.start = r6(c.start - len); continue; }
         if (clipEnd(c) <= a) continue;
         const ra = a - c.start, rb = b - c.start;
-        c.words = c.words.filter((w) => w.t1 <= ra + 0.02 || w.t0 >= rb - 0.02)
-          .map((w) => (w.t0 >= rb - 0.02 ? { ...w, t0: w.t0 - len, t1: w.t1 - len } : w));
+        // A word goes only when most of it is inside the cut. Whisper often stretches the last word before a pause
+        // into the silence: that word stays, its edge clamped to the cut.
+        const at = (x: number) => (x <= ra ? x : x >= rb ? x - len : ra);
+        c.words = c.words.flatMap((w) => {
+          const t0 = at(w.t0), t1 = at(w.t1);
+          return t1 - t0 >= (w.t1 - w.t0) / 2 && t1 - t0 > 0.02 ? [t0 === w.t0 && t1 === w.t1 ? w : { ...w, t0, t1 }] : [];
+        });
         c.duration = r6(Math.max(MIN_CLIP, c.duration - Math.max(0, Math.min(clipEnd(c), b) - Math.max(c.start, a))));
       }
     }
