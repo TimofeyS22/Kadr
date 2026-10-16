@@ -46,6 +46,18 @@ if command -v say >/dev/null && [ ! -f reel_ru.mp4 ]; then
   ff -f lavfi -i "testsrc2=s=720x1280:r=30:d=$d" -i reel_ru.wav -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest reel_ru.mp4
   rm -f reel_ru.txt reel_ru.wav
 fi
+# Speech language detection (docs/08 A follow-up): ~8 s of speech in other languages, Ukrainian being the one closest to Russian.
+if command -v say >/dev/null; then
+  for lv in uk:Lesya es:Mónica de:Anna fr:Jacques it:Alice pt:Luciana tr:Yelda; do
+    l=${lv%%:*}; v=${lv#*:}
+    [ -f lang_$l.mp4 ] && continue
+    python3 -c "import json,sys; sys.stdout.write(json.load(open('../e2e/eval/texts.json'))['lang_$l'])" > lang_$l.txt
+    say -v "$v" -o lang_$l.aiff -f lang_$l.txt
+    d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 lang_$l.aiff)
+    ff -f lavfi -i "testsrc2=s=720x1280:r=30:d=$d" -i lang_$l.aiff -c:v libx264 -pix_fmt yuv420p -c:a aac -ar 48000 -shortest lang_$l.mp4
+    rm -f lang_$l.txt lang_$l.aiff
+  done
+fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
 
 # Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.

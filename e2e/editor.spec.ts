@@ -1257,9 +1257,7 @@ test('teleprompter: visible while editing the script, size applies live, speed c
 
 test('reel in one tap: from the home card to a shorter reel with captions, title, zooms and music; undo all', async ({ page }, info) => {
   test.setTimeout(400_000);
-  // Russian speech under the English interface: the speech language comes from the saved reel options.
-  await page.addInitScript(() => localStorage.setItem('kadr.reel', JSON.stringify({ language: 'russian' })));
-  await page.goto('./');
+  await page.goto('./'); // Russian speech under the English interface: the language is detected from the speech
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
   await (await chooser).setFiles(fx('reel_ru.mp4')); // 18.7 s: 1.5 s of silence, long pauses, "эээ", a repeat
@@ -1274,6 +1272,18 @@ test('reel in one tap: from the home card to a shorter reel with captions, title
   await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1); // music
   const shorter = Number((await done.locator('.reel-length b').nth(1).textContent())!.split(':')[1]);
   expect(shorter).toBeLessThan(15);
+  // The captions' tail after the last word ends with the video: no picture-less seconds at the end.
+  const right = async (l: ReturnType<Page['locator']>) => { const b = (await l.boundingBox())!; return b.x + b.width; };
+  expect(await right(page.locator('.clip-caption'))).toBeLessThanOrEqual(await right(main.last()) + 1);
+  const lang = done.getByRole('combobox', { name: 'Speech language' });
+  await expect(lang).toHaveValue('russian');
+  await expect(done).toContainText('found by Kadr');
+  // Another language redoes the reel in it, once: the saved options keep "Auto".
+  await lang.selectOption('english');
+  await expect(done).toBeVisible({ timeout: 300_000 });
+  await expect(lang).toHaveValue('english');
+  await expect(done).not.toContainText('found by Kadr');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('kadr.reel') ?? '{}').language ?? '')).toBe('');
   // Undo all: back to the single untouched clip.
   await page.getByRole('button', { name: 'Undo all' }).click();
   await expect(main).toHaveCount(1);

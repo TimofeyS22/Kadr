@@ -380,3 +380,4 @@ h1, h2, h3 { margin: 0; }
 .task-banner { display: grid; gap: 10px; margin: 0 0 16px; padding: 14px; border-radius: var(--radius); background: var(--panel-2); }
 .task-banner b { font-size: 17px; }
 .task-banner .btn { margin: 0; }
+.reel-lang { display: grid; gap: 6px; font-size: 14px; color: var(--muted); }

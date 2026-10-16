@@ -30,7 +30,7 @@ test('reel eval: speech kept, silence removed, time', async ({ page }, info) => 
   await page.addInitScript(() => {
     localStorage.setItem('kadr.tips', '99');
     localStorage.setItem('kadr.locale', 'en');
-    localStorage.setItem('kadr.reel', JSON.stringify({ music: null, language: 'russian' })); // music would hide the silence
+    localStorage.setItem('kadr.reel', JSON.stringify({ music: null })); // music would hide the silence; language: Auto
     Object.defineProperty(navigator, 'canShare', { value: undefined });
   });
   await page.goto('./');

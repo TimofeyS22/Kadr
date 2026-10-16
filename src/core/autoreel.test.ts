@@ -4,7 +4,7 @@ import { useEditor } from '../state/store';
 import { JUMP_ZOOM, fillerCuts, fitWordsToPauses, hookClip, hookText, jumpZoom, pauseCuts, withoutIndices } from './autoreel';
 import { createCaptionClip, createProject, createVideoClip } from './defaults';
 import { CAPTION_PRESETS } from './presets';
-import { cutTimelineRanges, insertMain, mainTrack, placeClip, projectDuration } from './timeline';
+import { cutTimelineRanges, endWithContent, insertMain, mainTrack, placeClip, projectDuration } from './timeline';
 import type { Asset, CaptionClip, CaptionWord, VideoClip } from './types';
 
 const PPS = 50;
@@ -119,6 +119,19 @@ describe('reel in one tap: cuts keep the speech', () => {
     const q = produce(talkProject(), (d) => { placeClip(d, createCaptionClip(fit, CAPTION_PRESETS[0])); cutTimelineRanges(d, pauses); });
     const cap = q.tracks.flatMap((t) => t.clips).find((x): x is CaptionClip => x.kind === 'caption')!;
     expect(cap.words.map((w) => w.text)).toEqual(['everyone.', 'today,', 'we']);
+  });
+
+  it('captions and the title never make the project longer than its media', () => {
+    const p = produce(talkProject(), (d) => { // a 10 s video
+      const cap = createCaptionClip([{ t0: 8.5, t1: 9.8, text: 'bye!' }], CAPTION_PRESETS[0]); // tail to 10.3
+      endWithContent(d, cap);
+      placeClip(d, cap);
+      const hook = hookClip('Hello there');
+      hook.start = 9;
+      endWithContent(d, hook);
+      placeClip(d, hook);
+    });
+    expect(projectDuration(p)).toBe(10);
   });
 
   it('every step is its own history entry, and undoing them all restores the project', () => {

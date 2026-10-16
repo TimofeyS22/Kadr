@@ -5,7 +5,7 @@ import { setCaptionLayout } from '../core/captions';
 import { createAudioClip, createCaptionClip } from '../core/defaults';
 import { fitTrack, type Mood } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
-import { cutTimelineRanges, mainTrack, placeClip, projectDuration, soundAssetId } from '../core/timeline';
+import { cutTimelineRanges, endWithContent, mainTrack, placeClip, projectDuration, soundAssetId } from '../core/timeline';
 import type { CaptionWord, Project } from '../core/types';
 import type { AsrModel, CaptionProgress } from '../engine/captions';
 import { MediaError, PEAKS_PER_SEC, waveform } from '../engine/media';
@@ -26,6 +26,8 @@ export const DEFAULT_REEL: ReelOptions = {
 export interface ReelReport {
   steps: number; before: number; after: number; pauses: number; fillers: number; words: number; zoomed: number;
   hook: string | null; music: string | null; musicError: string | null; noSpeech: boolean; seconds: number;
+  /** Speech language used (id from CAPTION_LANGUAGES) and whether Kadr detected it. */
+  language: string | null; detected: boolean;
 }
 
 function speechLabel(p: CaptionProgress): [string, number | null] {
@@ -42,7 +44,7 @@ export async function makeReel(o: ReelOptions, onProgress: (label: string, f: nu
   if (!p0 || !mainTrack(p0).clips.length) throw new MediaError('Add a video with speech first');
   player.pause();
   const started = performance.now();
-  const r: ReelReport = { steps: 0, before: projectDuration(p0), after: 0, pauses: 0, fillers: 0, words: 0, zoomed: 0, hook: null, music: null, musicError: null, noSpeech: false, seconds: 0 };
+  const r: ReelReport = { steps: 0, before: projectDuration(p0), after: 0, pauses: 0, fillers: 0, words: 0, zoomed: 0, hook: null, music: null, musicError: null, noSpeech: false, seconds: 0, language: null, detected: false };
   /** One history step; counted only when it changed the project. */
   const step = (fn: (d: Project) => void) => {
     const before = editor().project;
@@ -56,7 +58,10 @@ export async function makeReel(o: ReelOptions, onProgress: (label: string, f: nu
     let words: CaptionWord[] = [];
     if ((o.captions || o.fillers || o.hook) && clips.length) {
       const { transcribeProject } = await import('../engine/captions');
-      words = await transcribeProject(p0, o.model, o.language || null, (pr) => onProgress(...speechLabel(pr)), signal);
+      const tr = await transcribeProject(p0, o.model, o.language || null, (pr) => onProgress(...speechLabel(pr)), signal);
+      words = tr.words;
+      r.language = tr.language;
+      r.detected = tr.detected;
     }
     r.noSpeech = !words.length;
     check();
@@ -76,6 +81,7 @@ export async function makeReel(o: ReelOptions, onProgress: (label: string, f: nu
       step((d) => {
         const c = createCaptionClip(spoken, preset);
         setCaptionLayout(c, 'highlight', preset.highlight ?? CAPTION_ACCENT);
+        endWithContent(d, c);
         placeClip(d, c);
       });
       r.words = spoken.length;
@@ -87,7 +93,7 @@ export async function makeReel(o: ReelOptions, onProgress: (label: string, f: nu
     }
     if (o.zoom) step((d) => { r.zoomed = jumpZoom(d); });
     const hook = o.hook ? hookText(spoken) : null;
-    if (hook) { step((d) => { placeClip(d, hookClip(hook)); }); r.hook = hook; }
+    if (hook) { step((d) => { const c = hookClip(hook); endWithContent(d, c); placeClip(d, c); }); r.hook = hook; }
     check();
 
     if (o.music) {
@@ -121,6 +127,7 @@ export async function makeReel(o: ReelOptions, onProgress: (label: string, f: nu
     track('reel_done', {
       steps: r.steps, seconds: Math.round(r.seconds), before: Math.round(r.before), after: Math.round(r.after),
       pauses: r.pauses, fillers: r.fillers, words: r.words, zoomed: r.zoomed, music: !!r.music, noSpeech: r.noSpeech,
+      language: r.language ?? 'none', detected: r.detected,
     });
     editor().select(null);
     player.seek(0);

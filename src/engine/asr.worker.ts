@@ -7,12 +7,14 @@ export type AsrModel = 'tiny' | 'base' | 'small';
 export type AsrRequest =
   | { type: 'load'; model: AsrModel }
   | { type: 'transcribe'; id: number; audio: Float32Array; language: string | null }
+  | { type: 'detect'; id: number; audio: Float32Array; candidates: string[] }
   | { type: 'vad'; id: number; audio: Float32Array };
 export type AsrResponse =
   | { type: 'download'; loaded: number; total: number }
   | { type: 'ready' }
   | { type: 'result'; id: number; words: { t0: number; t1: number; text: string }[] }
   | { type: 'vad'; id: number; probs: Float32Array }
+  | { type: 'language'; id: number; code: string; p: number }
   | { type: 'error'; id?: number; message: string };
 
 env.allowLocalModels = false;
@@ -74,6 +76,27 @@ async function speechProbabilities(audio: Float32Array): Promise<Float32Array> {
   return probs;
 }
 
+/**
+ * Whisper's own language detection, which transformers.js lacks (without a language it silently assumes English and
+ * so translates other speech): one decoder step after <|startoftranscript|>. Returns the most likely of `candidates`
+ * (ISO codes) and its probability among all languages.
+ */
+async function detectLanguage(run: AutomaticSpeechRecognitionPipeline, audio: Float32Array, candidates: string[]): Promise<{ code: string; p: number }> {
+  const { input_features } = (await run.processor(audio)) as { input_features: Tensor };
+  const cfg = run.model.generation_config as unknown as { decoder_start_token_id: number; lang_to_id: Record<string, number> };
+  const forward = run.model as unknown as (x: Record<string, Tensor>) => Promise<{ logits: Tensor }>;
+  const { logits } = await forward({
+    input_features,
+    decoder_input_ids: new Tensor('int64', BigInt64Array.from([BigInt(cfg.decoder_start_token_id)]), [1, 1]),
+  });
+  const l = logits.data as Float32Array;
+  const all = Object.entries(cfg.lang_to_id).map(([tok, id]) => ({ code: tok.slice(2, -2), x: l[id] }));
+  const max = Math.max(...all.map((a) => a.x));
+  const sum = all.reduce((s, a) => s + Math.exp(a.x - max), 0);
+  const best = all.filter((a) => candidates.includes(a.code)).sort((a, b) => b.x - a.x)[0];
+  return best ? { code: best.code, p: Math.exp(best.x - max) / sum } : { code: 'en', p: 0 };
+}
+
 self.onmessage = async (e: MessageEvent<AsrRequest>) => {
   const msg = e.data;
   try {
@@ -88,6 +111,10 @@ self.onmessage = async (e: MessageEvent<AsrRequest>) => {
       return;
     }
     const run = await (asr ?? load('tiny'));
+    if (msg.type === 'detect') {
+      post({ type: 'language', id: msg.id, ...(await detectLanguage(run, msg.audio, msg.candidates)) });
+      return;
+    }
     const out = await run(msg.audio, {
       return_timestamps: 'word',
       ...(msg.language ? { language: msg.language, task: 'transcribe' } : {}),

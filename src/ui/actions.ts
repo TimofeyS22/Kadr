@@ -5,7 +5,7 @@ import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
 import { fitTrack, type LibraryTrack, type MusicManifest } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
-  clipEnd, deleteClip, deleteClips, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
+  clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
   sourceTime, splitClip,
 } from '../core/timeline';
 import type { Asset, CaptionClip, CaptionWord, Clip, Project, SoundClip } from '../core/types';
@@ -257,6 +257,7 @@ export function addCaptions(words: CaptionWord[], presetId = 'pop', layout?: Cap
   editor().commit((d) => {
     const c = createCaptionClip(words, typeof layout === 'object' ? { ...preset, ...layout } : preset);
     if (typeof layout === 'string') setCaptionLayout(c, layout, preset.highlight ?? CAPTION_ACCENT);
+    endWithContent(d, c);
     placeClip(d, c);
     id = c.id;
   });

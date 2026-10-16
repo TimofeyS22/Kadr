@@ -10,7 +10,7 @@ import { CAPTION_ACCENT, CAPTION_PRESETS, STICKERS } from '../core/presets';
 import { placeClip } from '../core/timeline';
 import type { CaptionClip, ImageClip, Rect, VideoClip } from '../core/types';
 import { soundEntries } from '../engine/audio';
-import { ASR_MODELS, CAPTION_LANGUAGES, transcribeProject, type AsrModel, type CaptionProgress } from '../engine/captions';
+import { ASR_MODELS, CAPTION_LANGUAGES, languageLabel, transcribeProject, type AsrModel, type CaptionProgress } from '../engine/captions';
 import { importFile } from '../engine/importer';
 import { player } from '../engine/player';
 import { VoiceRecorder } from '../engine/recorder';
@@ -19,7 +19,7 @@ import { editor, useEditor } from '../state/store';
 import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles } from './actions';
 import { Chips, Slider, Swatches, Toggle, pct } from './controls';
 import { formatTime } from './format';
-import { t, useLocale } from '../lib/i18n';
+import { t } from '../lib/i18n';
 import { StyleSwatch } from './swatch';
 
 // ---------- Crop ----------
@@ -189,13 +189,6 @@ function progressLabel(p: CaptionProgress): [string, number] {
 
 const LAYOUT_LABELS: Record<CaptionLayout, string> = { phrase: 'Phrase', word: 'Word by word', highlight: 'Highlight the word', reveal: 'Words appear' };
 
-/** Speech language to start with: the interface language, else the device's, else auto-detect. */
-export function defaultLanguage(): string {
-  const tag = useLocale.getState().locale === 'ru' ? 'ru' : (navigator.language || '').slice(0, 2).toLowerCase();
-  const byTag: Record<string, string> = { ru: 'russian', en: 'english', es: 'spanish', pt: 'portuguese', de: 'german', fr: 'french', it: 'italian', uk: 'ukrainian', tr: 'turkish', hi: 'hindi', ja: 'japanese' };
-  return byTag[tag] ?? '';
-}
-
 /** Caption look: layout chips plus styles drawn as themselves. Shared by "create" and "edit". */
 function CaptionLook({ layout, preset, onLayout, onPreset }: { layout: CaptionLayout; preset: string | null; onLayout: (l: CaptionLayout) => void; onPreset: (id: string) => void }) {
   return (
@@ -212,7 +205,8 @@ function CaptionLook({ layout, preset, onLayout, onPreset }: { layout: CaptionLa
 export function CaptionsBody() {
   // "Accurate" everywhere (v1.0): on Russian speech tiny made 2× the errors of base (eval in docs/02); tiny stays a choice.
   const [model, setModel] = useState<AsrModel>('base');
-  const [lang, setLang] = useState(defaultLanguage);
+  // Auto by default: the language is detected from the speech (eval in docs/02, v1.1.1).
+  const [lang, setLang] = useState('');
   const [preset, setPreset] = useState('pop');
   const [layout, setLayout] = useState<CaptionLayout>('highlight');
   const [progress, setProgress] = useState<CaptionProgress | null>(null);
@@ -228,9 +222,10 @@ export function CaptionsBody() {
     abort.current = ac;
     const started = performance.now();
     try {
-      const words = await transcribeProject(p, model, lang || null, setProgress, ac.signal);
-      track('captions_generated', { model, lang: lang || 'auto', layout, words: words.length, seconds: Math.round((performance.now() - started) / 1000) });
+      const { words, language, detected } = await transcribeProject(p, model, lang || null, setProgress, ac.signal);
+      track('captions_generated', { model, lang: lang || 'auto', detected: detected ? language ?? 'none' : '', layout, words: words.length, seconds: Math.round((performance.now() - started) / 1000) });
       addCaptions(words, preset, layout);
+      if (detected && language) editor().toast(t('Speech language: {language}. Wrong? Pick it and create again.', { language: languageLabel(language) }), 'info', 6000);
     } catch (e) {
       if ((e as Error).name !== 'AbortError') editor().toast(t('Captions failed: {error}', { error: errorMessage(e) }), 'error');
     } finally {

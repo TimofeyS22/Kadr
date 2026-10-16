@@ -14,12 +14,22 @@ export const ASR_MODELS: Record<AsrModel, { label: string; mb: number }> = {
   small: { label: 'Most accurate', mb: 249 },
 };
 
-export const CAPTION_LANGUAGES: { id: string | null; label: string }[] = [
-  { id: null, label: 'Auto' }, { id: 'english', label: 'English' }, { id: 'russian', label: 'Русский' },
-  { id: 'spanish', label: 'Español' }, { id: 'portuguese', label: 'Português' }, { id: 'german', label: 'Deutsch' },
-  { id: 'french', label: 'Français' }, { id: 'italian', label: 'Italiano' }, { id: 'ukrainian', label: 'Українська' },
-  { id: 'turkish', label: 'Türkçe' }, { id: 'hindi', label: 'हिन्दी' }, { id: 'japanese', label: '日本語' },
+export const CAPTION_LANGUAGES: { id: string | null; code: string; label: string }[] = [
+  { id: null, code: '', label: 'Auto' }, { id: 'english', code: 'en', label: 'English' }, { id: 'russian', code: 'ru', label: 'Русский' },
+  { id: 'spanish', code: 'es', label: 'Español' }, { id: 'portuguese', code: 'pt', label: 'Português' }, { id: 'german', code: 'de', label: 'Deutsch' },
+  { id: 'french', code: 'fr', label: 'Français' }, { id: 'italian', code: 'it', label: 'Italiano' }, { id: 'ukrainian', code: 'uk', label: 'Українська' },
+  { id: 'turkish', code: 'tr', label: 'Türkçe' }, { id: 'hindi', code: 'hi', label: 'हिन्दी' }, { id: 'japanese', code: 'ja', label: '日本語' },
 ];
+/** The label of a speech language id ('russian' → 'Русский'). */
+export const languageLabel = (id: string): string => CAPTION_LANGUAGES.find((l) => l.id === id)?.label ?? id;
+
+export interface Transcript {
+  words: CaptionWord[];
+  /** The language the speech was recognized in (an id from CAPTION_LANGUAGES); null when there was no speech. */
+  language: string | null;
+  /** True when Kadr found the language itself (the caller passed none). */
+  detected: boolean;
+}
 
 const SR = 16000;
 const MAX_CHUNK_S = 28;
@@ -83,17 +93,20 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
       const r = e.data;
       if (r.type === 'download') { onDownload?.(r.loaded, r.total); return; }
       if (msg.type === 'load' && (r.type === 'ready' || r.type === 'error')) { w.removeEventListener('message', onMessage); resolve(r); }
-      if (msg.type !== 'load' && (r.type === 'result' || r.type === 'vad' || r.type === 'error') && 'id' in r && r.id === id) { w.removeEventListener('message', onMessage); resolve(r); }
+      if (msg.type !== 'load' && (r.type === 'result' || r.type === 'vad' || r.type === 'language' || r.type === 'error') && 'id' in r && r.id === id) { w.removeEventListener('message', onMessage); resolve(r); }
     };
     w.addEventListener('message', onMessage);
     w.postMessage(msg, msg.type !== 'load' ? [msg.audio.buffer] : []);
   });
 }
 
-/** Transcribes the whole timeline; returns words in timeline seconds. */
+/**
+ * Transcribes the whole timeline; returns words in timeline seconds. Without a language, it is detected once on the
+ * longest stretch of speech and then used for every chunk (one language per video, no per-chunk flips).
+ */
 export async function transcribeProject(
   p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal,
-): Promise<CaptionWord[]> {
+): Promise<Transcript> {
   const w = getWorker();
   onProgress({ phase: 'download', fraction: 0, mb: ASR_MODELS[model].mb });
   const loaded = await request(w, { type: 'load', model }, (l, t) => onProgress({ phase: 'download', fraction: t ? l / t : 0, mb: ASR_MODELS[model].mb }));
@@ -106,6 +119,13 @@ export async function transcribeProject(
   if (vad.type === 'error') throw new Error(`Speech detection failed: ${vad.message}`);
   const speech = vad.type === 'vad' ? vadSegments(vad.probs, 512 / SR) : [];
   const windows = speechWindows(speech);
+  const detected = !language && windows.length > 0;
+  if (detected) {
+    const [a0, a1] = windows.reduce((x, y) => (y[1] - y[0] > x[1] - x[0] ? y : x));
+    const r = await request(w, { type: 'detect', id: -2, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code) });
+    if (r.type === 'error') throw new Error(`Speech detection failed: ${r.message}`);
+    if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
+  }
   const words: CaptionWord[] = [];
   for (let i = 0; i < windows.length; i++) {
     if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
@@ -118,7 +138,11 @@ export async function transcribeProject(
     for (const x of r.words) words.push({ t0: x.t0 + a0, t1: Math.max(x.t0 + 0.05, x.t1) + a0, text: x.text });
   }
   onProgress({ phase: 'transcribe', fraction: 1 });
-  return alignToSpeech(dropArtifacts(wordsInSpeech(words, speech)), speech, speech.map(([a, b]) => speechOnset(audio, SR, a, b)));
+  return {
+    words: alignToSpeech(dropArtifacts(wordsInSpeech(words, speech)), speech, speech.map(([a, b]) => speechOnset(audio, SR, a, b))),
+    language: windows.length ? language : null,
+    detected,
+  };
 }
 
 /** Frees the model memory (the files stay cached for next time). */

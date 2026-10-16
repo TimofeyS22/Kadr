@@ -71,6 +71,16 @@ export function findClip(p: Project, id: string): { track: Track; clip: Clip; in
   return null;
 }
 
+/**
+ * Captions and titles made from the media never make the project longer: a clip ending after every media clip
+ * (the 0.5 s caption tail after the last word, a title over a shorter video) is cut to end with them.
+ */
+export function endWithContent(p: Project, c: Clip): void {
+  let end = 0;
+  for (const t of p.tracks) for (const x of t.clips) if (x !== c && x.kind !== 'caption' && x.kind !== 'text') end = Math.max(end, clipEnd(x));
+  if (end > c.start && clipEnd(c) > end) c.duration = r6(Math.max(MIN_CLIP, end - c.start));
+}
+
 export function projectDuration(p: Project): number {
   let d = 0;
   for (const t of p.tracks) for (const c of t.clips) d = Math.max(d, clipEnd(c));

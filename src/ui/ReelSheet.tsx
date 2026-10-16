@@ -12,14 +12,13 @@ import { DEFAULT_REEL, makeReel, undoSteps, type ReelOptions, type ReelReport } 
 import { Chips, Toggle } from './controls';
 import { MOOD_LABEL } from './MusicSheet';
 import { StyleSwatch } from './swatch';
-import { defaultLanguage } from './ToolSheets';
 
 const KEY = 'kadr.reel';
 function loadOptions(): ReelOptions {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<ReelOptions> | null;
-    return { ...DEFAULT_REEL, language: defaultLanguage(), ...saved };
-  } catch { return { ...DEFAULT_REEL, language: defaultLanguage() }; }
+    return { ...DEFAULT_REEL, ...saved };
+  } catch { return { ...DEFAULT_REEL }; }
 }
 const saveOptions = (o: ReelOptions) => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch { /* storage blocked */ } };
 
@@ -39,12 +38,13 @@ export function ReelBody() {
     void run();
   }, []);
 
-  async function run() {
+  /** `opts`: a one-off change (the language picked after a run); the saved options stay as they are. */
+  async function run(opts: ReelOptions = o) {
     const ac = new AbortController();
     abort.current = ac;
     setPhase({ kind: 'running', label: t('Getting ready…'), f: null });
     try {
-      const report = await makeReel(o, (label, f) => setPhase({ kind: 'running', label, f }), ac.signal);
+      const report = await makeReel(opts, (label, f) => setPhase({ kind: 'running', label, f }), ac.signal);
       setPhase({ kind: 'done', report });
     } catch (e) {
       setPhase({ kind: 'setup' });
@@ -77,6 +77,18 @@ export function ReelBody() {
           {r.music && <li>{t('Music: “{title}”, quieter under the voice', { title: r.music })}</li>}
           {r.musicError && <li>{t('Music was not added: {error}', { error: r.musicError })}</li>}
         </ul>
+        {r.language && (
+          <label className="reel-lang">
+            <span>{r.detected ? t('Speech language (found by Kadr)') : t('Speech language')}</span>
+            <select className="select" value={r.language} aria-label={t('Speech language')} onChange={(e) => {
+              track('reel_language_changed', { from: r.language ?? '', to: e.target.value, detected: r.detected });
+              undoSteps(r.steps);
+              void run({ ...o, language: e.target.value });
+            }}>
+              {CAPTION_LANGUAGES.filter((l) => l.id).map((l) => <option key={l.code} value={l.id!}>{t(l.label)}</option>)}
+            </select>
+          </label>
+        )}
         <p className="hint">{t('Everything is on the timeline: tap any part to change it.')}</p>
         <button className="btn primary big" onClick={() => { editor().openSheet(null); player.seek(0); player.play(); }}>{t('Watch the reel')}</button>
         <button className="btn" onClick={() => { undoSteps(r.steps); track('reel_undo_all', { steps: r.steps }); setPhase({ kind: 'setup' }); }}>{t('Undo all')}</button>
