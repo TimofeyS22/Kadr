@@ -69,11 +69,13 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
 }
 
 const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const IOS_TIP_KEY = 'kadr.iosVideoTip';
+const IOS_TIP_KEY = 'kadr.iosVideoTip.v3';
 
 /**
- * WebKit on iOS always re-encodes videos picked from the photo library to H.264 (whatever the picker's format option):
- * slow, and the copy can be softer. Files picked through the Files app arrive untouched; said once per device.
+ * iOS re-encodes HEVC videos picked from Photos to H.264 unless the picker's format is "Current" (⋯ → Options):
+ * measured on iOS 26.1, a 20 s 4K clip took 30–90 s re-encoded vs 3 s as the original, and the choice is remembered
+ * (reports/Долгая загрузка видео на iPhone.md). Files picked through the Files app also arrive untouched. Said once per
+ * device; the key's version moved when the advice was corrected (v2 said "Files only").
  */
 function iosVideoTip(): void {
   if (!IOS) return;
@@ -81,7 +83,7 @@ function iosVideoTip(): void {
     if (localStorage.getItem(IOS_TIP_KEY)) return;
     localStorage.setItem(IOS_TIP_KEY, '1');
   } catch { return; }
-  editor().toast(t('Tip: Safari on iPhone re-encodes videos picked from Photos — that is slow and can lower quality. To add the original: in Photos tap Share → Save to Files, then in Kadr choose “Choose Files”.'), 'info', 12000);
+  editor().toast(t('Tip: iPhone re-encodes videos from Photos unless you ask for the original — slow, and the quality drops. In the photo picker tap ⋯ → Options → Format: Current once (iPhone remembers it), or add the video from Files.'), 'info', 14000);
 }
 
 function clipFor(a: Asset, target: AddTarget): Clip | null {

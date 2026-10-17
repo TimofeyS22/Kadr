@@ -2,6 +2,7 @@ node_modules
 dist
 dev-dist
 fixtures/*.mp4
+fixtures/*.mov
 fixtures/*.m4a
 fixtures/*.png
 *.log

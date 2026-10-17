@@ -1687,3 +1687,33 @@ test('an older project\'s processed sound (44 ms late before v1.2.1) is rebuilt 
   const t = onset(await samples(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false })));
   expect(Math.abs(t - t0), `${t0.toFixed(3)} → ${t.toFixed(3)} s`).toBeLessThan(0.02);
 });
+
+test('iPhone: the first video import explains how to get originals (picker format "Current"), once', async ({ page }, info) => {
+  await newProject(page);
+  const tip = page.locator('.toast', { hasText: 'Format: Current' });
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  if (info.project.name !== 'iphone-webkit') { await expect(tip).toHaveCount(0); return; } // only iOS re-encodes
+  await expect(tip).toBeVisible();
+  await tip.click(); // dismiss
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Media', ['portrait.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  await expect(tip).toHaveCount(0);
+});
+
+test('iPhone HDR original (HEVC 10-bit HLG, as "Format: Current" hands it over) imports and exports', async ({ page }, info) => {
+  test.skip(info.project.name !== 'iphone-webkit', 'Playwright\'s Chromium has no HEVC decoder; Android Chrome uses the platform one');
+  test.skip(!fs.existsSync(fx('iphone_hdr.mov')), 'needs ffmpeg with libx265 (npm run fixtures)');
+  await newProject(page);
+  await importFiles(page, 'Media', ['iphone_hdr.mov']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const duration = await exportAndProbe(page, info);
+  expect(Math.abs(duration - 4)).toBeLessThan(0.1);
+  // The picture made it through 10-bit HLG decoding: the exported frame has the bars, not black.
+  const { execFileSync } = await import('node:child_process');
+  const file = info.outputPath('Project 1.mp4');
+  const stats = execFileSync('ffmpeg', ['-v', 'error', '-ss', '2', '-i', file, '-frames:v', '1', '-vf', 'signalstats,metadata=print:file=-', '-f', 'null', '-']).toString();
+  expect(Number(/YAVG=([\d.]+)/.exec(stats)?.[1])).toBeGreaterThan(30);
+  expect(Number(/SATMAX=([\d.]+)/.exec(stats)?.[1])).toBeGreaterThan(60);
+});

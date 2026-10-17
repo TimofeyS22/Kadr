@@ -78,6 +78,12 @@ if [ ! -f avsync.mp4 ]; then
   ff -f lavfi -i "color=c=black:s=720x1280:r=30:d=4" -f lavfi -i "aevalsrc='if(between(t,1,1.03)+between(t,2.5,2.53),0.5*sin(2*PI*1000*t),0)':s=48000:d=4" \
     -vf "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='between(t,1,1.032)+between(t,2.5,2.532)'" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest avsync.mp4
 fi
+# An iPhone-style HDR original (v1.2.2): HEVC Main 10, HLG, BT.2020 in a .mov — what "Format: Current" hands over.
+if [ ! -f iphone_hdr.mov ] && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libx265; then
+  ff -f lavfi -i "smptehdbars=s=1920x1080:r=30:d=4" -f lavfi -i "sine=f=440:sample_rate=48000:d=4" -c:v libx265 -tag:v hvc1 -pix_fmt yuv420p10le \
+    -x265-params "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:log-level=error" -color_primaries bt2020 -color_trc arib-std-b67 \
+    -colorspace bt2020nc -b:v 8M -c:a aac -shortest iphone_hdr.mov
+fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
 
 # Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.

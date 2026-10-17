@@ -278,7 +278,7 @@ export const RU: Record<string, string> = {
   'Bubble': 'Пузырь',
   'Test the speed': 'Проверить скорость',
   'Stop the test': 'Остановить проверку',
-  'Tip: Safari on iPhone re-encodes videos picked from Photos — that is slow and can lower quality. To add the original: in Photos tap Share → Save to Files, then in Kadr choose “Choose Files”.': 'Совет: Safari на iPhone перекодирует видео из «Фото» — это долго и может снизить качество. Чтобы добавить оригинал, в «Фото» нажмите «Поделиться» → «Сохранить в Файлы», а в Kadr выберите «Выбрать файлы».',
+  'Tip: iPhone re-encodes videos from Photos unless you ask for the original — slow, and the quality drops. In the photo picker tap ⋯ → Options → Format: Current once (iPhone remembers it), or add the video from Files.': 'Совет: iPhone перекодирует видео из «Фото», если не попросить оригинал, — это долго и хуже по качеству. В окне выбора один раз нажмите «⋯» → «Параметры» → формат «Текущий» (iPhone запомнит) или добавляйте видео из «Файлов».',
   'Letter spacing': 'Между буквами',
   'Line spacing': 'Между строками',
   'Padding': 'Отступ от края',
