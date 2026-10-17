@@ -305,7 +305,7 @@ export function Home() {
           ))}
         </ul>
       )}
-      <footer className="home-foot">{t('Projects and media are stored in this browser. Kadr v1.0.0')}</footer>
+      <footer className="home-foot">{t('Projects and media are stored in this browser.')} Kadr v{__APP_VERSION__}</footer>
     </main>
   );
 }

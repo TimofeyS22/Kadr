@@ -1717,3 +1717,9 @@ test('iPhone HDR original (HEVC 10-bit HLG, as "Format: Current" hands it over) 
   expect(Number(/YAVG=([\d.]+)/.exec(stats)?.[1])).toBeGreaterThan(30);
   expect(Number(/SATMAX=([\d.]+)/.exec(stats)?.[1])).toBeGreaterThan(60);
 });
+
+test('the home footer shows the version from package.json', async ({ page }) => {
+  const { version } = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { version: string };
+  await page.goto('./');
+  await expect(page.locator('.home-foot')).toContainText(`Kadr v${version}`);
+});

@@ -11,7 +11,7 @@ export const RU: Record<string, string> = {
   'Your projects': 'Ваши проекты',
   'Loading…': 'Загрузка…',
   'No projects yet. Start a new one or try the sample.': 'Проектов пока нет. Создайте новый или откройте пример.',
-  'Projects and media are stored in this browser. Kadr v1.0.0': 'Проекты и медиа хранятся в этом браузере. Kadr v1.0.0',
+  'Projects and media are stored in this browser.': 'Проекты и медиа хранятся в этом браузере.',
   'Project {n}': 'Проект {n}',
   'Project name': 'Название проекта',
   'Open {name}': 'Открыть «{name}»',
