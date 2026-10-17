@@ -117,6 +117,9 @@ interface Look {
   effect?: Effect; lut?: LutRef; privacy?: Privacy;
   /** Remove the background behind people (on-device segmentation). */
   removeBg?: boolean;
+  /** Mirror left–right / upside down (v1.2). The picture, cutout and hidden faces flip together; the mask does not. */
+  flipX?: boolean;
+  flipY?: boolean;
 }
 
 export type VideoClip = ClipBase & Visual & MediaRef & Sound & Look & { kind: 'video' };
@@ -164,6 +167,8 @@ export interface Asset {
   derived?: { denoise?: string; enhance?: string; pitch?: Record<string, string> };
   /** Beat grid of the asset's sound, in source seconds. */
   beats?: { bpm: number; times: number[] };
+  /** The teleprompter text this recording was read from (docs/09 S1): captions take their words from it. Stays on the device. */
+  script?: string;
   /** From the built-in music library (v0.8): license proof for the user. */
   library?: { id: string; title: string; artist: string; license: string; licenseUrl: string; source: string };
 }

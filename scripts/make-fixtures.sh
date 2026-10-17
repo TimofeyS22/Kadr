@@ -46,6 +46,21 @@ if command -v say >/dev/null && [ ! -f reel_ru.mp4 ]; then
   ff -f lavfi -i "testsrc2=s=720x1280:r=30:d=$d" -i reel_ru.wav -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest reel_ru.mp4
   rm -f reel_ru.txt reel_ru.wav
 fi
+# Captions from a script (docs/09 S1): one script read verbatim, with two improvised lines, with a sentence skipped,
+# and verbatim under music; what was actually said is in e2e/eval/texts.json (script_*_said).
+if command -v say >/dev/null && [ ! -f script_music.mp4 ]; then
+  bed=$(ls ../public/music/tracks/*.m4a | head -1)
+  for v in verbatim adlib skip; do
+    python3 -c "import json,sys; sys.stdout.write(json.load(open('../e2e/eval/texts.json'))['script_${v}_said'])" > script_$v.txt
+    say -v Milena -o script_$v.aiff -f script_$v.txt
+    d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 script_$v.aiff)
+    ff -f lavfi -i "testsrc2=s=720x1280:r=30:d=$d" -i script_$v.aiff -c:v libx264 -pix_fmt yuv420p -c:a aac -ar 48000 -shortest script_$v.mp4
+    rm -f script_$v.txt
+  done
+  d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 script_verbatim.aiff)
+  ff -f lavfi -i "color=c=0x223344:s=720x1280:r=30:d=$d" -i script_verbatim.aiff -stream_loop -1 -i "$bed" -filter_complex "[1:a]aresample=48000[s];[2:a]aresample=48000,volume=0.35[m];[s][m]amix=inputs=2:duration=first:normalize=0[a]" -map 0:v -map "[a]" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest script_music.mp4
+  rm -f script_*.aiff
+fi
 # Speech language detection (docs/08 A follow-up): ~8 s of speech in other languages, Ukrainian being the one closest to Russian.
 if command -v say >/dev/null; then
   for lv in uk:Lesya es:Mónica de:Anna fr:Jacques it:Alice pt:Luciana tr:Yelda; do

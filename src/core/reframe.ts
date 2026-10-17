@@ -49,6 +49,8 @@ export function maskCentroid(data: Uint8Array, w: number, h: number): number | n
 
 const FILLERS = new Set(['um', 'umm', 'uh', 'uhh', 'uhm', 'er', 'erm', 'hmm', 'mm', 'ah', 'эээ', 'ээ', 'э', 'эм', 'мм', 'ммм', 'ам']);
 const norm = (w: string) => w.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+/** "um", "эээ" and the like. */
+export const isFiller = (w: string): boolean => FILLERS.has(norm(w));
 
 /** Indices of filler words and immediate repeats ("I I think") — candidates for "edit by text". */
 export function fillerIndices(words: { text: string }[]): number[] {

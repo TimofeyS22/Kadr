@@ -150,6 +150,15 @@ describe('timeline', () => {
 });
 
 describe('buildFrame', () => {
+  it('mirroring reaches the layer and its blurred background, and is off by default', () => {
+    const p = edit(twoClips(), (d) => { const c = clips(d)[0]; if (c.kind === 'video') { c.flipX = true; c.flipY = true; } });
+    const f = buildFrame(p, 1);
+    expect(f.layers.find((l) => l.id === clips(p)[0].id)?.flip).toEqual([1, 1]);
+    const bg = f.layers.find((l) => l.id === '__bg');
+    if (bg) expect(bg.flip).toEqual([1, 1]);
+    expect(buildFrame(twoClips(), 1).layers[0].flip).toEqual([0, 0]);
+  });
+
   it('maps timeline time to source time with speed', () => {
     const p = edit(twoClips(), (d) => { setSpeed(d, clips(d)[0].id, 2); });
     const f = buildFrame(p, 1);

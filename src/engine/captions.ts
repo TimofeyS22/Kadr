@@ -2,6 +2,7 @@
 // quietest moments (so words are not split), and transcribes the chunks in the ASR worker.
 import { alignToSpeech, dropArtifacts, speechOnset, speechWindows, vadSegments, wordsInSpeech } from '../core/captions';
 import { projectDuration } from '../core/timeline';
+import type { ScriptCaptions } from '../core/script';
 import type { CaptionWord, Project } from '../core/types';
 import type { AsrModel, AsrRequest, AsrResponse } from './asr.worker';
 import { renderAudioWindow } from './audio';
@@ -29,6 +30,8 @@ export interface Transcript {
   language: string | null;
   /** True when Kadr found the language itself (the caller passed none). */
   detected: boolean;
+  /** Where there is speech (VAD), timeline seconds: tells a skipped stretch of a script from words recognition missed. */
+  speech: [number, number][];
 }
 
 const SR = 16000;
@@ -93,10 +96,10 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
       const r = e.data;
       if (r.type === 'download') { onDownload?.(r.loaded, r.total); return; }
       if (msg.type === 'load' && (r.type === 'ready' || r.type === 'error')) { w.removeEventListener('message', onMessage); resolve(r); }
-      if (msg.type !== 'load' && (r.type === 'result' || r.type === 'vad' || r.type === 'language' || r.type === 'error') && 'id' in r && r.id === id) { w.removeEventListener('message', onMessage); resolve(r); }
+      if (msg.type !== 'load' && (r.type === 'result' || r.type === 'vad' || r.type === 'language' || r.type === 'aligned' || r.type === 'error') && 'id' in r && r.id === id) { w.removeEventListener('message', onMessage); resolve(r); }
     };
     w.addEventListener('message', onMessage);
-    w.postMessage(msg, msg.type !== 'load' ? [msg.audio.buffer] : []);
+    w.postMessage(msg, 'audio' in msg ? [msg.audio.buffer] : []);
   });
 }
 
@@ -142,7 +145,19 @@ export async function transcribeProject(
     words: alignToSpeech(dropArtifacts(wordsInSpeech(words, speech)), speech, speech.map(([a, b]) => speechOnset(audio, SR, a, b))),
     language: windows.length ? language : null,
     detected,
+    speech,
   };
+}
+
+/**
+ * Captions with the words of `script` and the timing of the speech (docs/09 S1), computed in the speech worker.
+ * Null when the text does not belong to this speech: the caller keeps the recognized words.
+ */
+export async function alignToScript(script: string, tr: Transcript): Promise<ScriptCaptions | null> {
+  if (!script.trim() || !tr.words.length) return null;
+  const r = await request(getWorker(), { type: 'align', id: -3, script, words: tr.words, speech: tr.speech });
+  if (r.type === 'error') throw new Error(r.message);
+  return r.type === 'aligned' ? r.result : null;
 }
 
 /** Frees the model memory (the files stay cached for next time). */

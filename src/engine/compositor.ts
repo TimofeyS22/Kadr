@@ -9,12 +9,17 @@ in vec2 aPos;
 uniform vec2 uRes, uCenter, uSize;
 uniform float uRot;
 uniform vec4 uCrop;
+uniform vec2 uFlip;
 out vec2 vUv;
 out vec2 vQuad;
+out vec2 vSrc;
 out vec2 vCanvas;
 void main() {
   vQuad = aPos + 0.5;
-  vUv = uCrop.xy + vQuad * uCrop.zw;
+  // Mirroring happens in source space: the picture, the cutout mask and hidden faces flip together (the user's
+  // shape mask stays in layer space, where it was drawn).
+  vSrc = mix(vQuad, 1.0 - vQuad, uFlip);
+  vUv = uCrop.xy + vSrc * uCrop.zw;
   vec2 p = aPos * uSize;
   float c = cos(uRot), s = sin(uRot);
   p = vec2(p.x * c - p.y * s, p.x * s + p.y * c) + uCenter;
@@ -27,6 +32,7 @@ precision highp float;
 in vec2 vUv;
 in vec2 vCanvas;
 in vec2 vQuad;
+in vec2 vSrc;
 out vec4 outColor;
 uniform sampler2D uSegTex;
 uniform int uHasSeg;
@@ -98,7 +104,7 @@ void main() {
   bool hide = false;
   for (int i = 0; i < 8; i++) {
     if (i >= uPrivN) break;
-    vec2 d = abs(vQuad - uPriv[i].xy) - uPriv[i].zw * 0.5;
+    vec2 d = abs(vSrc - uPriv[i].xy) - uPriv[i].zw * 0.5;
     if (max(d.x, d.y) <= 0.0) hide = true;
   }
   // Effects that move the sampling position.
@@ -401,6 +407,7 @@ export class Compositor {
         gl.uniform2f(this.loc('uTexel'), 1 / s.w, 1 / s.h);
       }
       gl.uniform4f(this.loc('uCrop'), cr.x, cr.y, cr.w, cr.h);
+      gl.uniform2f(this.loc('uFlip'), l.flip[0], l.flip[1]);
       gl.uniform2f(this.loc('uCenter'), cx, cy);
       gl.uniform2f(this.loc('uSize'), w, h);
       gl.uniform1f(this.loc('uRot'), rot);

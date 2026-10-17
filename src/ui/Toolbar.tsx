@@ -1,5 +1,5 @@
 import {
-  Activity, ArrowRightToLine, AudioLines, Bell, Check, Clapperboard, CopyCheck, Disc3, EyeOff, Zap, ScanFace, Captions, CircleDashed, Copy, Crop, Film, Frame, Gauge, Layers, Mic, Move, Music, PersonStanding, Rewind, Scissors,
+  Activity, ArrowRightToLine, TrianglesCenterlineDashedVertical, Pipette, AudioLines, Bell, Check, Clapperboard, CopyCheck, Disc3, EyeOff, Zap, ScanFace, Captions, CircleDashed, Copy, Crop, Film, Frame, Gauge, Layers, Mic, Move, Music, PersonStanding, Rewind, Scissors,
   SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Video, Volume2, WandSparkles, X,
   type LucideIcon,
 } from 'lucide-react';
@@ -7,7 +7,7 @@ import { findClip } from '../core/timeline';
 import { useEditor, type SheetId } from '../state/store';
 import {
   addMedia, addText, autoReframe, deleteMulti, deleteSelected, detachSelectedAudio, duplicateMulti, duplicateSelected, freezeFrame, multiToPlayhead, reverseSelected,
-  splitAtPlayhead, toggleCutout,
+  splitAtPlayhead, toggleCutout, toggleFlip,
 } from './actions';
 import { t } from '../lib/i18n';
 
@@ -50,6 +50,9 @@ export function Toolbar() {
   const fx: Tool = { icon: Zap, label: t('Effects'), run: sheet('effects'), on: !!(clip && 'effect' in clip && clip.effect) };
   const hide: Tool = { icon: EyeOff, label: t('Hide faces'), run: sheet('privacy'), on: !!(clip && 'privacy' in clip && clip.privacy && (clip.privacy.faces || clip.privacy.areas.length)) };
   const cutout: Tool = { icon: PersonStanding, label: t('Cutout'), run: () => void toggleCutout(), on: !!(clip && 'removeBg' in clip && clip.removeBg) };
+  const mirror: Tool = { icon: TrianglesCenterlineDashedVertical, label: t('Mirror'), run: () => toggleFlip('x'), on: !!(clip && 'flipX' in clip && clip.flipX) };
+  // Next to Cutout, where people look for it (it used to sit at the bottom of Transform, docs/09 Q3).
+  const chroma: Tool = { icon: Pipette, label: t('Chroma key'), run: sheet('chroma'), on: !!(clip && 'chroma' in clip && clip.chroma.enabled) };
   const sound: Tool[] = [
     { icon: Gauge, label: t('Speed'), run: sheet('speed') },
     { icon: Volume2, label: t('Volume'), run: sheet('volume') },
@@ -57,10 +60,10 @@ export function Toolbar() {
 
   let tools: Tool[];
   switch (kind) {
-    case 'video': tools = [split, ...sound, pauses, crop, { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() }, ...look, fx, mask, hide, cutout, { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() },
+    case 'video': tools = [split, ...sound, pauses, crop, mirror, { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() }, ...look, fx, mask, hide, cutout, chroma, { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() },
       { icon: Rewind, label: t('Reverse'), run: () => void reverseSelected(), on: !!(clip?.kind === 'video' && clip.reversedFrom) },
       { icon: AudioLines, label: t('Extract audio'), run: detachSelectedAudio }, pick, dup, del]; break;
-    case 'image': tools = [split, crop, ...look, fx, mask, hide, cutout, pick, dup, del]; break;
+    case 'image': tools = [split, crop, mirror, ...look, fx, mask, hide, cutout, chroma, pick, dup, del]; break;
     case 'audio': tools = [split, ...sound, { icon: Activity, label: t('Beat'), run: sheet('beats'), on: !!clip && clip.kind === 'audio' && !!useEditor.getState().project?.assets[clip.assetId]?.beats }, pauses, pick, dup, del]; break;
     case 'text': tools = [{ icon: Type, label: t('Edit text'), run: sheet('text') }, look[2], split, pick, dup, del]; break;
     case 'caption': tools = [{ icon: Captions, label: t('Edit captions'), run: sheet('captionEdit') }, look[2], split, pick, del]; break;

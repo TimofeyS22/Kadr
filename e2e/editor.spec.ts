@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
@@ -491,6 +492,29 @@ async function gray(file: string): Promise<Buffer> {
 /** Share of pixels that differ by more than `thr` levels. */
 const changed = (a: Buffer, b: Buffer, thr: number) => { let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > thr) n++; return n / a.length; };
 const photo = async (page: Page, info: { outputPath: (n: string) => string }) => gray(await exportAs(page, info, 'Photo', 'Save photo'));
+/** Samples the progress bar every 200 ms until `done` appears (docs/09 Q4: never backwards, keeps moving). */
+const sampleProgress = (page: Page, done: string) => page.evaluate((sel) => new Promise<number[]>((res) => {
+  const out: number[] = [];
+  const id = setInterval(() => {
+    const el = document.querySelector('[role=progressbar]');
+    if (el) out.push(Number(el.getAttribute('aria-valuenow')));
+    if (document.querySelector(sel)) { clearInterval(id); res(out); }
+  }, 200);
+}), done);
+function expectHonestProgress(v: number[]) {
+  expect(v.length, 'the bar was shown').toBeGreaterThan(5);
+  v.forEach((x, i) => { if (i) expect(x, `sample ${i}`).toBeGreaterThanOrEqual(v[i - 1]); });
+  expect(new Set(v.map((x) => x.toFixed(3))).size, 'it keeps moving').toBeGreaterThan(5);
+  expect(Math.max(...v)).toBeLessThan(1);
+}
+
+/** The 270×480 gray frame mirrored left–right (`x`) and/or upside down (`y`). */
+function mirrored(g: Buffer, x: boolean, y: boolean): Buffer {
+  const [W, H] = [270, 480];
+  const o = Buffer.alloc(g.length);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) o[r * W + c] = g[(y ? H - 1 - r : r) * W + (x ? W - 1 - c : c)];
+  return o;
+}
 
 test('video effects change the exported picture', async ({ page }, info) => {
   test.setTimeout(180_000);
@@ -505,6 +529,28 @@ test('video effects change the exported picture', async ({ page }, info) => {
     await page.getByRole('button', { name: 'Done' }).click();
     expect(changed(base, await photo(page, info), 8), name).toBeGreaterThan(0.02);
   }
+});
+
+test('mirror: one tap flips the picture left to right, Transform turns it upside down, undo restores', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['person.jpg']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const base = await photo(page, info);
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Mirror').click();
+  await expect(tool(page, 'Mirror')).toHaveAttribute('aria-pressed', 'true');
+  const flipped = await photo(page, info);
+  expect(changed(base, flipped, 8), 'the picture changed').toBeGreaterThan(0.05);
+  expect(changed(mirrored(base, true, false), flipped, 12), 'into its mirror image').toBeLessThan(0.02);
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Transform').click();
+  await page.getByRole('button', { name: 'Upside down' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  expect(changed(mirrored(base, true, true), await photo(page, info), 12), 'and upside down').toBeLessThan(0.02);
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  expect(changed(base, await photo(page, info), 8), 'undo restores').toBeLessThan(0.01);
 });
 
 test('LUT import: identity keeps the picture, invert inverts it', async ({ page }, info) => {
@@ -564,7 +610,12 @@ test('hide faces automatically and with an area', async ({ page }, info) => {
   await page.getByRole('radio', { name: 'Pixelate' }).click();
   await page.getByRole('button', { name: 'Add area' }).click();
   await page.getByRole('button', { name: 'Done' }).click();
-  expect(changed(hidden, await photo(page, info), 20)).toBeGreaterThan(0.01); // the area hides more
+  const covered = await photo(page, info);
+  expect(changed(hidden, covered, 20)).toBeGreaterThan(0.01); // the area hides more
+  // Mirrored, the face and the area stay hidden: the whole frame is the mirror image of the covered one (v1.2).
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Mirror').click();
+  expect(changed(mirrored(covered, true, false), await photo(page, info), 12)).toBeLessThan(0.02);
 });
 
 test('multi-select: pick clips on several tracks, delete, undo, duplicate', async ({ page }) => {
@@ -637,6 +688,12 @@ test('camera with teleprompter scrolls the script, records a mirrored clip onto 
   const pr = await probe(file);
   expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
   expect(Number(pr.format.duration)).toBeGreaterThan(1.5);
+  // The teleprompter text stays with the recording: Auto captions offer it as the words (docs/09 S1).
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Captions').click();
+  await expect(page.getByRole('radio', { name: 'From my text' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('textbox', { name: 'Your text' })).toHaveValue('Hello! This is a teleprompter test.\nSecond line.');
+  await page.getByRole('button', { name: 'Done' }).click();
   // The front camera is recorded as the mirrored preview shows it: the white half ends up on the right.
   const { execFileSync } = await import('node:child_process');
   const g = execFileSync('ffmpeg', ['-v', 'error', '-ss', '1', '-i', file, '-frames:v', '1', '-vf', 'scale=90:160', '-f', 'rawvideo', '-pix_fmt', 'gray', '-']);
@@ -862,6 +919,9 @@ test('sound effects and a voice-over from the Record sheet', async ({ page }) =>
   await tool(page, 'Record').click();
   await page.getByRole('button', { name: 'Start recording' }).click();
   await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 });
+  // The fake microphone is a full-scale sine: the clip mark and the hint light up (v1.2 Q5).
+  await expect(page.getByText('Too loud: hold the phone a little further away')).toBeVisible();
+  await expect(page.locator('.meter.clip')).toHaveCount(1);
   await page.waitForTimeout(1500);
   await page.getByRole('button', { name: 'Stop recording' }).click();
   await expect(page.locator('.tl-row.audio .clip')).toHaveCount(2, { timeout: 30_000 });
@@ -919,7 +979,7 @@ test('keyframes, chroma key and a mask change the picture', async ({ page }, inf
   await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0.5 * 60; });
   const base = await photo(page, info);
   await selectClip(page, clip);
-  await tool(page, 'Transform').click();
+  await tool(page, 'Chroma key').click(); // its own tool next to Cutout (v1.2)
   await page.getByRole('switch', { name: 'Remove color (green screen)' }).check();
   await page.getByRole('button', { name: 'Done' }).click();
   const keyed = await photo(page, info);
@@ -1261,8 +1321,10 @@ test('reel in one tap: from the home card to a shorter reel with captions, title
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
   await (await chooser).setFiles(fx('reel_ru.mp4')); // 18.7 s: 1.5 s of silence, long pauses, "эээ", a repeat
+  const progress = sampleProgress(page, '.reel-done');
   const done = page.locator('.reel-done');
   await expect(done).toBeVisible({ timeout: 300_000 }); // started by itself
+  expectHonestProgress(await progress);
   await expect(done).toContainText('0:18');
   await expect(done).toContainText(/Pauses removed: \d+/);
   const main = page.locator('.tl-row.main .clip');
@@ -1356,3 +1418,100 @@ test('task pages: a static page leads into Kadr with the task banner, and the pi
   await expect(page.locator('.sheet')).toContainText('Remove pauses');
   await expect(page.locator('.tl-row.main .clip.sel')).toHaveCount(1);
 });
+
+// ---------- v1.2: captions from my text (docs/09 S1) ----------
+
+test('captions from my text: every word is the text\'s own, timed by the speech, and editable', async ({ page }) => {
+  test.setTimeout(400_000);
+  const script = (JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'eval', 'texts.json'), 'utf8')) as Record<string, string>).script_ru;
+  await newProject(page);
+  await importFiles(page, 'Media', ['script_verbatim.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Captions').click();
+  await expect(page.getByRole('radio', { name: 'Recognize speech' })).toHaveAttribute('aria-checked', 'true'); // no text yet
+  await page.getByRole('radio', { name: 'From my text' }).click();
+  await expect(page.getByRole('button', { name: 'Create captions' })).toBeDisabled();
+  await page.getByRole('textbox', { name: 'Your text' }).fill(script);
+  await page.getByRole('combobox', { name: 'Language' }).selectOption('russian');
+  const progress = sampleProgress(page, '.clip-caption');
+  await page.getByRole('button', { name: 'Create captions' }).click();
+  await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 300_000 });
+  expectHonestProgress(await progress); // it used to fill on download and drop back to 0 (v1.2 Q4)
+  if (!(await page.locator('.caption-row').first().isVisible())) await tool(page, 'Edit captions').click();
+  const lines = await page.locator('.caption-row input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+  expect(lines.join(' ')).toBe(script); // punctuation, capitals, "15" and "слова-паразиты" exactly as written
+  // Timed by the speech: the captions end with the voice, not stretched over the clip.
+  const right = async (l: ReturnType<Page['locator']>) => { const b = (await l.boundingBox())!; return b.x + b.width; };
+  expect(await right(page.locator('.clip-caption'))).toBeLessThanOrEqual(await right(page.locator('.tl-row.main .clip').last()) + 1);
+});
+
+
+test('teleprompter → reel in one tap: the reel\'s captions are the script, word for word', async ({ page }) => {
+  test.setTimeout(400_000);
+  const script = (JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'eval', 'texts.json'), 'utf8')) as Record<string, string>).script_ru;
+  // A camera whose microphone reads the script (the TTS recording), starting when the recording starts.
+  await page.route('**/__e2e/speech.mp4', (r) => r.fulfill({ path: fx('script_verbatim.mp4'), contentType: 'video/mp4' }));
+  await page.addInitScript(() => {
+    localStorage.setItem('kadr.reel', JSON.stringify({ music: null }));
+    const speech = new Audio('/__e2e/speech.mp4');
+    MediaDevices.prototype.getUserMedia = async function () {
+      const c = Object.assign(document.createElement('canvas'), { width: 360, height: 640 });
+      const g = c.getContext('2d')!;
+      setInterval(() => { g.fillStyle = '#345'; g.fillRect(0, 0, 360, 640); }, 33);
+      const ctx = new AudioContext();
+      const dest = ctx.createMediaStreamDestination();
+      ctx.createMediaElementSource(speech).connect(dest);
+      return new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    };
+    const start = MediaRecorder.prototype.start;
+    MediaRecorder.prototype.start = function (...a: Parameters<MediaRecorder['start']>) { speech.currentTime = 0; void speech.play(); return start.apply(this, a); };
+  });
+  await newProject(page);
+  await tool(page, 'Camera').click();
+  await page.getByRole('button', { name: 'Edit script' }).click();
+  await page.getByRole('textbox', { name: 'Script' }).fill(script);
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(21_000); // the reading is 19.6 s
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Reel in 1 tap').click();
+  await page.getByRole('combobox', { name: 'Language' }).selectOption('russian');
+  await page.getByRole('button', { name: 'Make the reel' }).click();
+  const done = page.locator('.reel-done');
+  await expect(done).toBeVisible({ timeout: 300_000 });
+  await expect(done).toContainText('Captions from your text');
+  await page.getByRole('button', { name: 'Watch the reel' }).click();
+  await page.getByRole('button', { name: 'Pause' }).click().catch(() => undefined);
+  await selectClip(page, page.locator('.clip-caption'));
+  await tool(page, 'Edit captions').click();
+  const lines = await page.locator('.caption-row input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+  expect(lines.join(' ')).toBe(script);
+});
+
+test('a sheet closes with a swipe down on its header; a small drag or a tap on the header keeps it', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  const head = page.locator('.sheet-head');
+  const swipe = async (dy: number) => {
+    const b = (await head.boundingBox())!;
+    await page.mouse.move(b.x + 40, b.y + 10);
+    await page.mouse.down();
+    for (let i = 1; i <= 8; i++) { await page.mouse.move(b.x + 40, b.y + 10 + (dy * i) / 8); await page.waitForTimeout(30); }
+    await page.mouse.up();
+  };
+  await tool(page, 'Adjust').click();
+  await expect(sheet(page)).toBeVisible();
+  await swipe(20);
+  await page.waitForTimeout(300);
+  await expect(sheet(page), 'a small drag springs back').toBeVisible();
+  await head.locator('h2').click();
+  await expect(sheet(page), 'a tap on the title is not a swipe').toBeVisible();
+  await swipe(220);
+  await expect(sheet(page), 'a swipe down closes it').toHaveCount(0);
+});
+

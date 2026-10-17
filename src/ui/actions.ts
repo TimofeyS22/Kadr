@@ -29,7 +29,8 @@ export async function addMedia(target: AddTarget): Promise<void> {
 }
 
 /** Imports files and places them at the playhead (also used for drag and drop). */
-export async function addFiles(files: File[], target: AddTarget): Promise<void> {
+/** `meta.script`: the teleprompter text the files were recorded with (kept on their assets for captions). */
+export async function addFiles(files: File[], target: AddTarget, meta: { script?: string } = {}): Promise<void> {
   if (!files.length) return;
   const s = editor();
   const busy = (i: number) => useEditor.setState({ busy: { label: t('Adding {i} of {n}…', { i: i + 1, n: files.length }), progress: i / files.length } });
@@ -42,6 +43,7 @@ export async function addFiles(files: File[], target: AddTarget): Promise<void> 
     useEditor.setState({ busy: null });
   }
   if (!assets.length) return;
+  if (meta.script) for (const a of assets) a.script = meta.script;
   let first: string | null = null;
   const now = player.time;
   editor().commit((d) => {
@@ -487,6 +489,16 @@ export async function addLibraryTrack(tr: LibraryTrack): Promise<void> {
   s.openSheet(null);
   s.toast(t('Added “{title}”. Free to use anywhere, no credit needed.', { title: tr.title }));
   track('music_added', { mood: tr.mood, bpm: Math.round(tr.bpm ?? 0) });
+}
+
+/** Mirrors the selected video or photo (v1.2): one tap, like CapCut's "Mirror"; `y` turns it upside down. */
+export function toggleFlip(axis: 'x' | 'y'): void {
+  const s = editor();
+  const f = s.project && s.selection ? findClip(s.project, s.selection) : null;
+  if (!f || (f.clip.kind !== 'video' && f.clip.kind !== 'image')) return;
+  const key = axis === 'x' ? 'flipX' : 'flipY';
+  editClip(f.clip.id, (c) => { if (c.kind === 'video' || c.kind === 'image') { if (c[key]) delete c[key]; else c[key] = true; } });
+  track('flip', { axis });
 }
 
 export async function toggleCutout(): Promise<void> {

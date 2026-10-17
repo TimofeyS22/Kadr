@@ -22,13 +22,13 @@ export class VoiceRecorder {
     this.recorder.start(250);
   }
 
-  /** Input level 0..1 for a meter. */
-  level(): number {
-    if (!this.analyser) return 0;
+  /** Input level 0..1 for a meter (scaled up so speech fills it) and the raw sample peak (for the clip mark). */
+  levels(): { level: number; peak: number } {
+    if (!this.analyser) return { level: 0, peak: 0 };
     this.analyser.getFloatTimeDomainData(this.levelBuf);
     let peak = 0;
     for (const v of this.levelBuf) peak = Math.max(peak, Math.abs(v));
-    return Math.min(1, peak * 1.5);
+    return { level: Math.min(1, peak * 1.5), peak };
   }
 
   stop(): Promise<Blob> {

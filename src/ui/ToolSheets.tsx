@@ -3,14 +3,17 @@ import { useEffect, useRef, useState } from 'react';
 import { CAPTION_LAYOUTS, captionLayout, captionPages, setCaptionLayout, wordsFromSegment, type CaptionLayout } from '../core/captions';
 import { fillerIndices } from '../core/reframe';
 import { wordCutRange } from '../core/silence';
-import { clipEnd, cutTimelineRanges, mainTrack, soundAssetId, sourceTime, timelineTimeOf } from '../core/timeline';
+import { clipEnd, cutTimelineRanges, mainTrack, projectDuration, soundAssetId, sourceTime, timelineTimeOf } from '../core/timeline';
 import { PEAKS_PER_SEC, waveform } from '../engine/media';
 import { createAudioClip } from '../core/defaults';
 import { CAPTION_ACCENT, CAPTION_PRESETS, STICKERS } from '../core/presets';
 import { placeClip } from '../core/timeline';
 import type { CaptionClip, ImageClip, Rect, VideoClip } from '../core/types';
 import { soundEntries } from '../engine/audio';
-import { ASR_MODELS, CAPTION_LANGUAGES, languageLabel, transcribeProject, type AsrModel, type CaptionProgress } from '../engine/captions';
+import { METER_IDLE, meterStep } from '../core/meter';
+import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
+import { projectScript } from '../core/script';
+import { ASR_MODELS, CAPTION_LANGUAGES, alignToScript, languageLabel, transcribeProject, type AsrModel, type CaptionProgress } from '../engine/captions';
 import { importFile } from '../engine/importer';
 import { player } from '../engine/player';
 import { VoiceRecorder } from '../engine/recorder';
@@ -18,6 +21,7 @@ import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles } from './actions';
 import { Chips, Slider, Swatches, Toggle, pct } from './controls';
+import { PaceBar, learnPace, speechStage, speechStages } from './pace';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
 import { StyleSwatch } from './swatch';
@@ -94,6 +98,7 @@ export function VoiceoverBody() {
   const [state, setState] = useState<'idle' | 'asking' | 'recording' | 'saving'>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [level, setLevel] = useState(0);
+  const [meter, setMeter] = useState<ReturnType<typeof meterStep>>({ ...METER_IDLE, clip: false });
   const rec = useRef<VoiceRecorder | null>(null);
   const startAt = useRef(0);
   const raf = useRef(0);
@@ -118,7 +123,9 @@ export function VoiceoverBody() {
       setState('recording');
       const tick = () => {
         setElapsed((performance.now() - t0) / 1000);
-        setLevel(r.level());
+        const { level: lv, peak } = r.levels();
+        setLevel(lv);
+        setMeter((m) => meterStep(m, peak, performance.now()));
         raf.current = requestAnimationFrame(tick);
       };
       tick();
@@ -158,7 +165,11 @@ export function VoiceoverBody() {
   return (
     <div className="recorder">
       <p className="hint">{t('Recording starts at the playhead. The video plays without sound so you can talk over it.')}</p>
-      <div className="meter" aria-hidden><div style={{ width: `${Math.round(level * 100)}%` }} /></div>
+      <div className={`meter ${meter.clip ? 'clip' : ''}`} aria-hidden>
+        <div style={{ width: `${Math.round(level * 100)}%` }} />
+        <i className="hold" style={{ left: `${Math.round(Math.min(1, meter.hold * 1.5) * 100)}%` }} />
+      </div>
+      {meter.clip && state === 'recording' && <p className="clip-warn" role="status">{t('Too loud: hold the phone a little further away')}</p>}
       <span className="rec-time">{state === 'asking' ? t('Allow microphone access…') : formatTime(elapsed)}</span>
       {state === 'recording'
         ? <button className="rec-btn on" onClick={() => void stop()} aria-label={t('Stop recording')}><Square size={26} fill="currentColor" /></button>
@@ -180,11 +191,11 @@ export function StickersBody() {
 // ---------- Auto captions ----------
 
 
-function progressLabel(p: CaptionProgress): [string, number] {
-  if (p.phase === 'download') return [t('Getting the speech model ({mb} MB, once)…', { mb: p.mb }), p.fraction];
-  if (p.phase === 'prepare') return [t('Preparing the sound…'), 0];
-  if (p.phase === 'listen') return [t('Finding speech…'), 0];
-  return [t('Recognizing speech…'), p.fraction];
+function progressLabel(p: CaptionProgress): string {
+  if (p.phase === 'download') return t('Getting the speech model ({mb} MB, once)…', { mb: p.mb });
+  if (p.phase === 'prepare') return t('Preparing the sound…');
+  if (p.phase === 'listen') return t('Finding speech…');
+  return t('Recognizing speech…');
 }
 
 const LAYOUT_LABELS: Record<CaptionLayout, string> = { phrase: 'Phrase', word: 'Word by word', highlight: 'Highlight the word', reveal: 'Words appear' };
@@ -209,7 +220,12 @@ export function CaptionsBody() {
   const [lang, setLang] = useState('');
   const [preset, setPreset] = useState('pop');
   const [layout, setLayout] = useState<CaptionLayout>('highlight');
-  const [progress, setProgress] = useState<CaptionProgress | null>(null);
+  // Words from the user's own text (docs/09 S1): on by default when the recording was read from the teleprompter.
+  const [script, setScript] = useState(() => { const p = editor().project; return p ? projectScript(p) : ''; });
+  const [source, setSource] = useState<'speech' | 'script'>(() => (script ? 'script' : 'speech'));
+  // What the job is doing, as words; the bar itself is drawn from the pace (docs/09 Q4).
+  const [progress, setProgress] = useState<string | null>(null);
+  const pace = useRef<Pace | null>(null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
 
@@ -222,8 +238,27 @@ export function CaptionsBody() {
     abort.current = ac;
     const started = performance.now();
     try {
-      const { words, language, detected } = await transcribeProject(p, model, lang || null, setProgress, ac.signal);
-      track('captions_generated', { model, lang: lang || 'auto', detected: detected ? language ?? 'none' : '', layout, words: words.length, seconds: Math.round((performance.now() - started) / 1000) });
+      const seconds = projectDuration(p);
+      const withScript = source === 'script' && !!script.trim();
+      pace.current = startPace(speechStages(model, seconds, { script: withScript }), performance.now());
+      setProgress(t('Getting ready…'));
+      const report = (pr: CaptionProgress) => {
+        if (pace.current) reportPace(pace.current, speechStage(pr.phase), pr.phase === 'download' || pr.phase === 'transcribe' ? pr.fraction : null, performance.now());
+        const label = progressLabel(pr);
+        setProgress((old) => (old === label ? old : label));
+      };
+      const tr = await transcribeProject(p, model, lang || null, report, ac.signal);
+      if (withScript && pace.current) { reportPace(pace.current, 'align', null, performance.now()); setProgress(t('Matching your text…')); }
+      const { language, detected } = tr;
+      let words = tr.words;
+      const own = source === 'script' && script.trim() ? await alignToScript(script, tr) : null;
+      if (own) words = own.words;
+      else if (source === 'script' && script.trim() && tr.words.length) editor().toast(t('The text did not match the speech: captions are from recognition.'), 'info', 6000);
+      track('captions_generated', {
+        model, lang: lang || 'auto', detected: detected ? language ?? 'none' : '', layout, words: words.length, seconds: Math.round((performance.now() - started) / 1000),
+        source: own ? 'script' : 'speech', ...(own && { matched: Math.round(own.matched * 100), skipped: own.skipped, adlibs: own.adlibs }),
+      });
+      if (pace.current) learnPace(model, seconds, finishPace(pace.current, performance.now()));
       addCaptions(words, preset, layout);
       if (detected && language) editor().toast(t('Speech language: {language}. Wrong? Pick it and create again.', { language: languageLabel(language) }), 'info', 6000);
     } catch (e) {
@@ -234,17 +269,26 @@ export function CaptionsBody() {
   }
 
   if (progress) {
-    const [label, f] = progressLabel(progress);
     return (
       <div className="export-progress">
-        <div className="progress"><div style={{ width: `${Math.round(f * 100)}%` }} /></div>
-        <p>{label} {Math.round(f * 100)}%</p>
+        <PaceBar pace={pace} />
+        <p>{progress}</p>
         <button className="btn" onClick={() => abort.current?.abort()}>{t('Cancel')}</button>
       </div>
     );
   }
   return (
     <>
+      <h3>{t('Words')}</h3>
+      <Chips options={['speech', 'script'] as const} value={source} onChange={setSource} label={t('Words')}
+        render={(s) => (s === 'speech' ? t('Recognize speech') : t('From my text'))} />
+      {source === 'script' && (
+        <>
+          <textarea className="select script-input" value={script} onChange={(e) => setScript(e.target.value)} rows={5}
+            aria-label={t('Your text')} placeholder={t('Paste the text you read')} />
+          <p className="hint">{t('Words come from your text, timing from the recording. The speech model still runs to place each word.')}</p>
+        </>
+      )}
       <h3>{t('Language')}</h3>
       <select className="select" value={lang} onChange={(e) => setLang(e.target.value)} aria-label={t('Language')}>
         {CAPTION_LANGUAGES.map((l) => <option key={l.label} value={l.id ?? ''}>{t(l.label)}</option>)}
@@ -254,7 +298,7 @@ export function CaptionsBody() {
       <Chips options={['tiny', 'base', 'small'] as const} value={model} onChange={setModel} render={(m) => `${t(ASR_MODELS[m].label)}, ${ASR_MODELS[m].mb} MB`} />
       <CaptionLook layout={layout} preset={preset} onLayout={setLayout} onPreset={setPreset} />
       <p className="hint">{t('Speech is recognized on this device and your audio is never uploaded. The model downloads once and is kept in this browser.')}</p>
-      <button className="btn primary big" onClick={() => void run()}>{t('Create captions')}</button>
+      <button className="btn primary big" disabled={source === 'script' && !script.trim()} onClick={() => void run()}>{t('Create captions')}</button>
       <button className="btn" onClick={() => void importSubtitles()}>{t('Import .srt or .vtt')}</button>
     </>
   );

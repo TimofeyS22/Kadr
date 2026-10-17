@@ -1,3 +1,4 @@
+import { TrianglesCenterlineDashedVertical, TrianglesCenterlineDashedHorizontal } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { evalAnim, hasKeys, keyIndexAt, setAnim, toggleKey } from '../core/anim';
 import { TEXT_PRESETS } from '../core/presets';
@@ -14,7 +15,7 @@ import {
 import { TEXT_BG_PADDING, TEXT_LINE_HEIGHT, fontOf, fontWeight, type AnyFontId } from '../engine/text';
 import { errorMessage } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
-import { addCustomFont, detachSelectedAudio, editClip, updateClipSound } from './actions';
+import { addCustomFont, detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
 import { StyleSwatch } from './swatch';
 import { CameraSheet } from './CameraSheet';
@@ -35,7 +36,7 @@ const TITLES: Record<SheetId, string> = {
   speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform & keyframes',
   text: 'Text', transition: 'Transition', canvas: 'Canvas', export: 'Export',
   crop: 'Crop', captions: 'Auto captions', captionEdit: 'Captions', voiceover: 'Voice-over', stickers: 'Stickers',
-  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap',
+  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap', chroma: 'Chroma key',
 };
 
 export function Sheets() {
@@ -60,6 +61,7 @@ export function Sheets() {
       {sheet === 'adjust' && <AdjustBody clip={clip} />}
       {sheet === 'filters' && <FiltersBody clip={clip} />}
       {sheet === 'transform' && <TransformBody clip={clip} />}
+      {sheet === 'chroma' && (clip.kind === 'video' || clip.kind === 'image') && <ChromaControls clip={clip} />}
       {sheet === 'text' && clip.kind === 'text' && <TextBody clip={clip} />}
       {sheet === 'crop' && (clip.kind === 'video' || clip.kind === 'image') && <CropBody clip={clip} />}
       {sheet === 'captionEdit' && clip.kind === 'caption' && <CaptionEditBody clip={clip} />}
@@ -199,9 +201,14 @@ function TransformBody({ clip }: { clip: Clip }) {
         );
       })}
       <p className="hint">{t('Tap ◆ to add a keyframe at the playhead. When a property has keyframes, changes create keyframes.')}</p>
+      {(clip.kind === 'video' || clip.kind === 'image') && (
+        <div className="flip-row">
+          <button className="btn" aria-pressed={!!clip.flipX} onClick={() => toggleFlip('x')}><TrianglesCenterlineDashedVertical size={18} aria-hidden /> {t('Mirror')}</button>
+          <button className="btn" aria-pressed={!!clip.flipY} onClick={() => toggleFlip('y')}><TrianglesCenterlineDashedHorizontal size={18} aria-hidden /> {t('Upside down')}</button>
+        </div>
+      )}
       <h3>{t('Blend')}</h3>
       <Chips options={BLENDS} value={clip.blend} onChange={(b) => editClip(clip.id, (c) => { if (c.kind !== 'audio') c.blend = b; })} />
-      {(clip.kind === 'video' || clip.kind === 'image') && <ChromaControls clip={clip} />}
       <button className="btn" onClick={() => editClip(clip.id, (c) => { if (c.kind !== 'audio') c.transform = defaultTransform(); })}>{t('Reset transform')}</button>
     </>
   );
@@ -212,7 +219,6 @@ function ChromaControls({ clip }: { clip: Extract<Clip, { chroma: unknown }> }) 
   const e = (fn: (ck: typeof k) => void, key?: string) => editClip(clip.id, (c) => { if ('chroma' in c) fn(c.chroma); }, key && `${key}:${clip.id}`);
   return (
     <>
-      <h3>{t('Chroma key')}</h3>
       <Toggle label={t('Remove color (green screen)')} value={k.enabled} onChange={(v) => e((ck) => { ck.enabled = v; })} />
       {k.enabled && (
         <>

@@ -183,7 +183,7 @@ export function CameraSheet() {
     const file = new File(r.chunks, `${t('Camera')} ${stamp}.${ext}`, { type: type.split(';')[0] });
     track('camera_recording_saved', { seconds: Math.round(elapsed), mb: Math.round(file.size / 1e6) });
     editor().openSheet(null); // closes this screen (stops the camera) before the import overlay
-    await addFiles([file], 'main');
+    await addFiles([file], 'main', { script: script.trim() || undefined });
   }
 
   const close = () => editor().openSheet(null);

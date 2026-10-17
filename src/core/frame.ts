@@ -33,6 +33,8 @@ export interface Layer {
   mask: Mask | null;
   /** Cut out people (segmentation mask applied as alpha). */
   removeBg: boolean;
+  /** Mirrored source: [x, y], 1 = flipped (texture, segmentation and privacy flip together). */
+  flip: [number, number];
   blend: BlendMode;
   blur: boolean;
   /** Reveal mask in canvas space: direction (dx, dy) and progress 0..1. */
@@ -81,7 +83,7 @@ export function visualLayer(p: Project, c: VisualClip, t: number): Layer {
     chroma: null,
     crop: null,
     mask: null,
-    removeBg: false,
+    removeBg: false, flip: [0, 0],
     blend: c.blend,
     blur: false,
     wipe: null,
@@ -111,6 +113,7 @@ export function visualLayer(p: Project, c: VisualClip, t: number): Layer {
   layer.crop = c.crop ?? null;
   layer.mask = c.mask ?? null;
   layer.removeBg = !!c.removeBg;
+  layer.flip = [c.flipX ? 1 : 0, c.flipY ? 1 : 0];
   const ef = c.effect;
   if (ef && ef.amount > 0) {
     const seed = seedOf(c.id);
@@ -142,7 +145,7 @@ export function visualLayer(p: Project, c: VisualClip, t: number): Layer {
 function solid(color: string, opacity: number): Layer {
   return {
     id: '__dip', source: { kind: 'solid', color }, fit: 'cover', x: 0, y: 0, scale: 1, rotation: 0, opacity,
-    adjust: null, chroma: null, crop: null, mask: null, removeBg: false, blend: 'normal', blur: false, wipe: null, selectable: false,
+    adjust: null, chroma: null, crop: null, mask: null, removeBg: false, flip: [0, 0], blend: 'normal', blur: false, wipe: null, selectable: false,
     fx: null, lut: null, privacy: null,
   };
 }
@@ -228,7 +231,7 @@ export function buildFrame(p: Project, t: number): FrameDesc {
     primary = prog < 0.5 ? a : b;
   }
   if (background.mode === 'blur' && primary && primary.source.kind !== 'solid') {
-    layers.push({ ...primary, id: '__bg', fit: 'cover', x: 0, y: 0, scale: 1.05, rotation: 0, opacity: 1, blend: 'normal', blur: true, wipe: null, chroma: null, mask: null, removeBg: false, selectable: false, fx: null });
+    layers.push({ ...primary, id: '__bg', fit: 'cover', x: 0, y: 0, scale: 1.05, rotation: 0, opacity: 1, blend: 'normal', blur: true, wipe: null, chroma: null, mask: null, removeBg: false, selectable: false, fx: null }); // keeps the primary's mirroring
   }
   layers.push(...mainLayers);
   if (extra) layers.push(extra);

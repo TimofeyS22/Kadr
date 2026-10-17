@@ -2,12 +2,15 @@
 // Speech recognition worker: Whisper via transformers.js (ONNX Runtime WASM). Audio never leaves the device;
 // only the model files are downloaded once (and cached by the browser).
 import { AutoModel, Tensor, env, pipeline, type AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
+import { alignScript, type ScriptCaptions } from '../core/script';
+import type { CaptionWord } from '../core/types';
 
 export type AsrModel = 'tiny' | 'base' | 'small';
 export type AsrRequest =
   | { type: 'load'; model: AsrModel }
   | { type: 'transcribe'; id: number; audio: Float32Array; language: string | null }
   | { type: 'detect'; id: number; audio: Float32Array; candidates: string[] }
+  | { type: 'align'; id: number; script: string; words: CaptionWord[]; speech: [number, number][] }
   | { type: 'vad'; id: number; audio: Float32Array };
 export type AsrResponse =
   | { type: 'download'; loaded: number; total: number }
@@ -15,6 +18,7 @@ export type AsrResponse =
   | { type: 'result'; id: number; words: { t0: number; t1: number; text: string }[] }
   | { type: 'vad'; id: number; probs: Float32Array }
   | { type: 'language'; id: number; code: string; p: number }
+  | { type: 'aligned'; id: number; result: ScriptCaptions | null }
   | { type: 'error'; id?: number; message: string };
 
 env.allowLocalModels = false;
@@ -103,6 +107,10 @@ self.onmessage = async (e: MessageEvent<AsrRequest>) => {
     if (msg.type === 'load') {
       await load(msg.model);
       post({ type: 'ready' });
+      return;
+    }
+    if (msg.type === 'align') { // pure CPU work, off the main thread so a long talk never freezes the UI
+      post({ type: 'aligned', id: msg.id, result: alignScript(msg.script, msg.words, msg.speech) });
       return;
     }
     if (msg.type === 'vad') {

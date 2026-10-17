@@ -8,7 +8,11 @@ import { formatTime } from './format';
 import { t } from '../lib/i18n';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
-import { DEFAULT_REEL, makeReel, undoSteps, type ReelOptions, type ReelReport } from './autoreel';
+import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
+import { projectScript } from '../core/script';
+import { projectDuration } from '../core/timeline';
+import { DEFAULT_REEL, makeReel, reelUsesSpeech, undoSteps, type ReelOptions, type ReelReport } from './autoreel';
+import { PaceBar, learnPace, speechStages } from './pace';
 import { Chips, Toggle } from './controls';
 import { MOOD_LABEL } from './MusicSheet';
 import { StyleSwatch } from './swatch';
@@ -22,12 +26,13 @@ function loadOptions(): ReelOptions {
 }
 const saveOptions = (o: ReelOptions) => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch { /* storage blocked */ } };
 
-type Phase = { kind: 'setup' } | { kind: 'running'; label: string; f: number | null } | { kind: 'done'; report: ReelReport };
+type Phase = { kind: 'setup' } | { kind: 'running'; label: string } | { kind: 'done'; report: ReelReport };
 
 export function ReelBody() {
   const [o, setO] = useState(loadOptions);
   const [phase, setPhase] = useState<Phase>({ kind: 'setup' });
   const abort = useRef<AbortController | null>(null);
+  const pace = useRef<Pace | null>(null);
   const set = (patch: Partial<ReelOptions>) => setO((x) => { const n = { ...x, ...patch }; saveOptions(n); return n; });
   useEffect(() => () => abort.current?.abort(), []);
 
@@ -42,9 +47,18 @@ export function ReelBody() {
   async function run(opts: ReelOptions = o) {
     const ac = new AbortController();
     abort.current = ac;
-    setPhase({ kind: 'running', label: t('Getting ready…'), f: null });
+    setPhase({ kind: 'running', label: t('Getting ready…') });
+    const p = editor().project;
+    const seconds = p ? projectDuration(p) : 0;
+    const stages = speechStages(opts.model, seconds, { script: !!p && !!projectScript(p), pauses: true, music: !!opts.music });
+    pace.current = startPace(reelUsesSpeech(opts) ? stages : stages.filter((s) => s.id === 'pauses' || s.id === 'music'), performance.now());
+    let label = '';
     try {
-      const report = await makeReel(opts, (label, f) => setPhase({ kind: 'running', label, f }), ac.signal);
+      const report = await makeReel(opts, (stage, l, f) => {
+        if (pace.current) reportPace(pace.current, stage, f, performance.now());
+        if (l !== label) { label = l; setPhase({ kind: 'running', label: l }); }
+      }, ac.signal);
+      if (pace.current) learnPace(opts.model, seconds, finishPace(pace.current, performance.now()));
       setPhase({ kind: 'done', report });
     } catch (e) {
       setPhase({ kind: 'setup' });
@@ -55,8 +69,8 @@ export function ReelBody() {
   if (phase.kind === 'running') {
     return (
       <div className="export-progress">
-        <div className="progress">{phase.f === null ? <div className="indeterminate" style={{ width: '30%' }} /> : <div style={{ width: `${Math.round(phase.f * 100)}%` }} />}</div>
-        <p>{phase.label}{phase.f !== null && ` ${Math.round(phase.f * 100)}%`}</p>
+        <PaceBar pace={pace} />
+        <p>{phase.label}</p>
         <button className="btn" onClick={() => abort.current?.abort()}>{t('Cancel')}</button>
       </div>
     );
@@ -71,7 +85,7 @@ export function ReelBody() {
           {r.noSpeech && <li>{t('No speech found: captions, fillers and the title were skipped')}</li>}
           {r.pauses > 0 && <li>{t('Pauses removed: {n}', { n: r.pauses })}</li>}
           {r.fillers > 0 && <li>{t('Fillers and repeats removed: {n}', { n: r.fillers })}</li>}
-          {r.words > 0 && <li>{t('Captions: {n} words, the spoken word lights up', { n: r.words })}</li>}
+          {r.words > 0 && <li>{r.script ? t('Captions from your text: {n} words, timed by your voice', { n: r.words }) : t('Captions: {n} words, the spoken word lights up', { n: r.words })}</li>}
           {r.zoomed > 0 && <li>{t('Zoom-ins on cuts: {n}', { n: r.zoomed })}</li>}
           {r.hook && <li>{t('Title: “{text}”', { text: r.hook })}</li>}
           {r.music && <li>{t('Music: “{title}”, quieter under the voice', { title: r.music })}</li>}
