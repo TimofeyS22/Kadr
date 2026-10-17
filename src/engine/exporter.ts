@@ -4,6 +4,7 @@ import {
   AudioBufferSource, BufferTarget, CanvasSource, Mp4OutputFormat, Output, QUALITY_HIGH, QUALITY_VERY_HIGH,
   StreamTarget, WebMOutputFormat, canEncodeVideo, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
 } from 'mediabunny';
+import { encoderDelay } from './encoderDelay';
 import { Limiter, LoudnessMeter, normalizeGain } from '../core/dsp';
 import { buildFrame } from '../core/frame';
 import { withoutGuides } from '../core/music';
@@ -61,8 +62,20 @@ class MixStream {
   readonly total: number;
   private done = 0;
   private limiter: Limiter | null = null;
-  constructor(private readonly p: Project, private readonly pool: MediaPool, duration: number) {
+  /** `skip`: samples to drop at the start, where the encoder puts its priming (see engine/encoderDelay). */
+  constructor(private readonly p: Project, private readonly pool: MediaPool, duration: number, private skip = 0) {
     this.total = Math.round(duration * SAMPLE_RATE);
+  }
+
+  /** The buffer without the samples still owed to the encoder's priming. */
+  private trim(b: AudioBuffer): AudioBuffer | null {
+    if (!this.skip) return b;
+    const k = Math.min(this.skip, b.length);
+    this.skip -= k;
+    if (k === b.length) return null;
+    const res = new AudioBuffer({ length: b.length - k, numberOfChannels: b.numberOfChannels, sampleRate: b.sampleRate });
+    for (let c = 0; c < b.numberOfChannels; c++) res.copyToChannel(b.getChannelData(c).subarray(k) as Float32Array<ArrayBuffer>, c);
+    return res;
   }
   get finished(): boolean { return this.done >= this.total; }
   get progress(): number { return this.total ? this.done / this.total : 1; }
@@ -87,7 +100,7 @@ class MixStream {
     const next = Math.min(this.total, this.done + AUDIO_WINDOW_S * SAMPLE_RATE);
     const buf = await renderAudioWindow(this.p, this.pool, this.done / SAMPLE_RATE, next / SAMPLE_RATE, SAMPLE_RATE);
     this.done = next;
-    if (!this.limiter) return buf;
+    if (!this.limiter) return this.trim(buf);
     let out = this.limiter.process([buf.getChannelData(0), buf.getChannelData(1)]);
     if (this.finished) {
       const tail = this.limiter.flush();
@@ -96,7 +109,7 @@ class MixStream {
     if (!out[0].length) return null;
     const res = new AudioBuffer({ length: out[0].length, numberOfChannels: 2, sampleRate: SAMPLE_RATE });
     out.forEach((c, i) => res.copyToChannel(c as Float32Array<ArrayBuffer>, i));
-    return res;
+    return this.trim(res);
   }
 }
 
@@ -171,7 +184,8 @@ export async function exportProject(
   output.addVideoTrack(video, { frameRate: opts.fps });
   const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, bitrate: QUALITY_HIGH }) : null;
   if (audio) output.addAudioTrack(audio);
-  const mix = new MixStream(withoutGuides(p), frames.pool, duration); // guide tracks are for editing only
+  // Guide tracks are for editing only; the encoder's priming is taken off the start so the sound meets the picture.
+  const mix = new MixStream(withoutGuides(p), frames.pool, duration, audioCodec ? await encoderDelay(audioCodec, 2, SAMPLE_RATE) : 0);
   // Loudness pre-pass takes the first 5% of the progress bar (audio renders far faster than video).
   const pre = audio && opts.loudness !== false ? 0.05 : 0;
 
@@ -217,7 +231,7 @@ export async function exportAudio(p: Project, loudness: boolean, onProgress: (f:
   const audio = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
   output.addAudioTrack(audio);
   const pool = new MediaPool(16);
-  const mix = new MixStream(withoutGuides(p), pool, duration);
+  const mix = new MixStream(withoutGuides(p), pool, duration, await encoderDelay(codec, 2, SAMPLE_RATE));
   const pre = loudness ? 0.4 : 0;
   try {
     await output.start();

@@ -1515,3 +1515,175 @@ test('a sheet closes with a swipe down on its header; a small drag or a tap on t
   await expect(sheet(page), 'a swipe down closes it').toHaveCount(0);
 });
 
+// ---------- v1.2: voice effects (docs/09 V1) ----------
+
+/** Mono 48 kHz samples of an exported sound. */
+async function samples(file: string): Promise<Float32Array> {
+  const { execFileSync } = await import('node:child_process');
+  const b = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', '48000', '-f', 'f32le', '-'], { maxBuffer: 256 << 20 });
+  return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
+}
+/** Mean level in dB of a sound, optionally above `highpass` Hz (ffmpeg volumedetect). */
+async function meanDb(file: string, highpass?: number): Promise<number> {
+  const { spawnSync } = await import('node:child_process');
+  // 8th order: a softer filter lets the band just below the cutoff leak into "above" (the 4 kHz meter read 18 dB, not 30).
+  const af = highpass ? `${Array(4).fill(`highpass=f=${highpass}:poles=2`).join(',')},volumedetect` : 'volumedetect';
+  const out = spawnSync('ffmpeg', ['-hide_banner', '-i', file, '-af', af, '-f', 'null', '-'], { encoding: 'utf8' }).stderr;
+  return Number(/mean_volume: (-?[\d.]+) dB/.exec(out)![1]);
+}
+/** First moment the sound gets louder than -30 dBFS over 10 ms. */
+function onset(x: Float32Array): number {
+  const w = 480;
+  for (let i = 0; i + w < x.length; i += w / 2) {
+    let s = 0;
+    for (let k = i; k < i + w; k++) s += x[k] * x[k];
+    if (Math.sqrt(s / w) > 0.0316) return i / 48000;
+  }
+  return Infinity;
+}
+async function pickVoice(page: Page, clip: ReturnType<Page['locator']>, name: string) {
+  await selectClip(page, clip);
+  await tool(page, 'Voice').click();
+  await sheet(page).getByRole('radio', { name, exact: true }).click();
+  await expect(sheet(page).getByRole('radio', { name, exact: true })).toHaveAttribute('aria-checked', 'true', { timeout: 60_000 }); // processed
+  await page.getByRole('button', { name: 'Done' }).click();
+}
+
+test('voice effects: telephone cuts the highs, chipmunk raises the pitch in sync, undo restores', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Audio', ['noisy_en.m4a']); // speech plus broadband noise: energy far above 4 kHz
+  const audio = page.locator('.tl-row.audio .clip').first();
+  await expect(audio).toHaveCount(1);
+  // Each export reuses the file name: measure right away.
+  const highs = async (f: string) => (await meanDb(f, 4000)) - (await meanDb(f));
+  const plain = await highs(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  await pickVoice(page, audio, 'Telephone');
+  await expect(tool(page, 'Voice')).toHaveAttribute('aria-pressed', 'true');
+  const phone = await highs(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  expect(plain - phone, 'energy above 4 kHz, relative to the whole').toBeGreaterThan(20);
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(tool(page, 'Voice')).toHaveAttribute('aria-pressed', 'false');
+  expect(Math.abs((await highs(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }))) - plain), 'undo restores').toBeLessThan(1.5);
+
+  // Chipmunk on a 220 Hz tone: the pitch goes up 1.4–2×.
+  await selectClip(page, audio);
+  await tool(page, 'Delete').click();
+  await importFiles(page, 'Audio', ['music.m4a']);
+  await expect(audio).toHaveCount(1);
+  await pickVoice(page, audio, 'Chipmunk');
+  const x = await samples(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  let crossings = 0;
+  for (let i = 1; i < x.length; i++) if ((x[i - 1] < 0) !== (x[i] < 0)) crossings++;
+  const ratio = crossings / 2 / (x.length / 48000) / 220;
+  expect(ratio).toBeGreaterThan(1.4);
+  expect(ratio).toBeLessThan(2);
+});
+
+test('voice effects keep lip sync: speech starts within 20 ms of the original', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['reel_ru.mp4']); // 1.5 s of silence, then speech
+  const clip = page.locator('.tl-row.main .clip').first();
+  await expect(clip).toHaveCount(1);
+  const t0 = onset(await samples(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false })));
+  for (const name of ['Chipmunk', 'Deep', 'Robot']) {
+    await pickVoice(page, clip, name);
+    const t = onset(await samples(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false })));
+    expect(Math.abs(t - t0), `${name}: ${t0.toFixed(3)} → ${t.toFixed(3)} s`).toBeLessThan(0.02);
+  }
+  // Noise reduction and voice enhance (RNNoise works in 10 ms frames) keep the timing too.
+  await pickVoice(page, clip, 'Original');
+  for (const name of ['Reduce background noise', 'Enhance voice']) {
+    await selectClip(page, clip);
+    await tool(page, 'Volume').click();
+    await page.getByRole('switch', { name }).check();
+    await expect(page.getByRole('switch', { name })).toBeChecked({ timeout: 60_000 });
+    await page.getByRole('button', { name: 'Done' }).click();
+    const t = onset(await samples(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false })));
+    expect(Math.abs(t - t0), `${name}: ${t0.toFixed(3)} → ${t.toFixed(3)} s`).toBeLessThan(0.02);
+    await page.getByRole('button', { name: 'Undo' }).click();
+  }
+  // The same pitch shifter keeps the natural voice at 1.25× (on by default): speech starts at t0 / 1.25.
+  await selectClip(page, clip);
+  await tool(page, 'Speed').click();
+  await page.getByRole('radio', { name: '1.25×' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const fast = onset(await samples(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false })));
+  expect(Math.abs(fast - t0 / 1.25), `1.25×: ${(t0 / 1.25).toFixed(3)} expected, ${fast.toFixed(3)} s`).toBeLessThan(0.02);
+});
+
+
+/** Sound minus picture, ms, for each flash+beep pair of fixtures/avsync.mp4 as found in an exported file. */
+async function avOffsets(file: string): Promise<number[]> {
+  const { spawnSync } = await import('node:child_process');
+  const v = spawnSync('ffmpeg', ['-hide_banner', '-i', file, '-vf', 'signalstats,metadata=print:key=lavfi.signalstats.YAVG', '-an', '-f', 'null', '-'], { encoding: 'utf8', maxBuffer: 64 << 20 }).stderr;
+  const frames = [...v.matchAll(/pts_time:([\d.]+)[^\n]*\n[^\n]*YAVG=([\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
+  const flashes: number[] = [];
+  frames.forEach(([t, y], i) => { if (y > 128 && (i === 0 || frames[i - 1][1] <= 128)) flashes.push(t); });
+  const a = spawnSync('ffmpeg', ['-hide_banner', '-i', file, '-af', 'silencedetect=noise=-40dB:d=0.1', '-vn', '-f', 'null', '-'], { encoding: 'utf8' }).stderr;
+  const starts = [...a.matchAll(/silence_end: ([\d.]+)/g)].map((m) => Number(m[1]));
+  expect(flashes.length, 'two flashes').toBe(2);
+  // The beep that belongs to a flash is the first sound after (or just before) it; later ones are echoes.
+  return flashes.map((f) => {
+    const b = starts.find((t) => t > f - 0.2);
+    expect(b, `a beep near ${f} s`).toBeDefined();
+    return Math.round((b! - f) * 1000);
+  });
+}
+
+test('export keeps the sound in sync with the picture, also through processed sound', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['avsync.mp4']); // white frames and beeps together at 1.0 s and 2.5 s
+  const clip = page.locator('.tl-row.main .clip').first();
+  await expect(clip).toHaveCount(1);
+  // Even loudness off: on near-silence it would lift the codec noise into "beeps".
+  const plain = await avOffsets(await exportAs(page, info, 'Video', 'Export video', { loudness: false }));
+  await pickVoice(page, clip, 'Echo'); // the dry sound passes untouched: any shift is the pipeline's
+  const echo = await avOffsets(await exportAs(page, info, 'Video', 'Export video', { loudness: false }));
+  fs.writeFileSync(test.info().outputPath('offsets.txt'), `plain ${plain} ms\necho ${echo} ms\n`);
+  console.log(`A/V offsets (${test.info().project.name}): plain ${plain} ms, echo ${echo} ms`);
+  for (const o of [...plain, ...echo]) expect(Math.abs(o), `sound vs picture: plain ${plain}, echo ${echo} ms`).toBeLessThanOrEqual(20);
+});
+
+/** Reads the open project as stored in the app's IndexedDB; `age` rewrites it as v1.1 stored processed sound. */
+const storedProject = (page: Page, age = false) => page.evaluate(async (ageIt) => {
+  type P = { tracks: { clips: { kind: string; audioKey?: string; audioAssetId?: string }[] }[]; assets: Record<string, { derived?: { sync?: number } }> };
+  const id = /#\/p\/([\w-]+)/.exec(location.hash)![1];
+  const db = await new Promise<IDBDatabase>((res, rej) => { const r = indexedDB.open('kadr'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  const p = await new Promise<P>((res) => { const r = db.transaction('kv').objectStore('kv').get(`p:${id}`); r.onsuccess = () => res(r.result as P); });
+  if (ageIt) { // the old key and a cache without the sync mark (the CSP rightly forbids eval, so this is spelled out)
+    for (const t of p.tracks) for (const c of t.clips) if (c.audioKey) c.audioKey = c.audioKey.replace(/~\d+$/, '');
+    for (const a of Object.values(p.assets)) if (a.derived) delete a.derived.sync;
+    await new Promise<void>((res) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(p, `p:${id}`); tx.oncomplete = () => res(); });
+  }
+  db.close();
+  return p;
+}, age);
+
+test('an older project\'s processed sound (44 ms late before v1.2.1) is rebuilt in sync when it opens', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['reel_ru.mp4']);
+  const clip = page.locator('.tl-row.main .clip').first();
+  await expect(clip).toHaveCount(1);
+  const t0 = onset(await samples(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false })));
+  await selectClip(page, clip);
+  await tool(page, 'Volume').click();
+  await page.getByRole('switch', { name: 'Reduce background noise' }).check();
+  await expect(page.getByRole('switch', { name: 'Reduce background noise' })).toBeChecked({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Done' }).click();
+  const soundOf = async () => (await storedProject(page)).tracks.flatMap((t) => t.clips).find((c) => c.kind === 'video')!;
+  await expect.poll(async () => (await soundOf()).audioKey, { timeout: 20_000 }).toBe('d~2');
+  const fresh = (await soundOf()).audioAssetId;
+  await storedProject(page, true); // as v1.1 stored it
+  await page.reload();
+  await expect.poll(async () => (await soundOf()).audioKey, { timeout: 60_000 }).toBe('d~2'); // rebuilt on open
+  expect((await soundOf()).audioAssetId, 'a new sound, not the late cache').not.toBe(fresh);
+  const t = onset(await samples(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false })));
+  expect(Math.abs(t - t0), `${t0.toFixed(3)} → ${t.toFixed(3)} s`).toBeLessThan(0.02);
+});

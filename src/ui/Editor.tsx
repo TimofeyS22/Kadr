@@ -8,7 +8,7 @@ import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { loadProject, saveProject } from '../storage/db';
-import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead } from './actions';
+import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
 import { formatTime } from './format';
 import { Preview } from './Preview';
 import { Sheets } from './sheets';
@@ -43,6 +43,12 @@ export function Editor({ id }: { id: string }) {
       useEditor.getState().open(produce(p, (d) => { normalizeProject(d); }));
       const task = useEditor.getState().startTask;
       if (task) { useEditor.setState({ startTask: null }); runStartTask(task); }
+      // Sound processed before v1.2.1 was ~44 ms behind the picture: rebuild it once, so nothing drifts or goes missing.
+      const outdated = outdatedSoundClips(useEditor.getState().project!);
+      if (outdated.length) {
+        track('sound_resync', { clips: outdated.length });
+        void withBusy(t('Fine-tuning the sound sync…'), (progress, signal) => prepareStaleSounds(progress, signal));
+      }
       // The user's own fonts: register, then redraw text that may have used a fallback meanwhile.
       if (p.fonts) void import('../engine/customFonts').then((m) => m.registerProjectFonts(p)).then(() => { player.text.clear(); player.requestRender(); });
       track('project_opened', { clips: p.tracks.reduce((n, t) => n + t.clips.length, 0) });

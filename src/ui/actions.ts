@@ -6,7 +6,7 @@ import { fitTrack, type LibraryTrack, type MusicManifest } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
   clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
-  sourceTime, splitClip,
+  sourceTime, splitClip, SOUND_SYNC,
 } from '../core/timeline';
 import type { Asset, CaptionClip, CaptionWord, Clip, Project, SoundClip } from '../core/types';
 import { prepareClipSound } from '../engine/audiofx';
@@ -319,6 +319,10 @@ export const staleSoundClips = (p: Project): SoundClip[] =>
     const key = expectedAudioKey(c);
     return key !== '' && !(c.audioKey === key && c.audioAssetId && p.assets[c.audioAssetId]);
   });
+
+/** Clips whose sound was processed by an older version (before the sync fix): rebuilt once when the project opens. */
+export const outdatedSoundClips = (p: Project): SoundClip[] =>
+  staleSoundClips(p).filter((c) => !!c.audioAssetId && !!c.audioKey && !c.audioKey.endsWith(`~${SOUND_SYNC}`));
 
 /** Prepares every stale sound (e.g. natural pitch after a speed change), so the export sounds like the settings say. */
 export async function prepareStaleSounds(onProgress: (f: number) => void, signal: AbortSignal): Promise<Project | null> {

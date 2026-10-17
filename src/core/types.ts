@@ -1,5 +1,6 @@
 // Project document model. Pure data: JSON-serializable, no DOM types.
 // Times are in seconds. Clip-relative times (keyframes) start at 0 = clip.start.
+import type { VoiceId } from './voicefx';
 
 export const SCHEMA_VERSION = 1;
 
@@ -88,6 +89,8 @@ interface Sound {
   /** Keep natural pitch when speed != 1 (pre-shifted sound, see engine/audiofx). */
   /** Natural voice pitch at any speed; on unless explicitly false (default changed in v1.0). */
   keepPitch?: boolean;
+  /** Voice effect (v1.2): chipmunk, robot, telephone… processed into a derived sound, so preview = export. */
+  voice?: VoiceId;
   /** Auto-ducking depth 0..1: lower this clip while speech plays in other clips. */
   duck?: number;
   /** Guide track (v0.8): heard while editing, never exported (edit to a trending sound, add it in the app you post to). */
@@ -164,7 +167,7 @@ export interface Asset {
   height: number;
   hasAudio: boolean;
   /** Cache of processed versions of this asset's sound, e.g. { denoise: assetId }. */
-  derived?: { denoise?: string; enhance?: string; pitch?: Record<string, string> };
+  derived?: { denoise?: string; enhance?: string; pitch?: Record<string, string>; voice?: Record<string, string>; sync?: number };
   /** Beat grid of the asset's sound, in source seconds. */
   beats?: { bpm: number; times: number[] };
   /** The teleprompter text this recording was read from (docs/09 S1): captions take their words from it. Stays on the device. */

@@ -5,7 +5,7 @@ import { TEXT_PRESETS } from '../core/presets';
 import { ASPECTS, defaultAdjust, defaultTransform } from '../core/defaults';
 import { FILTERS, adjustRange } from '../core/filters';
 import { CURVE_PRESETS } from '../core/speed';
-import { applyTransitionToAll, expectedAudioKey, findClip, keepsPitch, setCurve, setSpeed, setTransition } from '../core/timeline';
+import { applyTransitionToAll, expectedAudioKey, findClip, keepsPitch, setCurve, setSpeed, setTransition, isSound } from '../core/timeline';
 import { CurveEditor } from './CurveEditor';
 import {
   ADJUST_KEYS, FONT_IDS as FONT_ID_LIST, TRANSITION_TYPES,
@@ -13,13 +13,14 @@ import {
   type Transform, type Transition, type TransitionType,
 } from '../core/types';
 import { TEXT_BG_PADDING, TEXT_LINE_HEIGHT, fontOf, fontWeight, type AnyFontId } from '../engine/text';
-import { errorMessage } from '../lib/telemetry';
+import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { addCustomFont, detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
 import { StyleSwatch } from './swatch';
 import { CameraSheet } from './CameraSheet';
 import { licenseText } from '../core/music';
+import { VOICE_IDS, VOICE_LABEL } from '../core/voicefx';
 import { MusicBody } from './MusicSheet';
 import { ReelBody } from './ReelSheet';
 import { ExportSheet } from './ExportSheet';
@@ -36,7 +37,7 @@ const TITLES: Record<SheetId, string> = {
   speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform & keyframes',
   text: 'Text', transition: 'Transition', canvas: 'Canvas', export: 'Export',
   crop: 'Crop', captions: 'Auto captions', captionEdit: 'Captions', voiceover: 'Voice-over', stickers: 'Stickers',
-  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap', chroma: 'Chroma key',
+  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap', chroma: 'Chroma key', voice: 'Voice',
 };
 
 export function Sheets() {
@@ -62,6 +63,7 @@ export function Sheets() {
       {sheet === 'filters' && <FiltersBody clip={clip} />}
       {sheet === 'transform' && <TransformBody clip={clip} />}
       {sheet === 'chroma' && (clip.kind === 'video' || clip.kind === 'image') && <ChromaControls clip={clip} />}
+      {sheet === 'voice' && isSound(clip) && <VoiceBody clip={clip} />}
       {sheet === 'text' && clip.kind === 'text' && <TextBody clip={clip} />}
       {sheet === 'crop' && (clip.kind === 'video' || clip.kind === 'image') && <CropBody clip={clip} />}
       {sheet === 'captionEdit' && clip.kind === 'caption' && <CaptionEditBody clip={clip} />}
@@ -379,6 +381,23 @@ function LicenseButton({ assetId }: { assetId: string }) {
   const copy = () => navigator.clipboard?.writeText(licenseText(lib))
     .then(() => editor().toast(t('License copied: paste it into a copyright dispute or the description')), () => editor().toast(licenseText(lib)));
   return <button className="btn" onClick={() => void copy()}>{t('Copy license')}</button>;
+}
+
+/** Voice effects (docs/09 V1): one tap, processed on the device into a sound that preview and export both play. */
+function VoiceBody({ clip }: { clip: SoundClip }) {
+  const { run, progress } = useSoundJob(clip.id);
+  if (progress) return progress;
+  return (
+    <>
+      <Chips options={['none', ...VOICE_IDS] as const} value={clip.voice ?? 'none'} scroll label={t('Voice')}
+        onChange={(v) => {
+          track('voice_effect', { voice: v });
+          void run((c) => { if (v === 'none') delete c.voice; else c.voice = v; });
+        }}
+        render={(v) => (v === 'none' ? t('Original') : t(VOICE_LABEL[v]))} />
+      <p className="hint">{t('Processed on this device. Speed and noise settings still apply.')}</p>
+    </>
+  );
 }
 
 /** One-tap voice enhancement: noise reduction, voice EQ, compression and even loudness (on device). */

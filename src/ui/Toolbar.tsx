@@ -56,6 +56,7 @@ export function Toolbar() {
   const sound: Tool[] = [
     { icon: Gauge, label: t('Speed'), run: sheet('speed') },
     { icon: Volume2, label: t('Volume'), run: sheet('volume') },
+    { icon: AudioLines, label: t('Voice'), run: sheet('voice'), on: !!(clip && 'voice' in clip && clip.voice) },
   ];
 
   let tools: Tool[];

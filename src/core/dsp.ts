@@ -1,7 +1,7 @@
 // Streaming DSP in plain TypeScript: filters, compressor, loudness meter (ITU-R BS.1770-4) and a lookahead
 // limiter. State carries across calls, so sound processed in 10 s windows has no seams (ADR 15).
 
-type FilterType = 'highpass' | 'peaking' | 'highshelf';
+type FilterType = 'highpass' | 'lowpass' | 'peaking' | 'highshelf';
 
 /** Biquad in transposed direct form II, one instance per channel; coefficients normalized by a0. */
 export class Biquad {
@@ -15,6 +15,8 @@ export class Biquad {
     let b0: number, b1: number, b2: number, a0: number, a1: number, a2: number;
     if (type === 'highpass') {
       b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = (1 + cw) / 2; a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha;
+    } else if (type === 'lowpass') {
+      b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = (1 - cw) / 2; a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha;
     } else if (type === 'peaking') {
       b0 = 1 + alpha * A; b1 = -2 * cw; b2 = 1 - alpha * A; a0 = 1 + alpha / A; a1 = -2 * cw; a2 = 1 - alpha / A;
     } else {

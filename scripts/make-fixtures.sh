@@ -73,6 +73,11 @@ if command -v say >/dev/null; then
     rm -f lang_$l.txt lang_$l.aiff
   done
 fi
+# Audio/video sync (v1.2): white frames and 1 kHz beeps at exactly 1.0 s and 2.5 s.
+if [ ! -f avsync.mp4 ]; then
+  ff -f lavfi -i "color=c=black:s=720x1280:r=30:d=4" -f lavfi -i "aevalsrc='if(between(t,1,1.03)+between(t,2.5,2.53),0.5*sin(2*PI*1000*t),0)':s=48000:d=4" \
+    -vf "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='between(t,1,1.032)+between(t,2.5,2.532)'" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest avsync.mp4
+fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
 
 # Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.

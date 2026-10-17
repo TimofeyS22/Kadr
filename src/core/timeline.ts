@@ -47,9 +47,14 @@ export const rateAt = (c: MediaClip, t: number): number =>
 /** Natural voice at any speed is the default (v1.0); only an explicit `keepPitch: false` lets the pitch follow the speed. */
 export const keepsPitch = (c: SoundClip): boolean => c.keepPitch !== false;
 
-/** What the clip's processed sound must contain: d = noise-reduced, p<speed> = pitch-compensated. */
-export const expectedAudioKey = (c: SoundClip): string =>
-  `${c.enhance ? 'e' : c.denoise ? 'd' : ''}${keepsPitch(c) && c.speed !== 1 && !c.curve ? `p${c.speed}` : ''}`;
+/** Version of processed sounds: 2 = encoder delay removed (v1.2.1; older ones were ~44 ms late and are rebuilt). */
+export const SOUND_SYNC = 2;
+/** What the processed sound must contain: clean-up (e/d), voice effect (v…), natural pitch at speed (p…), and the
+ * sync version (~2); '' = the source plays as is. */
+export const expectedAudioKey = (c: SoundClip): string => {
+  const key = `${c.enhance ? 'e' : c.denoise ? 'd' : ''}${c.voice ? `v${c.voice}` : ''}${keepsPitch(c) && c.speed !== 1 && !c.curve ? `p${c.speed}` : ''}`;
+  return key && `${key}~${SOUND_SYNC}`;
+};
 
 /** Asset to play for a clip's sound: the processed one if it matches the clip's settings, else the source. */
 export function soundAssetId(c: SoundClip): string {
