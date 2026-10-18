@@ -278,6 +278,7 @@ export function CaptionsBody() {
       if (pace.current) learnPace(model, seconds, finishPace(pace.current, performance.now()));
       addCaptions(words, preset, layout);
       if (detected && language) editor().toast(t('Speech language: {language}. Wrong? Pick it and create again.', { language: languageLabel(language) }), 'info', 6000);
+      if (tr.unreadable.length) editor().toast(t('Captions are made without “{name}”: its sound cannot be decoded in this browser.', { name: tr.unreadable.join(', ') }), 'info', 8000);
     } catch (e) {
       // A decoder interrupted by Cancel or by leaving the project fails with its own error: that is a cancel, not a failure.
       if ((e as Error).name !== 'AbortError' && !ac.signal.aborted) editor().toast(t('Captions failed: {error}', { error: errorMessage(e) }), 'error');

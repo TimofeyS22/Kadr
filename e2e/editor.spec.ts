@@ -1796,3 +1796,78 @@ test('quick export: one tap on Export renders with the last settings and saves; 
   const v = pr.streams.find((s) => s.codec_type === 'video')!;
   expect(Math.min(v.width!, v.height!)).toBe(720); // the saved settings, not the defaults
 });
+
+test('iPhone 16+ video: the playable stereo track is used, not the 4-channel one before it (captions, export)', async ({ page }, info) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['iphone_spatial.mov']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  // The whole soundtrack goes through the same decoding as captions; it used to fail or come out silent.
+  const db = await meanDb(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  expect(db).toBeGreaterThan(-30); // the 1 kHz tone of the AAC track
+});
+
+// ---------- v1.3.1: the browser refuses to decode a sound (owner's "Unsupported configuration") ----------
+
+/**
+ * Chromium's AudioDecoder.isConfigSupported() does not check the description, so a track can pass it and fail in
+ * configure(). This makes every audio configure() fail that way, while isConfigSupported() still says yes.
+ */
+async function refuseAudioDecoder(page: Page) {
+  await page.addInitScript(() => {
+    const Base = window.AudioDecoder;
+    if (!Base) return;
+    window.AudioDecoder = class extends Base {
+      configure(config: AudioDecoderConfig) { super.configure({ ...config, codec: 'mp4a.refused' }); }
+    };
+  });
+}
+
+test('the browser refuses WebCodecs audio: captions are still made, from the right words', async ({ page }) => {
+  test.setTimeout(300_000);
+  await refuseAudioDecoder(page);
+  await newProject(page);
+  await importFiles(page, 'Media', ['speech_en.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Captions').click();
+  await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 240_000 });
+  if (!(await sheet(page).isVisible())) await tool(page, 'Edit captions').click();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save as .srt' }).click();
+  const srt = (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
+  for (const w of ['welcome', 'editor', 'phone', 'device']) expect(srt).toContain(w);
+});
+
+test('the browser refuses WebCodecs audio: export keeps the sound, in sync with the picture', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await refuseAudioDecoder(page);
+  await newProject(page);
+  await importFiles(page, 'Media', ['avsync.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const offsets = await avOffsets(await exportAs(page, info, 'Video', 'Export video', { loudness: false }));
+  console.log(`A/V offsets with native decoding (${test.info().project.name}): ${offsets} ms`);
+  for (const o of offsets) expect(Math.abs(o), `sound vs picture: ${offsets} ms`).toBeLessThanOrEqual(20);
+});
+
+test('a sound no decoder in the browser can read is left out of the captions, by name; the rest is captioned', async ({ page }) => {
+  test.setTimeout(300_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['speech_en.mp4', 'landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  // From now on neither WebCodecs nor decodeAudioData reads 44.1 kHz sound: landscape.mp4 (speech_en.mp4 is 48 kHz).
+  await page.evaluate(() => {
+    const Base = window.AudioDecoder;
+    window.AudioDecoder = class extends Base {
+      configure(c: AudioDecoderConfig) { super.configure(c.sampleRate === 44100 ? { ...c, codec: 'mp4a.refused' } : c); }
+    };
+    const decode = BaseAudioContext.prototype.decodeAudioData;
+    BaseAudioContext.prototype.decodeAudioData = function (this: BaseAudioContext, data: ArrayBuffer) {
+      return this.sampleRate === 44100 ? Promise.reject(new DOMException('refused', 'EncodingError')) : decode.call(this, data);
+    } as typeof decode;
+  });
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Captions').click();
+  await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 240_000 });
+  await expect(page.getByText(/Captions are made without “landscape/)).toBeVisible();
+});

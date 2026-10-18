@@ -84,6 +84,12 @@ if [ ! -f iphone_hdr.mov ] && ffmpeg -hide_banner -encoders 2>/dev/null | grep -
     -x265-params "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:log-level=error" -color_primaries bt2020 -color_trc arib-std-b67 \
     -colorspace bt2020nc -b:v 8M -c:a aac -shortest iphone_hdr.mov
 fi
+# iPhone 16+ style audio (v1.3.1): a disabled 4-channel track the browser cannot decode first (stands in for spatial
+# APAC), then the enabled stereo AAC track with a 1 kHz tone.
+if [ ! -f iphone_spatial.mov ]; then
+  ff -f lavfi -i "testsrc2=s=1280x720:r=30:d=4" -f lavfi -i "anullsrc=channel_layout=4.0:sample_rate=48000" -f lavfi -i "sine=f=1000:sample_rate=48000:d=4" \
+    -map 0:v -map 1:a -map 2:a -c:v libx264 -pix_fmt yuv420p -c:a:0 alac -c:a:1 aac -ac:a:1 2 -disposition:a:0 0 -disposition:a:1 default -t 4 iphone_spatial.mov
+fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
 
 # Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.

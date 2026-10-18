@@ -6,7 +6,7 @@ import path from 'node:path';
 
 const texts = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'eval', 'texts.json'), 'utf8')) as Record<string, string>;
 const models = (process.env.EVAL_MODELS ?? 'tiny,base,small').split(',');
-const samples = (process.env.EVAL_SAMPLES ?? 'ru,ru_music,en,en_music').split(',');
+const samples = (process.env.EVAL_SAMPLES ?? 'ru,ru_music,en,en_music,ru_live,ru_live_music').split(',');
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
 
 /** Word-level Levenshtein: errors and the number of reference words matched exactly (coverage). */
@@ -67,7 +67,7 @@ for (const model of models) for (const sample of samples) {
     await page.getByRole('button', { name: 'Save as .srt' }).click();
     const srt = fs.readFileSync(await (await dl).path()!, 'utf8');
     const hyp = srt.split('\n').filter((l) => l && !/^\d+$/.test(l) && !l.includes('-->')).join(' ');
-    const r = wer(norm(texts[lang]), norm(hyp));
+    const r = wer(norm(texts[sample.replace(/_(music|loud)$/, '')] ?? texts[lang]), norm(hyp));
     rows.push(`| ${model} | ${sample} | ${(r.wer * 100).toFixed(1)}% | ${(r.coverage * 100).toFixed(1)}% | ${seconds.toFixed(0)} |`);
     fs.writeFileSync(test.info().outputPath('captions.txt'), hyp);
   });

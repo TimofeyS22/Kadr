@@ -1,7 +1,7 @@
 // Reverse: re-encodes the used part of a clip backwards (frames and sound) into a new asset.
 // Frames are decoded in short windows from the end so memory stays bounded on phones.
 import {
-  ALL_FORMATS, AudioBufferSink, AudioBufferSource, BlobSource, BufferTarget, CanvasSink, CanvasSource, Input,
+  ALL_FORMATS, AudioBufferSource, BlobSource, BufferTarget, CanvasSink, CanvasSource, Input,
   Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
   type WrappedCanvas,
 } from 'mediabunny';
@@ -9,6 +9,7 @@ import type { Asset, Project, VideoClip } from '../core/types';
 import { getBlob } from '../storage/db';
 import { importFile } from './importer';
 import { MediaError } from './media';
+import { ResilientSink, playableAudioTrack } from './sound';
 
 export const MAX_REVERSE_S = 60;
 const WINDOW_S = 0.5;
@@ -25,7 +26,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
   try {
     const video = await input.getPrimaryVideoTrack();
     if (!video) throw new MediaError('No video in this clip');
-    const audio = asset.hasAudio ? await input.getPrimaryAudioTrack() : null;
+    const audio = asset.hasAudio ? await playableAudioTrack(input) : null;
     const dw = await video.getDisplayWidth(), dh = await video.getDisplayHeight();
     const k = Math.min(1, MAX_DIM / Math.max(dw, dh));
     const width = Math.round((dw * k) / 2) * 2, height = Math.round((dh * k) / 2) * 2;
@@ -48,7 +49,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     if (audio && aSource) {
       // Sound: collect the range (≤ 60 s), reverse it, add it in one-second chunks.
       const parts = [];
-      for await (const wb of new AudioBufferSink(audio).buffers(s0, s1)) parts.push(wb);
+      for await (const wb of new ResilientSink(audio).buffers(s0, s1)) parts.push(wb);
       if (parts.length) {
         const sr = parts[0].buffer.sampleRate, ch = Math.min(2, parts[0].buffer.numberOfChannels);
         const len = Math.round((s1 - s0) * sr);

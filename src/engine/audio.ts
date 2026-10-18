@@ -1,11 +1,11 @@
 // Audio mixing with Web Audio. The same scheduling code drives realtime preview (AudioContext)
 // and export (OfflineAudioContext rendered in windows), so the exported mix matches the preview.
-import type { AudioBufferSink } from 'mediabunny';
 import { duckBreakpoints, duckGain, mergeRanges } from '../core/duck';
 import { speechRanges } from '../core/silence';
 import { clipEnd, soundAssetId, sourceSpan, sourceTime, timelineTimeOf } from '../core/timeline';
 import type { Project, SoundClip } from '../core/types';
-import { PEAKS_PER_SEC, waveform, type MediaPool } from './media';
+import { MediaError, PEAKS_PER_SEC, waveform, type MediaPool } from './media';
+import type { SoundSink } from './sound';
 
 export interface SoundEntry { clip: SoundClip; fadeIn: number; fadeOut: number; duck: number }
 
@@ -66,7 +66,7 @@ function envelope(e: SoundEntry, t: number, ducks: [number, number][]): number {
 interface ScheduleOpts {
   ctx: BaseAudioContext;
   out: AudioNode;
-  sink: AudioBufferSink;
+  sink: SoundSink;
   entry: SoundEntry;
   from: number;
   to: number;
@@ -208,15 +208,29 @@ export class AudioEngine {
   }
 }
 
-/** Renders the mix for [from, to) seconds (use sample-aligned bounds for gapless concatenation). */
-export async function renderAudioWindow(p: Project, pool: MediaPool, from: number, to: number, sampleRate: number): Promise<AudioBuffer> {
+/**
+ * Renders the mix for [from, to) seconds (use sample-aligned bounds for gapless concatenation). With `skip`, a sound
+ * that cannot be decoded is left out and its asset id added to the set (captions); without it, that is an error.
+ */
+export async function renderAudioWindow(p: Project, pool: MediaPool, from: number, to: number, sampleRate: number, skip?: Set<string>): Promise<AudioBuffer> {
   const length = Math.max(1, Math.round((to - from) * sampleRate));
   const ctx = new OfflineAudioContext(2, length, sampleRate);
   for (const entry of soundEntries(p)) {
     if (entry.clip.start >= to || clipEnd(entry.clip) <= from) continue;
-    const sink = await pool.audioSink(soundAssetId(entry.clip));
+    const id = soundAssetId(entry.clip);
+    if (skip?.has(id)) continue;
     const ducks = entry.duck > 0 ? await duckRanges(p) : undefined;
-    if (sink) await scheduleClip({ ctx, out: ctx.destination, sink, entry, from, to, at: (tl) => tl - from, keep: () => undefined, ducks });
+    try {
+      const sink = await pool.audioSink(id);
+      // The file had sound when it was added: no track that decodes now is a decoding failure, not silence.
+      if (!sink && p.assets[id]?.hasAudio) throw new Error('No audio track decodes');
+      if (sink) await scheduleClip({ ctx, out: ctx.destination, sink, entry, from, to, at: (tl) => tl - from, keep: () => undefined, ducks });
+    } catch (e) {
+      if ((e as Error).name === 'AbortError' || e instanceof MediaError) throw e;
+      if (skip) { console.warn('sound left out', p.assets[id]?.name, e); skip.add(id); continue; }
+      // Name the file: a bare decoder message ("Unsupported configuration…") does not tell anyone what to do.
+      throw new MediaError('The sound of “{name}” cannot be decoded in this browser ({error})', { name: p.assets[id]?.name ?? '?', error: (e as Error).message ?? String(e) });
+    }
   }
   return ctx.startRendering();
 }

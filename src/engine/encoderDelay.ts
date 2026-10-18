@@ -2,8 +2,9 @@
 // Apple's, about 44 ms — and our MP4s carry no edit list, so every decoder plays them. Every export ran ~44 ms behind
 // its picture, and every processed sound (noise reduction, natural pitch, voice effects) added another 44 ms.
 // The delay is measured once per codec and channel count: a burst is encoded and decoded the way the app plays
-// sound (AudioBufferSink, by timestamp), and that many samples are then dropped before encoding.
-import { ALL_FORMATS, AudioBufferSink, AudioBufferSource, BlobSource, BufferTarget, Input, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, type AudioCodec } from 'mediabunny';
+// sound (ResilientSink, by timestamp), and that many samples are then dropped before encoding.
+import { ALL_FORMATS, AudioBufferSource, BlobSource, BufferTarget, Input, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, type AudioCodec } from 'mediabunny';
+import { ResilientSink } from './sound';
 
 const measured = new Map<string, Promise<number>>();
 
@@ -36,7 +37,7 @@ async function measure(codec: AudioCodec, channels: number, sr: number): Promise
     const track = await input.getPrimaryAudioTrack();
     if (!track) return 0;
     const heard = new Float32Array(2 * len);
-    for await (const { buffer, timestamp } of new AudioBufferSink(track).buffers()) {
+    for await (const { buffer, timestamp } of new ResilientSink(track).buffers()) {
       const at = Math.round(timestamp * sr), d = buffer.getChannelData(0);
       for (let k = 0; k < d.length; k++) if (at + k >= 0 && at + k < heard.length) heard[at + k] = d[k];
     }

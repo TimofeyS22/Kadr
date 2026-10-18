@@ -1,12 +1,13 @@
 // Media access on top of Mediabunny/WebCodecs: probing, per-clip decoding streams, thumbnails, waveforms.
 import {
-  ALL_FORMATS, AudioBufferSink, BlobSource, EncodedPacketSink, Input, VideoSampleSink,
+  ALL_FORMATS, BlobSource, EncodedPacketSink, Input, VideoSampleSink,
   type InputAudioTrack, type InputVideoTrack, type VideoSample,
 } from 'mediabunny';
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
 import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
 import { getBlob, getPeaks, putPeaks } from '../storage/db';
+import { ResilientSink, playableAudioTrack, type SoundSink } from './sound';
 
 /** Error with a user-facing English message (a translation key); `vars` fill its {placeholders}. */
 export class MediaError extends Error {
@@ -16,6 +17,7 @@ export class MediaError extends Error {
 export interface Probe { kind: AssetKind; duration: number; width: number; height: number; hasAudio: boolean }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 const openInput = (blob: Blob) => new Input({ formats: ALL_FORMATS, source: new BlobSource(blob) });
 
 export async function probe(file: Blob): Promise<Probe> {
@@ -29,9 +31,8 @@ export async function probe(file: Blob): Promise<Probe> {
   try {
     if (!(await input.canRead())) throw new MediaError('Unsupported file format');
     const video = await input.getPrimaryVideoTrack();
-    const audio = await input.getPrimaryAudioTrack();
     if (video && !(await video.canDecode())) throw new MediaError('This browser cannot decode {codec} video. On iPhone, set Camera → Formats → Most Compatible.', { codec: (await video.getCodec()) ?? '?' });
-    const hasAudio = !!audio && (await audio.canDecode());
+    const hasAudio = !!(await playableAudioTrack(input));
     if (!video && !hasAudio) throw new MediaError('No playable video or audio found');
     const duration = await input.computeDuration();
     if (!(duration > 0)) throw new MediaError('The file has no duration');
@@ -191,7 +192,7 @@ export class MediaPool {
         const blob = await getBlob(assetId);
         if (!blob) throw new MediaError('Media file is missing from this device');
         const input = openInput(blob);
-        return { input, video: await input.getPrimaryVideoTrack(), audio: await input.getPrimaryAudioTrack() };
+        return { input, video: await input.getPrimaryVideoTrack(), audio: await playableAudioTrack(input) };
       })();
       h.catch(() => this.handles.delete(assetId));
       this.handles.set(assetId, h);
@@ -228,9 +229,9 @@ export class MediaPool {
     return s.frameAt(t, fast);
   }
 
-  async audioSink(assetId: string): Promise<AudioBufferSink | null> {
+  async audioSink(assetId: string): Promise<SoundSink | null> {
     const h = await this.handle(assetId);
-    return h.audio ? new AudioBufferSink(h.audio) : null;
+    return h.audio ? new ResilientSink(h.audio) : null;
   }
 
   /** Closes decoders of clips that were not used recently (hardware decoders are scarce on phones). */
@@ -318,11 +319,11 @@ export function waveform(assetId: string): Promise<Float32Array> {
       if (!blob) return new Float32Array();
       const input = openInput(blob);
       try {
-        const audio = await input.getPrimaryAudioTrack();
+        const audio = await playableAudioTrack(input);
         if (!audio) return new Float32Array();
         const duration = await input.computeDuration();
         const peaks = new Float32Array(Math.ceil(duration * PEAKS_PER_SEC) + 1);
-        for await (const { buffer, timestamp } of new AudioBufferSink(audio).buffers()) {
+        for await (const { buffer, timestamp } of new ResilientSink(audio).buffers()) {
           const data = buffer.getChannelData(0);
           const step = buffer.sampleRate / PEAKS_PER_SEC;
           for (let i = 0; i < data.length; i++) {
