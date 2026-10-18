@@ -55,6 +55,7 @@ for (const model of models) for (const sample of samples) {
     await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
     await page.getByRole('button', { name: 'Close tools' }).click();
     await page.getByRole('button', { name: 'Captions', exact: true }).click();
+    await page.getByRole('button', { name: 'Settings' }).click(); // the tool starts with the defaults (v1.3)
     await page.getByRole('combobox', { name: 'Language' }).selectOption(lang === 'ru' ? 'russian' : 'english');
     await page.locator('.sheet .chip', { hasText: new RegExp(`${model === 'tiny' ? 'Fast' : model === 'base' ? 'Accurate' : 'Most accurate'},`) }).first().click();
     const t0 = Date.now();

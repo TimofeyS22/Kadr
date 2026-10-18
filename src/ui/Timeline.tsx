@@ -212,10 +212,38 @@ export function Timeline() {
         cancelAnimationFrame(raf);
         raf = 0;
         if (d.mode === 'move' && e.type === 'pointerup') finishMove(d, e);
-        if (d.mode === 'trim') player.seek(useEditor.getState().time); // back to the playhead
+        if (d.mode === 'trim') {
+          if (d.edge === 'start') settleStartTrim(d);
+          player.seek(useEditor.getState().time); // back to the playhead
+        }
         return;
       }
       if (p && e.type === 'pointerup' && p.pointerId === e.pointerId) tapClip(p.id);
+    };
+    /**
+     * Trimming the start of a main-track clip closed the gap in the model, and the drag drew the clip shifted so its
+     * left edge stayed under the finger. On release the view scrolls back by the trimmed width, so nothing moves:
+     * the clip stays where the finger left it and the playhead keeps pointing at the same picture (before v1.3
+     * everything jumped left by the trimmed width — the owner's "trimming by the left edge is very crooked").
+     * Near 0:00 there is no room to scroll; there the clips glide the rest of the way instead of jumping.
+     */
+    const settleStartTrim = (d: Extract<Drag, { mode: 'trim' }>) => {
+      const before = findClip(d.base, d.id), now = findClip(useEditor.getState().project!, d.id);
+      if (!before || !now || now.track.kind !== 'main') return;
+      const el = scroller.current!, { zoom } = live.current;
+      const cut = (before.clip.duration - now.clip.duration) * zoom;
+      if (cut <= 0) return;
+      const x = Math.max(0, el.scrollLeft - cut);
+      const rest = cut - (el.scrollLeft - x);
+      ignoreScroll.current = x;
+      el.scrollLeft = x;
+      useEditor.setState({ time: Math.min(projectDuration(useEditor.getState().project!), x / zoom) });
+      if (rest > 0.5 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const ids = new Set(mainTrack(useEditor.getState().project!).clips.slice(now.index).map((c) => c.id));
+        for (const node of el.querySelectorAll<HTMLElement>('.tl-row.main .clip')) {
+          if (ids.has(node.dataset.clip!)) node.animate([{ transform: `translateX(${rest}px)` }, { transform: 'none' }], { duration: 180, easing: 'ease-out' });
+        }
+      }
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -312,7 +340,8 @@ export function Timeline() {
         onClick={(e) => { if (!(e.target as HTMLElement).closest('.clip, button')) useEditor.getState().select(null); }}
       >
         {/* While dragging, extra room past the end lets a clip be carried (and auto-scrolled) beyond the last one. */}
-        <div className="tl-content" style={{ width: duration * zoom + vw + (drag ? vw / 2 : 0) }}>
+        {/* While dragging, as wide as before: a project getting shorter under the finger must not make the browser clamp the scroll (the drag would read that as auto-scroll). */}
+        <div className="tl-content" style={{ width: (drag ? Math.max(duration, projectDuration(drag.base)) : duration) * zoom + vw + (drag ? vw / 2 : 0) }}>
           <Ruler duration={duration} zoom={zoom} pad={pad} />
           {overlays.map(row)}
           {row(main)}

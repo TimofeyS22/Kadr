@@ -68,6 +68,11 @@ export const RU: Record<string, string> = {
   'Done': 'Готово',
   'Double-tap to reset': 'Дважды нажмите, чтобы сбросить',
   'Cancel': 'Отмена',
+  'Settings': 'Настройки',
+  'Quick export: the Export button saves right away with these settings': 'Быстрый экспорт: кнопка «Экспорт» сразу сохраняет с этими настройками',
+  'Saved to Downloads.': 'Сохранено в «Загрузки».',
+  'iPhone saves to Photos through the share sheet: tap Save, then “Save Video”.': 'В «Фото» iPhone сохраняет через меню «Поделиться»: нажмите «Сохранить», затем «Сохранить видео».',
+  'Create again…': 'Создать заново…',
   'Back': 'Назад',
 
   // Toolbar
@@ -451,6 +456,8 @@ export const RU: Record<string, string> = {
   '{p}% — keep this screen open': '{p}% — не закрывайте экран',
   'Ready: {mb} MB in {s} s': 'Готово: {mb} МБ за {s} с',
   'Save / Share': 'Сохранить / Поделиться',
+  'Save': 'Сохранить',
+  'Share': 'Поделиться',
   'Export again': 'Экспортировать снова',
   'Export failed: {error}': 'Экспорт не удался: {error}',
   // v0.5

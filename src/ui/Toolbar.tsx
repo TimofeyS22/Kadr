@@ -7,7 +7,7 @@ import { findClip } from '../core/timeline';
 import { useEditor, type SheetId } from '../state/store';
 import {
   addMedia, addText, autoReframe, deleteMulti, deleteSelected, detachSelectedAudio, duplicateMulti, duplicateSelected, freezeFrame, multiToPlayhead, reverseSelected,
-  splitAtPlayhead, toggleCutout, toggleFlip,
+  splitAtPlayhead, startCaptions, toggleCutout, toggleFlip,
 } from './actions';
 import { t } from '../lib/i18n';
 
@@ -53,6 +53,8 @@ export function Toolbar() {
   const mirror: Tool = { icon: TrianglesCenterlineDashedVertical, label: t('Mirror'), run: () => toggleFlip('x'), on: !!(clip && 'flipX' in clip && clip.flipX) };
   // Next to Cutout, where people look for it (it used to sit at the bottom of Transform, docs/09 Q3).
   const chroma: Tool = { icon: Pipette, label: t('Chroma key'), run: sheet('chroma'), on: !!(clip && 'chroma' in clip && clip.chroma.enabled) };
+  // One tap: captions for the whole timeline, every video (v1.3); existing captions open for editing.
+  const captions: Tool = { icon: Captions, label: t('Captions'), run: startCaptions };
   const sound: Tool[] = [
     { icon: Gauge, label: t('Speed'), run: sheet('speed') },
     { icon: Volume2, label: t('Volume'), run: sheet('volume') },
@@ -61,23 +63,23 @@ export function Toolbar() {
 
   let tools: Tool[];
   switch (kind) {
-    case 'video': tools = [split, ...sound, pauses, crop, mirror, { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() }, ...look, fx, mask, hide, cutout, chroma, { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() },
+    case 'video': tools = [split, captions, ...sound, pauses, crop, mirror, { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() }, ...look, fx, mask, hide, cutout, chroma, { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() },
       { icon: Rewind, label: t('Reverse'), run: () => void reverseSelected(), on: !!(clip?.kind === 'video' && clip.reversedFrom) },
       { icon: AudioLines, label: t('Extract audio'), run: detachSelectedAudio }, pick, dup, del]; break;
     case 'image': tools = [split, crop, mirror, ...look, fx, mask, hide, cutout, chroma, pick, dup, del]; break;
-    case 'audio': tools = [split, ...sound, { icon: Activity, label: t('Beat'), run: sheet('beats'), on: !!clip && clip.kind === 'audio' && !!useEditor.getState().project?.assets[clip.assetId]?.beats }, pauses, pick, dup, del]; break;
+    case 'audio': tools = [split, captions, ...sound, { icon: Activity, label: t('Beat'), run: sheet('beats'), on: !!clip && clip.kind === 'audio' && !!useEditor.getState().project?.assets[clip.assetId]?.beats }, pauses, pick, dup, del]; break;
     case 'text': tools = [{ icon: Type, label: t('Edit text'), run: sheet('text') }, look[2], split, pick, dup, del]; break;
     case 'caption': tools = [{ icon: Captions, label: t('Edit captions'), run: sheet('captionEdit') }, look[2], split, pick, del]; break;
     default: tools = [
       { icon: Clapperboard, label: t('Reel in 1 tap'), run: sheet('reel') },
       { icon: Film, label: t('Media'), run: () => void addMedia('main') },
+      captions,
       { icon: Layers, label: t('Overlay'), run: () => void addMedia('overlay') },
       { icon: Disc3, label: t('Music'), run: sheet('music') },
       { icon: Music, label: t('Audio'), run: () => void addMedia('audio') },
       { icon: Video, label: t('Camera'), run: sheet('camera') },
       { icon: Mic, label: t('Record'), run: sheet('voiceover') },
       { icon: Type, label: t('Text'), run: addText },
-      { icon: Captions, label: t('Captions'), run: sheet('captions') },
       { icon: Smile, label: t('Stickers'), run: sheet('stickers') },
       { icon: Bell, label: t('Sounds'), run: sheet('sfx') },
       { icon: Frame, label: t('Canvas'), run: sheet('canvas') },

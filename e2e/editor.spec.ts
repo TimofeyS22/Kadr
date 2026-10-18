@@ -11,6 +11,8 @@ test.beforeEach(async ({ page }) => {
     localStorage.setItem('kadr.tips', '99');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
+    // Export tests pick their settings; quick export (on by default, v1.3) has its own test.
+    if (!localStorage.getItem('kadr.exportPrefs')) localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false }));
     // Headless WebKit has no share sheet (share() never settles): take the download path like desktop browsers.
     Object.defineProperty(navigator, 'canShare', { value: undefined });
   });
@@ -350,8 +352,7 @@ test('auto captions, edit by text, .srt export', async ({ page }) => {
   await importFiles(page, 'Media', ['speech_en.mp4']);
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close tools' }).click();
-  await tool(page, 'Captions').click();
-  await page.getByRole('button', { name: 'Create captions' }).click();
+  await tool(page, 'Captions').click(); // one tap: no settings on the way (v1.3)
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 240_000 });
   if (!(await sheet(page).isVisible())) await tool(page, 'Edit captions').click();
   await expect(page.getByRole('button', { name: 'Save as .srt' })).toBeVisible();
@@ -691,6 +692,7 @@ test('camera with teleprompter scrolls the script, records a mirrored clip onto 
   // The teleprompter text stays with the recording: Auto captions offer it as the words (docs/09 S1).
   if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
+  await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByRole('radio', { name: 'From my text' })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByRole('textbox', { name: 'Your text' })).toHaveValue('Hello! This is a teleprompter test.\nSecond line.');
   await page.getByRole('button', { name: 'Done' }).click();
@@ -1221,7 +1223,7 @@ test('a new text follows the finger from anywhere; a tap on empty space finishes
   await expect(selBox(page)).toBeVisible();
 });
 
-test('trimming the start of a main clip: the left edge follows the finger, the gap closes on release', async ({ page }) => {
+test('trimming the start of a main clip: the left edge follows the finger and stays there on release, the gap closed', async ({ page }) => {
   await newProject(page);
   await importFiles(page, 'Media', ['landscape.mp4', 'portrait.mp4']);
   const clip = page.locator('.tl-row.main .clip').nth(1);
@@ -1237,8 +1239,27 @@ test('trimming the start of a main clip: the left edge follows the finger, the g
   expect(Math.abs(mid.x - (b0.x + 60))).toBeLessThan(4); // left edge under the finger
   expect(Math.abs(mid.x + mid.width - (b0.x + b0.width))).toBeLessThan(4); // right edge stays
   await page.mouse.up();
-  await expect.poll(async () => (await clip.boundingBox())!.x).toBeLessThan(b0.x + 3); // gap closed
-  expect((await clip.boundingBox())!.width).toBeLessThan(b0.width - 50);
+  // Release: nothing jumps (v1.3). The view scrolled back by the trimmed width, so the clip stays under the finger…
+  await page.waitForTimeout(300);
+  const end = (await clip.boundingBox())!;
+  expect(Math.abs(end.x - (b0.x + 60))).toBeLessThan(4);
+  expect(Math.abs(end.x + end.width - (b0.x + b0.width))).toBeLessThan(4);
+  // …and the gap is closed: the clip starts where the one before it ends.
+  const prev = (await page.locator('.tl-row.main .clip').nth(0).boundingBox())!;
+  expect(Math.abs(prev.x + prev.width - end.x)).toBeLessThan(3);
+  // At 0:00 there is no room to scroll: the first clip glides back to the start instead of jumping.
+  const first = page.locator('.tl-row.main .clip').nth(0);
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
+  await selectClip(page, first);
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
+  const f0 = (await first.boundingBox())!;
+  const fh = (await first.getByLabel('Trim start').boundingBox())!;
+  await page.mouse.move(fh.x + fh.width / 2, fh.y + fh.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(fh.x + fh.width / 2 + 40, fh.y + fh.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.abs((await first.boundingBox())!.x - f0.x)).toBeLessThan(3);
+  expect((await first.boundingBox())!.width).toBeLessThan(f0.width - 30);
 });
 
 test('dragging a clip to the edge of the timeline scrolls it', async ({ page }) => {
@@ -1429,6 +1450,7 @@ test('captions from my text: every word is the text\'s own, timed by the speech,
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
+  await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByRole('radio', { name: 'Recognize speech' })).toHaveAttribute('aria-checked', 'true'); // no text yet
   await page.getByRole('radio', { name: 'From my text' }).click();
   await expect(page.getByRole('button', { name: 'Create captions' })).toBeDisabled();
@@ -1722,4 +1744,55 @@ test('the home footer shows the version from package.json', async ({ page }) => 
   const { version } = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { version: string };
   await page.goto('./');
   await expect(page.locator('.home-foot')).toContainText(`Kadr v${version}`);
+});
+
+// ---------- v1.3: captions in one tap on every video (owner's feedback) ----------
+
+test('Captions in one tap from a selected video caption every clip; a second tap edits, "Create again" replaces', async ({ page }) => {
+  test.setTimeout(400_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['speech_en.mp4', 'speech_en.mp4']);
+  const clips = page.locator('.tl-row.main .clip');
+  await expect(clips).toHaveCount(2);
+  await tool(page, 'Captions').click(); // straight from the selected clip's tools
+  const caption = page.locator('.clip-caption');
+  await expect(caption).toHaveCount(1, { timeout: 300_000 });
+  const c = (await caption.boundingBox())!, a = (await clips.nth(0).boundingBox())!, b = (await clips.nth(1).boundingBox())!;
+  expect(c.x).toBeLessThan(a.x + a.width / 2); // the first video's speech…
+  expect(c.x + c.width).toBeGreaterThan(b.x + b.width / 3); // …and the second one's
+  await page.getByRole('button', { name: 'Done' }).click();
+  await selectClip(page, clips.nth(0));
+  await tool(page, 'Captions').click(); // captions exist: open them, do not double them
+  await expect(page.getByRole('button', { name: 'Save as .srt' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create again…' }).click();
+  await page.getByRole('button', { name: 'Create captions' }).click();
+  await expect(page.getByRole('button', { name: 'Save as .srt' })).toBeVisible({ timeout: 300_000 });
+  await expect(caption).toHaveCount(1); // replaced, not added
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(caption).toHaveCount(1); // one undo brings back the first set, still one
+});
+
+// ---------- v1.3: quick export (owner's feedback) ----------
+
+test('quick export: one tap on Export renders with the last settings and saves; Settings stops it', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await page.evaluate(() => localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: true, resolution: 720, quality: 'standard', loudness: true })));
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  // "Settings" while it renders: back to the settings, nothing saved.
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('button', { name: 'Export video' })).toBeVisible();
+  await expect(page.getByRole('switch', { name: /Quick export/ })).toBeChecked();
+  await page.getByRole('button', { name: 'Done' }).click();
+  // One tap: no settings on the way. Android and desktop download by themselves; iPhone gets one Save button.
+  const dl = page.waitForEvent('download', { timeout: 120_000 });
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  if (info.project.name === 'iphone-webkit') await page.getByRole('button', { name: 'Save', exact: true }).click({ timeout: 120_000 });
+  const file = info.outputPath((await dl).suggestedFilename());
+  await (await dl).saveAs(file);
+  const pr = await probe(file);
+  const v = pr.streams.find((s) => s.codec_type === 'video')!;
+  expect(Math.min(v.width!, v.height!)).toBe(720); // the saved settings, not the defaults
 });

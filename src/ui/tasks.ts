@@ -25,7 +25,7 @@ interface TaskSpec {
 
 export const TASKS: Record<TaskId, TaskSpec> = {
   reel: { title: 'Turn a talking video into a reel', accept: 'video/*', sheet: 'reel', auto: true },
-  captions: { title: 'Add captions to a video', accept: 'video/*,audio/*', sheet: 'captions' },
+  captions: { title: 'Add captions to a video', accept: 'video/*,audio/*', sheet: 'captions', auto: true },
   pauses: { title: 'Remove pauses from a video', accept: 'video/*,audio/*', sheet: 'pauses', clip: true },
   speed: { title: 'Speed up a video', accept: 'video/*', sheet: 'speed', clip: true },
   music: { title: 'Add music to a video', accept: 'video/*,image/*', sheet: 'music' },

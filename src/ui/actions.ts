@@ -68,7 +68,7 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   if (assets.some((a) => a.kind === 'video')) iosVideoTip();
 }
 
-const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+export const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const IOS_TIP_KEY = 'kadr.iosVideoTip.v3';
 
 /**
@@ -254,11 +254,25 @@ export function addSticker(emoji: string): void {
 }
 
 /** Adds a caption clip from words in timeline time. */
+/**
+ * The Captions tool (v1.3, owner's feedback "captions in one tap on every video"): one tap captions the whole
+ * timeline with the defaults; when the project already has captions, they open for editing instead of doubling.
+ */
+export function startCaptions(): void {
+  const s = editor();
+  const existing = s.project?.tracks.flatMap((tr) => tr.clips).find((c) => c.kind === 'caption');
+  if (existing) { s.select(existing.id); s.openSheet('captionEdit'); return; }
+  useEditor.setState({ startAuto: true });
+  s.openSheet('captions');
+}
+
+/** Adds captions as one clip; they replace earlier captions in the same undo step (one set of captions per project). */
 export function addCaptions(words: CaptionWord[], presetId = 'pop', layout?: CaptionLayout | { wordsPerPage: number }): void {
   if (!words.length) { editor().toast(t('No speech was found in this video')); return; }
   const preset = CAPTION_PRESETS.find((x) => x.id === presetId) ?? CAPTION_PRESETS[0];
   let id = '';
   editor().commit((d) => {
+    deleteClips(d, d.tracks.flatMap((tr) => tr.clips.filter((c) => c.kind === 'caption').map((c) => c.id)));
     const c = createCaptionClip(words, typeof layout === 'object' ? { ...preset, ...layout } : preset);
     if (typeof layout === 'string') setCaptionLayout(c, layout, preset.highlight ?? CAPTION_ACCENT);
     endWithContent(d, c);

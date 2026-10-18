@@ -320,6 +320,11 @@ export async function saveFile(blob: Blob, fileName: string): Promise<void> {
       if ((e as Error).name === 'AbortError') return;
     }
   }
+  downloadFile(blob, fileName);
+}
+
+/** Saves through the browser's downloads, with no share sheet (needs no fresh tap, so it works when an export finishes). */
+export function downloadFile(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

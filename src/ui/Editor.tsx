@@ -8,6 +8,7 @@ import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { loadProject, saveProject } from '../storage/db';
+import { startExport } from './ExportSheet';
 import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
 import { formatTime } from './format';
 import { Preview } from './Preview';
@@ -164,7 +165,7 @@ function TopBar({ project }: { project: Project }) {
         onChange={(e) => s.commit((d) => { d.name = e.target.value; }, 'name')} />
       <button className="icon-btn" disabled={!canUndo} onClick={s.undo} aria-label={t('Undo')}><Undo2 size={20} /></button>
       <button className="icon-btn" disabled={!canRedo} onClick={s.redo} aria-label={t('Redo')}><Redo2 size={20} /></button>
-      <button className="btn primary" disabled={projectDuration(project) <= 0} onClick={() => s.openSheet('export')}>
+      <button className="btn primary" disabled={projectDuration(project) <= 0} onClick={startExport}>
         <Upload size={16} /> {t('Export')}
       </button>
     </header>

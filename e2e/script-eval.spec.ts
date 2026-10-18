@@ -57,6 +57,7 @@ for (const { name, file: fileName, language } of SAMPLES) {
     await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
     await page.getByRole('button', { name: 'Close tools' }).click();
     await page.getByRole('button', { name: 'Captions', exact: true }).click();
+    await page.getByRole('button', { name: 'Settings' }).click(); // the tool starts with the defaults (v1.3)
     await page.getByRole('combobox', { name: 'Language' }).selectOption(language);
     await page.getByRole('button', { name: 'Create captions' }).click();
     await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 540_000 });

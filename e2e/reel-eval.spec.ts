@@ -31,6 +31,7 @@ test('reel eval: speech kept, silence removed, time', async ({ page }, info) => 
     localStorage.setItem('kadr.tips', '99');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.reel', JSON.stringify({ music: null })); // music would hide the silence; language: Auto
+    localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false })); // the eval picks its export settings
     Object.defineProperty(navigator, 'canShare', { value: undefined });
   });
   await page.goto('./');

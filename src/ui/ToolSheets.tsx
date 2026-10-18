@@ -213,13 +213,23 @@ function CaptionLook({ layout, preset, onLayout, onPreset }: { layout: CaptionLa
   );
 }
 
+/** The caption look last chosen here: one-tap captions (v1.3) reuse it. */
+const LOOK_KEY = 'kadr.captionLook';
+function savedLook(): { preset: string; layout: CaptionLayout } {
+  try {
+    const v = JSON.parse(localStorage.getItem(LOOK_KEY) ?? 'null') as { preset?: string; layout?: CaptionLayout } | null;
+    if (v && CAPTION_PRESETS.some((x) => x.id === v.preset) && CAPTION_LAYOUTS.includes(v.layout!)) return { preset: v.preset!, layout: v.layout! };
+  } catch { /* storage off: defaults */ }
+  return { preset: 'pop', layout: 'highlight' };
+}
+
 export function CaptionsBody() {
   // "Accurate" everywhere (v1.0): on Russian speech tiny made 2× the errors of base (eval in docs/02); tiny stays a choice.
   const [model, setModel] = useState<AsrModel>('base');
   // Auto by default: the language is detected from the speech (eval in docs/02, v1.1.1).
   const [lang, setLang] = useState('');
-  const [preset, setPreset] = useState('pop');
-  const [layout, setLayout] = useState<CaptionLayout>('highlight');
+  const [preset, setPreset] = useState(() => savedLook().preset);
+  const [layout, setLayout] = useState<CaptionLayout>(() => savedLook().layout);
   // Words from the user's own text (docs/09 S1): on by default when the recording was read from the teleprompter.
   const [script, setScript] = useState(() => { const p = editor().project; return p ? projectScript(p) : ''; });
   const [source, setSource] = useState<'speech' | 'script'>(() => (script ? 'script' : 'speech'));
@@ -228,11 +238,18 @@ export function CaptionsBody() {
   const pace = useRef<Pace | null>(null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
+  // The Captions tool (v1.3): start right away with the defaults; the settings are one tap away while it runs.
+  useEffect(() => {
+    if (!useEditor.getState().startAuto) return;
+    useEditor.setState({ startAuto: false });
+    void run();
+  }, []);
 
   async function run() {
     const p = editor().project;
     if (!p) return;
     if (!soundEntries(p).length) { editor().toast(t('There is no sound in this project to caption')); return; }
+    try { localStorage.setItem(LOOK_KEY, JSON.stringify({ preset, layout })); } catch { /* storage off */ }
     player.pause();
     const ac = new AbortController();
     abort.current = ac;
@@ -262,7 +279,8 @@ export function CaptionsBody() {
       addCaptions(words, preset, layout);
       if (detected && language) editor().toast(t('Speech language: {language}. Wrong? Pick it and create again.', { language: languageLabel(language) }), 'info', 6000);
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') editor().toast(t('Captions failed: {error}', { error: errorMessage(e) }), 'error');
+      // A decoder interrupted by Cancel or by leaving the project fails with its own error: that is a cancel, not a failure.
+      if ((e as Error).name !== 'AbortError' && !ac.signal.aborted) editor().toast(t('Captions failed: {error}', { error: errorMessage(e) }), 'error');
     } finally {
       setProgress(null);
     }
@@ -273,7 +291,8 @@ export function CaptionsBody() {
       <div className="export-progress">
         <PaceBar pace={pace} />
         <p>{progress}</p>
-        <button className="btn" onClick={() => abort.current?.abort()}>{t('Cancel')}</button>
+        <button className="btn" onClick={() => abort.current?.abort()}>{t('Settings')}</button>
+        <button className="btn" onClick={() => { abort.current?.abort(); editor().openSheet(null); }}>{t('Cancel')}</button>
       </div>
     );
   }
@@ -353,6 +372,7 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
       </div>
       <CutByText clip={clip} />
       <button className="btn" onClick={() => void exportSubtitles()}>{t('Save as .srt')}</button>
+      <button className="btn" onClick={() => editor().openSheet('captions')}>{t('Create again…')}</button>
     </>
   );
 }
