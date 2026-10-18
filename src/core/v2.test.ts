@@ -286,7 +286,7 @@ import { projectDuration as projectDurationOf, projectDuration } from './timelin
 
 import { createImageClip } from './defaults';
 
-import { speechWindows, vadSegments, wordsInSpeech } from './captions';
+import { GIGAAM_VAD, speechWindows, vadSegments, wordsInSpeech } from './captions';
 
 describe('speech detection for captions', () => {
   it('turns probabilities into padded speech segments with hysteresis', () => {
@@ -299,6 +299,16 @@ describe('speech detection for captions', () => {
     expect(seg.length).toBe(1);
     expect(seg[0][0]).toBeCloseTo(10 * f - DEFAULT_VAD.pad, 5);
     expect(seg[0][1]).toBeCloseTo(45 * f + DEFAULT_VAD.pad, 5);
+  });
+
+  it('gives GigaAM the quiet speech under music that Whisper is kept away from (v1.4)', () => {
+    const f = 0.032;
+    const probs = new Float32Array(100);
+    for (let i = 20; i < 50; i++) probs[i] = 0.4; // a voice the music half covers
+    expect(vadSegments(probs, f)).toEqual([]);
+    const seg = vadSegments(probs, f, GIGAAM_VAD);
+    expect(seg.length).toBe(1);
+    expect(seg[0][0]).toBeCloseTo(20 * f - GIGAAM_VAD.pad, 5);
   });
 
   it('groups speech into ≤ 28 s windows and filters words outside speech', () => {

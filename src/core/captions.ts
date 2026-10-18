@@ -124,6 +124,8 @@ export interface VadOptions { on: number; off: number; minSpeech: number; minSil
 // Measured in v1.0 (docs/02, caption eval): lenient thresholds (0.35/0.2, wider padding) made speech under loud music
 // worse (base, RU: WER 28.6% vs 16.9%), because music then reaches Whisper as "speech". These stay.
 export const DEFAULT_VAD: VadOptions = { on: 0.5, off: 0.35, minSpeech: 0.25, minSilence: 0.3, pad: 0.2 };
+/** GigaAM (CTC) does not invent text over music the way Whisper does, so it gets the lenient thresholds (v1.4, docs/10). */
+export const GIGAAM_VAD: VadOptions = { on: 0.25, off: 0.15, minSpeech: 0.25, minSilence: 0.3, pad: 0.4 };
 
 /** Speech segments (seconds) from per-frame speech probabilities, with hysteresis and padding. */
 export function vadSegments(probs: Float32Array, frame: number, o: VadOptions = DEFAULT_VAD): [number, number][] {

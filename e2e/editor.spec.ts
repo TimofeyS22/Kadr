@@ -1871,3 +1871,40 @@ test('a sound no decoder in the browser can read is left out of the captions, by
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 240_000 });
   await expect(page.getByText(/Captions are made without “landscape/)).toBeVisible();
 });
+
+// ---------- v1.4: GigaAM for Russian speech (docs/10 C1) ----------
+
+/** Captions with the "Russian speech" model and Auto language; returns the .srt text in lower case. */
+async function captionsWithRussianModel(page: Page, file: string): Promise<string> {
+  await newProject(page);
+  await importFiles(page, 'Media', [file]);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Captions').click();
+  await page.getByRole('button', { name: 'Settings' }).click(); // the tool starts with the defaults (v1.3)
+  await expect(page.getByRole('combobox', { name: 'Language' })).toHaveValue('');
+  await page.locator('.sheet .chip', { hasText: /^Russian speech, 225 MB$/ }).click();
+  await page.getByRole('button', { name: 'Create captions' }).click();
+  await expect(page.getByRole('button', { name: 'Save as .srt' })).toBeVisible({ timeout: 400_000 });
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save as .srt' }).click();
+  return (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
+}
+
+test('Russian speech, Auto language: GigaAM recognizes it by itself, punctuated and right', async ({ page }) => {
+  test.setTimeout(500_000);
+  const srt = await captionsWithRussianModel(page, 'speech_ru.mp4'); // «Привет! Это видеоредактор Кадр. Всё работает прямо на телефоне.»
+  for (const w of ['привет', 'видеоредактор', 'работает', 'телефоне']) expect(srt).toContain(w);
+  expect(srt).toMatch(/[.,!?]/); // GigaAM writes punctuation
+  // GigaAM confirmed the language itself: Whisper (77 MB more) was never downloaded.
+  const cached = await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async (n) => (await (await caches.open(n)).keys()).map((r) => r.url)))).flat());
+  expect(cached.some((u) => u.includes('gigaam'))).toBe(true);
+  expect(cached.filter((u) => u.includes('whisper'))).toEqual([]);
+});
+
+test('"Russian speech" on English speech falls back to Whisper: English words, not Cyrillic guesses', async ({ page }) => {
+  test.setTimeout(600_000);
+  const srt = await captionsWithRussianModel(page, 'speech_en.mp4');
+  for (const w of ['welcome', 'editor', 'phone', 'device']) expect(srt).toContain(w);
+  expect(srt).not.toMatch(/[а-я]/);
+});

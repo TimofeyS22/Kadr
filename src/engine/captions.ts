@@ -1,19 +1,31 @@
 // Auto-captions client: mixes the timeline sound to 16 kHz mono, cuts it into ≤30 s chunks at the
 // quietest moments (so words are not split), and transcribes the chunks in the ASR worker.
-import { alignToSpeech, dropArtifacts, speechOnset, speechWindows, vadSegments, wordsInSpeech } from '../core/captions';
+import { DEFAULT_VAD, GIGAAM_VAD, alignToSpeech, dropArtifacts, speechOnset, speechWindows, vadSegments, wordsInSpeech } from '../core/captions';
 import { projectDuration, soundAssetId } from '../core/timeline';
 import type { ScriptCaptions } from '../core/script';
 import type { CaptionWord, Project } from '../core/types';
 import type { AsrModel, AsrRequest, AsrResponse } from './asr.worker';
 import { renderAudioWindow, soundEntries } from './audio';
 import { MediaError, MediaPool } from './media';
+import { useLocale } from '../lib/i18n';
 
 export type { AsrModel };
 export const ASR_MODELS: Record<AsrModel, { label: string; mb: number }> = {
   tiny: { label: 'Fast', mb: 41 },
   base: { label: 'Accurate', mb: 77 },
   small: { label: 'Most accurate', mb: 249 },
+  ru: { label: 'Russian speech', mb: 225 },
 };
+
+/** GigaAM for Russian where the interface is Russian (its speech is mostly Russian), Whisper base elsewhere. */
+export const defaultAsrModel = (): AsrModel => (useLocale.getState().locale === 'ru' ? 'ru' : 'base');
+
+/**
+ * GigaAM confirms Russian speech by itself (no Whisper download) when it is at least this sure and reads at least
+ * this many letters per second; otherwise Whisper detects the language. Measured on the eval set (docs/10 §2):
+ * Russian 0.96–0.99, Russian under music 0.88; Ukrainian 0.84, English 0.82–0.84, Spanish 0.92 with almost no letters.
+ */
+const RU_SURE = 0.93, RU_LETTERS_PER_S = 5;
 
 export const CAPTION_LANGUAGES: { id: string | null; code: string; label: string }[] = [
   { id: null, code: '', label: 'Auto' }, { id: 'english', code: 'en', label: 'English' }, { id: 'russian', code: 'ru', label: 'Русский' },
@@ -127,9 +139,14 @@ export async function transcribeProject(
   p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal,
 ): Promise<Transcript> {
   const w = getWorker();
-  onProgress({ phase: 'download', fraction: 0, mb: ASR_MODELS[model].mb });
-  const loaded = await request(w, { type: 'load', model }, (l, t) => onProgress({ phase: 'download', fraction: t ? l / t : 0, mb: ASR_MODELS[model].mb }), signal);
-  if (loaded.type === 'error') throw new Error(`Could not load the speech model: ${loaded.message}`);
+  // 'ru' is GigaAM for Russian speech; speech in another language goes to Whisper base.
+  let engine: AsrModel = model === 'ru' && language && language !== 'russian' ? 'base' : model;
+  const load = async (m: AsrModel) => {
+    onProgress({ phase: 'download', fraction: 0, mb: ASR_MODELS[m].mb });
+    const loaded = await request(w, { type: 'load', model: m }, (l, t) => onProgress({ phase: 'download', fraction: t ? l / t : 0, mb: ASR_MODELS[m].mb }), signal);
+    if (loaded.type === 'error') throw new Error(`Could not load the speech model: ${loaded.message}`);
+  };
+  await load(engine);
   onProgress({ phase: 'prepare' });
   const skipped = new Set<string>();
   const audio = await timelineAudio(p, signal, skipped);
@@ -141,24 +158,44 @@ export async function transcribeProject(
   onProgress({ phase: 'listen' });
   const vad = await request(w, { type: 'vad', id: 0, audio: audio.slice() }, undefined, signal);
   if (vad.type === 'error') throw new Error(`Speech detection failed: ${vad.message}`);
-  const speech = vad.type === 'vad' ? vadSegments(vad.probs, 512 / SR) : [];
-  const windows = speechWindows(speech);
+  // Speech segments for the engine at work: lenient for GigaAM, strict for Whisper (it invents text over music).
+  let speech: [number, number][] = [], windows: [number, number][] = [];
+  const segment = () => {
+    speech = vad.type === 'vad' ? vadSegments(vad.probs, 512 / SR, engine === 'ru' ? GIGAAM_VAD : DEFAULT_VAD) : [];
+    windows = speechWindows(speech);
+  };
+  segment();
+  const transcribe = async (i: number) => {
+    const [a0, a1] = windows[i];
+    const r = await request(w, { type: 'transcribe', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), language: engine === 'ru' ? null : language, model: engine }, undefined, signal);
+    if (r.type === 'error') throw new Error(`Transcription failed: ${r.message}`);
+    return r.type === 'result' ? r : null;
+  };
+  const done = new Map<number, NonNullable<Awaited<ReturnType<typeof transcribe>>>>();
   const detected = !language && windows.length > 0;
   if (detected) {
-    const [a0, a1] = windows.reduce((x, y) => (y[1] - y[0] > x[1] - x[0] ? y : x));
-    const r = await request(w, { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code) }, undefined, signal);
-    if (r.type === 'error') throw new Error(`Speech detection failed: ${r.message}`);
-    if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
+    const longest = windows.reduce((best, x, i) => (x[1] - x[0] > windows[best][1] - windows[best][0] ? i : best), 0);
+    const [a0, a1] = windows[longest];
+    if (engine === 'ru') {
+      const r = await transcribe(longest);
+      if (r && (r.confidence ?? 0) >= RU_SURE && (r.chars ?? 0) / (a1 - a0) >= RU_LETTERS_PER_S) { language = 'russian'; done.set(longest, r); }
+      else { engine = 'base'; segment(); await load(engine); }
+    }
+    if (!language) {
+      const r = await request(w, { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code) }, undefined, signal);
+      if (r.type === 'error') throw new Error(`Speech detection failed: ${r.message}`);
+      if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
+      // GigaAM was unsure (Russian under loud music) but it is Russian: GigaAM still reads it best.
+      if (model === 'ru' && language === 'russian') { engine = 'ru'; segment(); await load(engine); }
+    }
   }
   const words: CaptionWord[] = [];
   for (let i = 0; i < windows.length; i++) {
     if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
     onProgress({ phase: 'transcribe', fraction: i / windows.length });
-    const [a0, a1] = windows[i];
-    const chunk = audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR));
-    const r = await request(w, { type: 'transcribe', id: 0, audio: chunk, language }, undefined, signal);
-    if (r.type === 'error') throw new Error(`Transcription failed: ${r.message}`);
-    if (r.type !== 'result') continue;
+    const r = done.get(i) ?? (await transcribe(i));
+    if (!r) continue;
+    const a0 = windows[i][0];
     for (const x of r.words) words.push({ t0: x.t0 + a0, t1: Math.max(x.t0 + 0.05, x.t1) + a0, text: x.text });
   }
   onProgress({ phase: 'transcribe', fraction: 1 });

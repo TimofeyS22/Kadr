@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MOODS, type Mood } from '../core/music';
 import { player } from '../engine/player';
 import { CAPTION_PRESETS } from '../core/presets';
-import { CAPTION_LANGUAGES } from '../engine/captions';
+import { CAPTION_LANGUAGES, defaultAsrModel } from '../engine/captions';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
 import { errorMessage, track } from '../lib/telemetry';
@@ -21,8 +21,9 @@ const KEY = 'kadr.reel';
 function loadOptions(): ReelOptions {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<ReelOptions> | null;
-    return { ...DEFAULT_REEL, ...saved };
-  } catch { return { ...DEFAULT_REEL }; }
+    // The model has no control here: always the default for this interface language (GigaAM for Russian, v1.4).
+    return { ...DEFAULT_REEL, ...saved, model: defaultAsrModel() };
+  } catch { return { ...DEFAULT_REEL, model: defaultAsrModel() }; }
 }
 const saveOptions = (o: ReelOptions) => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch { /* storage blocked */ } };
 

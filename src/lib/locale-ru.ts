@@ -421,6 +421,8 @@ export const RU: Record<string, string> = {
   'Pick the language if the video mixes languages or the result looks wrong.': 'Выберите язык, если в видео несколько языков или результат неточный.',
   'Fast': 'Быстро',
   'Accurate': 'Точно',
+  'Russian speech': 'Русская речь',
+  'GigaAM reads Russian speech best. Speech in other languages is recognized by “Accurate”.': 'GigaAM лучше всех распознаёт русскую речь. Речь на других языках распознаёт «Точно».',
   'Auto': 'Авто',
   'Style': 'Стиль',
   'Speech is recognized on this device and your audio is never uploaded. The model downloads once and is kept in this browser.': 'Речь распознаётся на устройстве, звук никуда не отправляется. Модель скачивается один раз и хранится в браузере.',
