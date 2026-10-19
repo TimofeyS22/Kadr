@@ -5,8 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { createAudioClip, createImageClip, createProject, createTextClip, createVideoClip } from './defaults';
 import {
   MAX_STILL, MIN_CLIP, MIN_TRANSITION, clipEnd, deleteClip, duplicateClip, insertMain, isMedia, isVisual, mainTrack,
-  moveClip, placeClip, projectDuration, reorderMain, setSpeed, setTransition, sourceSpan, splitClip, trimClip,
+  moveClip, placeClip, projectDuration, reorderMain, setCurve, setSpeed, setTransition, sourceSpan, sourceTime, splitClip, trimClip,
 } from './timeline';
+import { CURVE_PRESETS } from './speed';
 import type { Asset, Clip, Project } from './types';
 
 function rng(seed: number) {
@@ -35,6 +36,17 @@ function problems(p: Project): string[] {
         if (!(c.speed >= 0.1 && c.speed <= 10)) out.push(`${tag}: speed ${c.speed}`);
         if (!Number.isFinite(c.in) || c.in < -1e-9) out.push(`${tag}: in ${c.in}`);
         if (a && c.in + sourceSpan(c) > a.duration + 1e-3) out.push(`${tag}: plays ${c.in + sourceSpan(c)} s of a ${a.duration} s source`);
+        if (c.curve) {
+          if (c.curve.length < 2 || !c.curve.every((v) => Number.isFinite(v) && v > 0)) out.push(`${tag}: curve ${c.curve.join(',')}`);
+          // The picture moves forward through the source and lands on its end exactly at the clip's end.
+          let prev = -Infinity;
+          for (let k = 0; k <= 20; k++) {
+            const s = sourceTime(c, c.start + (c.duration * k) / 20);
+            if (!Number.isFinite(s) || s < prev - 1e-9) { out.push(`${tag}: source time ${s} after ${prev} at ${k}/20`); break; }
+            prev = s;
+          }
+          if (Math.abs(prev - (c.in + sourceSpan(c))) > 1e-3) out.push(`${tag}: ends at source ${prev}, expected ${c.in + sourceSpan(c)}`);
+        }
       } else if (c.duration > MAX_STILL + 1e-6) out.push(`${tag}: still of ${c.duration} s`);
     }
     if (t.kind === 'main') {
@@ -72,8 +84,8 @@ export function run(seed: number, steps: number, trace = false): { log: string[]
   for (let s = 0; s < steps; s++) {
     const clips = all();
     const c = clips.length ? pick(clips) : null;
-    const op = Math.floor(r() * 11);
-    if (!c && op < 9) continue;
+    const op = Math.floor(r() * 12);
+    if (!c && (op < 9 || op === 11)) continue;
     let what = '';
     switch (op) {
       case 0: { const t = r() < 0.3 ? pick([c!.start, clipEnd(c!), c!.start + MIN_CLIP, clipEnd(c!) - MIN_CLIP * 0.5]) : c!.start + r() * c!.duration; what = `split ${c!.id} @${t}`; splitClip(p, c!.id, t); break; }
@@ -86,7 +98,11 @@ export function run(seed: number, steps: number, trace = false): { log: string[]
       case 7: { const st = num() * 3; what = `move ${c!.id} → ${st}`; moveClip(p, c!.id, st); break; }
       case 8: { const i = Math.floor(r() * 8) - 2; what = `reorder ${c!.id} → ${i}`; reorderMain(p, c!.id, i); break; }
       case 9: { const t = num(); const k = r() < 0.5 ? createVideoClip(v) : createImageClip(img); what = `insert ${k.kind} @${t}`; insertMain(p, k, t); break; }
-      default: { const k = r() < 0.5 ? createAudioClip(aud, Math.max(0, num())) : createTextClip(Math.max(0, num())); what = `place ${k.kind} @${k.start}`; placeClip(p, k); }
+      case 11: {
+        const pts = r() < 0.15 ? null : r() < 0.6 ? pick(CURVE_PRESETS).points : Array.from({ length: 2 + Math.floor(r() * 8) }, () => (r() < 0.2 ? pick([0.1, 10, 0.05, 20]) : 0.1 + r() * 9.9));
+        what = `curve ${c!.id} ${pts ? pts.map((x) => +x.toFixed(2)).join(',') : 'off'}`; setCurve(p, c!.id, pts); break;
+      }
+      case 10: { const k = r() < 0.5 ? createAudioClip(aud, Math.max(0, num())) : createTextClip(Math.max(0, num())); what = `place ${k.kind} @${k.start}`; placeClip(p, k); }
     }
     log.push(what);
     if (trace) console.log(what, '\n  ', mainTrack(p).clips.map((x) => `${x.id}:${x.kind} s${x.start} d${x.duration}${isMedia(x) ? ` in${x.in} sp${x.speed}` : ''}${isVisual(x) && x.transitionIn ? ` tr${x.transitionIn.duration}` : ''}`).join(' | '));
@@ -108,7 +124,7 @@ it.skipIf(!process.env.FUZZ_SUMMARY)('summary of the first failure per seed, gro
     g.n++; groups.set(key, g);
   }
   console.log([...groups].sort((a, b) => b[1].n - a[1].n).map(([k, g]) => `${g.n}x ${k}\n    ${g.ex}`).join('\n'));
-});
+}, 600_000);
 
 describe('timeline operations keep the project sound under any sequence of edits (fuzz, docs/11 §3.5)', () => {
   it('300 seeded sequences × 60 edits, edge values included', () => {
@@ -131,4 +147,52 @@ it('×10 on the last 0.46 s of a video lowers the speed so the 0.1 s piece still
   expect(t.kind === 'video' && t.in + sourceSpan(t)).toBeLessThanOrEqual(8 + 1e-6);
   expect(t.duration).toBeGreaterThanOrEqual(MIN_CLIP - 1e-6);
   expect(t.kind === 'video' && t.speed).toBeCloseTo(4.6, 5);
+});
+
+describe('speed curves after edits (v1.4.8, found by the fuzz with curves)', () => {
+  const setup = () => {
+    const p = createProject('t', '9:16', 0);
+    const v = asset('v', 'video', 8), aud = asset('aud', 'audio', 20);
+    p.assets = { v, aud };
+    const a = createAudioClip(aud), b = createAudioClip(aud, 12);
+    placeClip(p, a); placeClip(p, b); // a 0–20 overlaps b, so b goes to its own track; trim a to sit right before b
+    return { p, a, aud };
+  };
+
+  it('a preset curve, then cuts and trims: the pieces touch exactly, stay inside the source and keep the speed', () => {
+    const { p, a } = setup();
+    trimClip(p, a.id, 'end', 6);
+    setSpeed(p, a.id, 1.5);
+    setCurve(p, a.id, CURVE_PRESETS.find((x) => x.id === 'montage')!.points);
+    const right = splitClip(p, a.id, 1.37)!;
+    trimClip(p, right, 'end', 30); // as far as the source allows
+    trimClip(p, a.id, 'start', -5); // back to the source start
+    expect(problems(p)).toEqual([]);
+    const [l, r] = p.tracks.flatMap((t) => t.clips).filter((c) => c.id === a.id || c.id === right) as typeof a[];
+    expect(Math.abs(r.start - clipEnd(l))).toBeLessThan(1e-6); // no gap, no overlap
+    expect(l.speed).toBe(1.5);
+    expect(r.speed).toBe(1.5);
+    expect(sourceTime(l, clipEnd(l))).toBeCloseTo(r.in, 3); // the picture is continuous at the cut
+  });
+
+  it('a fast curve on a 0.2 s piece at ×10 keeps MIN_CLIP and plays inside the source', () => {
+    const p = createProject('t', '9:16', 0);
+    const v = asset('v', 'video', 8);
+    p.assets = { v };
+    const c = createVideoClip(v);
+    insertMain(p, c, 0);
+    const tail = splitClip(p, c.id, 7.8)!;
+    setSpeed(p, tail, 10);
+    setCurve(p, tail, CURVE_PRESETS.find((x) => x.id === 'flashIn')!.points);
+    expect(problems(p)).toEqual([]);
+  });
+
+  it('trimming the start of the first curved clip on an audio track stops at 0', () => {
+    const { p, a } = setup();
+    trimClip(p, a.id, 'start', 3);
+    setCurve(p, a.id, CURVE_PRESETS.find((x) => x.id === 'slowmo')!.points);
+    trimClip(p, a.id, 'start', -1e6);
+    expect(problems(p)).toEqual([]);
+    expect(p.tracks.flatMap((t) => t.clips).find((c) => c.id === a.id)!.start).toBe(0);
+  });
 });

@@ -2011,7 +2011,7 @@ async function previewAt(page: Page, info: { outputPath: (n: string) => string }
   await page.waitForTimeout(1000);
   const canvas = page.locator('.preview-canvas');
   const whole = info.outputPath(`preview-${t}-element.png`);
-  await canvas.screenshot({ path: whole });
+  await canvas.screenshot({ path: whole, style: '.toast { visibility: hidden !important; }' }); // a tip lying over the preview is not in the export
   // The element screenshot spans whole CSS pixels around the canvas, whose edges are fractional: up to 1.4 px of the page
   // and of the 1 px outline came along, a dark-and-grey frame that read as a colour cast. Keep only the canvas itself.
   const b = await canvas.evaluate((c) => { const r = c.getBoundingClientRect(); return [r.x - Math.floor(r.x), r.y - Math.floor(r.y), r.width, r.height].map((v) => v * devicePixelRatio); });
@@ -2761,4 +2761,100 @@ test('WYSIWYG for sound: what the preview plays matches the exported mix — vol
     expect.soft(rest, `left over, ${name}`).toBeLessThan(0.06);
   }
 });
+});
+
+// ---------- QA docs/11 §3.7: codecs are released ----------
+
+/** Counts WebCodecs decoders and encoders made on the page and how many are not closed (worker ones are not seen). */
+async function countCodecs(page: Page) {
+  await page.addInitScript(() => {
+    const live: { kind: string; c: { state: string } }[] = [];
+    (window as unknown as { __codecs: () => unknown }).__codecs = () => {
+      const open: Record<string, number> = {}, made: Record<string, number> = {};
+      for (const x of live) { made[x.kind] = (made[x.kind] ?? 0) + 1; if (x.c.state !== 'closed') open[x.kind] = (open[x.kind] ?? 0) + 1; }
+      return { open, made, total: live.filter((x) => x.c.state !== 'closed').length };
+    };
+    const w = window as unknown as Record<string, new (init: unknown) => { state: string }>;
+    for (const kind of ['AudioDecoder', 'VideoDecoder', 'AudioEncoder', 'VideoEncoder']) {
+      const C = w[kind];
+      if (C) w[kind] = class extends C { constructor(init: unknown) { super(init); live.push({ kind, c: this }); } };
+    }
+  });
+  return () => page.evaluate(() => (window as unknown as { __codecs: () => { open: Record<string, number>; made: Record<string, number>; total: number } }).__codecs());
+}
+
+test('codecs are released: playing, seeking and exporting again leave no more decoders open than the first time', async ({ page }, info) => {
+  test.setTimeout(400_000);
+  const codecs = await countCodecs(page);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4', 'portrait.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Audio', ['../public/music/tracks/holiznacc0-2nd-dimension-eda08f.m4a']); // a real 136 s AAC track
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 60_000 });
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  const scroll = page.locator('.tl-scroll');
+  /** Play, then jump around the timeline the way a thumb scrubs, then play again. */
+  const session = async () => {
+    await page.getByRole('button', { name: 'Play' }).click();
+    await page.waitForTimeout(1500);
+    await page.getByRole('button', { name: 'Pause' }).click();
+    for (const s of [7, 1, 10, 3, 0, 11, 5, 2]) { await scroll.evaluate((el, x) => { el.scrollLeft = x; }, s * 60); await page.waitForTimeout(350); }
+    await page.getByRole('button', { name: 'Play' }).click();
+    await page.waitForTimeout(1000);
+    await page.getByRole('button', { name: 'Pause' }).click();
+    await page.waitForTimeout(2500); // idle: streams that are done have had time to close
+  };
+  const rows: string[] = [];
+  const mark = async (label: string) => { const c = await codecs(); rows.push(`${label}: open ${c.total} ${JSON.stringify(c.open)}, made ${JSON.stringify(c.made)}`); return c.total; };
+  await page.waitForTimeout(2500);
+  await mark('imported');
+  await session();
+  const play1 = await mark('play + 8 seeks');
+  for (let i = 0; i < 3; i++) await session();
+  const play4 = await mark('3 more of the same');
+  await exportAs(page, info, 'Video', 'Export video');
+  await page.waitForTimeout(2500);
+  const export1 = await mark('export 1');
+  await exportAs(page, info, 'Video', 'Export video');
+  await page.waitForTimeout(2500);
+  const export2 = await mark('export 2');
+  console.log(`codecs (${info.project.name}):\n${rows.join('\n')}`);
+  expect(play4 - play1, 'playing and seeking again opens no more decoders').toBeLessThanOrEqual(1);
+  expect(export2 - export1, 'a second export leaves no more codecs open').toBeLessThanOrEqual(0);
+  expect(export2, 'codecs open at rest').toBeLessThanOrEqual(12);
+});
+
+// ---------- QA docs/11 §3.1–3.2: speed curves end to end ----------
+
+test('speed curve: a preset, a cut in the middle of it; the file is as long as the timeline and shows the same frames as the preview', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']); // testsrc: every frame differs, so a wrong source time shows
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await tool(page, 'Speed').click();
+  await sheet(page).getByRole('radio', { name: 'Curve', exact: true }).click();
+  await sheet(page).getByRole('radio', { name: 'Hero moment', exact: true }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const total = async () => { const [, m, s] = /\/\s*(\d+):(\d+(?:\.\d+)?)/.exec((await page.locator('.time').textContent()) ?? '')!; return Number(m) * 60 + Number(s); };
+  const curved = await total();
+  expect(curved, 'Hero moment slows the middle down: the clip gets longer than its 6 s').toBeGreaterThan(7);
+  await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, Math.round((curved / 2) * 60));
+  await selectClip(page, mainVideo(page));
+  await tool(page, 'Split').click();
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  expect(Math.abs((await total()) - curved), 'a cut does not change the length').toBeLessThan(0.11);
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const pr = await probe(video);
+  expect(Math.abs(Number(pr.format.duration) - curved), 'the file lasts as long as the timeline').toBeLessThan(0.1);
+  const rows: string[] = [];
+  // Fast start, slow middle (on both sides of the cut), fast end.
+  for (const f of [0.08, 0.42, 0.58, 0.92]) {
+    const t = Math.round(f * curved * 30) / 30;
+    const d = meanAbsDiff(await grayAt(await previewAt(page, info, t)), await grayAt(video, Math.round(t * 30)));
+    rows.push(`${t.toFixed(2)} s: preview vs video ${d.toFixed(2)}`);
+    expect.soft(d, `frame at ${t.toFixed(2)} s`).toBeLessThan(6);
+  }
+  console.log(`speed curve (${info.project.name}): ${curved.toFixed(2)} s\n${rows.join('\n')}`);
 });

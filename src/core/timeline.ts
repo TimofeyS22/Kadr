@@ -2,7 +2,7 @@
 // and keep the invariants: main track packed, free tracks sorted and non-overlapping.
 import { evalAnim as evalAnimAt, mapAnimTime, splitAnim } from './anim';
 import { splitWords } from './captions';
-import { RESAMPLE_POINTS, curveAt, curveIntegral, subCurve, timeFractionToU, uToTimeFraction } from './speed';
+import { RESAMPLE_POINTS, clampRate, curveAt, curveIntegral, subCurve, timeFractionToU, uToTimeFraction } from './speed';
 import { anim, createImageClip, uid } from './defaults';
 import type {
   Asset, AudioClip, Clip, MediaClip, Project, SoundClip, Track, TrackKind, Transform, Transition, VisualClip,
@@ -201,11 +201,12 @@ export function splitClip(p: Project, id: string, t: number, minPiece = MIN_CLIP
       // is continuous at the cut even though the re-sampled curves differ slightly from the original.
       const L = (c.duration + right.duration) * c.speed / curveIntegral(c.curve);
       const us = timeFractionToU(c.curve, local / (c.duration + right.duration));
+      const total = c.duration + right.duration;
       right.in = r6(c.in + L * us);
       right.curve = subCurve(c.curve, us, 1, RESAMPLE_POINTS);
       c.curve = subCurve(c.curve, 0, us, RESAMPLE_POINTS);
-      c.duration = r6((L * us * curveIntegral(c.curve)) / c.speed);
-      right.duration = r6((L * (1 - us) * curveIntegral(right.curve)) / c.speed);
+      fitCurved(c, local, L * us);
+      fitCurved(right, total - c.duration, L * (1 - us));
       right.start = r6(c.start + c.duration);
     } else right.in = r6(c.in + local * c.speed);
   }
@@ -347,7 +348,7 @@ export function setSpeed(p: Project, id: string, speed: number): void {
   // A piece too short for this speed would play past the end of its source to fill MIN_CLIP (found by the timeline
   // fuzz, docs/11 §3.5: 0.46 s of source at ×10 ran 0.54 s past the end). The speed is lowered until it fits.
   const a = p.assets[c.assetId];
-  const fits = a && !c.curve ? (a.duration - c.in) / MIN_CLIP : 10;
+  const fits = a ? ((a.duration - c.in) * (c.curve ? curveIntegral(c.curve) : 1)) / MIN_CLIP : 10;
   const next = clamp(speed, 0.1, Math.max(0.1, Math.min(10, fits)));
   const ratio = c.speed / next;
   c.speed = next;
@@ -489,15 +490,14 @@ function trimCurved(p: Project, c: MediaClip, edge: 'start' | 'end', t: number, 
   const curve = c.curve!;
   const L = sourceSpan(c), D = c.duration;
   if (edge === 'start') {
-    const prevEnd = free && index > 0 ? clipEnd(track.clips[index - 1]) : -Infinity;
+    const prevEnd = !free ? -Infinity : index > 0 ? clipEnd(track.clips[index - 1]) : 0; // a free clip never before 0
     const lo = Math.max(-c.in / (c.speed * curve[0]), prevEnd - c.start);
     const delta = clamp(t - c.start, lo, D - MIN_CLIP);
     const ds = delta >= 0 ? L * timeFractionToU(curve, delta / D) : delta * c.speed * curve[0];
-    const next = subCurve(curve, ds / L, 1, RESAMPLE_POINTS);
-    const end = c.start + D;
+    const end = c.start + D, in0 = c.in;
     c.in = r6(Math.max(0, c.in + ds));
-    c.curve = next;
-    c.duration = r6(Math.max(MIN_CLIP, ((L - ds) * curveIntegral(next)) / c.speed));
+    c.curve = subCurve(curve, ds / L, 1, RESAMPLE_POINTS);
+    fitCurved(c, D - delta, L - (c.in - in0));
     const shift = end - c.duration - c.start;
     c.start = r6(end - c.duration);
     mapClipAnims(c, (k) => k - shift);
@@ -506,8 +506,24 @@ function trimCurved(p: Project, c: MediaClip, edge: 'start' | 'end', t: number, 
     const d = clamp(t - c.start, MIN_CLIP, Math.min(maxDuration(c, p.assets[c.assetId]), nextStart - c.start));
     const u1 = d <= D ? timeFractionToU(curve, d / D) : 1 + ((d - D) * c.speed * curve[curve.length - 1]) / L;
     c.curve = subCurve(curve, 0, u1, RESAMPLE_POINTS);
-    c.duration = r6(Math.max(MIN_CLIP, (L * u1 * curveIntegral(c.curve)) / c.speed));
+    fitCurved(c, d, L * u1);
   }
+}
+
+/**
+ * A curved clip whose edit fixed its timeline length `d` and its source span (v1.4.8). Re-sampling a curve changes its
+ * integral a little, and letting the length absorb that made pieces overlap their neighbours, play past the source or
+ * fall under MIN_CLIP (timeline fuzz, docs/11 §3.5). The curve is scaled by that tiny factor instead: same shape, and
+ * the speed the user set stays as it is.
+ */
+function fitCurved(c: MediaClip, d: number, span: number): void {
+  const want = (d * c.speed) / span; // the integral that makes `span` fill `d` at this speed
+  const k = curveIntegral(c.curve!) / want;
+  if (Number.isFinite(k) && k > 0) c.curve = c.curve!.map((v) => clampRate(v * k));
+  // Where the rate range stopped the scaling (a piece near MIN_CLIP), the speed makes up the rest.
+  let got = (span * curveIntegral(c.curve!)) / c.speed;
+  if (Math.abs(got - d) >= 1e-4 && span > 0) { c.speed = r6(clamp((span * curveIntegral(c.curve!)) / d, 0.1, 10)); got = (span * curveIntegral(c.curve!)) / c.speed; }
+  c.duration = r6(Math.max(MIN_CLIP, Math.abs(got - d) < 1e-4 ? d : got));
 }
 
 /** Applies (or removes, with null) a speed curve; the clip keeps its source range, so its duration changes. */
@@ -516,9 +532,15 @@ export function setCurve(p: Project, id: string, points: number[] | null): void 
   if (!f || !isMedia(f.clip)) return;
   const c = f.clip;
   const L = sourceSpan(c);
-  if (points) c.curve = [...points];
+  if (points) c.curve = points.map(clampRate);
   else delete c.curve;
-  c.duration = r6(Math.max(MIN_CLIP, c.curve ? (L * curveIntegral(c.curve)) / c.speed : L / c.speed));
+  const I = c.curve ? curveIntegral(c.curve) : 1;
+  // Too short for this curve at this speed: it keeps MIN_CLIP and plays its source a bit slower, never past it;
+  // shorter still than MIN_CLIP at 0.1×, it takes the little more it needs from the source before it.
+  if ((L * I) / c.speed < MIN_CLIP) c.speed = r6(Math.max(0.1, (L * I) / MIN_CLIP));
+  const need = (MIN_CLIP * c.speed) / I;
+  if (need > L) c.in = r6(Math.max(0, c.in - (need - L)));
+  c.duration = r6(Math.max(MIN_CLIP, (Math.max(L, need) * I) / c.speed));
   if (f.track.kind === 'main') packMain(f.track);
   else resolveOverlap(p, c.id);
 }
