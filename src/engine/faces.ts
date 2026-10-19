@@ -1,11 +1,12 @@
 // Face detection for "Hide faces": MediaPipe BlazeFace (short range, ~230 KB, on device, self-hosted model).
 import type { FaceDetector } from '@mediapipe/tasks-vision';
 import type { Rect } from '../core/types';
+import { modelLoad } from './modelLoad';
 
 let detector: Promise<FaceDetector> | null = null;
 
 function getDetector(): Promise<FaceDetector> {
-  detector ??= (async () => {
+  detector ??= modelLoad((async () => {
     const { FilesetResolver, FaceDetector } = await import('@mediapipe/tasks-vision');
     const base = new URL(import.meta.env.BASE_URL, location.origin).href;
     const files = await FilesetResolver.forVisionTasks(`${base}mediapipe`);
@@ -22,7 +23,7 @@ function getDetector(): Promise<FaceDetector> {
       void gpu.then((late) => late.close(), () => undefined);
     } catch { /* GPU unavailable */ }
     return make('CPU');
-  })();
+  })(), (late) => late.close());
   detector.catch(() => { detector = null; });
   return detector;
 }

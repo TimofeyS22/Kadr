@@ -434,6 +434,8 @@ export const RU: Record<string, string> = {
   'Recognizing speech…': 'Распознаём речь…',
   'Captions failed: {error}': 'Не удалось создать субтитры: {error}',
   'Could not load the speech model ({error})': 'Не удалось загрузить модель речи ({error})',
+  'The on-device model did not load. Check the connection and try again.': 'Модель на устройстве не загрузилась. Проверьте сеть и попробуйте ещё раз.',
+  'No internet. This tool downloads its model once; after that it works offline.': 'Нет интернета. Модель этого инструмента скачивается один раз, потом он работает без сети.',
   'No internet. The speech model ({mb} MB) downloads once; after that captions work offline.': 'Нет интернета. Модель речи ({mb} МБ) скачивается один раз, потом субтитры работают без сети.',
   'Speech detection failed ({error})': 'Не удалось найти речь ({error})',
   'Transcription failed ({error})': 'Не удалось распознать речь ({error})',

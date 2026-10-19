@@ -1,11 +1,12 @@
 // Person segmentation for "Remove background": MediaPipe selfie segmenter (on device, ~250 KB model).
 import type { ImageSegmenter, ImageSource } from '@mediapipe/tasks-vision';
 import type { SegMask } from './text';
+import { modelLoad } from './modelLoad';
 
 let segmenter: Promise<ImageSegmenter> | null = null;
 
 function getSegmenter(): Promise<ImageSegmenter> {
-  segmenter ??= (async () => {
+  segmenter ??= modelLoad((async () => {
     const { FilesetResolver, ImageSegmenter } = await import('@mediapipe/tasks-vision');
     const base = new URL(import.meta.env.BASE_URL, location.origin).href; // works under a sub-path (GitHub Pages)
     const files = await FilesetResolver.forVisionTasks(`${base}mediapipe`);
@@ -24,7 +25,7 @@ function getSegmenter(): Promise<ImageSegmenter> {
       void gpu.then((late) => late.close(), () => undefined);
     } catch { /* GPU unavailable */ }
     return make('CPU');
-  })();
+  })(), (late) => late.close());
   segmenter.catch(() => { segmenter = null; });
   return segmenter;
 }

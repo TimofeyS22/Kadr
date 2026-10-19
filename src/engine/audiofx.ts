@@ -11,6 +11,7 @@ import { renderAudioWindow } from './audio';
 import { importFile } from './importer';
 import { encoderDelay } from './encoderDelay';
 import { MediaError, MediaPool } from './media';
+import { offlineAware } from './modelLoad';
 
 const SR = 48000;
 const WINDOW_S = 10;
@@ -118,7 +119,8 @@ export async function enhanceAsset(p: Project, assetId: string, onProgress: (f: 
 
 /** Voice noise reduction with RNNoise (mono, 48 kHz, 480-sample frames). */
 export async function denoiseAsset(p: Project, assetId: string, onProgress: (f: number) => void, signal: AbortSignal): Promise<Asset> {
-  const { Rnnoise } = await import('@shiguredo/rnnoise-wasm');
+  // 4.8 MB, cached on first use: offline before that, say so (no time limit, a slow network may take a minute).
+  const { Rnnoise } = await offlineAware(import('@shiguredo/rnnoise-wasm'));
   const rnnoise = await Rnnoise.load();
   const state = rnnoise.createDenoiseState();
   const N = rnnoise.frameSize;
