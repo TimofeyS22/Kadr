@@ -105,9 +105,11 @@ export function parseSubtitles(text: string): CaptionWord[] {
     const [a, b] = lines[i].split('-->');
     const m0 = TIME.exec(a), m1 = TIME.exec(b);
     if (!m0 || !m1) continue;
-    const body = lines.slice(i + 1).join(' ').replace(/<[^>]+>/g, '').trim();
+    // `<[^<>]*>` stays linear on a broken file: `<[^>]+>` took 50 s on 200 000 "<" without a ">" (docs/11 QA).
+    const body = lines.slice(i + 1).join(' ').replace(/<[^<>]*>/g, '').trim();
     const cue = words.length ? (words[words.length - 1].cue ?? 0) + 1 : 0;
-    if (body) words.push(...wordsFromSegment(toSec(m0), toSec(m1), body).map((x) => ({ ...x, cue })));
+    const t0 = toSec(m0), t1 = Math.max(toSec(m1), t0 + 0.5); // a cue ending before it starts still shows its text
+    if (body) words.push(...wordsFromSegment(t0, t1, body).map((x) => ({ ...x, cue })));
   }
   return words.sort((x, y) => x.t0 - y.t0);
 }

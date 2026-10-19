@@ -2088,3 +2088,125 @@ test('a 48 MP photo (iPhone "48MP") imports, previews and exports the same pictu
   expect(d).toBeLessThan(8);
 });
 
+
+/** What breaks the 375 px layout or assistive tech in the open screen: page overflow, nameless controls, small targets. */
+async function layoutAudit(page: Page) {
+  return page.evaluate(() => {
+    const vw = window.innerWidth;
+    const overflow = document.scrollingElement!.scrollWidth - vw;
+    const controls = [...document.querySelectorAll<HTMLElement>('button, [role="button"], [role="radio"], [role="switch"], input, select, a[href]')]
+      .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; });
+    const name = (el: HTMLElement) => (el.getAttribute('aria-label') ?? el.getAttribute('title') ?? (el as HTMLInputElement).labels?.[0]?.textContent ?? el.textContent ?? '').trim();
+    const nameless = controls.filter((el) => !name(el) && !el.closest('[aria-hidden="true"]')).map((el) => el.outerHTML.slice(0, 90));
+    const small = controls.filter((el) => { const r = el.getBoundingClientRect(); return (r.width < 44 || r.height < 44) && el.tagName !== 'INPUT'; })
+      .map((el) => `${name(el).slice(0, 30) || el.className} ${Math.round(el.getBoundingClientRect().width)}×${Math.round(el.getBoundingClientRect().height)}`);
+    // Content past the screen edge, unless it sits in a row meant to scroll sideways (chips, the timeline).
+    const inScroller = (el: HTMLElement) => {
+      for (let a = el.parentElement; a; a = a.parentElement) {
+        const ox = getComputedStyle(a).overflowX;
+        if ((ox === 'auto' || ox === 'scroll') && a.scrollWidth > a.clientWidth + 1 && !a.classList.contains('sheet-body')) return true;
+      }
+      return false;
+    };
+    const offscreen = controls.filter((el) => { const r = el.getBoundingClientRect(); return (r.right > vw + 1 || r.left < -1) && !inScroller(el); })
+      .map((el) => `${name(el).slice(0, 30) || el.className} at ${Math.round(el.getBoundingClientRect().left)}…${Math.round(el.getBoundingClientRect().right)}`);
+    const body = document.querySelector<HTMLElement>('.sheet-body');
+    const sheetScroll = body ? body.scrollWidth - body.clientWidth : 0;
+    return { overflow, nameless, small, offscreen, sheetScroll };
+  });
+}
+
+test('every tool at 375 px: no sideways scroll, every control has a name (small targets are listed)', async ({ page }, info) => {
+  test.setTimeout(400_000);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const report: string[] = [];
+  const problems: string[] = [];
+  const audit = async (where: string) => {
+    const a = await layoutAudit(page);
+    report.push(`## ${where}: overflow ${a.overflow}px, nameless ${a.nameless.length}, small ${a.small.length}\n${a.small.join('; ')}`);
+    if (a.overflow > 0) problems.push(`${where}: page scrolls sideways by ${a.overflow}px`);
+    if (a.sheetScroll > 1) problems.push(`${where}: the sheet scrolls sideways by ${a.sheetScroll}px`);
+    for (const o of a.offscreen) problems.push(`${where}: off screen ${o}`);
+    for (const n of a.nameless) problems.push(`${where}: control without a name ${n}`);
+  };
+  await audit('clip selected');
+  // Tools that open a settings sheet (no file picker, camera, microphone or long processing): clip, then project.
+  const SHEETS = ['Adjust', 'Filters', 'Effects', 'Crop', 'Transform', 'Mask', 'Chroma key', 'Speed', 'Volume', 'Voice', 'Text', 'Stickers', 'Music', 'Sounds', 'Canvas'];
+  for (const scope of ['clip', 'project'] as const) {
+    for (const name of SHEETS) {
+      if (scope === 'clip' && !(await page.locator('.tl-row.main .clip.sel').count())) await page.locator('.tl-row.main .clip').first().click();
+      if (scope === 'project' && (await page.locator('.tl-row.main .clip.sel').count())) await page.getByRole('button', { name: 'Close tools' }).click();
+      const button = page.locator('.toolbar .tool', { hasText: new RegExp(`^${name}$`) });
+      if (!(await button.count())) continue;
+      await button.first().click();
+      await expect(sheet(page), `${name} opens its sheet`).toBeVisible();
+      await page.waitForTimeout(400);
+      await audit(`${scope} › ${name}`);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    }
+  }
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await audit('export sheet');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
+  await audit('home');
+  // The main action is a full touch target (it was 97×40 before v1.4.3).
+  await page.locator('.project-open').first().click();
+  const exp = (await page.getByRole('button', { name: 'Export' }).first().boundingBox())!;
+  expect(Math.min(exp.width, exp.height)).toBeGreaterThanOrEqual(44);
+  fs.writeFileSync(info.outputPath('layout-audit.md'), report.join('\n\n'));
+  console.log(`layout audit (${info.project.name}): ${problems.length} problems\n${problems.join('\n')}`);
+  expect(problems).toEqual([]);
+});
+
+/** Counts VideoFrames made on the page (constructed, decoded, cloned) and closed: `made - closed` are still open. */
+async function countFrames(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __frames: { made: number; closed: number } };
+    w.__frames = { made: 0, closed: 0 };
+    const VF = window.VideoFrame;
+    if (!VF) return;
+    const closed = new WeakSet<VideoFrame>();
+    const { close, clone } = VF.prototype;
+    VF.prototype.close = function (this: VideoFrame) { if (!closed.has(this)) { closed.add(this); w.__frames.closed++; } close.call(this); };
+    VF.prototype.clone = function (this: VideoFrame) { w.__frames.made++; return clone.call(this); };
+    // A wrapper with the same prototype: `instanceof VideoFrame` stays true for frames the decoder makes (mediabunny checks it).
+    const Counted = function (...a: ConstructorParameters<typeof VideoFrame>) { w.__frames.made++; return new VF(...a); } as unknown as typeof VideoFrame;
+    Counted.prototype = VF.prototype;
+    Object.setPrototypeOf(Counted, VF);
+    window.VideoFrame = Counted;
+    const VD = window.VideoDecoder;
+    if (VD) window.VideoDecoder = class extends VD {
+      constructor(init: VideoDecoderInit) { super({ ...init, output: (f) => { w.__frames.made++; init.output(f); } }); }
+    };
+  });
+  return () => page.evaluate(() => (window as unknown as { __frames: { made: number; closed: number } }).__frames);
+}
+
+test('decoded frames are released: playing and two exports leave almost no VideoFrame open, the second adds none', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  const frames = await countFrames(page);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4', 'portrait.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await page.getByRole('button', { name: 'Play' }).click();
+  await page.waitForTimeout(2500);
+  await page.getByRole('button', { name: 'Pause' }).click();
+  await exportAs(page, info, 'Video', 'Export video');
+  await page.waitForTimeout(2000);
+  const one = await frames();
+  await exportAs(page, info, 'Video', 'Export video');
+  await page.waitForTimeout(2000);
+  const two = await frames();
+  console.log(`VideoFrames (${info.project.name}): after export 1 made ${one.made}, open ${one.made - one.closed}; after export 2 made ${two.made}, open ${two.made - two.closed}`);
+  expect(two.made - one.made, 'the second export decodes and renders frames').toBeGreaterThan(100);
+  // Measured 11–16 with two clips: each stream holds its current and next sample plus a few in the decoder's queue.
+  expect(two.made - two.closed, 'frames still open').toBeLessThanOrEqual(24); // 11–16 seen; growth is the leak signal
+  expect((two.made - two.closed) - (one.made - one.closed), 'open frames grow with each export').toBeLessThanOrEqual(1);
+});

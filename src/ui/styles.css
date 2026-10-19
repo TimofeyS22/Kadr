@@ -35,7 +35,7 @@ h1, h2, h3 { margin: 0; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line);
+  min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); /* touch target (v1.4.3 QA) */
   background: var(--panel-2); font-weight: 600; font-size: 14px;
 }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
