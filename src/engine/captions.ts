@@ -116,8 +116,15 @@ let seq = 0;
 function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<AsrResponse> {
   return new Promise((resolve, reject) => {
     const id = msg.type !== 'load' ? (msg.id = ++seq) : undefined;
-    const done = () => { w.removeEventListener('message', onMessage); signal?.removeEventListener('abort', onAbort); };
+    const done = () => { w.removeEventListener('message', onMessage); w.removeEventListener('error', onError); signal?.removeEventListener('abort', onAbort); };
     const onAbort = () => { done(); reject(new DOMException('Cancelled', 'AbortError')); };
+    // The worker script itself failed to load (offline before captions were ever used): fail, never wait forever.
+    const onError = (e: ErrorEvent) => {
+      done();
+      if (worker === w) worker = null; // a new one next time
+      reject(navigator.onLine ? new MediaError('Could not load the speech model ({error})', { error: e.message || 'worker' })
+        : new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: msg.type === 'load' ? ASR_MODELS[msg.model].mb : 0 }));
+    };
     const onMessage = (e: MessageEvent<AsrResponse>) => {
       const r = e.data;
       if (r.type === 'download') { onDownload?.(r.loaded, r.total); return; }
@@ -127,6 +134,7 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
     if (signal?.aborted) { reject(new DOMException('Cancelled', 'AbortError')); return; }
     signal?.addEventListener('abort', onAbort);
     w.addEventListener('message', onMessage);
+    w.addEventListener('error', onError);
     w.postMessage(msg, 'audio' in msg ? [msg.audio.buffer] : []);
   });
 }
@@ -144,7 +152,11 @@ export async function transcribeProject(
   const load = async (m: AsrModel) => {
     onProgress({ phase: 'download', fraction: 0, mb: ASR_MODELS[m].mb });
     const loaded = await request(w, { type: 'load', model: m }, (l, t) => onProgress({ phase: 'download', fraction: t ? l / t : 0, mb: ASR_MODELS[m].mb }), signal);
-    if (loaded.type === 'error') throw new MediaError('Could not load the speech model ({error})', { error: loaded.message });
+    if (loaded.type === 'error') {
+      // Offline before the first download: say what to do, not "Failed to fetch" (docs/11 QA).
+      if (!navigator.onLine) throw new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: ASR_MODELS[m].mb });
+      throw new MediaError('Could not load the speech model ({error})', { error: loaded.message });
+    }
   };
   await load(engine);
   onProgress({ phase: 'prepare' });

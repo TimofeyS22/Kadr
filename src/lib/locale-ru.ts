@@ -434,6 +434,7 @@ export const RU: Record<string, string> = {
   'Recognizing speech…': 'Распознаём речь…',
   'Captions failed: {error}': 'Не удалось создать субтитры: {error}',
   'Could not load the speech model ({error})': 'Не удалось загрузить модель речи ({error})',
+  'No internet. The speech model ({mb} MB) downloads once; after that captions work offline.': 'Нет интернета. Модель речи ({mb} МБ) скачивается один раз, потом субтитры работают без сети.',
   'Speech detection failed ({error})': 'Не удалось найти речь ({error})',
   'Transcription failed ({error})': 'Не удалось распознать речь ({error})',
   'WebGL2 is not available in this browser': 'В этом браузере нет WebGL2: обновите браузер или откройте Kadr в другом',

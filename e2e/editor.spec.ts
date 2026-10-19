@@ -2210,3 +2210,64 @@ test('decoded frames are released: playing and two exports leave almost no Video
   expect(two.made - two.closed, 'frames still open').toBeLessThanOrEqual(24); // 11–16 seen; growth is the leak signal
   expect((two.made - two.closed) - (one.made - one.closed), 'open frames grow with each export').toBeLessThanOrEqual(1);
 });
+
+test('captions work offline once the speech model is on the device (Russian interface, GigaAM)', async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+  test.skip(!!process.env.E2E_URL?.includes('localhost:51'), 'dev server has no service worker');
+  test.setTimeout(500_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru'));
+  await page.goto('./');
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.reload(); // controlled by the service worker from now on
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.getByRole('button', { name: 'Новый проект' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  await importFiles(page, 'Медиа', ['speech_ru.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
+  await tool(page, 'Субтитры').click(); // online: the model downloads once
+  await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
+  await page.waitForTimeout(1500); // autosave
+  await context.setOffline(true);
+  try {
+    await page.reload();
+    await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 30_000 });
+    await page.locator('.clip-caption').click();
+    await tool(page, 'Субтитры').click();
+    await page.getByRole('button', { name: 'Создать заново…' }).click();
+    await page.getByRole('button', { name: 'Создать субтитры' }).click();
+    await expect(page.getByRole('button', { name: 'Сохранить .srt' })).toBeVisible({ timeout: 120_000 });
+    const dl = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Сохранить .srt' }).click();
+    const srt = (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
+    for (const w of ['привет', 'работает', 'телефоне']) expect(srt).toContain(w);
+  } finally {
+    await context.setOffline(false);
+  }
+});
+
+test('captions offline before the first model download say what to do, not "Failed to fetch"', async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+  test.skip(!!process.env.E2E_URL?.includes('localhost:51'), 'dev server has no service worker');
+  test.setTimeout(240_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru'));
+  await page.goto('./');
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.reload();
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.getByRole('button', { name: 'Новый проект' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  await importFiles(page, 'Медиа', ['speech_ru.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
+  await context.setOffline(true);
+  try {
+    await tool(page, 'Субтитры').click();
+    await expect(page.locator('.toast.error')).toContainText('Нет интернета. Модель речи (225 МБ) скачивается один раз', { timeout: 60_000 });
+    await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0)); // the expected one
+    await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 30_000 });
+    await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+  } finally {
+    await context.setOffline(false);
+  }
+});
