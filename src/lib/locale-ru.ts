@@ -496,6 +496,7 @@ export const RU: Record<string, string> = {
   'The sound of “{name}” cannot be decoded in this browser': 'Звук «{name}» не декодируется в этом браузере',
   'Captions are made without “{name}”: its sound cannot be decoded in this browser.': 'Субтитры сделаны без «{name}»: его звук не декодируется в этом браузере.',
   'This browser cannot decode {codec} video. On iPhone, set Camera → Formats → Most Compatible.': 'Этот браузер не умеет декодировать видео {codec}. На iPhone включите Камера → Форматы → Наиболее совместимый.',
+  'The sound of this file cannot be decoded in this browser ({error})': 'Звук этого файла не декодируется в этом браузере ({error})',
   'No playable video or audio found': 'В файле нет видео или звука, которые можно воспроизвести',
   'The file has no duration': 'У файла нулевая длительность',
   'Media file is missing from this device': 'Медиафайл пропал с этого устройства',

@@ -122,13 +122,13 @@ export class ResilientSink implements SoundSink {
   }
 }
 
-async function decodesFirst(sink: SoundSink, how: string): Promise<boolean> {
+async function decodesFirst(sink: SoundSink, how: string, onFail?: (reason: string) => void): Promise<boolean> {
   try {
     for await (const b of sink.buffers()) { void b; return true; }
   } catch (e) {
-    // Refused at configure or decode time. Logged: when no track decodes, the file is reported as having no
-    // playable sound, and this is the only trace of why.
+    // Refused at configure or decode time: logged, and handed to the caller so the message can say why.
     console.warn(`An audio track does not decode with ${how}`, e);
+    onFail?.(`${how}: ${e instanceof Error ? e.message : String(e)}`);
   }
   return false;
 }
@@ -138,15 +138,15 @@ async function decodesFirst(sink: SoundSink, how: string): Promise<boolean> {
  * the stereo AAC one, in either order and with one of them disabled. So: enabled tracks first, then stereo or mono,
  * then file order — and the first one whose first packet actually decodes, with WebCodecs or, failing that, natively.
  */
-export async function playableAudioTrack(input: Input): Promise<InputAudioTrack | null> {
+export async function playableAudioTrack(input: Input, onFail?: (reason: string) => void): Promise<InputAudioTrack | null> {
   const ranked = await input.getAudioTracks({
     sortBy: async (t) => [(await t.getDisposition()).default === false ? 1 : 0, (await t.getNumberOfChannels()) > 2 ? 1 : 0],
   });
   for (const track of ranked) {
     if (refused.has(track)) continue;
-    if (await decodesFirst(new AudioBufferSink(track), 'WebCodecs')) return track;
+    if (await decodesFirst(new AudioBufferSink(track), 'WebCodecs', onFail)) return track;
     refused.add(track);
   }
-  for (const track of ranked) if (await decodesFirst(new NativeSink(track), 'decodeAudioData')) return track;
+  for (const track of ranked) if (await decodesFirst(new NativeSink(track), 'decodeAudioData', onFail)) return track;
   return null;
 }

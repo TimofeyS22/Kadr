@@ -32,7 +32,10 @@ export async function probe(file: Blob): Promise<Probe> {
     if (!(await input.canRead())) throw new MediaError('Unsupported file format');
     const video = await input.getPrimaryVideoTrack();
     if (video && !(await video.canDecode())) throw new MediaError('This browser cannot decode {codec} video. On iPhone, set Camera → Formats → Most Compatible.', { codec: (await video.getCodec()) ?? '?' });
-    const hasAudio = !!(await playableAudioTrack(input));
+    let why = '';
+    const hasAudio = !!(await playableAudioTrack(input, (reason) => { why = reason; }));
+    // A sound track that is there but does not decode says why (QA: "no playable audio" hid a decoder refusal).
+    if (!video && !hasAudio && why) throw new MediaError('The sound of this file cannot be decoded in this browser ({error})', { error: why });
     if (!video && !hasAudio) throw new MediaError('No playable video or audio found');
     const duration = await input.computeDuration();
     if (!(duration > 0)) throw new MediaError('The file has no duration');

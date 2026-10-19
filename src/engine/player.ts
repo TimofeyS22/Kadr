@@ -2,7 +2,7 @@
 import { buildFrame } from '../core/frame';
 import { clamp, findClip, isMedia, projectDuration } from '../core/timeline';
 import type { Project } from '../core/types';
-import { AudioEngine } from './audio';
+import { AudioEngine, duckRanges, soundEntries } from './audio';
 import { Compositor, type LayerBounds } from './compositor';
 import { MediaPool } from './media';
 import { resolveDrawables } from './render';
@@ -60,6 +60,9 @@ export class Player {
     this.project = p;
     if (!p) { this.pause(); return; }
     if (!changed) return;
+    // Music lowered under speech cannot play until the speech is mapped. Mapped at Play, a talking video's sound was
+    // decoded alongside the starting playback (seconds on Chromium) and the music came in late (QA, docs/11 §3.2).
+    if (soundEntries(p).some((e) => e.duck > 0)) setTimeout(() => { if (this.project === p) void duckRanges(p).catch(() => undefined); }, 0);
     if (this.playing) this.audio.start(p, this.audio.now(), this.pool);
     else this.requestRender();
   }
@@ -70,7 +73,7 @@ export class Player {
     if (this.time >= this.duration - 0.02) this.time = 0;
     this.playing = true;
     this.onPlayingChange?.(true);
-    this.audio.start(this.project, this.time, this.pool);
+    this.audio.start(this.project, this.time, this.pool, true);
     const loop = () => {
       if (!this.playing) return;
       const t = this.audio.now();
@@ -108,7 +111,7 @@ export class Player {
   seek(t: number): void {
     this.time = clamp(t, 0, this.duration);
     this.fast = !this.playing;
-    if (this.playing && this.project) this.audio.start(this.project, this.time, this.pool);
+    if (this.playing && this.project) this.audio.start(this.project, this.time, this.pool, true);
     this.requestRender(this.time);
   }
 

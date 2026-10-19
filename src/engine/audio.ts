@@ -4,6 +4,7 @@ import { duckBreakpoints, duckGain, mergeRanges } from '../core/duck';
 import { speechRanges } from '../core/silence';
 import { clipEnd, soundAssetId, sourceSpan, sourceTime, timelineTimeOf } from '../core/timeline';
 import type { Project, SoundClip } from '../core/types';
+import type { WrappedAudioBuffer } from 'mediabunny';
 import { MediaError, PEAKS_PER_SEC, waveform, type MediaPool } from './media';
 import type { SoundSink } from './sound';
 
@@ -77,6 +78,8 @@ interface ScheduleOpts {
   pace?: (tl: number) => Promise<void>;
   signal?: AbortSignal;
   ducks?: [number, number][];
+  /** The clip's buffers from the window start, when they were opened ahead (see `primed`). */
+  stream?: AsyncIterable<WrappedAudioBuffer>;
 }
 
 /** Schedules the part of a clip inside timeline window [from, to). */
@@ -96,7 +99,7 @@ async function scheduleClip(o: ScheduleOpts): Promise<void> {
   for (const x of points.slice(1)) gain.gain.linearRampToValueAtTime(envelope(e, x, ducks), Math.max(floor, at(x)));
 
   const s0 = sourceTime(c, t0), s1 = sourceTime(c, t1);
-  for await (const { buffer, timestamp } of o.sink.buffers(s0, s1)) {
+  for await (const { buffer, timestamp } of o.stream ?? o.sink.buffers(s0, s1)) {
     if (o.signal?.aborted) return;
     const b0 = Math.max(timestamp, s0), b1 = Math.min(timestamp + buffer.duration, s1);
     if (b1 <= b0) continue;
@@ -125,6 +128,27 @@ async function scheduleClip(o: ScheduleOpts): Promise<void> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const LOOKAHEAD = 1.2;
+/** Clips starting this soon after the playhead have this much decoded before the clock starts. */
+const PRIME_S = 0.5;
+/** The longest the clock waits for that sound; then playback starts and late sound joins in sync. */
+const PRIME_MAX_MS = 2000;
+
+/** A buffer stream with its first `seconds` already decoded; `close` releases the decoder if it is never played. */
+async function primed(it: AsyncGenerator<WrappedAudioBuffer, void, unknown>, seconds: number) {
+  const head: WrappedAudioBuffer[] = [];
+  let got = 0, done = false;
+  while (got < seconds) {
+    const r = await it.next();
+    if (r.done) { done = true; break; }
+    head.push(r.value);
+    got += r.value.duration;
+  }
+  const close = () => void it.return(undefined).catch(() => undefined);
+  return {
+    stream: (async function* () { try { yield* head; if (!done) yield* it; } finally { close(); } })(),
+    close,
+  };
+}
 
 /** Realtime preview mixer; its context clock is the playback clock. */
 export class AudioEngine {
@@ -160,29 +184,57 @@ export class AudioEngine {
     return this.ctx ? Math.max(this.startTl, this.startTl + this.ctx.currentTime - this.startCtx) : this.startTl;
   }
 
-  start(p: Project, t: number, pool: MediaPool): void {
+  /**
+   * Plays the mix from timeline time `t`. With `wait`, the clock holds at `t` (now() stays put, so does the picture)
+   * until the sound at the playhead is decoded, up to PRIME_MAX_MS: otherwise a slow first decode (opening the file,
+   * a busy phone) made playback start silent, the clip's first moments skipped as already late (QA, docs/11 §3.2).
+   * Without it (a restart after an edit while playing) the clock runs on at once.
+   */
+  start(p: Project, t: number, pool: MediaPool, wait = false): void {
     this.stop();
     const ctx = this.ctx, master = this.master;
     this.startTl = t;
     if (!ctx || !master) return;
-    this.startCtx = ctx.currentTime + 0.05;
     const ac = new AbortController();
     this.abort = ac;
+    this.startCtx = Infinity; // holds now() at t
     const at = (tl: number) => this.startCtx + (tl - t);
     const pace = async (tl: number) => {
       while (!ac.signal.aborted && tl - this.now() > LOOKAHEAD) await sleep(100);
     };
+    const ready: Promise<unknown>[] = [];
+    let go!: () => void;
+    const clock = new Promise<void>((r) => { go = r; });
+    ac.signal.addEventListener('abort', () => go()); // waiting tasks see the abort and release what they opened
     for (const entry of soundEntries(p)) {
-      if (clipEnd(entry.clip) <= t) continue;
-      void (async () => {
-        await pace(entry.clip.start);
-        if (ac.signal.aborted) return;
-        const sink = await pool.audioSink(soundAssetId(entry.clip));
+      const c = entry.clip;
+      if (clipEnd(c) <= t) continue;
+      const soon = wait && c.start <= t + PRIME_S;
+      const opened = (async () => {
+        if (!soon) { await clock; await pace(c.start); }
+        if (ac.signal.aborted) return null;
+        const sink = await pool.audioSink(soundAssetId(c));
         const ducks = entry.duck > 0 ? await duckRanges(p) : undefined;
-        if (!sink || ac.signal.aborted) return;
-        await scheduleClip({ ctx, out: master, sink, entry, from: t, to: Infinity, at, keep: (n) => this.nodes.add(n), drop: (n) => { n.disconnect(); this.nodes.delete(n); }, pace, signal: ac.signal, ducks });
+        if (!sink || ac.signal.aborted) return null;
+        const head = soon ? await primed(sink.buffers(sourceTime(c, Math.max(t, c.start)), sourceTime(c, clipEnd(c))), PRIME_S) : null;
+        return { sink, ducks, head };
+      })();
+      if (soon) ready.push(opened.catch(() => undefined));
+      void (async () => {
+        const o = await opened;
+        if (!o) return;
+        await clock;
+        if (ac.signal.aborted) { o.head?.close(); return; }
+        await scheduleClip({ ctx, out: master, sink: o.sink, entry, from: t, to: Infinity, at, keep: (n) => this.nodes.add(n), drop: (n) => { n.disconnect(); this.nodes.delete(n); }, pace, signal: ac.signal, ducks: o.ducks, stream: o.head?.stream });
       })().catch((e) => { if (!ac.signal.aborted) this.onError?.(e); });
     }
+    const run = () => {
+      if (ac.signal.aborted) return;
+      this.startCtx = ctx.currentTime + 0.05;
+      go();
+    };
+    if (ready.length) void Promise.race([Promise.all(ready), sleep(PRIME_MAX_MS)]).then(run);
+    else run();
   }
 
   /** Silences playback (e.g. while recording a voice-over) without affecting the mix. */

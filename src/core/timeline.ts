@@ -344,7 +344,11 @@ export function setSpeed(p: Project, id: string, speed: number): void {
   const f = findClip(p, id);
   if (!f || !isMedia(f.clip)) return;
   const c = f.clip;
-  const next = clamp(speed, 0.1, 10);
+  // A piece too short for this speed would play past the end of its source to fill MIN_CLIP (found by the timeline
+  // fuzz, docs/11 §3.5: 0.46 s of source at ×10 ran 0.54 s past the end). The speed is lowered until it fits.
+  const a = p.assets[c.assetId];
+  const fits = a && !c.curve ? (a.duration - c.in) / MIN_CLIP : 10;
+  const next = clamp(speed, 0.1, Math.max(0.1, Math.min(10, fits)));
   const ratio = c.speed / next;
   c.speed = next;
   c.duration = r6(clamp(c.duration * ratio, MIN_CLIP, maxDuration(c, p.assets[c.assetId])));

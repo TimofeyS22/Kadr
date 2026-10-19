@@ -10,15 +10,25 @@ const pageErrors: string[] = [];
 const ALLOWED_HOSTS = [/^localhost$/, /^127\.0\.0\.1$/, /^timofeys22\.github\.io$/, /^huggingface\.co$/, /\.huggingface\.co$/, /\.hf\.co$/, /^cdn\.jsdelivr\.net$/];
 const network: { method: string; url: string; body: number }[] = [];
 const consoleErrors: string[] = [];
+// Connections the CSP blocked (they never reach the network log above). MediaPipe's own telemetry tries Google's
+// ODML logging endpoint; the CSP stops it. Any other blocked destination is a new attempt to phone home: it fails.
+const KNOWN_BLOCKED = [/^odml\.pa\.googleapis\.com$/];
+const blocked: string[] = [];
 test.beforeEach(async ({ page }) => {
   pageErrors.length = 0;
   network.length = 0;
   consoleErrors.length = 0;
+  blocked.length = 0;
   page.context().on('request', (r) => {
     if (/^(blob|data):/.test(r.url())) return;
     network.push({ method: r.method(), url: r.url(), body: r.postDataBuffer()?.length ?? 0 });
   });
-  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 300)); });
+  page.on('console', (m) => {
+    // Errors, and the app's own decoder warnings (the only trace of why a file is reported as having no sound).
+    if (m.type() === 'error' || (m.type() === 'warning' && /does not decode|refused to decode|Content Security Policy/.test(m.text()))) consoleErrors.push(m.text().slice(0, 300));
+    const csp = /(?:Refused to connect to|Connecting to|cannot load) '?(https?:\/\/[^'\s]+)'?[^]*Content Security Policy/.exec(m.text());
+    if (csp) blocked.push(csp[1]);
+  });
   page.context().on('response', (r) => { if (r.status() >= 400) consoleErrors.push(`HTTP ${r.status()} ${r.url().slice(0, 200)}`); });
   await page.addInitScript(() => {
     localStorage.setItem('kadr.tips', '99');
@@ -43,6 +53,7 @@ test.afterEach(async ({ page }, info) => {
   expect(outside.map((r) => `${r.method} ${r.url}`), 'requests to hosts outside the CSP allow-list').toEqual([]);
   const sent = network.filter((r) => (r.method !== 'GET' && r.method !== 'HEAD') && !(new URL(r.url).pathname.endsWith('/share-target')));
   expect(sent.map((r) => `${r.method} ${r.url} (${r.body} bytes)`), 'requests that send data').toEqual([]);
+  expect(blocked.filter((u) => !KNOWN_BLOCKED.some((h) => h.test(new URL(u).hostname))), 'connections the CSP had to block').toEqual([]);
   // Console errors are collected for triage (docs/11), not failed on: some come from the browser itself.
   if (consoleErrors.length) fs.appendFileSync(path.join(import.meta.dirname, '..', 'test-results', 'console-errors.txt'), `## ${info.project.name} › ${info.title}\n${[...new Set(consoleErrors)].join('\n')}\n\n`);
   expect(pageErrors, 'uncaught errors in the page').toEqual([]);
@@ -2578,4 +2589,176 @@ test('WYSIWYG in motion: auto reframe and a LUT, mid-transition, a keyframe betw
     { name: 'mid-cut: whip pan', t: start2 + 0.25 },
     { name: 'bars: X between keys, Comic title, blurred canvas', t: start2 + 2 },
   ], 2); // bright full frames: matching casts ≤ 0.83; export-only temperature +0.3 gives 4.9–6.1
+});
+// ---------- QA docs/11 §3.2: the sound the preview plays is the sound the export contains ----------
+
+test.describe(() => {
+  // The tap is test equipment. WebKit loads its worklet from a routed same-origin URL; Chromium does not route worklet
+  // requests, so it takes a blob, which the app's CSP (enforced in every other test) refuses.
+  test.use({ bypassCSP: true, serviceWorkers: 'block' });
+
+test('WYSIWYG for sound: what the preview plays matches the exported mix — volume, fades, music ducked under speech', async ({ page, browserName }, info) => {
+  test.setTimeout(300_000);
+  // Headless Chromium decodes the video in software on this thread pool; on a busy Mac it decoded AAC at ~0.3× real
+  // time while playing (0.5 s of sound took 1.7 s), so its preview dropped seconds that no buffering can save. The
+  // mix code is the same for both engines; WebKit (hardware decoding, as on the iPhone) measures it.
+  test.skip(browserName === 'chromium', 'realtime sound in headless Chromium measures the machine, not the mix');
+  // Taps the preview mixer on the audio thread: an AudioWorklet sees every 128-sample render quantum of what the
+  // realtime context sends to the speakers, numbered, and outputs silence. (A ScriptProcessor runs on the main
+  // thread and repeats or drops blocks when it is busy — it made dropouts that were not in the preview.)
+  const TAP = `
+    registerProcessor('tap', class extends AudioWorkletProcessor {
+      constructor() { super(); this.buf = new Float32Array(4096); this.n = 0; }
+      process(inputs) {
+        const ch = inputs[0];
+        for (let i = 0; i < 128; i++) this.buf[this.n + i] = ch.length > 1 ? (ch[0][i] + ch[1][i]) / 2 : ch.length ? ch[0][i] : 0;
+        this.n += 128;
+        if (this.n === 4096) { this.port.postMessage({ frame: currentFrame + 128 - 4096, d: this.buf }); this.buf = new Float32Array(4096); this.n = 0; }
+        return true;
+      }
+    });`;
+  await page.route('**/__tap-worklet.js', (r) => r.fulfill({ contentType: 'text/javascript', body: TAP }));
+  await page.addInitScript((code) => {
+    const blob = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+    const tap = { chunks: [] as { frame: number; d: Float32Array }[], rate: 0, error: '' };
+    (window as unknown as { __tap: typeof tap }).__tap = tap;
+    const connect = AudioNode.prototype.connect as (this: AudioNode, ...a: unknown[]) => AudioNode;
+    AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
+      const ctx = this.context;
+      if (args[0] instanceof AudioDestinationNode && ctx instanceof AudioContext && this instanceof GainNode) {
+        const master = this;
+        tap.rate = ctx.sampleRate;
+        void ctx.audioWorklet.addModule(new URL('__tap-worklet.js', location.href).href).catch(() => ctx.audioWorklet.addModule(blob)).then(() => {
+          const node = new AudioWorkletNode(ctx, 'tap');
+          node.port.onmessage = (e: MessageEvent<{ frame: number; d: Float32Array }>) => tap.chunks.push(e.data);
+          connect.call(master, node);
+          connect.call(node, ctx.destination);
+          (window as unknown as { __tapNode: AudioNode }).__tapNode = node;
+        }, (e: unknown) => { tap.error = String(e); });
+      }
+      return connect.apply(this, args);
+    } as typeof AudioNode.prototype.connect;
+  }, TAP);
+  await newProject(page);
+  await importFiles(page, 'Media', ['speech_en.mp4']); // 5.9 s of speech
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Audio', ['beat120.m4a']); // 12 s of beat, on under the speech and after it
+  const music = page.locator('.tl-row.audio .clip').first();
+  await expect(music).toHaveCount(1);
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Volume').click();
+  await page.getByRole('slider', { name: 'Volume', exact: true }).fill('0.6');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await selectClip(page, music);
+  await tool(page, 'Volume').click();
+  await page.getByRole('slider', { name: 'Fade in', exact: true }).fill('1');
+  await page.getByRole('slider', { name: 'Fade out', exact: true }).fill('1.5');
+  await page.getByRole('switch', { name: 'Lower when others speak' }).check();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+
+  // The preview, played from the start to the end in real time. A first short play wakes the audio context (it starts
+  // suspended until a tap, which hides any delay); the measured play is the next one, as most are. Right after its
+  // tap the page is kept busy for 0.8 s, as a phone is while it opens files and renders: the sound must still start
+  // with the picture, not after.
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    (window as unknown as { __tap: { chunks: unknown[] } }).__tap.chunks.length = 0;
+    window.addEventListener('click', (e) => { // after the app's own handler (React listens on its root)
+      // The path, not the target: React has already swapped the Play icon the tap landed on for Pause.
+      if (!e.composedPath().some((n) => n instanceof Element && n.classList.contains('play-btn'))) return;
+      (window as unknown as { __busy: number }).__busy = ((window as unknown as { __busy?: number }).__busy ?? 0) + 1;
+      const until = performance.now() + 800;
+      while (performance.now() < until) { /* busy */ }
+    });
+  });
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible({ timeout: 30_000 }); // stopped at the end
+  const { b64, rate, gaps, error, count } = await page.evaluate(() => {
+    const { chunks, rate } = (window as unknown as { __tap: { chunks: { frame: number; d: Float32Array }[]; rate: number } }).__tap;
+    let gaps = 0;
+    for (let k = 1; k < chunks.length; k++) if (chunks[k].frame !== chunks[k - 1].frame + 4096) gaps++;
+    const all = new Float32Array(chunks.length * 4096);
+    chunks.forEach((c, k) => all.set(c.d, k * 4096));
+    const u = new Uint8Array(all.buffer);
+    let s = '';
+    for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
+    return { b64: btoa(s), rate, gaps, error: (window as unknown as { __tap: { error: string } }).__tap.error, count: chunks.length };
+  });
+  expect(error, 'the tap worklet loads').toBe('');
+  expect(await page.evaluate(() => (window as unknown as { __busy?: number }).__busy), 'the page was kept busy after the tap').toBe(1);
+  expect(count, 'the tap heard the preview').toBeGreaterThan(0);
+  expect.soft(gaps, 'the tap saw every render quantum').toBe(0);
+  const tb = Buffer.from(b64, 'base64');
+  const played = new Float32Array(tb.buffer, tb.byteOffset, tb.byteLength / 4);
+
+  // The export at the preview's rate, (L + R) / 2 like the tap: ffmpeg's own `-ac 1` sums stereo at 0.707 each.
+  const { execFileSync } = await import('node:child_process');
+  const file = await exportAs(page, info, 'Audio', 'Export audio', { loudness: false });
+  const eb = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-af', 'pan=mono|c0=0.5*c0+0.5*c1', '-ar', String(rate), '-f', 'f32le', '-'], { maxBuffer: 64 << 20 });
+  const exported = new Float32Array(eb.buffer, eb.byteOffset, eb.byteLength / 4);
+
+  // Line the two up: to the millisecond on 10 ms RMS (the tap starts before the sound: the clock may wait for it up to
+  // 2 s), then to the sample.
+  const ms = rate / 1000;
+  const perMs = (x: Float32Array) => Array.from({ length: Math.floor(x.length / ms) }, (_, k) => x.subarray(k * ms, (k + 1) * ms).reduce((s, v) => s + v * v, 0));
+  const pp = perMs(played), pe = perMs(exported);
+  const rms10 = (e: number[], k: number) => { let v = 0; for (let j = k; j < k + 10; j++) v += e[j] ?? 0; return Math.sqrt(v); };
+  let lagMs = 0, bestMisfit = Infinity;
+  for (let l = 0; l <= 3000; l++) {
+    let d = 0;
+    for (let k = 0; k + 10 <= pe.length; k += 10) d += Math.abs(rms10(pp, k + l) - rms10(pe, k));
+    if (d < bestMisfit) { bestMisfit = d; lagMs = l; }
+  }
+  const lag = lagMs * ms;
+  const dot = (o: number, a: number, b2: number) => { let v = 0; for (let i = a; i < b2; i++) v += played[i + o] * exported[i]; return v; };
+  let best = lag;
+  for (let o = lag - 2 * ms; o <= lag + 2 * ms; o++) if (o >= 0 && dot(o, rate, 5 * rate) > dot(best, rate, 5 * rate)) best = o;
+
+  // Two different questions, 20 ms at a time. Delivery: a dropout is preview silence where the export is loud — the
+  // realtime engine late with a buffer (a slow first decode, a starved CPU). Mix: where the preview sounds, the gain
+  // that best maps the export onto it (1 = same level) and what is left over (fades, ducking, timing).
+  const w = 20 * ms;
+  const win = (i: number) => {
+    let pv = 0, ev = 0;
+    for (let j = i; j < i + w; j++) { pv += played[j + best] ** 2; ev += exported[j] ** 2; }
+    return { p: Math.sqrt(pv / w), e: Math.sqrt(ev / w) };
+  };
+  const dropped = (i: number) => { const v = win(i); return v.e > 0.01 && v.p < 0.1 * v.e; };
+  const drops: number[] = [];
+  for (let i = Math.round(0.05 * rate); i + w <= exported.length; i += w) if (dropped(i)) drops.push(i / rate);
+  const rows: string[] = [];
+  const stats: { name: string; gain: number; rest: number }[] = [];
+  for (const [name, a, b2] of [['music fades in under speech', 0.1, 1], ['speech, music ducked', 1.5, 5.5], ['music back up', 6.5, 10], ['music fades out', 10.5, 11.8]] as const) {
+    let xy = 0, yy = 0, rr = 0, gone = 0;
+    const i0 = Math.round(a * rate), i1 = Math.round(b2 * rate);
+    for (let i = i0; i + w <= i1; i += w) {
+      if (dropped(i)) { gone++; continue; }
+      for (let j = i; j < i + w; j++) { xy += played[j + best] * exported[j]; yy += exported[j] * exported[j]; }
+    }
+    const gain = xy / yy;
+    for (let i = i0; i + w <= i1; i += w) if (!dropped(i)) for (let j = i; j < i + w; j++) rr += (played[j + best] - gain * exported[j]) ** 2;
+    const rest = Math.sqrt(rr / yy);
+    stats.push({ name, gain, rest });
+    rows.push(`${name} ${a}–${b2} s: preview ×${gain.toFixed(4)}, left over ${(rest * 100).toFixed(1)}%${gone ? `, ${gone * 20} ms dropped` : ''}`);
+  }
+  console.log(`WYSIWYG sound (${info.project.name}): preview at ${rate} Hz, the clock waited ${(best / ms).toFixed(0)} ms; dropouts ${drops.length * 20} ms${drops.length ? ` from ${drops[0].toFixed(2)} s` : ''}\n${rows.join('\n')}`);
+  expect(played.length - best, 'the preview played to the end').toBeGreaterThan(exported.length - rate / 2);
+  // Delivery. The start is the app's to get right (it waits for the decoded sound); later dropouts measure the machine
+  // as much as the app — clean on an idle Mac, seconds long at load average 10–20 with software video decoding.
+  expect.soft(drops.filter((t) => t < 1), 'the sound starts with the picture').toEqual([]);
+  expect.soft(drops.length * 20 / (exported.length / ms), 'share of the sound dropped').toBeLessThan(0.1);
+  // Mix. Matching: ×0.999–1.003 and 0.5–3.6% left over (AAC). The first 44 ms are not compared: the export drops the
+  // encoder's priming there (engine/encoderDelay).
+  for (const { name, gain, rest } of stats) {
+    expect.soft(Math.abs(gain - 1), `level, ${name}`).toBeLessThan(0.03);
+    expect.soft(rest, `left over, ${name}`).toBeLessThan(0.06);
+  }
+});
 });
