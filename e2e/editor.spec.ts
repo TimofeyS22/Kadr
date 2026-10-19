@@ -2271,3 +2271,140 @@ test('captions offline before the first model download say what to do, not "Fail
     await context.setOffline(false);
   }
 });
+
+// ---------- QA docs/11 §3.3–3.4: history and persistence across tools ----------
+
+/** The project as saved in IndexedDB ('kadr'/'kv', key p:<id>), without its save time. */
+async function savedProject(page: Page): Promise<string> {
+  const id = /#\/p\/([^/?]+)/.exec(page.url())![1];
+  return page.evaluate(async (key) => {
+    const db = await new Promise<IDBDatabase>((ok, ko) => { const r = indexedDB.open('kadr'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+    const p = await new Promise<Record<string, unknown> | undefined>((ok, ko) => {
+      const r = db.transaction('kv').objectStore('kv').get(key);
+      r.onsuccess = () => ok(r.result as Record<string, unknown> | undefined); r.onerror = () => ko(r.error);
+    });
+    db.close();
+    if (!p) return '';
+    delete p.updatedAt;
+    return JSON.stringify(p);
+  }, `p:${id}`);
+}
+
+/** The saved project once the autosave after the last edit has landed. */
+async function settledProject(page: Page, prev?: string): Promise<string> {
+  if (prev !== undefined) await expect.poll(() => savedProject(page), { timeout: 10_000 }).not.toBe(prev);
+  let cur = await savedProject(page);
+  for (;;) { await page.waitForTimeout(900); const next = await savedProject(page); if (next === cur) return cur; cur = next; }
+}
+
+/** Where two saved projects first differ, for a readable failure. */
+const firstDiff = (a: string, b: string) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return `at ${i}: …${a.slice(Math.max(0, i - 80), i + 80)}… vs …${b.slice(Math.max(0, i - 80), i + 80)}…`; };
+
+/** What a viewer sees and hears: gray 45×80 frames at 20/40/60/80% and the sound's 100 ms RMS envelope. */
+async function fingerprint(file: string) {
+  const { execFileSync } = await import('node:child_process');
+  const duration = Number((await probe(file)).format.duration);
+  const frames = [0.2, 0.4, 0.6, 0.8].map((f) => execFileSync('ffmpeg', ['-v', 'error', '-ss', (f * duration).toFixed(2), '-i', file, '-frames:v', '1', '-vf', 'scale=45:80', '-f', 'rawvideo', '-pix_fmt', 'gray', '-']));
+  const b = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', '8000', '-f', 'f32le', '-']);
+  const pcm = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
+  const env = Array.from({ length: Math.floor(pcm.length / 800) }, (_, i) => Math.sqrt(pcm.subarray(i * 800, (i + 1) * 800).reduce((s, x) => s + x * x, 0) / 800));
+  return { duration, frames, env };
+}
+
+test('history and persistence across tools: every action is one undo step back to exactly the project before it, redo replays them, a reload exports the same video', async ({ page }, info) => {
+  test.setTimeout(480_000);
+  const clips = page.locator('.tl-row.main .clip'), videos = page.locator('.tl-row.main .clip-video');
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  const scrubTo = async (px: number, shown: string) => {
+    await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, px);
+    await expect.poll(() => time(page)).toBe(shown);
+  };
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4', 'photo.png']);
+  await expect(clips).toHaveCount(2);
+  if (await closeTools.isVisible()) await closeTools.click();
+  // The saved project after each action: states[0] is the import, states[k] the project after action k.
+  const states = [await settledProject(page)], names = ['import'];
+  const act = async (name: string, run: () => Promise<void>) => { await run(); names.push(name); states.push(await settledProject(page, states[states.length - 1])); };
+  const drag = async (target: ReturnType<Page['locator']>, dx: number) => {
+    const b = (await target.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2, { steps: 8 });
+    await page.mouse.up();
+  };
+
+  // Actions of different kinds, three of them creating derived media (reversed video, clean sound, a still).
+  await act('trim start', async () => {
+    await selectClip(page, mainVideo(page));
+    const w0 = (await mainVideo(page).boundingBox())!.width;
+    await drag(mainVideo(page).getByLabel('Trim start'), 60); // 1 s at 60 px per second
+    await expect.poll(async () => (await mainVideo(page).boundingBox())!.width).toBeLessThan(w0 - 40);
+  });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await scrubTo(120, '0:02.0');
+  await act('split', async () => { await selectClip(page, mainVideo(page)); await tool(page, 'Split').click(); await expect(clips).toHaveCount(3); });
+  await act('speed', async () => { await selectClip(page, mainVideo(page)); await useSheet(page, 'Speed'); });
+  await act('filter', async () => { await selectClip(page, mainVideo(page)); await useSheet(page, 'Filters'); });
+  await act('reverse', async () => {
+    await selectClip(page, videos.nth(1));
+    await tool(page, 'Reverse').click();
+    await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
+  });
+  await act('noise reduction', async () => {
+    await selectClip(page, videos.nth(1));
+    await tool(page, 'Volume').click();
+    const denoise = page.getByRole('switch', { name: 'Reduce background noise' });
+    await denoise.check();
+    await expect(denoise).toBeChecked({ timeout: 120_000 });
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await scrubTo(30, '0:00.5');
+  await act('freeze', async () => {
+    await selectClip(page, mainVideo(page));
+    await tool(page, 'Freeze').click();
+    await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
+    await expect(page.locator('.tl-row.main .clip-image')).toHaveCount(2);
+  });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await act('text', async () => { await tool(page, 'Text').click(); await page.getByRole('button', { name: 'Done' }).click(); });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await act('move text', async () => {
+    const text = page.locator('.clip-text'), x0 = (await text.boundingBox())!.x;
+    await drag(text, 60);
+    await expect.poll(async () => (await text.boundingBox())!.x).toBeGreaterThan(x0 + 40);
+  });
+  if (await closeTools.isVisible()) await closeTools.click();
+
+  // Each undo goes back exactly one action; each redo replays exactly one.
+  const undo = page.getByRole('button', { name: 'Undo' }), redo = page.getByRole('button', { name: 'Redo' });
+  let cur = states[states.length - 1];
+  for (let k = states.length - 2; k >= 0; k--) {
+    await undo.click();
+    cur = await settledProject(page, cur);
+    expect(cur === states[k], `undo of "${names[k + 1]}" gives the project before it; ${firstDiff(cur, states[k])}`).toBe(true);
+  }
+  for (let k = 1; k < states.length; k++) {
+    await redo.click();
+    cur = await settledProject(page, cur);
+    expect(cur === states[k], `redo of "${names[k]}" gives the project after it; ${firstDiff(cur, states[k])}`).toBe(true);
+  }
+  await expect(redo).toBeDisabled();
+  console.log(`history (${info.project.name}): ${names.slice(1).join(', ')} — each one undo step, exact both ways`);
+
+  // A reload changes nothing: the same saved project, the same exported picture and sound.
+  const before = await fingerprint(await exportAs(page, info, 'Video', 'Export video'));
+  const saved = await settledProject(page);
+  await page.reload();
+  await expect(clips).toHaveCount(5);
+  expect(await settledProject(page) === saved, `the reload keeps the project; ${firstDiff(await savedProject(page), saved)}`).toBe(true);
+  const after = await fingerprint(await exportAs(page, info, 'Video', 'Export video'));
+  expect(Math.abs(after.duration - before.duration)).toBeLessThan(0.05);
+  const frameDiff = before.frames.map((f, k) => { let s = 0; for (let i = 0; i < f.length; i++) s += Math.abs(f[i] - after.frames[k][i]); return s / f.length; });
+  const envDiff = Math.max(...before.env.map((v, i) => Math.abs(v - (after.env[i] ?? 0))));
+  console.log(`reload (${info.project.name}): frame diff ${frameDiff.map((d) => d.toFixed(2)).join(', ')} of 255; sound envelope diff ${envDiff.toFixed(4)}; peak ${Math.max(...before.env).toFixed(3)}`);
+  for (const d of frameDiff) expect(d).toBeLessThan(3);
+  expect(Math.max(...before.env)).toBeGreaterThan(0.01); // there is sound to compare
+  expect(envDiff).toBeLessThan(0.01);
+});
