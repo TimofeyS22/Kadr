@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -1998,8 +1998,16 @@ const meanAbsDiff = (a: Buffer, b: Buffer) => { let s = 0; for (let i = 0; i < a
 async function previewAt(page: Page, info: { outputPath: (n: string) => string }, t: number): Promise<string> {
   await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, t * 60);
   await page.waitForTimeout(1000);
+  const canvas = page.locator('.preview-canvas');
+  const whole = info.outputPath(`preview-${t}-element.png`);
+  await canvas.screenshot({ path: whole });
+  // The element screenshot spans whole CSS pixels around the canvas, whose edges are fractional: up to 1.4 px of the page
+  // and of the 1 px outline came along, a dark-and-grey frame that read as a colour cast. Keep only the canvas itself.
+  const b = await canvas.evaluate((c) => { const r = c.getBoundingClientRect(); return [r.x - Math.floor(r.x), r.y - Math.floor(r.y), r.width, r.height].map((v) => v * devicePixelRatio); });
+  const [x, y, w, h] = b.map(Math.round);
   const shot = info.outputPath(`preview-${t}.png`);
-  await page.locator('.preview-canvas').screenshot({ path: shot });
+  const { execFileSync } = await import('node:child_process');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', whole, '-vf', `crop=w='min(${w},iw-${x})':h='min(${h},ih-${y})':x=${x}:y=${y}`, shot]);
   return shot;
 }
 
@@ -2017,7 +2025,7 @@ test('WYSIWYG: the preview shows what the photo and video exports contain — ti
     const photo = meanAbsDiff(preview, await grayAt(await exportAs(page, info, 'Photo', 'Save photo')));
     const frame = meanAbsDiff(preview, await grayAt(video, Math.round(t * 30)));
     rows.push(`${t} s (playhead ${await time(page)}): preview vs photo ${photo.toFixed(2)}, vs video ${frame.toFixed(2)}`);
-    // Mean |difference| of 0–255 grey at 270×480. Matching frames measured ≤ 2.3 (photo) and ≤ 4 (video, "Small file"
+    // Mean |difference| of 0–255 grey at 270×480. Matching frames measured ≤ 1.4 (photo) and ≤ 3 (video, "Small file"
     // compression); one frame off mid-slide is ~13–15; grey blacks from a mislabelled range (v1.4.3) were 4–12.
     expect(photo, `photo at ${t} s`).toBeLessThan(4);
     expect(frame, `video frame at ${t} s`).toBeLessThan(6);
@@ -2407,4 +2415,167 @@ test('history and persistence across tools: every action is one undo step back t
   for (const d of frameDiff) expect(d).toBeLessThan(3);
   expect(Math.max(...before.env)).toBeGreaterThan(0.01); // there is sound to compare
   expect(envDiff).toBeLessThan(0.01);
+});
+
+// ---------- QA docs/11 §3.2: WYSIWYG for every look tool, in colour ----------
+
+/** RGB 135×240 of a picture, or of a video's frame number `n`: colour errors (a filter's hue, a LUT) show here, not in grey. */
+async function rgbAt(file: string, n?: number): Promise<Buffer> {
+  const { execFileSync } = await import('node:child_process');
+  const pick = n === undefined ? '' : `select=eq(n\\,${n}),`;
+  return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', `${pick}scale=135:240`, '-fps_mode', 'passthrough', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
+}
+
+/** The largest mean signed R, G or B difference of two RGB pictures, 0–255: a colour cast, with zero-mean noise cancelled out. */
+function colourCast(a: Buffer, b: Buffer): number {
+  const sum = [0, 0, 0];
+  for (let i = 0; i < a.length; i++) sum[i % 3] += a[i] - b[i];
+  return Math.max(...sum.map((v) => Math.abs(v) / (a.length / 3)));
+}
+
+/** Exports the video once, then at each named time compares the preview with the photo export and the video's frame, in colour. */
+async function expectSameFrames(page: Page, info: TestInfo, title: string, points: { name: string; t: number }[], maxCast: number) {
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const rows: string[] = [];
+  for (const { name, t: at } of points) {
+    const t = Math.round(at * 30) / 30; // on a frame
+    const preview = await rgbAt(await previewAt(page, info, t));
+    const photo = await rgbAt(await exportAs(page, info, 'Photo', 'Save photo'));
+    const frame = await rgbAt(video, Math.round(t * 30));
+    const [dp, df, cp, cf] = [meanAbsDiff(preview, photo), meanAbsDiff(preview, frame), colourCast(preview, photo), colourCast(preview, frame)];
+    rows.push(`${name} @ ${t.toFixed(2)} s (playhead ${await time(page)}): photo ${dp.toFixed(2)} / cast ${cp.toFixed(2)}, video ${df.toFixed(2)} / cast ${cf.toFixed(2)}`);
+    // Mean |difference| (0–255) catches a missing or moved element: matching frames ≤ 2, an export without the cutout 91.
+    // The cast catches a colour shift that compression noise would hide in it; it grows with how bright and full the
+    // frame is, so each scene passes its own limit (see the callers).
+    expect.soft(dp, `photo, ${name}`).toBeLessThan(4);
+    expect.soft(df, `video frame, ${name}`).toBeLessThan(6);
+    expect.soft(cp, `photo colour cast, ${name}`).toBeLessThan(maxCast);
+    expect.soft(cf, `video frame colour cast, ${name}`).toBeLessThan(maxCast);
+  }
+  console.log(`${title} (${info.project.name}):\n${rows.join('\n')}`);
+}
+
+test('WYSIWYG for every look tool: in the middle of each clip the preview, the photo and the video frame match in colour', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  // The one-time iPhone video tip lies over the top of the preview and would be in its screenshot (not in the export).
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  await newProject(page);
+  // Colour tools go on natural tones (walk: a person on blue-grey); the saturated test bars would clip a colour shift away.
+  await importFiles(page, 'Media', ['walk.mp4', 'photo.png', 'person.jpg', 'landscape.mp4']);
+  const clips = page.locator('.tl-row.main .clip');
+  await expect(clips).toHaveCount(4);
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  const effect = async (name: string) => { await tool(page, 'Effects').click(); await page.getByRole('radio', { name, exact: true }).click(); await page.getByRole('button', { name: 'Done' }).click(); };
+  // Clip middles in seconds (60 px per second, the first clip at 0).
+  const middles = await clips.evaluateAll((els) => els.map((e) => ((e as HTMLElement).offsetLeft - (els[0] as HTMLElement).offsetLeft + (e as HTMLElement).offsetWidth / 2) / 60));
+  const at = (t: number) => page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, Math.round(t * 60));
+
+  // 1 walking video: filter, adjust, VHS effect, and a title over it.
+  await selectClip(page, clips.nth(0));
+  await useSheet(page, 'Filters');
+  await useSheet(page, 'Adjust');
+  await effect('VHS');
+  // 2 photo: crop, transform, mirror, circle mask, and a sticker over it.
+  await selectClip(page, clips.nth(1));
+  await useSheet(page, 'Crop');
+  await useSheet(page, 'Transform');
+  await tool(page, 'Mirror').click();
+  await expect(tool(page, 'Mirror')).toHaveAttribute('aria-pressed', 'true');
+  await tool(page, 'Mask').click();
+  await sheet(page).getByRole('radio', { name: 'Circle' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  // 3 person photo: cutout and hidden faces.
+  await selectClip(page, clips.nth(2));
+  await tool(page, 'Cutout').click();
+  await expect(tool(page, 'Cutout')).toHaveAttribute('aria-pressed', 'true', { timeout: 60_000 });
+  await tool(page, 'Hide faces').click();
+  await page.getByRole('switch', { name: 'Hide faces automatically' }).click();
+  await expect(page.getByRole('switch', { name: 'Hide faces automatically' })).toBeChecked({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Done' }).click();
+  // 4 test bars: chroma key and RGB split.
+  await selectClip(page, clips.nth(3));
+  await tool(page, 'Chroma key').click();
+  await page.getByRole('switch', { name: 'Remove color (green screen)' }).check();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await effect('RGB split');
+  if (await closeTools.isVisible()) await closeTools.click();
+  await at(middles[0] - 0.5);
+  await tool(page, 'Text').click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  if (await closeTools.isVisible()) await closeTools.click();
+  await at(middles[1] - 0.5);
+  await page.getByRole('button', { name: 'Stickers' }).click();
+  await page.getByRole('button', { name: 'Add 🔥' }).click();
+  await page.keyboard.press('Escape'); // nothing selected: no handles over the picture
+  if (await closeTools.isVisible()) await closeTools.click();
+
+  const names = ['video: filter, adjust, VHS, title', 'photo: crop, transform, mirror, mask, sticker', 'person: cutout, hidden faces', 'bars: chroma key, RGB split'];
+  // Mostly black frames: matching casts ≤ 0.32; export-only temperature +0.3 gives 1.06–2.78.
+  await expectSameFrames(page, info, 'WYSIWYG look tools', names.map((name, k) => ({ name, t: middles[k] })), 0.8);
+});
+
+test('WYSIWYG in motion: auto reframe and a LUT, mid-transition, a keyframe between keys, a styled title on a blurred canvas', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  // A LUT that rotates the channels (r, g, b) → (g, b, r): a colour path that skips or misreads it is far off.
+  const cube = info.outputPath('rotate.cube');
+  const lines = ['TITLE "rotate"', 'LUT_3D_SIZE 9'];
+  for (let b = 0; b < 9; b++) for (let g = 0; g < 9; g++) for (let r = 0; r < 9; r++) lines.push(`${g / 8} ${b / 8} ${r / 8}`);
+  fs.writeFileSync(cube, lines.join('\n'));
+  await newProject(page);
+  await importFiles(page, 'Media', ['walk.mp4', 'landscape.mp4']);
+  const clips = page.locator('.tl-row.main .clip');
+  await expect(clips).toHaveCount(2);
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  const closeAll = async () => { if (await closeTools.isVisible()) await closeTools.click(); };
+  const at = (t: number) => page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, Math.round(t * 60));
+  // The whole canvas: a blurred copy behind the 16:9 bars instead of black bands.
+  await closeAll();
+  await tool(page, 'Canvas').click();
+  await sheet(page).getByRole('radio', { name: 'Blur' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  // The cut: whip pan (a motion blur that depends on the time within the transition).
+  await closeAll();
+  await page.getByRole('button', { name: 'Transition' }).first().click();
+  await page.getByRole('radio', { name: 'Whip pan', exact: true }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  // 1 walking person: auto reframe (position keyframes from the model), then the LUT.
+  await selectClip(page, clips.nth(0));
+  await tool(page, 'Auto reframe').click();
+  await expect(page.getByText(/Reframed/)).toBeVisible({ timeout: 90_000 });
+  await selectClip(page, clips.nth(0));
+  await tool(page, 'Filters').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Import LUT (.cube)' }).click();
+  await (await chooser).setFiles(cube);
+  await expect(page.getByRole('radio', { name: 'rotate' })).toBeChecked();
+  await page.getByRole('button', { name: 'Done' }).click();
+  // 2 bars: position X keyed 0.5 s and 3.5 s into the clip, a Comic title from 1 s.
+  const start2 = await clips.evaluateAll((els) => ((els[1] as HTMLElement).offsetLeft - (els[0] as HTMLElement).offsetLeft) / 60);
+  expect(start2, 'the 0.5 s transition starts clip 2 early').toBeCloseTo(4.5, 1);
+  await at(start2 + 0.5);
+  await selectClip(page, clips.nth(1));
+  await tool(page, 'Transform').click();
+  await page.getByRole('button', { name: 'Add Position X keyframe' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await at(start2 + 3.5);
+  await selectClip(page, clips.nth(1));
+  await tool(page, 'Transform').click();
+  await sheet(page).locator('input[type=range]').first().focus();
+  for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowRight');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await closeAll();
+  await at(start2 + 1);
+  await tool(page, 'Text').click();
+  await page.getByRole('textbox', { name: 'Text', exact: true }).fill('Kadr 2026');
+  await page.getByRole('radiogroup', { name: 'Style' }).getByRole('radio', { name: 'Comic' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.keyboard.press('Escape'); // nothing selected: no handles over the picture
+  await closeAll();
+
+  await expectSameFrames(page, info, 'WYSIWYG in motion', [
+    { name: 'walk: auto reframe, channel-rotating LUT', t: 2.5 },
+    { name: 'mid-cut: whip pan', t: start2 + 0.25 },
+    { name: 'bars: X between keys, Comic title, blurred canvas', t: start2 + 2 },
+  ], 2); // bright full frames: matching casts ≤ 0.83; export-only temperature +0.3 gives 4.9–6.1
 });

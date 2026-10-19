@@ -122,10 +122,14 @@ export class ResilientSink implements SoundSink {
   }
 }
 
-async function decodesFirst(sink: SoundSink): Promise<boolean> {
+async function decodesFirst(sink: SoundSink, how: string): Promise<boolean> {
   try {
     for await (const b of sink.buffers()) { void b; return true; }
-  } catch { /* refused at configure or decode time */ }
+  } catch (e) {
+    // Refused at configure or decode time. Logged: when no track decodes, the file is reported as having no
+    // playable sound, and this is the only trace of why.
+    console.warn(`An audio track does not decode with ${how}`, e);
+  }
   return false;
 }
 
@@ -140,9 +144,9 @@ export async function playableAudioTrack(input: Input): Promise<InputAudioTrack 
   });
   for (const track of ranked) {
     if (refused.has(track)) continue;
-    if (await decodesFirst(new AudioBufferSink(track))) return track;
+    if (await decodesFirst(new AudioBufferSink(track), 'WebCodecs')) return track;
     refused.add(track);
   }
-  for (const track of ranked) if (await decodesFirst(new NativeSink(track))) return track;
+  for (const track of ranked) if (await decodesFirst(new NativeSink(track), 'decodeAudioData')) return track;
   return null;
 }
