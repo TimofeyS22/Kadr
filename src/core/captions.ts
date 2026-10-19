@@ -1,5 +1,5 @@
 // Caption logic: grouping words into on-screen pages, the active word, SRT import/export.
-import type { CaptionClip, CaptionWord } from './types';
+import type { CaptionClip, CaptionWord, Clip, Project } from './types';
 
 const SENTENCE_END = /[.!?…]$/;
 
@@ -224,4 +224,17 @@ export function alignToSpeech(words: CaptionWord[], segments: [number, number][]
     for (const w of inSeg) { w.t0 = Math.max(a, w.t0 - lag); w.t1 = Math.max(w.t0 + 0.05, w.t1 - lag); }
   }
   return out;
+}
+
+/**
+ * What captions listen to (v1.4.1): the timeline without background sound — music-library clips, clips that duck
+ * under speech, and guide tracks (someone else's sound, never exported). Music in the mix tripled GigaAM's errors on
+ * live speech (WER 7.3% → 24.8%, docs/10 §2). A project with nothing else to hear keeps the whole mix.
+ */
+export function captionSource(p: Project): Project {
+  const background = (c: Clip) => c.kind === 'audio' && (!!p.assets[c.assetId]?.library || (c.duck ?? 0) > 0 || !!c.guide);
+  if (!p.tracks.some((t) => t.clips.some(background))) return p;
+  const tracks = p.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => !background(c)) }));
+  const voice = tracks.some((t) => !t.muted && t.clips.some((c) => (c.kind === 'video' || c.kind === 'audio') && !c.muted && !!p.assets[c.assetId]?.hasAudio));
+  return voice ? { ...p, tracks } : p;
 }

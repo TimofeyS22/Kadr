@@ -1891,9 +1891,21 @@ async function captionsWithRussianModel(page: Page, file: string): Promise<strin
   return (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
 }
 
-test('Russian speech, Auto language: GigaAM recognizes it by itself, punctuated and right', async ({ page }) => {
+test('Russian interface, one tap: GigaAM captions Russian speech with punctuation and never downloads Whisper', async ({ page }) => {
   test.setTimeout(500_000);
-  const srt = await captionsWithRussianModel(page, 'speech_ru.mp4'); // «Привет! Это видеоредактор Кадр. Всё работает прямо на телефоне.»
+  await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru')); // runs after the English default
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Новый проект' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  await importFiles(page, 'Медиа', ['speech_ru.mp4']); // «Привет! Это видеоредактор Кадр. Всё работает прямо на телефоне.»
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
+  await tool(page, 'Субтитры').click(); // one tap, the defaults: "Russian speech", Auto language
+  await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
+  if (!(await sheet(page).isVisible())) await tool(page, 'Субтитры').click();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Сохранить .srt' }).click();
+  const srt = (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
   for (const w of ['привет', 'видеоредактор', 'работает', 'телефоне']) expect(srt).toContain(w);
   expect(srt).toMatch(/[.,!?]/); // GigaAM writes punctuation
   // GigaAM confirmed the language itself: Whisper (77 MB more) was never downloaded.
@@ -1907,4 +1919,34 @@ test('"Russian speech" on English speech falls back to Whisper: English words, n
   const srt = await captionsWithRussianModel(page, 'speech_en.mp4');
   for (const w of ['welcome', 'editor', 'phone', 'device']) expect(srt).toContain(w);
   expect(srt).not.toMatch(/[а-я]/);
+});
+
+test('captions listen to the voice, not the library music under it: live speech stays as accurate as without music', async ({ page }) => {
+  test.setTimeout(600_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['eval_ru_live.mp4']); // 87 s of live Russian speech recorded on phones
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Music').click();
+  await page.getByRole('radiogroup', { name: 'Mood' }).getByRole('radio', { name: 'Energetic' }).click();
+  await page.locator('.music-row', { hasText: 'BPM' }).first().getByRole('button', { name: 'Add', exact: false }).click();
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 60_000 });
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Captions').click();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('combobox', { name: 'Language' }).selectOption('russian');
+  await page.locator('.sheet .chip', { hasText: /^Russian speech, 225 MB$/ }).click();
+  await page.getByRole('button', { name: 'Create captions' }).click();
+  await expect(page.getByRole('button', { name: 'Save as .srt' })).toBeVisible({ timeout: 400_000 });
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save as .srt' }).click();
+  const srt = await fs.promises.readFile(await (await dl).path(), 'utf8');
+  const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  const ref = norm(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'eval', 'texts.json'), 'utf8')).ru_live as string);
+  const hyp = norm(srt.split('\n').filter((l) => l && !/^\d+$/.test(l) && !l.includes('-->')).join(' '));
+  const d = Array.from({ length: ref.length + 1 }, (_, i) => Array.from({ length: hyp.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
+  for (let i = 1; i <= ref.length; i++) for (let j = 1; j <= hyp.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (ref[i - 1] === hyp[j - 1] ? 0 : 1));
+  const wer = d[ref.length][hyp.length] / ref.length;
+  console.log(`WER with library music on the timeline (${test.info().project.name}): ${(wer * 100).toFixed(1)}%`);
+  expect(wer).toBeLessThanOrEqual(0.12); // 7.3% without music (docs/10)
 });

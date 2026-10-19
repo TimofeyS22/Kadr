@@ -1,6 +1,6 @@
 // Auto-captions client: mixes the timeline sound to 16 kHz mono, cuts it into ≤30 s chunks at the
 // quietest moments (so words are not split), and transcribes the chunks in the ASR worker.
-import { DEFAULT_VAD, GIGAAM_VAD, alignToSpeech, dropArtifacts, speechOnset, speechWindows, vadSegments, wordsInSpeech } from '../core/captions';
+import { DEFAULT_VAD, GIGAAM_VAD, alignToSpeech, captionSource, dropArtifacts, speechOnset, speechWindows, vadSegments, wordsInSpeech } from '../core/captions';
 import { projectDuration, soundAssetId } from '../core/timeline';
 import type { ScriptCaptions } from '../core/script';
 import type { CaptionWord, Project } from '../core/types';
@@ -149,9 +149,10 @@ export async function transcribeProject(
   await load(engine);
   onProgress({ phase: 'prepare' });
   const skipped = new Set<string>();
-  const audio = await timelineAudio(p, signal, skipped);
+  const heard = captionSource(p); // the voice, without background music (v1.4.1)
+  const audio = await timelineAudio(heard, signal, skipped);
   const unreadable = [...skipped].map((id) => p.assets[id]?.name ?? '?');
-  if (skipped.size && soundEntries(p).every((e) => skipped.has(soundAssetId(e.clip)))) {
+  if (skipped.size && soundEntries(heard).every((e) => skipped.has(soundAssetId(e.clip)))) {
     throw new MediaError('The sound of “{name}” cannot be decoded in this browser', { name: unreadable.join(', ') });
   }
   // Whisper invents text over music and silence, so only speech found by the VAD is transcribed.
