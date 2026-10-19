@@ -5,8 +5,21 @@ import path from 'node:path';
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
 const pageErrors: string[] = [];
+// Privacy audit on every scenario (docs/11 §3.12): the page talks only to its own origin and to the hosts the CSP
+// allows for models, and never sends anything out. A request with a body to anywhere but the share target fails.
+const ALLOWED_HOSTS = [/^localhost$/, /^127\.0\.0\.1$/, /^timofeys22\.github\.io$/, /^huggingface\.co$/, /\.huggingface\.co$/, /\.hf\.co$/, /^cdn\.jsdelivr\.net$/];
+const network: { method: string; url: string; body: number }[] = [];
+const consoleErrors: string[] = [];
 test.beforeEach(async ({ page }) => {
   pageErrors.length = 0;
+  network.length = 0;
+  consoleErrors.length = 0;
+  page.context().on('request', (r) => {
+    if (/^(blob|data):/.test(r.url())) return;
+    network.push({ method: r.method(), url: r.url(), body: r.postDataBuffer()?.length ?? 0 });
+  });
+  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 300)); });
+  page.context().on('response', (r) => { if (r.status() >= 400) consoleErrors.push(`HTTP ${r.status()} ${r.url().slice(0, 200)}`); });
   await page.addInitScript(() => {
     localStorage.setItem('kadr.tips', '99');
     localStorage.setItem('kadr.locale', 'en');
@@ -25,7 +38,13 @@ test.beforeEach(async ({ page }) => {
   });
   page.on('pageerror', (e) => pageErrors.push(e.message));
 });
-test.afterEach(async ({ page }) => {
+test.afterEach(async ({ page }, info) => {
+  const outside = network.filter((r) => !ALLOWED_HOSTS.some((h) => h.test(new URL(r.url).hostname)));
+  expect(outside.map((r) => `${r.method} ${r.url}`), 'requests to hosts outside the CSP allow-list').toEqual([]);
+  const sent = network.filter((r) => (r.method !== 'GET' && r.method !== 'HEAD') && !(new URL(r.url).pathname.endsWith('/share-target')));
+  expect(sent.map((r) => `${r.method} ${r.url} (${r.body} bytes)`), 'requests that send data').toEqual([]);
+  // Console errors are collected for triage (docs/11), not failed on: some come from the browser itself.
+  if (consoleErrors.length) fs.appendFileSync(path.join(import.meta.dirname, '..', 'test-results', 'console-errors.txt'), `## ${info.project.name} › ${info.title}\n${[...new Set(consoleErrors)].join('\n')}\n\n`);
   expect(pageErrors, 'uncaught errors in the page').toEqual([]);
   expect(await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors) ?? [], 'error toasts').toEqual([]);
 });
@@ -1958,9 +1977,114 @@ test('GigaAM with its lenient speech detection invents no words over music witho
   await page.getByRole('button', { name: 'Новый проект' }).click();
   await page.locator('.aspect-card', { hasText: '9:16' }).click();
   await importFiles(page, 'Звук', ['../public/music/tracks/holiznacc0-2nd-dimension-eda08f.m4a']); // real music, the bed under the eval samples
-  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1);
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 60_000 }); // a 136 s track: slower under a full run
   await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
   await tool(page, 'Субтитры').click();
   await expect(page.getByText('Речь в видео не найдена')).toBeVisible({ timeout: 400_000 });
   await expect(page.locator('.clip-caption')).toHaveCount(0);
 });
+
+// ---------- QA (docs/11): invariants across features ----------
+
+/** Grayscale 270×480 of a picture, or of a video's frame number `n` (exact: `-ss` can land a frame off). */
+async function grayAt(file: string, n?: number): Promise<Buffer> {
+  const { execFileSync } = await import('node:child_process');
+  const pick = n === undefined ? '' : `select=eq(n\\,${n}),`;
+  return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', `${pick}scale=270:480`, '-fps_mode', 'passthrough', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-']);
+}
+const meanAbsDiff = (a: Buffer, b: Buffer) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; };
+
+/** The preview canvas as a picture, after the playhead settles at `t` (60 px per second on the timeline). */
+async function previewAt(page: Page, info: { outputPath: (n: string) => string }, t: number): Promise<string> {
+  await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, t * 60);
+  await page.waitForTimeout(1000);
+  const shot = info.outputPath(`preview-${t}.png`);
+  await page.locator('.preview-canvas').screenshot({ path: shot });
+  return shot;
+}
+
+test('WYSIWYG: the preview shows what the photo and video exports contain — title, mid-transition, filter', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Try a sample' }).click(); // two clips, a slide, a "vivid" filter, a popping title
+  await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
+  await page.keyboard.press('Escape'); // nothing selected: no handles over the picture
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const rows: string[] = [];
+  // Frame times at 30 fps: the title over clip 1, the middle of the 0.6 s slide (3.4–4.0 s), clip 2 with its filter.
+  for (const t of [1.5, 3.7, 5.5]) {
+    const preview = await grayAt(await previewAt(page, info, t));
+    const photo = meanAbsDiff(preview, await grayAt(await exportAs(page, info, 'Photo', 'Save photo')));
+    const frame = meanAbsDiff(preview, await grayAt(video, Math.round(t * 30)));
+    rows.push(`${t} s (playhead ${await time(page)}): preview vs photo ${photo.toFixed(2)}, vs video ${frame.toFixed(2)}`);
+    // Mean |difference| of 0–255 grey at 270×480. Matching frames measured ≤ 2.3 (photo) and ≤ 4 (video, "Small file"
+    // compression); one frame off mid-slide is ~13–15; grey blacks from a mislabelled range (v1.4.3) were 4–12.
+    expect(photo, `photo at ${t} s`).toBeLessThan(4);
+    expect(frame, `video frame at ${t} s`).toBeLessThan(6);
+  }
+  fs.writeFileSync(info.outputPath('wysiwyg.txt'), rows.join('\n'));
+  console.log(`WYSIWYG (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('edits survive closing the page right after them (saved on pagehide, not only after the autosave pause)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  const clips = page.locator('.tl-row.main .clip');
+  await expect(clips).toHaveCount(1);
+  await page.waitForTimeout(1500); // the import itself is saved
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 120; });
+  await expect.poll(() => time(page)).toBe('0:02.0');
+  await tool(page, 'Split').click();
+  await expect(clips).toHaveCount(2);
+  await page.reload(); // at once: inside the 0.6 s autosave pause
+  await expect(clips).toHaveCount(2);
+});
+
+test('hostile files: each one is refused by name, nothing breaks, the good file in the same batch imports and exports', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['hostile_random.mp4', 'hostile_text.mp4', 'hostile_empty.mp4', 'landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.join('\n')), { timeout: 20_000 })
+    .toContain('hostile_empty');
+  await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 30_000 }); // shown one after another
+  const toasts = await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+  console.log(`hostile toasts (${info.project.name}):\n${toasts.join('\n')}`);
+  for (const n of ['hostile_random.mp4', 'hostile_text.mp4', 'hostile_empty.mp4']) expect(toasts.join('\n')).toContain(n);
+  const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  expect(pr.streams.some((x) => x.codec_type === 'video')).toBe(true);
+});
+
+test('a video cut short (header says 6 s, data stops halfway): no hang, no crash, a clear message or a working clip', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['hostile_half.mp4']);
+  // Either refused at import, or imported: then the preview and the export must finish, not hang.
+  await page.waitForTimeout(3000);
+  const imported = await page.locator('.tl-row.main .clip').count();
+  if (imported) {
+    await page.getByRole('button', { name: 'Close tools' }).click();
+    await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 5 * 60; }); // past the end of the data
+    await page.waitForTimeout(1500);
+    await page.getByRole('button', { name: 'Export' }).first().click();
+    await page.getByRole('radio', { name: 'Video', exact: true }).click();
+    await page.getByRole('button', { name: 'Export video' }).click();
+    await expect(page.getByText(/Ready: .* MB/).or(page.locator('.toast.error'))).toBeVisible({ timeout: 120_000 });
+  }
+  const toasts = await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+  console.log(`cut-short video (${info.project.name}): imported ${imported}, toasts: ${toasts.join(' | ') || 'none'}`);
+  if (!imported) expect(toasts.join('\n')).toContain('hostile_half.mp4');
+});
+
+test('a 48 MP photo (iPhone "48MP") imports, previews and exports the same picture', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo_48mp.jpg']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  const preview = await grayAt(await previewAt(page, info, 1));
+  const d = meanAbsDiff(preview, await grayAt(await exportAs(page, info, 'Photo', 'Save photo')));
+  console.log(`48 MP photo (${info.project.name}): preview vs photo ${d.toFixed(2)}`);
+  expect(d).toBeLessThan(8);
+});
+

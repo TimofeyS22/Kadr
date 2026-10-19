@@ -15,6 +15,7 @@ import { Compositor } from './compositor';
 import { MediaError, MediaPool } from './media';
 import { resolveDrawables } from './render';
 import { TextRasterizer } from './text';
+import { matchStreamRange } from './videoRange';
 
 export type Resolution = 720 | 1080 | 1440 | 2160;
 export interface ExportOptions {
@@ -180,6 +181,7 @@ export async function exportProject(
   const frames = new FrameRenderer(p, width, height);
   const video = new CanvasSource(frames.canvas, {
     codec: videoCodec, bitrate: opts.quality === 'high' ? QUALITY_VERY_HIGH : QUALITY_HIGH, keyFrameInterval: 2,
+    onEncodedPacket: matchStreamRange,
   });
   output.addVideoTrack(video, { frameRate: opts.fps });
   const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, bitrate: QUALITY_HIGH }) : null;

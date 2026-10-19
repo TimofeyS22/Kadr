@@ -7,7 +7,7 @@ import type { Project } from '../core/types';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
-import { loadProject, saveProject } from '../storage/db';
+import { clearJournal, journalProject, loadProject, saveProject } from '../storage/db';
 import { startExport } from './ExportSheet';
 import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
 import { formatTime } from './format';
@@ -25,7 +25,14 @@ const snapshot = () => Promise.race([player.snapshot(), new Promise<null>((r) =>
 export async function leaveEditor(): Promise<void> {
   player.pause();
   const p = useEditor.getState().project;
-  if (p) await saveProject(p, (await snapshot()) ?? undefined).catch(() => undefined);
+  if (p) {
+    // Never close over unsaved work (v1.4.3: this error used to be swallowed): without the thumbnail, then give up loudly.
+    const saved = await saveProject(p, (await snapshot()) ?? undefined).then(() => true, () => saveProject(p).then(() => true, (e) => {
+      useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error');
+      return false;
+    }));
+    if (!saved) return;
+  }
   useEditor.getState().close();
   location.hash = '';
 }
@@ -71,23 +78,29 @@ export function Editor({ id }: { id: string }) {
   useEffect(() => {
     let timer = 0;
     let pending: Project | null = null;
-    const flush = () => {
+    // Hiding: the page may be gone before IndexedDB finishes, so the edits are also journaled synchronously (v1.4.3).
+    const flush = (hiding = false) => {
       clearTimeout(timer);
       if (!pending) return;
       const p = pending;
       pending = null;
-      saveProject(p).catch((e) => useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error'));
+      const seq = hiding ? journalProject(p) : 0;
+      saveProject(p).then(
+        () => { if (seq) clearJournal(p.id, seq); },
+        (e) => useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error'),
+      );
     };
+    const onPageHide = () => flush(true);
     const unsub = useEditor.subscribe((s, prev) => {
       if (!s.project || !prev.project || s.project === prev.project) return;
       pending = s.project;
       clearTimeout(timer);
       timer = window.setTimeout(flush, 600);
     });
-    const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
+    const onHide = () => { if (document.visibilityState === 'hidden') flush(true); };
     document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('pagehide', flush);
-    return () => { unsub(); flush(); document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', flush); };
+    window.addEventListener('pagehide', onPageHide);
+    return () => { unsub(); flush(); document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', onPageHide); };
   }, []);
 
   useEffect(() => {

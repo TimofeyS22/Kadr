@@ -3,6 +3,7 @@ import type { FrameDesc, Layer } from '../core/frame';
 import { fromBase64 } from '../core/lut';
 import { ADJUST_KEYS, type BlendMode, type LutData } from '../core/types';
 import type { Drawable } from './text';
+import { MediaError } from './media';
 
 const VS = `#version 300 es
 in vec2 aPos;
@@ -254,7 +255,7 @@ export class Compositor {
 
   private init(): void {
     const gl = this.canvas.getContext('webgl2', { alpha: false, antialias: false, preserveDrawingBuffer: this.preserve, premultipliedAlpha: true });
-    if (!gl) throw new Error('WebGL2 is not available in this browser');
+    if (!gl) throw new MediaError('WebGL2 is not available in this browser');
     this.gl = gl;
     const sh = (type: number, src: string) => {
       const s = gl.createShader(type)!;

@@ -53,6 +53,18 @@ function fitSize(w: number, h: number, maxDim: number): [number, number] {
   return [Math.max(2, Math.round((w * s) / 2) * 2), Math.max(2, Math.round((h * s) / 2) * 2)];
 }
 
+/** Scales a bitmap down to `maxDim` on its long side (closing the original); smaller ones pass through. */
+async function fitBitmap(bmp: ImageBitmap, maxDim: number): Promise<ImageBitmap> {
+  if (Math.max(bmp.width, bmp.height) <= maxDim) return bmp;
+  const [w, h] = fitSize(bmp.width, bmp.height, maxDim);
+  const c = new OffscreenCanvas(w, h);
+  const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, 0, 0, w, h);
+  bmp.close();
+  return c.transferToImageBitmap();
+}
+
 /**
  * Sequential frame reader for one clip. Forward reads reuse the running decoder; backward or far
  * jumps restart it at the nearest keyframe. Calls are serialized, so concurrent callers are safe.
@@ -200,12 +212,16 @@ export class MediaPool {
     return h;
   }
 
+  /**
+   * A photo at most `maxDim` on its long side (v1.4.3). The pool keeps every image of the project, and a 12 MP iPhone
+   * photo is 48.8 MB decoded: ten of them took ~0.5 GB in the preview alone, as much again while exporting.
+   */
   image(assetId: string): Promise<ImageBitmap> {
     let p = this.images.get(assetId);
     if (!p) {
-      p = getBlob(assetId).then((b) => {
+      p = getBlob(assetId).then(async (b) => {
         if (!b) throw new MediaError('Image is missing from this device');
-        return createImageBitmap(b);
+        return fitBitmap(await createImageBitmap(b), this.maxDim);
       });
       p.catch(() => this.images.delete(assetId));
       this.images.set(assetId, p);

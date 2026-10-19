@@ -144,7 +144,7 @@ export async function transcribeProject(
   const load = async (m: AsrModel) => {
     onProgress({ phase: 'download', fraction: 0, mb: ASR_MODELS[m].mb });
     const loaded = await request(w, { type: 'load', model: m }, (l, t) => onProgress({ phase: 'download', fraction: t ? l / t : 0, mb: ASR_MODELS[m].mb }), signal);
-    if (loaded.type === 'error') throw new Error(`Could not load the speech model: ${loaded.message}`);
+    if (loaded.type === 'error') throw new MediaError('Could not load the speech model ({error})', { error: loaded.message });
   };
   await load(engine);
   onProgress({ phase: 'prepare' });
@@ -158,7 +158,7 @@ export async function transcribeProject(
   // Whisper invents text over music and silence, so only speech found by the VAD is transcribed.
   onProgress({ phase: 'listen' });
   const vad = await request(w, { type: 'vad', id: 0, audio: audio.slice() }, undefined, signal);
-  if (vad.type === 'error') throw new Error(`Speech detection failed: ${vad.message}`);
+  if (vad.type === 'error') throw new MediaError('Speech detection failed ({error})', { error: vad.message });
   // Speech segments for the engine at work: lenient for GigaAM, strict for Whisper (it invents text over music).
   let speech: [number, number][] = [], windows: [number, number][] = [];
   const segment = () => {
@@ -169,7 +169,7 @@ export async function transcribeProject(
   const transcribe = async (i: number) => {
     const [a0, a1] = windows[i];
     const r = await request(w, { type: 'transcribe', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), language: engine === 'ru' ? null : language, model: engine }, undefined, signal);
-    if (r.type === 'error') throw new Error(`Transcription failed: ${r.message}`);
+    if (r.type === 'error') throw new MediaError('Transcription failed ({error})', { error: r.message });
     return r.type === 'result' ? r : null;
   };
   const done = new Map<number, NonNullable<Awaited<ReturnType<typeof transcribe>>>>();
@@ -184,7 +184,7 @@ export async function transcribeProject(
     }
     if (!language) {
       const r = await request(w, { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code) }, undefined, signal);
-      if (r.type === 'error') throw new Error(`Speech detection failed: ${r.message}`);
+      if (r.type === 'error') throw new MediaError('Speech detection failed ({error})', { error: r.message });
       if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
       // GigaAM was unsure (Russian under loud music) but it is Russian: GigaAM still reads it best.
       if (model === 'ru' && language === 'russian') { engine = 'ru'; segment(); await load(engine); }

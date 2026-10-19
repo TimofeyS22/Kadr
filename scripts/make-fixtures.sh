@@ -90,6 +90,18 @@ if [ ! -f iphone_spatial.mov ]; then
   ff -f lavfi -i "testsrc2=s=1280x720:r=30:d=4" -f lavfi -i "anullsrc=channel_layout=4.0:sample_rate=48000" -f lavfi -i "sine=f=1000:sample_rate=48000:d=4" \
     -map 0:v -map 1:a -map 2:a -c:v libx264 -pix_fmt yuv420p -c:a:0 alac -c:a:1 aac -ac:a:1 2 -disposition:a:0 0 -disposition:a:1 default -t 4 iphone_spatial.mov
 fi
+# QA (docs/11 §3.6): hostile inputs — random bytes, text and nothing under a video name, a video cut in half —
+# and a 48 MP photo (iPhone "48MP" mode) for the decoded-image memory cap.
+if [ ! -f hostile_random.mp4 ]; then
+  python3 -c "import random,sys; random.seed(7); sys.stdout.buffer.write(bytes(random.getrandbits(8) for _ in range(200000)))" > hostile_random.mp4
+  printf 'not a video, just text\n' > hostile_text.mp4
+  : > hostile_empty.mp4
+  ff -i landscape.mp4 -c copy -movflags +faststart half_tmp.mp4 # header first, like a download cut short
+  head -c $(( $(wc -c < half_tmp.mp4) / 2 )) half_tmp.mp4 > hostile_half.mp4 && rm half_tmp.mp4
+fi
+if [ ! -f photo_48mp.jpg ]; then
+  ff -f lavfi -i "testsrc2=s=8064x6048" -frames:v 1 -q:v 3 photo_48mp.jpg
+fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
 
 # Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.

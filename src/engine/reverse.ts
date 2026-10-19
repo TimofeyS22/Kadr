@@ -10,6 +10,7 @@ import { getBlob } from '../storage/db';
 import { importFile } from './importer';
 import { MediaError } from './media';
 import { ResilientSink, playableAudioTrack } from './sound';
+import { matchStreamRange } from './videoRange';
 
 export const MAX_REVERSE_S = 60;
 const WINDOW_S = 0.5;
@@ -40,7 +41,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
-    const vSource = new CanvasSource(canvas, { codec: vCodec, bitrate: QUALITY_HIGH });
+    const vSource = new CanvasSource(canvas, { codec: vCodec, bitrate: QUALITY_HIGH, onEncodedPacket: matchStreamRange });
     output.addVideoTrack(vSource, { frameRate: fps });
     const aSource = aCodec ? new AudioBufferSource({ codec: aCodec, bitrate: QUALITY_HIGH }) : null;
     if (aSource) output.addAudioTrack(aSource);

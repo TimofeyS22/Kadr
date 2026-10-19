@@ -24,7 +24,39 @@ export async function listProjects(): Promise<ProjectMeta[]> {
   return index.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+// Edits the page had not saved when it went away (v1.4.3). An IndexedDB write started in pagehide is cut off when the
+// page unloads: a split made half a second before a reload was lost (docs/11 QA). localStorage is synchronous and
+// survives; the journal is dropped once the IndexedDB save of that very version lands, and replayed on the next open.
+const JOURNAL = 'kadr.journal';
+let journalSeq = 0;
+type Journal = { seq: number; project: Project };
+
+function readJournal(id: string): Journal | null {
+  try {
+    const j = JSON.parse(localStorage.getItem(JOURNAL) ?? 'null') as Journal | null;
+    return j?.project?.id === id ? j : null;
+  } catch { return null; }
+}
+
+/** Synchronously keeps this version of the project until `clearJournal(seq)`; returns the version number (0 if not kept). */
+export function journalProject(project: Project): number {
+  const seq = Date.now() * 1000 + (journalSeq++ % 1000);
+  try { localStorage.setItem(JOURNAL, JSON.stringify({ seq, project } satisfies Journal)); return seq; }
+  catch (e) { console.warn('Unsaved edits could not be journaled', e); return 0; }
+}
+
+/** Drops the journal if it still holds version `seq` of project `id` (a newer edit keeps its own). */
+export function clearJournal(id: string, seq: number): void {
+  try { if (readJournal(id)?.seq === seq) localStorage.removeItem(JOURNAL); } catch { /* storage blocked */ }
+}
+
 export async function loadProject(id: string): Promise<Project | undefined> {
+  const j = readJournal(id);
+  if (j) { // the page went away before these edits reached IndexedDB
+    await saveProject(j.project);
+    clearJournal(id, j.seq);
+    return j.project;
+  }
   return get<Project>(`p:${id}`, store);
 }
 

@@ -10,6 +10,7 @@ import { insertMain, placeClip, setTransition } from '../core/timeline';
 import type { Asset, Project } from '../core/types';
 import { importFile } from './importer';
 import { MediaError } from './media';
+import { matchStreamRange } from './videoRange';
 
 const W = 720, H = 1280, FPS = 30, DUR = 4;
 
@@ -77,7 +78,7 @@ async function synthClip(scene: number): Promise<Asset> {
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
-  const video = new CanvasSource(canvas, { codec, bitrate: QUALITY_MEDIUM });
+  const video = new CanvasSource(canvas, { codec, bitrate: QUALITY_MEDIUM, onEncodedPacket: matchStreamRange });
   output.addVideoTrack(video, { frameRate: FPS });
   const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, bitrate: QUALITY_MEDIUM }) : null;
   if (audio) output.addAudioTrack(audio);
