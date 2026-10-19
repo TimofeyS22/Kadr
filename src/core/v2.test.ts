@@ -304,11 +304,20 @@ describe('speech detection for captions', () => {
   it('gives GigaAM the quiet speech under music that Whisper is kept away from (v1.4)', () => {
     const f = 0.032;
     const probs = new Float32Array(100);
-    for (let i = 20; i < 50; i++) probs[i] = 0.4; // a voice the music half covers
+    for (let i = 40; i < 70; i++) probs[i] = 0.4; // a voice the music half covers
     expect(vadSegments(probs, f)).toEqual([]);
     const seg = vadSegments(probs, f, GIGAAM_VAD);
     expect(seg.length).toBe(1);
-    expect(seg[0][0]).toBeCloseTo(20 * f - GIGAAM_VAD.pad, 5);
+    expect(seg[0][0]).toBeCloseTo(40 * f - GIGAAM_VAD.pad, 5);
+  });
+
+  it('keeps GigaAM\'s speech whole across short gaps, so music between words does not cut it (v1.4.2)', () => {
+    const f = 0.032;
+    const probs = new Float32Array(200);
+    for (let i = 40; i < 70; i++) probs[i] = 0.6;
+    for (let i = 100; i < 130; i++) probs[i] = 0.6; // ~1 s of music between the phrases
+    expect(vadSegments(probs, f)).toHaveLength(2);
+    expect(vadSegments(probs, f, GIGAAM_VAD)).toHaveLength(1);
   });
 
   it('groups speech into ≤ 28 s windows and filters words outside speech', () => {

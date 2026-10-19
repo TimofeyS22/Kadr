@@ -1950,3 +1950,17 @@ test('captions listen to the voice, not the library music under it: live speech 
   console.log(`WER with library music on the timeline (${test.info().project.name}): ${(wer * 100).toFixed(1)}%`);
   expect(wer).toBeLessThanOrEqual(0.12); // 7.3% without music (docs/10)
 });
+
+test('GigaAM with its lenient speech detection invents no words over music without a voice', async ({ page }) => {
+  test.setTimeout(500_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru'));
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Новый проект' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  await importFiles(page, 'Звук', ['../public/music/tracks/holiznacc0-2nd-dimension-eda08f.m4a']); // real music, the bed under the eval samples
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
+  await tool(page, 'Субтитры').click();
+  await expect(page.getByText('Речь в видео не найдена')).toBeVisible({ timeout: 400_000 });
+  await expect(page.locator('.clip-caption')).toHaveCount(0);
+});
