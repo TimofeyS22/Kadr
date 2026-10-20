@@ -3195,3 +3195,58 @@ test('cuts reach the file frame for frame: split twice, delete the middle — th
   console.log(`cuts frame for frame (${info.project.name}):\n${rows.join('\n')}`);
   expect(Math.min(...around)).toBeGreaterThan(0.5 * steady);
 });
+
+test('clip tools reach the file frame for frame: 2× speed, reverse and a freeze frame show exactly the expected source frames in the video, the photo and the preview', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  test.skip(!fs.existsSync(fx('counter.mp4')), 'needs npm run fixtures');
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4', 'counter.mp4', 'counter.mp4']); // A, B, C: 6 s each, frame N in binary
+  await expect(main).toHaveCount(3);
+  // A at 2×: 0–3 s. B reversed: 3–9 s. C: 9–15 s, frozen at 10 s (its source frame 30) for 2 s, then on from frame 30.
+  await selectClip(page, main.nth(0));
+  await tool(page, 'Speed').click();
+  await page.getByRole('radio', { name: '2×' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
+  await selectClip(page, main.nth(1));
+  await tool(page, 'Reverse').click();
+  await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
+  // Select first, then scrub: Playwright scrolls a half-hidden clip into view to click it, which moves the playhead.
+  await selectClip(page, main.nth(2));
+  await scrubTo(page, 600, '0:10.0');
+  await tool(page, 'Freeze').click(); // the clip under the playhead
+  await expect(main).toHaveCount(5, { timeout: 30_000 });
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  // The source frame at timeline time t (seconds).
+  const source = (t: number) => {
+    const f = Math.floor(t * 30 + 1e-6);
+    if (t < 3) return Math.floor(t * 2 * 30 + 1e-6); // A, twice as fast
+    if (t < 9) return 179 - (f - 90); // B backwards
+    if (t < 10) return f - 270; // C up to the freeze
+    if (t < 12) return 30; // the freeze frame
+    return 30 + (f - 360); // C after it
+  };
+
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const rows: string[] = [];
+  const duration = Number((await probe(video)).format.duration);
+  rows.push(`duration ${duration.toFixed(3)} s`);
+  expect(Math.abs(duration - 17)).toBeLessThan(0.05);
+  for (const k of [0, 10, 89, 90, 91, 269, 270, 299, 300, 359, 360, 361, 509]) {
+    const got = await counterAt(video, k);
+    rows.push(`frame ${k}: video ${got} (expected ${source(k / 30)})`);
+    expect.soft(got, `video frame ${k}`).toBe(source(k / 30));
+  }
+  for (const k of [10, 90, 268, 330, 361]) {
+    const t = (k + 0.5) / 30; // mid-frame: the playhead moves 2 px per frame
+    const shown = await counterAt(await previewAt(page, info, t));
+    const photo = await counterAt(await exportAs(page, info, 'Photo', 'Save photo'));
+    rows.push(`frame ${k}½: preview ${shown}, photo ${photo} (expected ${source(t)})`);
+    expect.soft(shown, `preview at frame ${k}½`).toBe(source(t));
+    expect.soft(photo, `photo at frame ${k}½`).toBe(source(t));
+  }
+  console.log(`clip tools frame for frame (${info.project.name}):\n${rows.join('\n')}`);
+});
