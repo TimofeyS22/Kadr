@@ -678,9 +678,8 @@ test('multi-select: pick clips on several tracks, delete, undo, duplicate', asyn
   await expect(page.locator('.clip.picked')).toHaveCount(0);
 });
 
-test('camera with teleprompter scrolls the script, records a mirrored clip onto the main track and releases the camera', async ({ page }, info) => {
-  test.setTimeout(120_000);
-  // A synthetic camera: white left half, black right half, a moving strip on top, plus a tone, so the test runs headless.
+/** A synthetic camera: white left half, black right half, a moving strip on top, plus a tone, so tests run headless. */
+async function fakeCamera(page: Page) {
   await page.addInitScript(() => {
     const w = window as unknown as { __tracks: MediaStreamTrack[] };
     w.__tracks = [];
@@ -703,6 +702,11 @@ test('camera with teleprompter scrolls the script, records a mirrored clip onto 
       return s;
     };
   });
+}
+
+test('camera with teleprompter scrolls the script, records a mirrored clip onto the main track and releases the camera', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await fakeCamera(page);
   await newProject(page);
   await tool(page, 'Camera').click();
   await page.getByRole('button', { name: 'Edit script' }).click();
@@ -3071,4 +3075,52 @@ test('WYSIWYG for an iPhone HDR video: HEVC 10-bit HLG looks the same in the pre
   const closeTools = page.getByRole('button', { name: 'Close tools' });
   if (await closeTools.isVisible()) await closeTools.click();
   await expectSameFrames(page, info, 'WYSIWYG HDR', [1, 2, 3].map((t) => ({ name: `HLG at ${t} s`, t })), 0.8);
+});
+
+// ---------- QA docs/11 §3.3–3.4: capture, import and selection in one history ----------
+
+test('history and persistence, capture and selection: a camera recording, a two-file import, several clips duplicated then deleted — each one exact undo step, a reload exports the same video', async ({ page }, info) => {
+  test.setTimeout(480_000);
+  await fakeCamera(page);
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  const main = page.locator('.tl-row.main .clip'), text = page.locator('.clip-text'), picked = page.locator('.clip.picked');
+  await newProject(page);
+  const h = historyProof(page, info);
+  await h.start();
+  await h.act('camera recording', async () => {
+    await tool(page, 'Camera').click();
+    await page.getByRole('button', { name: 'Start recording' }).click();
+    await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
+    await page.waitForTimeout(2000);
+    await page.getByRole('button', { name: 'Stop recording' }).click();
+    await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
+  });
+  await h.act('import of two files at once', async () => {
+    await importFiles(page, 'Media', ['photo.png', 'landscape.mp4']);
+    await expect(main).toHaveCount(3);
+  });
+  await h.act('text', async () => {
+    await tool(page, 'Text').click();
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(text).toHaveCount(1);
+  });
+  await h.act('a text and a photo on two tracks duplicated', async () => {
+    await selectClip(page, text);
+    await tool(page, 'Select several').click();
+    await expect(text).toHaveClass(/picked/);
+    await page.locator('.tl-row.main .clip-image').click();
+    await expect(page.getByRole('status').filter({ hasText: '2 selected' })).toBeVisible();
+    await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
+    await expect(main).toHaveCount(4);
+    await expect(text).toHaveCount(2);
+  });
+  await h.act('the picked copies deleted', async () => {
+    await expect(picked).toHaveCount(2); // the copies are picked after duplicating
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(main).toHaveCount(3);
+    await expect(text).toHaveCount(1);
+    await page.getByRole('button', { name: 'Finish selecting' }).click();
+  });
+  await h.undoRedo();
+  await h.reload();
 });
