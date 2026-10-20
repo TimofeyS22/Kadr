@@ -3124,3 +3124,74 @@ test('history and persistence, capture and selection: a camera recording, a two-
   await h.undoRedo();
   await h.reload();
 });
+
+// ---------- QA docs/11 §3.1–3.2: cuts reach the file frame for frame ----------
+
+/** The source frame a picture (or a video's frame `n`) shows, read from counter.mp4's 8-stripe binary code. */
+async function counterAt(file: string, n?: number): Promise<number> {
+  const { execFileSync } = await import('node:child_process');
+  const pick = n === undefined ? '' : `select=eq(n\\,${n}),`;
+  const b = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', `${pick}scale=64:-2,format=gray`, '-fps_mode', 'passthrough', '-frames:v', '1', '-f', 'rawvideo', '-']);
+  const W = 64, H = b.length / W;
+  let v = 0;
+  for (let k = 0; k < 8; k++) {
+    let m = 0, c = 0;
+    for (let y = Math.floor(H * 0.45); y <= Math.floor(H * 0.55); y++) for (let x = k * 8 + 2; x < k * 8 + 6; x++) { m += b[y * W + x]; c++; }
+    if (m / c > 128) v |= 1 << k;
+  }
+  return v;
+}
+
+test('cuts reach the file frame for frame: split twice, delete the middle — the video, the photo and the preview show exactly the expected source frame on both sides of the cut', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  test.skip(!fs.existsSync(fx('counter.mp4')), 'needs npm run fixtures');
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4']); // 6 s at 30 fps, frame N written in binary
+  await expect(main).toHaveCount(1);
+  // Split at 2 s and 4 s, delete the middle: the timeline plays source frames 0–59, then 120–179.
+  await scrubTo(page, 120, '0:02.0');
+  await selectClip(page, main.first());
+  await tool(page, 'Split').click();
+  await expect(main).toHaveCount(2);
+  await scrubTo(page, 240, '0:04.0');
+  await selectClip(page, main.nth(1));
+  await tool(page, 'Split').click();
+  await expect(main).toHaveCount(3);
+  await selectClip(page, main.nth(1));
+  await tool(page, 'Delete').click();
+  await expect(main).toHaveCount(2);
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  const source = (k: number) => (k < 60 ? k : k + 60);
+
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const rows: string[] = [];
+  const duration = Number((await probe(video)).format.duration);
+  rows.push(`duration ${duration.toFixed(3)} s`);
+  expect(Math.abs(duration - 4)).toBeLessThan(0.05);
+  for (const k of [0, 30, 58, 59, 60, 61, 90, 119]) {
+    const got = await counterAt(video, k);
+    rows.push(`timeline frame ${k}: video shows ${got} (expected ${source(k)})`);
+    expect.soft(got, `video frame ${k}`).toBe(source(k));
+  }
+  // The preview and the photo in the middle of a frame (the playhead moves in whole pixels, 2 per frame).
+  for (const k of [10, 59, 60, 100]) {
+    const shown = await counterAt(await previewAt(page, info, (k + 0.5) / 30));
+    const photo = await counterAt(await exportAs(page, info, 'Photo', 'Save photo'));
+    rows.push(`timeline frame ${k}: preview ${shown}, photo ${photo} (expected ${source(k)})`);
+    expect.soft(shown, `preview at frame ${k}`).toBe(source(k));
+    expect.soft(photo, `photo at frame ${k}`).toBe(source(k));
+  }
+  // The tone runs on across the cut (440 Hz: whole cycles in 2 s, so no click either): no 10 ms window goes quiet.
+  const { execFileSync } = await import('node:child_process');
+  const b = execFileSync('ffmpeg', ['-v', 'error', '-i', video, '-ac', '1', '-ar', '48000', '-f', 'f32le', '-']);
+  const pcm = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
+  const rms = (s: number) => { let v = 0; for (let i = Math.round(s * 48000); i < Math.round((s + 0.01) * 48000); i++) v += pcm[i] ** 2; return Math.sqrt(v / 480); };
+  const steady = rms(1);
+  const around = Array.from({ length: 40 }, (_, i) => rms(1.8 + i * 0.01));
+  rows.push(`sound around the cut: ${Math.min(...around).toFixed(3)}–${Math.max(...around).toFixed(3)}, steady ${steady.toFixed(3)}`);
+  console.log(`cuts frame for frame (${info.project.name}):\n${rows.join('\n')}`);
+  expect(Math.min(...around)).toBeGreaterThan(0.5 * steady);
+});

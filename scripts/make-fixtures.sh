@@ -4,6 +4,9 @@ set -e
 cd "$(dirname "$0")/../fixtures"
 ff() { ffmpeg -y -loglevel error "$@"; }
 ff -f lavfi -i testsrc2=size=1280x720:rate=30:duration=6 -f lavfi -i sine=frequency=440:duration=6 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest landscape.mp4
+# Frame N in binary across 8 vertical stripes (bit k: stripe k white): which source frame a file shows, exactly, through
+# any range or colour conversion
+ff -f lavfi -i "color=c=black:s=640x360:r=30:d=6,format=yuv420p,geq=lum='if(bitand(N,pow(2,floor(X*8/W))),235,16)':cb=128:cr=128" -f lavfi -i sine=frequency=440:duration=6 -c:v libx264 -g 30 -pix_fmt yuv420p -c:a aac -shortest counter.mp4
 ff -f lavfi -i "smptebars=size=720x1280:rate=30:duration=5" -f lavfi -i sine=frequency=660:duration=5 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest portrait.mp4
 ff -f lavfi -i "sine=frequency=220:duration=10" -c:a aac music.m4a
 ff -f lavfi -i "mandelbrot=size=1080x1080" -frames:v 1 photo.png
