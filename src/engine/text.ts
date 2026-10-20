@@ -67,6 +67,15 @@ export async function ensureFont(style: TextStyle, text: string): Promise<void> 
   const key = `${css}|${/[\u0400-\u04ff]/.test(text) ? 'c' : ''}${/[a-z]/i.test(text) ? 'l' : ''}`;
   if (loaded.has(key)) return;
   await document.fonts.load(css, text || 'Aa').catch(() => undefined);
+  // WebKit resolves load() before the font is whole on canvas (v1.4.9, QA: right after it the text measured a mix of
+  // fallback and font, the font itself 0.5 s later), so an export after reopening a project drew Impact instead of
+  // Rubik Mono. The family's faces for this weight and style are loaded directly and awaited.
+  const family = fontOf(style.font).family.split(',')[0].replace(/["']/g, '').trim();
+  const weight = fontWeight(style.font, style.weight), italic = style.italic ? 'italic' : 'normal';
+  const fits = (w: string) => { const [a, b = a] = w.split(' ').map(Number); return weight >= a && weight <= b; };
+  await Promise.all([...document.fonts]
+    .filter((f) => f.family.replace(/["']/g, '') === family && f.style === italic && fits(f.weight))
+    .map((f) => f.load().catch(() => undefined)));
   loaded.add(key);
 }
 

@@ -2330,47 +2330,103 @@ async function fingerprint(file: string) {
   return { duration, frames, env };
 }
 
+/**
+ * Proves docs/11 §3.3–3.4 for a chain of actions: the saved project is recorded after each one; then every undo must
+ * give exactly the project before its action and every redo the one after; then a reload keeps the project byte for
+ * byte and exports the same picture and sound.
+ */
+function historyProof(page: Page, info: { outputPath: (n: string) => string; project: { name: string } }) {
+  const states: string[] = [], names: string[] = [];
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  return {
+    async start() { states.push(await settledProject(page)); names.push('start'); },
+    /** One user action; it must change the project. */
+    async act(name: string, run: () => Promise<void>) {
+      await run();
+      names.push(name);
+      states.push(await settledProject(page, states[states.length - 1]));
+      if (await closeTools.isVisible()) await closeTools.click();
+    },
+    async undoRedo() {
+      const undo = page.getByRole('button', { name: 'Undo' }), redo = page.getByRole('button', { name: 'Redo' });
+      let cur = states[states.length - 1];
+      for (let k = states.length - 2; k >= 0; k--) {
+        await undo.click();
+        cur = await settledProject(page, cur).catch((e: Error) => { throw new Error(`undo of "${names[k + 1]}" changed nothing: ${e.message.split('\n')[0]}`); });
+        expect(cur === states[k], `undo of "${names[k + 1]}" gives the project before it; ${firstDiff(cur, states[k])}`).toBe(true);
+      }
+      for (let k = 1; k < states.length; k++) {
+        expect(await redo.isEnabled(), `redo is still possible before "${names[k]}"`).toBe(true);
+        await redo.click();
+        cur = await settledProject(page, cur).catch((e: Error) => { throw new Error(`redo of "${names[k]}" changed nothing: ${e.message.split('\n')[0]}`); });
+        expect(cur === states[k], `redo of "${names[k]}" gives the project after it; ${firstDiff(cur, states[k])}`).toBe(true);
+      }
+      await expect(redo).toBeDisabled();
+      console.log(`history (${info.project.name}): ${names.slice(1).join(', ')} — each one undo step, exact both ways`);
+    },
+    async reload() {
+      const clips = page.locator('.tl-row .clip'), n = await clips.count();
+      const before = await fingerprint(await exportAs(page, info, 'Video', 'Export video'));
+      const saved = await settledProject(page);
+      await page.reload();
+      await expect(clips).toHaveCount(n);
+      expect(await settledProject(page) === saved, `the reload keeps the project; ${firstDiff(await savedProject(page), saved)}`).toBe(true);
+      const after = await fingerprint(await exportAs(page, info, 'Video', 'Export video'));
+      expect(Math.abs(after.duration - before.duration)).toBeLessThan(0.05);
+      const frameDiff = before.frames.map((f, k) => { let s = 0; for (let i = 0; i < f.length; i++) s += Math.abs(f[i] - after.frames[k][i]); return s / f.length; });
+      // Pixels that changed visibly: a title drawn in a fallback font moved 2.15 on average and 2.1% of the pixels (v1.4.9).
+      const changed = before.frames.map((f, k) => { let n = 0; for (let i = 0; i < f.length; i++) if (Math.abs(f[i] - after.frames[k][i]) > 24) n++; return n / f.length; });
+      const envDiff = Math.max(...before.env.map((v, i) => Math.abs(v - (after.env[i] ?? 0))));
+      console.log(`reload (${info.project.name}): frame diff ${frameDiff.map((d) => d.toFixed(2)).join(', ')} of 255, pixels changed ${changed.map((c) => `${(c * 100).toFixed(1)}%`).join(', ')}; sound envelope diff ${envDiff.toFixed(4)}; peak ${Math.max(...before.env).toFixed(3)}`);
+      // The same project exports the same file: measured 0.00–0.19 on every chain without the font bug.
+      for (const d of frameDiff) expect(d, 'frames after the reload, mean difference').toBeLessThan(1);
+      for (const c of changed) expect(c, 'frames after the reload, share of changed pixels').toBeLessThan(0.005);
+      expect(Math.max(...before.env)).toBeGreaterThan(0.01); // there is sound to compare
+      expect(envDiff).toBeLessThan(0.01);
+    },
+  };
+}
+
+/** Drags an element sideways by `dx` px with the mouse. */
+async function dragBy(page: Page, target: ReturnType<Page['locator']>, dx: number) {
+  const b = (await target.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2, { steps: 8 });
+  await page.mouse.up();
+}
+
+const scrubTo = async (page: Page, px: number, shown: string) => {
+  await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, px);
+  await expect.poll(() => time(page)).toBe(shown);
+};
+
 test('history and persistence across tools: every action is one undo step back to exactly the project before it, redo replays them, a reload exports the same video', async ({ page }, info) => {
   test.setTimeout(480_000);
   const clips = page.locator('.tl-row.main .clip'), videos = page.locator('.tl-row.main .clip-video');
-  const closeTools = page.getByRole('button', { name: 'Close tools' });
-  const scrubTo = async (px: number, shown: string) => {
-    await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, px);
-    await expect.poll(() => time(page)).toBe(shown);
-  };
   await newProject(page);
   await importFiles(page, 'Media', ['landscape.mp4', 'photo.png']);
   await expect(clips).toHaveCount(2);
-  if (await closeTools.isVisible()) await closeTools.click();
-  // The saved project after each action: states[0] is the import, states[k] the project after action k.
-  const states = [await settledProject(page)], names = ['import'];
-  const act = async (name: string, run: () => Promise<void>) => { await run(); names.push(name); states.push(await settledProject(page, states[states.length - 1])); };
-  const drag = async (target: ReturnType<Page['locator']>, dx: number) => {
-    const b = (await target.boundingBox())!;
-    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2, { steps: 8 });
-    await page.mouse.up();
-  };
-
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  const h = historyProof(page, info);
+  await h.start();
   // Actions of different kinds, three of them creating derived media (reversed video, clean sound, a still).
-  await act('trim start', async () => {
+  await h.act('trim start', async () => {
     await selectClip(page, mainVideo(page));
     const w0 = (await mainVideo(page).boundingBox())!.width;
-    await drag(mainVideo(page).getByLabel('Trim start'), 60); // 1 s at 60 px per second
+    await dragBy(page, mainVideo(page).getByLabel('Trim start'), 60); // 1 s at 60 px per second
     await expect.poll(async () => (await mainVideo(page).boundingBox())!.width).toBeLessThan(w0 - 40);
   });
-  if (await closeTools.isVisible()) await closeTools.click();
-  await scrubTo(120, '0:02.0');
-  await act('split', async () => { await selectClip(page, mainVideo(page)); await tool(page, 'Split').click(); await expect(clips).toHaveCount(3); });
-  await act('speed', async () => { await selectClip(page, mainVideo(page)); await useSheet(page, 'Speed'); });
-  await act('filter', async () => { await selectClip(page, mainVideo(page)); await useSheet(page, 'Filters'); });
-  await act('reverse', async () => {
+  await scrubTo(page, 120, '0:02.0');
+  await h.act('split', async () => { await selectClip(page, mainVideo(page)); await tool(page, 'Split').click(); await expect(clips).toHaveCount(3); });
+  await h.act('speed', async () => { await selectClip(page, mainVideo(page)); await useSheet(page, 'Speed'); });
+  await h.act('filter', async () => { await selectClip(page, mainVideo(page)); await useSheet(page, 'Filters'); });
+  await h.act('reverse', async () => {
     await selectClip(page, videos.nth(1));
     await tool(page, 'Reverse').click();
     await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
   });
-  await act('noise reduction', async () => {
+  await h.act('noise reduction', async () => {
     await selectClip(page, videos.nth(1));
     await tool(page, 'Volume').click();
     const denoise = page.getByRole('switch', { name: 'Reduce background noise' });
@@ -2378,55 +2434,155 @@ test('history and persistence across tools: every action is one undo step back t
     await expect(denoise).toBeChecked({ timeout: 120_000 });
     await page.getByRole('button', { name: 'Done' }).click();
   });
-  if (await closeTools.isVisible()) await closeTools.click();
-  await scrubTo(30, '0:00.5');
-  await act('freeze', async () => {
+  await scrubTo(page, 30, '0:00.5');
+  await h.act('freeze', async () => {
     await selectClip(page, mainVideo(page));
     await tool(page, 'Freeze').click();
     await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
     await expect(page.locator('.tl-row.main .clip-image')).toHaveCount(2);
   });
-  if (await closeTools.isVisible()) await closeTools.click();
-  await act('text', async () => { await tool(page, 'Text').click(); await page.getByRole('button', { name: 'Done' }).click(); });
-  if (await closeTools.isVisible()) await closeTools.click();
-  await act('move text', async () => {
+  await h.act('text', async () => { await tool(page, 'Text').click(); await page.getByRole('button', { name: 'Done' }).click(); });
+  await h.act('move text', async () => {
     const text = page.locator('.clip-text'), x0 = (await text.boundingBox())!.x;
-    await drag(text, 60);
+    await dragBy(page, text, 60);
     await expect.poll(async () => (await text.boundingBox())!.x).toBeGreaterThan(x0 + 40);
   });
-  if (await closeTools.isVisible()) await closeTools.click();
-
-  // Each undo goes back exactly one action; each redo replays exactly one.
-  const undo = page.getByRole('button', { name: 'Undo' }), redo = page.getByRole('button', { name: 'Redo' });
-  let cur = states[states.length - 1];
-  for (let k = states.length - 2; k >= 0; k--) {
-    await undo.click();
-    cur = await settledProject(page, cur);
-    expect(cur === states[k], `undo of "${names[k + 1]}" gives the project before it; ${firstDiff(cur, states[k])}`).toBe(true);
-  }
-  for (let k = 1; k < states.length; k++) {
-    await redo.click();
-    cur = await settledProject(page, cur);
-    expect(cur === states[k], `redo of "${names[k]}" gives the project after it; ${firstDiff(cur, states[k])}`).toBe(true);
-  }
-  await expect(redo).toBeDisabled();
-  console.log(`history (${info.project.name}): ${names.slice(1).join(', ')} — each one undo step, exact both ways`);
-
-  // A reload changes nothing: the same saved project, the same exported picture and sound.
-  const before = await fingerprint(await exportAs(page, info, 'Video', 'Export video'));
-  const saved = await settledProject(page);
-  await page.reload();
-  await expect(clips).toHaveCount(5);
-  expect(await settledProject(page) === saved, `the reload keeps the project; ${firstDiff(await savedProject(page), saved)}`).toBe(true);
-  const after = await fingerprint(await exportAs(page, info, 'Video', 'Export video'));
-  expect(Math.abs(after.duration - before.duration)).toBeLessThan(0.05);
-  const frameDiff = before.frames.map((f, k) => { let s = 0; for (let i = 0; i < f.length; i++) s += Math.abs(f[i] - after.frames[k][i]); return s / f.length; });
-  const envDiff = Math.max(...before.env.map((v, i) => Math.abs(v - (after.env[i] ?? 0))));
-  console.log(`reload (${info.project.name}): frame diff ${frameDiff.map((d) => d.toFixed(2)).join(', ')} of 255; sound envelope diff ${envDiff.toFixed(4)}; peak ${Math.max(...before.env).toFixed(3)}`);
-  for (const d of frameDiff) expect(d).toBeLessThan(3);
-  expect(Math.max(...before.env)).toBeGreaterThan(0.01); // there is sound to compare
-  expect(envDiff).toBeLessThan(0.01);
+  await h.undoRedo();
+  await h.reload();
 });
+
+test('history and persistence, look and AI tools: keyframe, chroma key, mask, cutout, hidden faces, auto reframe, transition, blurred canvas', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  const clips = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4', 'walk.mp4', 'person.jpg', 'photo.png']);
+  await expect(clips).toHaveCount(4);
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  const h = historyProof(page, info);
+  await h.start();
+  await h.act('keyframe', async () => {
+    await selectClip(page, clips.nth(2));
+    await tool(page, 'Transform').click();
+    await page.getByRole('button', { name: 'Add Position X keyframe' }).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('chroma key', async () => {
+    await selectClip(page, clips.nth(3));
+    await tool(page, 'Chroma key').click();
+    await page.getByRole('switch', { name: 'Remove color (green screen)' }).check();
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('mask', async () => {
+    await selectClip(page, clips.nth(3));
+    await tool(page, 'Mask').click();
+    await sheet(page).getByRole('radio', { name: 'Circle' }).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('cutout', async () => {
+    await selectClip(page, clips.nth(2));
+    await tool(page, 'Cutout').click();
+    await expect(tool(page, 'Cutout')).toHaveAttribute('aria-pressed', 'true', { timeout: 60_000 });
+  });
+  await h.act('hide faces', async () => {
+    await selectClip(page, clips.nth(2));
+    await tool(page, 'Hide faces').click();
+    await page.getByRole('switch', { name: 'Hide faces automatically' }).click();
+    await expect(page.getByRole('switch', { name: 'Hide faces automatically' })).toBeChecked({ timeout: 60_000 });
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('auto reframe', async () => {
+    await selectClip(page, clips.nth(1));
+    await tool(page, 'Auto reframe').click();
+    await expect(page.locator('.busy')).toHaveCount(0, { timeout: 120_000 });
+  });
+  await h.act('transition', async () => {
+    await page.getByRole('button', { name: 'Transition' }).first().click();
+    await sheet(page).getByRole('radio').nth(2).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('blurred canvas', async () => {
+    await tool(page, 'Canvas').click();
+    await sheet(page).getByRole('radio', { name: 'Blur' }).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.undoRedo();
+  await h.reload();
+});
+
+test('history and persistence, overlays, sound and captions: text style, sticker, music, beat, cut to the beat, ducking, enhanced voice, sound effect, .srt captions and their style', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  const clips = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['speech_en.mp4', 'landscape.mp4']);
+  await expect(clips).toHaveCount(2);
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  const h = historyProof(page, info);
+  await h.start();
+  await scrubTo(page, 60, '0:01.0');
+  await h.act('text', async () => { await tool(page, 'Text').click(); await page.getByRole('button', { name: 'Done' }).click(); });
+  await h.act('text style', async () => {
+    await selectClip(page, page.locator('.clip-text'));
+    await tool(page, 'Edit text').click();
+    await page.getByRole('radiogroup', { name: 'Style' }).getByRole('radio', { name: 'Comic' }).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('sticker', async () => { await page.getByRole('button', { name: 'Stickers' }).click(); await page.getByRole('button', { name: 'Add 🔥' }).click(); await page.keyboard.press('Escape'); });
+  await h.act('music', async () => {
+    await importFiles(page, 'Audio', ['beat120.m4a']);
+    await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1);
+  });
+  await h.act('find the beat', async () => { // the beat marks on the clip are its own step
+    await selectClip(page, page.locator('.tl-row.audio .clip').first());
+    await tool(page, 'Beat').click();
+    await page.getByRole('button', { name: 'Find the beat' }).click();
+    await expect(page.getByText('BPM')).toBeVisible({ timeout: 60_000 });
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('cut to the beat', async () => {
+    await selectClip(page, page.locator('.tl-row.audio .clip').first());
+    await tool(page, 'Beat').click();
+    await page.getByRole('radio', { name: 'every beat' }).click();
+    await expect(page.getByText(/cuts now land on the beat/)).toBeVisible();
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('ducking', async () => {
+    await selectClip(page, page.locator('.tl-row.audio .clip').first());
+    await tool(page, 'Volume').click();
+    await page.getByLabel('Lower when others speak').check();
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('enhanced voice', async () => {
+    await selectClip(page, mainVideo(page));
+    await tool(page, 'Volume').click();
+    await page.getByRole('switch', { name: 'Enhance voice' }).check();
+    await expect(page.getByRole('switch', { name: 'Enhance voice' })).toBeChecked({ timeout: 120_000 });
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await scrubTo(page, 150, '0:02.5');
+  await h.act('sound effect', async () => {
+    await tool(page, 'Sounds').click();
+    await page.getByRole('button', { name: 'Add Whoosh at the playhead' }).click();
+    await expect(page.locator('.tl-row.audio .clip')).toHaveCount(2);
+  });
+  await h.act('.srt captions', async () => {
+    await tool(page, 'Captions').click(); // one tap starts recognition (v1.3); Settings stops it
+    await page.getByRole('button', { name: 'Settings' }).click();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Import .srt or .vtt' }).click();
+    await (await chooser).setFiles(fx('test.srt'));
+    await expect(page.locator('.clip-caption')).toHaveCount(1);
+    if (await sheet(page).isVisible()) await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.act('caption style', async () => {
+    await selectClip(page, page.locator('.clip-caption'));
+    await tool(page, 'Edit captions').click();
+    await page.getByRole('radiogroup', { name: 'Style' }).getByRole('radio', { name: 'Box' }).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+  await h.undoRedo();
+  await h.reload();
+});
+
 
 // ---------- QA docs/11 §3.2: WYSIWYG for every look tool, in colour ----------
 

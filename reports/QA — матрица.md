@@ -41,20 +41,20 @@
 | Видео | Скорость, кривые скорости, естественный голос | ✓ | ✓ | ✓ | ✓ | ✓ L1 фаззинг (с кривыми) | — | speed 1.25×…; remove pauses…speed 2×; history and persistence…; speed curve: a preset… (длина файла = таймлайну, кадры = превью в 4 точках кривой) |
 | Видео | Кроп, фильтры, коррекция, LUT, эффекты | ✓ | ✓ | ◐ | ◐ | ◐ | ✗ | crop, filters…; LUT import…; video effects…; history and persistence… (фильтр); WYSIWYG look tools / in motion |
 | Видео | Зеркало, трансформ | ✓ | ✓ | ✓ | ✓ | — | — | mirror…; WYSIWYG look tools |
-| Видео | Ключевые кадры, хромакей, маска | ✓ | ✓ | ✗ | ✗ | ✗ | — | keyframes, chroma key and a mask…; WYSIWYG look tools / in motion (позиция между ключами) |
-| Видео | Вырезание фона | ✓ | ✓ | ✗ | ✗ | ✗ | — | background removal…; crop, filters and cutout…; WYSIWYG look tools |
-| Видео | Скрыть лица, авторефрейм | ✓ | ✓ | ✗ | ✗ | ✗ | — | hide faces…; auto reframe…; WYSIWYG look tools / in motion |
-| Видео | Переходы, «ко всем склейкам» | ✓ | ✓ | ✗ | ✗ | ✗ | — | new transitions…; WYSIWYG («Пример»: слайд; in motion: Whip pan) |
-| Холст | Формат, размытый фон, безопасные зоны | ✓ | ✓ | ✗ | ✗ | — | — | canvas…; WYSIWYG in motion (размытый фон; зоны в экспорт не идут) |
+| Видео | Ключевые кадры, хромакей, маска | ✓ | ✓ | ✓ | ✓ | ✗ | — | keyframes, chroma key and a mask…; WYSIWYG look tools / in motion (позиция между ключами); history and persistence, look and AI… |
+| Видео | Вырезание фона | ✓ | ✓ | ✓ | ✓ | ✗ | — | background removal…; crop, filters and cutout…; WYSIWYG look tools; history and persistence, look and AI… |
+| Видео | Скрыть лица, авторефрейм | ✓ | ✓ | ✓ | ✓ | ✗ | — | hide faces…; auto reframe…; WYSIWYG look tools / in motion; history and persistence, look and AI… |
+| Видео | Переходы, «ко всем склейкам» | ✓ | ✓ | ◐ | ◐ | ✗ | — | new transitions…; WYSIWYG («Пример»: слайд; in motion: Whip pan); history and persistence, look and AI… (один переход; «ко всем» — нет) |
+| Холст | Формат, размытый фон, безопасные зоны | ✓ | ✓ | ◐ | ◐ | — | — | canvas…; WYSIWYG in motion (размытый фон; зоны в экспорт не идут); history and persistence, look and AI… (размытый фон) |
 | Текст | Добавление, перетаскивание, привязка, размер, поворот, интервалы | ◐ | ✓ | ◐ | ◐ | ◐ | — | 7 тестов текста; history and persistence… (добавление, перенос по времени); WYSIWYG (заголовок) |
-| Текст | Стили, шрифты (кириллица), свой шрифт | ✓ | ◐ | ✗ | ✓ | ✗ | ✗ | Russian text renders…; text style pack…; WYSIWYG in motion (Comic; свой шрифт и неон — нет) |
-| Стикеры | Эмодзи, щипок | ◐ | ✓ | ✗ | ✗ | ✗ | — | an emoji sticker… (только Chromium?); WYSIWYG look tools (оба движка) |
-| Звук | Музыка из библиотеки, бит, нарезка по биту, гид-дорожка | ✓ | ✗ | ✗ | ✗ | ✗ | — | music: beat…; music library… |
-| Звук | Приглушение, шумоподавление, улучшение голоса | ✓ | ✗ | ◐ | ✗ | ✗ | — | noise reduction…; enhance voice… |
+| Текст | Стили, шрифты (кириллица), свой шрифт | ✓ | ◐ | ✓ | ✓ | ✗ | ✗ | Russian text renders…; text style pack…; WYSIWYG in motion (Comic; свой шрифт и неон — нет); history and persistence, overlays… (стиль; нашёл P1 — шрифт стиля в экспорте после перезагрузки, WebKit) |
+| Стикеры | Эмодзи, щипок | ◐ | ✓ | ✓ | ✓ | ✗ | — | an emoji sticker… (только Chromium?); WYSIWYG look tools (оба движка); history and persistence, overlays… (добавление) |
+| Звук | Музыка из библиотеки, бит, нарезка по биту, гид-дорожка | ✓ | ✗ | ✓ | ✓ | ✗ | — | music: beat…; music library…; history and persistence, overlays… (музыка из файла, бит, нарезка) |
+| Звук | Приглушение, шумоподавление, улучшение голоса | ✓ | ✗ | ✓ | ✓ | ✗ | — | noise reduction…; enhance voice…; history and persistence, overlays… и across tools |
 | Звук | Эффекты голоса, синхронность | ✓ | — | ✓ | ✓ | ✗ | — | voice effects ×2; export keeps the sound in sync… |
-| Звук | Звуки (SFX), запись голоса | ◐ | ✗ | ✗ | ✗ | ✗ | — | sound effects and a voice-over… |
+| Звук | Звуки (SFX), запись голоса | ◐ | ✗ | ◐ | ◐ | ✗ | — | sound effects and a voice-over…; history and persistence, overlays… (звук; запись — нет) |
 | Субтитры | Автосубтитры (Whisper, GigaAM), один тап, язык | ✓ L3 | ✗ | ✓ | ✗ | ✓ | ✓ | 8 тестов + eval |
-| Субтитры | По тексту, .srt импорт/экспорт, монтаж по тексту | ✓ | ✗ | ✗ | ✗ | ◐ | ✗ | captions from my text…; imports subtitles…; auto captions, edit by text… |
+| Субтитры | По тексту, .srt импорт/экспорт, монтаж по тексту | ✓ | ✗ | ◐ | ◐ | ◐ | ✗ | captions from my text…; imports subtitles…; auto captions, edit by text…; history and persistence, overlays… (.srt и стиль) |
 | Камера | Камера с суфлёром | ◐ | ✗ | ✗ | ✗ | ✗ | — | camera with teleprompter…; teleprompter… |
 | AI | Рилс в 1 тап, удаление пауз | ✓ L3 | ✗ | ✓ | ✗ | ◐ | — | reel ×2 + eval; remove pauses… |
 | Экспорт | Видео, фото, GIF, звук, быстрый экспорт | ✓ | ✗ | — | ✓ | ✗ | — | exports a video; photo…GIF; quick export… |
@@ -88,3 +88,5 @@
 - 2026-10-20, L4: v1.4.6–1.4.7 выложены (деплой 0e77959). Живой сайт: футер v1.4.7 ×2, WYSIWYG картинки ×2, звук превью = экспорт (WebKit), офлайн-субтитры (Chromium) — зелёные.
 - 2026-10-20, полный прогон v1.4.7: 163 ✓, 9 пропусков по условию, 0 ✗ — первый полностью зелёный. Прежде нестабильные (суфлёр → «Рилс», GigaAM над музыкой, трек библиотеки в WebKit) прошли; сбой «трек не принят» за 4 полных прогона — 2 раза, причина в диагностике будет видна при следующем.
 - 2026-10-20, блок 6 (v1.4.8): §3.5 фаззинг с кривыми скорости — нашёл P2 (≈190/2000 сидов: кусок за концом файла, наезд на соседа, старт < 0, кусок < минимума; `setSpeed` не учитывал кривую), исправлено масштабированием кривой вместо длительности, 10 000 сидов чисто, контроль красный. §3.1–3.2 кривые сквозным e2e (их не было). §3.10 контраст и фокус (P3 поле названия). §3.7 кодеки. Слабость инструмента: снимок превью захватывал подсказку iPhone поверх холста (WebKit, равномерная разница 17–22) — теперь тосты скрыты на время снимка во всех WYSIWYG-тестах.
+- 2026-10-20, блок 7 (v1.4.9, §3.3–3.4): ещё две цепочки истории и сохранности — оформление и AI (8 действий), оверлеи, звук и субтитры (11 действий). Каждая отмена точна, каждый повтор точен, перезагрузка даёт тот же проект и тот же экспорт, на двух движках. Найдено P1: после перезагрузки экспорт в WebKit рисовал текст стиля запасным шрифтом (Rubik Mono → Impact): `document.fonts.load` в WebKit разрешается раньше, чем шрифт целиком пригоден для canvas (замер: смесь сразу, нужный шрифт через 0,5 с). Исправлено прямой загрузкой граней семейства. Слабость теста (P1 по §5): порог «средняя разница < 3» пропускал этот баг (2,15) — ужесточён до < 1 и < 0,5% изменённых пикселей, контроль красный. Наблюдалось 1 раз из 7: повтор шага не изменил проект за 10 с (прогон шёл аномально долго, 4,1 мин против 1,3); не воспроизвелось — помощник теперь называет шаг.
+
