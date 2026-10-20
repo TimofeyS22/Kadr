@@ -135,8 +135,9 @@ export function Home() {
     setBusy(t('Restoring the backup…'));
     try {
       const { importBackup } = await import('../engine/backup');
-      const p = await importBackup(file);
+      const { project: p, dropped } = await importBackup(file);
       track('backup_restored');
+      if (dropped) toast(t('Some parts of the backup could not be restored: {n}', { n: dropped }));
       open(p.id);
     } catch (e) {
       toast(t('Could not restore: {error}', { error: errorMessage(e) }), 'error');

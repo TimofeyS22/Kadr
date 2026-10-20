@@ -1,4 +1,5 @@
 import { uid } from '../core/defaults';
+import { SNIFF_BYTES, sniffMime } from '../core/sniff';
 import type { Asset } from '../core/types';
 import { putBlob } from '../storage/db';
 import { MediaError, probe } from './media';
@@ -24,7 +25,12 @@ export function pickFiles(accept: string, multiple = true): Promise<File[]> {
 
 export async function importFile(file: File | Blob, name = (file as File).name ?? 'media'): Promise<Asset> {
   if (file.size > MAX_FILE_BYTES) throw new MediaError('{name} is larger than 4 GB', { name });
-  if (isImage(file, name)) file = await toDecodableImage(file);
+  // The first bytes decide when they are known: a photo without an extension, a video renamed to .jpg.
+  const sniffed = sniffMime(new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer()));
+  const image = sniffed ? sniffed.startsWith('image/') : isImage(file, name);
+  // The stored type is what later decoding goes by (thumbnails, frames), so it must agree.
+  if (sniffed && image !== file.type.startsWith('image/')) file = new Blob([file], { type: sniffed });
+  if (image) file = await toDecodableImage(file);
   const info = await probe(file);
   const asset: Asset = { id: uid(), name, mime: file.type, size: file.size, ...info };
   await putBlob(asset.id, file);

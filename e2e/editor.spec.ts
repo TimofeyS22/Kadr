@@ -3250,3 +3250,171 @@ test('clip tools reach the file frame for frame: 2× speed, reverse and a freeze
   }
   console.log(`clip tools frame for frame (${info.project.name}):\n${rows.join('\n')}`);
 });
+
+// ---------- QA docs/11 §3.6 and §3.15: backups that are not what they claim ----------
+
+test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a broken LUT, an impossible canvas, impossible or missing media — a clear message or a project that works and says what it left out', async ({ page }, info) => {
+  test.setTimeout(360_000);
+  const { unzipSync, zipSync, strFromU8, strToU8 } = await import('fflate');
+  const { randomBytes } = await import('node:crypto');
+  page.on('dialog', (d) => void (d.type() === 'prompt' ? d.accept('Mine') : d.accept()));
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Try a sample' }).click();
+  await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  const first = page.locator('.project-open').first();
+  const name = (await first.getAttribute('aria-label'))!.replace(/^Open /, '');
+  await page.getByRole('button', { name: `Rename ${name}` }).click();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save a backup of Mine' }).click();
+  const realPath = info.outputPath((await dl).suggestedFilename());
+  await (await dl).saveAs(realPath);
+  const real = unzipSync(new Uint8Array(fs.readFileSync(realPath)));
+  const project = JSON.parse(strFromU8(real['project.json'])) as { tracks: { kind: string; clips: Record<string, unknown>[] }[]; assets: Record<string, unknown> };
+  const write = (file: string, entries: Record<string, Uint8Array>, level: 0 | 6 = 0) => { const p = info.outputPath(file); fs.writeFileSync(p, zipSync(entries, { level })); return p; };
+  const withProject = (file: string, edit: (p: typeof project) => void) => {
+    const p = structuredClone(project);
+    edit(p);
+    return write(file, { ...real, 'project.json': strToU8(JSON.stringify(p)) });
+  };
+  const main = (p: typeof project) => p.tracks.find((t) => t.kind === 'main')!.clips;
+  const garbage = info.outputPath('garbage.kadr');
+  fs.writeFileSync(garbage, randomBytes(4096));
+  // [what, file, parts the restore must say it left out]
+  const files: [string, string, number?][] = [
+    ['random bytes', garbage],
+    ['broken JSON', write('broken-json.kadr', { 'project.json': strToU8('{"version": 1, "tracks": [{"kind": "main", "clips": [') })],
+    ['re-zipped with deflate (Finder "Compress")', write('recompressed.zip', real, 6), 0],
+    ['a zip bomb: 300 KB that unpacks to 300 MB', write('bomb.kadr', { 'project.json': new Uint8Array(300 * 1024 ** 2).fill(32) }, 6)],
+    ['negative duration, no start', withProject('negative.kadr', (p) => { main(p)[0].duration = -5; delete main(p)[0].start; }), 1],
+    ['unknown clip kind, text without a style', withProject('unknown.kadr', (p) => {
+      main(p).push({ kind: 'hologram', id: 'h1' });
+      p.tracks.push({ kind: 'text', clips: [{ kind: 'text', id: 't1', start: 0, duration: 2, text: 'Hi', style: null }] } as never);
+    }), 2],
+    ['a LUT that is not a LUT', withProject('lut.kadr', (p) => {
+      (p as unknown as { luts: unknown }).luts = { L: { name: 'Teal', size: 33, data: 'not base64 at all!' } };
+      main(p)[0].lut = { id: 'L', intensity: 1 };
+    }), 1],
+    ['zero fps and a canvas of 100 000 px', withProject('settings.kadr', (p) => {
+      Object.assign((p as unknown as { settings: object }).settings, { fps: 0, width: 100_000, height: 100_000, aspect: '7:3' });
+    }), 0],
+    ['a video with no size and no length', withProject('asset.kadr', (p) => {
+      Object.assign(Object.values(p.assets)[0] as object, { width: 0, height: 0, duration: -1 });
+    }), 1],
+    ['a media file missing', write('missing-media.kadr', Object.fromEntries(Object.entries(real).filter(([k], i) => !(k.startsWith('media/') && i === Object.keys(real).findIndex((x) => x.startsWith('media/')))))), 1],
+  ];
+  const outcomes: string[] = [];
+  for (const [what, file, leftOut] of files) {
+    console.log(`hostile backup: ${what}`); // which one, if it hangs
+    await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 20_000 }); // the last answer is gone
+    await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Restore backup' }).click();
+    await (await chooser).setFiles(file);
+    const opened = page.locator('.preview-canvas'), refused = page.locator('.toast.error');
+    await expect(opened.or(refused).first()).toBeVisible({ timeout: 60_000 });
+    if (await opened.isVisible()) {
+      const note = page.locator('.toast').filter({ hasText: 'could not be restored' });
+      const left = (await note.count()) ? ` (${await note.first().textContent()})` : '';
+      expect.soft(Number(left.match(/(\d+)\)$/)?.[1] ?? 0), `${what}: parts said to be left out`).toBe(leftOut);
+      await page.waitForTimeout(1500); // let it render the first frame
+      const clips = await page.locator('.tl-row .clip').count();
+      // A project that opens must also work: it exports a video.
+      const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+      const duration = Number(pr.format.duration), video = pr.streams.find((x) => x.codec_type === 'video')!;
+      expect.soft({ ratio: video.height! / video.width!, fits: video.height! <= 1920 }, `${what}: a canvas the app makes`).toEqual({ ratio: 16 / 9, fits: true });
+      outcomes.push(`${what}: opened, ${clips} clips${left}, exports ${duration.toFixed(2)} s${(await refused.count()) ? `, toast "${await refused.first().textContent()}"` : ''}`);
+      expect.soft(duration, `${what}: the export has a length`).toBeGreaterThan(1);
+      await page.getByRole('button', { name: 'Back to projects' }).click();
+    } else {
+      const text = (await refused.first().textContent()) ?? '';
+      outcomes.push(`${what}: refused "${text}"`);
+      // A message for people: no parser or library jargon.
+      expect.soft(text, what).not.toMatch(/JSON|token|Unexpected|undefined|null|TypeError|compression|zip data|position \d/i);
+      // Stopped while unpacking, not after holding all 300 MB (then it would be "damaged": the spaces are not a project).
+      if (what.startsWith('a zip bomb')) expect.soft(text, what).toContain('not a Kadr project backup');
+    }
+    await expect(page.getByRole('button', { name: 'Open Mine', exact: true })).toBeVisible(); // the original is untouched
+  }
+  console.log(`hostile backups (${info.project.name}):\n${outcomes.join('\n')}`);
+  expect.soft(outcomes.find((o) => o.startsWith('re-zipped')), 'a re-zipped backup still restores').toContain('opened');
+  await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+});
+
+test('files with a wrong or no extension (as messengers save them) import by what they are and export', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  const read = (n: string) => fs.readFileSync(fx(n));
+  // What a browser reports for such a file: the type follows the name, and no extension means no type.
+  const files = [
+    { name: 'IMG_2041', mimeType: '', buffer: read('person.jpg'), kind: 'image' },
+    { name: 'photo.mp4', mimeType: 'video/mp4', buffer: read('photo.png'), kind: 'image' },
+    { name: 'clip.jpg', mimeType: 'image/jpeg', buffer: read('landscape.mp4'), kind: 'video' },
+    { name: 'VID_0007', mimeType: '', buffer: read('portrait.mp4'), kind: 'video' },
+    { name: 'scan.png', mimeType: 'image/png', buffer: read('person.jpg'), kind: 'image' },
+  ];
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Media', exact: true }).click();
+  await (await chooser).setFiles(files.map(({ name, mimeType, buffer }) => ({ name, mimeType, buffer })));
+  const settled = async () => (await page.locator('.tl-row.main .clip').count())
+    + await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.length);
+  await expect.poll(settled, { timeout: 60_000 }).toBe(files.length); // each file is a clip or a refusal
+  const kinds = await page.locator('.tl-row.main .clip').evaluateAll((els) => els.map((e) => (e.className.match(/clip-(\w+)/) ?? [])[1]));
+  const errors = await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+  console.log(`wrong extensions (${info.project.name}): ${kinds.join(', ')}${errors.length ? `; refused: ${errors.join(' / ')}` : ''}`);
+  expect(errors).toEqual([]);
+  expect(kinds).toEqual(files.map((f) => f.kind));
+  const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  expect(Number(pr.format.duration)).toBeCloseTo(3 * 3 + 6 + 5, 0); // three photos of 3 s, the 6 s and 5 s videos
+});
+
+test('a photo, a 1D LUT or a zip picked as a LUT and a video or a cut font picked as a font: a clear refusal, the project is unchanged', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  const write = (name: string, data: string | Buffer) => { const p = info.outputPath(name); fs.writeFileSync(p, data); return p; };
+  const woff2 = fs.readFileSync(path.join(import.meta.dirname, '..', 'node_modules/@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff2'));
+  await newProject(page);
+  await importFiles(page, 'Media', ['person.jpg']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Text').click();
+  await page.getByRole('textbox', { name: 'Text', exact: true }).fill('Kadr');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.tl-row .clip-text')).toHaveCount(1);
+  await expect.poll(() => savedProject(page), { timeout: 10_000 }).toContain('"kind":"text"');
+  const before = await savedProject(page);
+  const pick = async (button: string, file: string) => {
+    await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 20_000 });
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: button }).click();
+    await (await chooser).setFiles(file);
+    await expect(page.locator('.toast.error')).toBeVisible({ timeout: 20_000 });
+    return (await page.locator('.toast.error').textContent()) ?? '';
+  };
+  const said: string[] = [];
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Filters').click();
+  for (const [what, file, expected] of [
+    ['a photo', fx('person.jpg'), /not a valid 3D LUT/],
+    ['a 1D LUT', write('curve.cube', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n'), /1D LUTs are not supported/],
+    ['a zipped LUT pack', write('pack.cube', Buffer.concat([Buffer.from('PK\x03\x04'), fs.readFileSync(fx('photo.png'))])), /not a valid 3D LUT/],
+  ] as const) {
+    const text = await pick('Import LUT (.cube)', file);
+    said.push(`LUT, ${what}: "${text}"`);
+    expect.soft(text, what).toMatch(expected);
+  }
+  await page.getByRole('button', { name: 'Done' }).click();
+  await selectClip(page, page.locator('.tl-row .clip-text').first());
+  await tool(page, 'Edit text').click();
+  for (const [what, file] of [
+    ['a video named .ttf', write('Video.ttf', fs.readFileSync(fx('landscape.mp4')))],
+    ['half a font file', write('Cut.woff2', woff2.subarray(0, woff2.length >> 1))],
+  ] as const) {
+    const text = await pick('Add font', file);
+    said.push(`font, ${what}: "${text}"`);
+    expect.soft(text, what).toMatch(/not a font \(TTF, OTF, WOFF or WOFF2\)/);
+  }
+  await page.getByRole('button', { name: 'Done' }).click();
+  console.log(`hostile LUTs and fonts (${info.project.name}):\n${said.join('\n')}`);
+  await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+  expect(await savedProject(page), 'the project is unchanged').toBe(before);
+});
