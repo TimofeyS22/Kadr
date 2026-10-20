@@ -2601,6 +2601,18 @@ function colourCast(a: Buffer, b: Buffer): number {
 }
 
 /** Exports the video once, then at each named time compares the preview with the photo export and the video's frame, in colour. */
+/** The largest mean signed R, G or B difference of any 15×15 block of two 135×240 RGB pictures: a local colour error
+ * (the wrong caption word lit, a missing sticker) that a whole-frame mean dilutes and that edge noise does not mimic. */
+function worstBlockCast(a: Buffer, b: Buffer): number {
+  let worst = 0;
+  for (let by = 0; by < 240; by += 15) for (let bx = 0; bx < 135; bx += 15) {
+    const sum = [0, 0, 0];
+    for (let y = by; y < by + 15; y++) for (let x = bx; x < bx + 15; x++) for (let c = 0; c < 3; c++) { const i = (y * 135 + x) * 3 + c; sum[c] += a[i] - b[i]; }
+    worst = Math.max(worst, ...sum.map((v) => Math.abs(v) / (15 * 15)));
+  }
+  return worst;
+}
+
 async function expectSameFrames(page: Page, info: TestInfo, title: string, points: { name: string; t: number }[], maxCast: number) {
   const video = await exportAs(page, info, 'Video', 'Export video');
   const rows: string[] = [];
@@ -2610,7 +2622,8 @@ async function expectSameFrames(page: Page, info: TestInfo, title: string, point
     const photo = await rgbAt(await exportAs(page, info, 'Photo', 'Save photo'));
     const frame = await rgbAt(video, Math.round(t * 30));
     const [dp, df, cp, cf] = [meanAbsDiff(preview, photo), meanAbsDiff(preview, frame), colourCast(preview, photo), colourCast(preview, frame)];
-    rows.push(`${name} @ ${t.toFixed(2)} s (playhead ${await time(page)}): photo ${dp.toFixed(2)} / cast ${cp.toFixed(2)}, video ${df.toFixed(2)} / cast ${cf.toFixed(2)}`);
+    const [bp, bf] = [worstBlockCast(preview, photo), worstBlockCast(preview, frame)];
+    rows.push(`${name} @ ${t.toFixed(2)} s (playhead ${await time(page)}): photo ${dp.toFixed(2)} / cast ${cp.toFixed(2)} / block ${bp.toFixed(1)}, video ${df.toFixed(2)} / cast ${cf.toFixed(2)} / block ${bf.toFixed(1)}`);
     // Mean |difference| (0–255) catches a missing or moved element: matching frames ≤ 2, an export without the cutout 91.
     // The cast catches a colour shift that compression noise would hide in it; it grows with how bright and full the
     // frame is, so each scene passes its own limit (see the callers).
@@ -2618,6 +2631,9 @@ async function expectSameFrames(page: Page, info: TestInfo, title: string, point
     expect.soft(df, `video frame, ${name}`).toBeLessThan(6);
     expect.soft(cp, `photo colour cast, ${name}`).toBeLessThan(maxCast);
     expect.soft(cf, `video frame colour cast, ${name}`).toBeLessThan(maxCast);
+    // Matching frames: ≤ 5 per block, captions on WebKit ≤ 10.3 (text drawn 2 px higher at preview size).
+    expect.soft(bp, `photo, worst block, ${name}`).toBeLessThan(20);
+    expect.soft(bf, `video frame, worst block, ${name}`).toBeLessThan(20);
   }
   console.log(`${title} (${info.project.name}):\n${rows.join('\n')}`);
 }
@@ -3013,4 +3029,46 @@ test('speed curve: a preset, a cut in the middle of it; the file is as long as t
     expect.soft(d, `frame at ${t.toFixed(2)} s`).toBeLessThan(6);
   }
   console.log(`speed curve (${info.project.name}): ${curved.toFixed(2)} s\n${rows.join('\n')}`);
+});
+
+// ---------- QA docs/11 §3.2: captions and iPhone HDR look the same in the preview and the files ----------
+
+test('WYSIWYG for captions: a word-highlight style with a web font is the same in the preview, the photo and the video', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  await newProject(page);
+  // The captions first: with a video selected, Captions would caption its speech in one tap (and fetch a model).
+  // "Hello from Kadr" 0.5–2 s, "Second line" 2.5–4 s; an .srt has no word times, so the words share their line evenly.
+  await tool(page, 'Captions').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Import .srt or .vtt' }).click();
+  await (await chooser).setFiles(fx('test.srt'));
+  await expect(page.locator('.clip-caption')).toHaveCount(1);
+  await page.getByRole('radio', { name: 'Highlight the word' }).click();
+  await page.getByRole('radiogroup', { name: 'Style' }).getByRole('radio', { name: 'Pop' }).click(); // Anton, outlined, yellow word
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.keyboard.press('Escape');
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  if (await closeTools.isVisible()) await closeTools.click();
+  await expectSameFrames(page, info, 'WYSIWYG captions', [
+    { name: 'first word lit', t: 0.75 },
+    { name: 'last word lit', t: 1.75 },
+    { name: 'second line', t: 3.25 },
+  ], 0.8);
+});
+
+test('WYSIWYG for an iPhone HDR video: HEVC 10-bit HLG looks the same in the preview, the photo and the video', async ({ page }, info) => {
+  test.skip(info.project.name !== 'iphone-webkit', 'Playwright\'s Chromium has no HEVC decoder; Android Chrome uses the platform one');
+  test.skip(!fs.existsSync(fx('iphone_hdr.mov')), 'needs ffmpeg with libx265 (npm run fixtures)');
+  test.setTimeout(300_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  await newProject(page);
+  await importFiles(page, 'Media', ['iphone_hdr.mov']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await expectSameFrames(page, info, 'WYSIWYG HDR', [1, 2, 3].map((t) => ({ name: `HLG at ${t} s`, t })), 0.8);
 });
