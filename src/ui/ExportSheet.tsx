@@ -3,6 +3,7 @@ import { projectDuration } from '../core/timeline';
 import {
   MAX_GIF_S, downloadFile, exportAudio, exportFrame, exportGif, exportProject, gifSize, outputSize, saveFile, supportedResolutions, type ExportResult, type Resolution,
 } from '../engine/exporter';
+import { releaseSpeechModel } from '../engine/captions';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
@@ -85,6 +86,7 @@ export function ExportSheet() {
     const lock = await (navigator as Navigator & { wakeLock?: { request(t: 'screen'): Promise<{ release(): Promise<void> }> } })
       .wakeLock?.request('screen').catch(() => null);
     track('export_started', { format, resolution: res, fps, quality, loudness, quick: isQuick, duration: Math.round(duration) });
+    releaseSpeechModel(); // an export needs the memory more than a speech model kept for later
     try {
       let last = 0;
       const progress = (f: number) => { if (f - last > 0.005 || f === 1) { last = f; setPhase({ kind: 'running', progress: f }); } };

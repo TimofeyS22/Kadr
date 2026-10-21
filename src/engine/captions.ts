@@ -106,6 +106,15 @@ function getWorker(): Worker {
   return worker;
 }
 
+/**
+ * A model in the worker holds hundreds of MB (GigaAM 225 MB plus its runtime), and a phone tab has little memory: the
+ * worker goes a minute after its last request (so "Create again" stays quick) and at once when an export starts.
+ * It was never let go before (QA, docs/11 §3.7).
+ */
+const IDLE_MS = 60_000;
+let inFlight = 0;
+let idle: ReturnType<typeof setTimeout> | undefined;
+
 /** Request ids, unique per page: a reply to a cancelled request can never be taken for a newer one. */
 let seq = 0;
 
@@ -116,7 +125,13 @@ let seq = 0;
 function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<AsrResponse> {
   return new Promise((resolve, reject) => {
     const id = msg.type !== 'load' ? (msg.id = ++seq) : undefined;
-    const done = () => { w.removeEventListener('message', onMessage); w.removeEventListener('error', onError); signal?.removeEventListener('abort', onAbort); };
+    let settled = false;
+    const done = () => {
+      w.removeEventListener('message', onMessage); w.removeEventListener('error', onError); signal?.removeEventListener('abort', onAbort);
+      if (settled) return;
+      settled = true;
+      if (--inFlight === 0) idle = setTimeout(releaseSpeechModel, IDLE_MS);
+    };
     const onAbort = () => { done(); reject(new DOMException('Cancelled', 'AbortError')); };
     // The worker script itself failed to load (offline before captions were ever used): fail, never wait forever.
     const onError = (e: ErrorEvent) => {
@@ -132,6 +147,8 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
       if (msg.type !== 'load' && (r.type === 'result' || r.type === 'vad' || r.type === 'language' || r.type === 'aligned' || r.type === 'error') && 'id' in r && r.id === id) { done(); resolve(r); }
     };
     if (signal?.aborted) { reject(new DOMException('Cancelled', 'AbortError')); return; }
+    inFlight++;
+    clearTimeout(idle);
     signal?.addEventListener('abort', onAbort);
     w.addEventListener('message', onMessage);
     w.addEventListener('error', onError);
@@ -232,8 +249,10 @@ export async function alignToScript(script: string, tr: Transcript): Promise<Scr
   return r.type === 'aligned' ? r.result : null;
 }
 
-/** Frees the model memory (the files stay cached for next time). */
+/** Frees the model memory (the files stay cached for next time). Waits while a request is running. */
 export function releaseSpeechModel(): void {
+  clearTimeout(idle);
+  if (inFlight > 0) return;
   worker?.terminate();
   worker = null;
 }

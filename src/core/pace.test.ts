@@ -47,4 +47,12 @@ describe('honest progress (docs/09 Q4)', () => {
     expect(took).toEqual({ model: 4, prepare: 1, transcribe: 7 });
     expect(paceAt(p, 12_000)).toBe(1);
   });
+
+  it('a stage the job reports as fully measured still waits for the job: the bar never reads 100% before the end', () => {
+    const p = startPace([{ id: 'transcribe', expected: 4 }, { id: 'music', expected: 2.5 }], 0);
+    reportPace(p, 'music', 1, 1000); // the track is downloaded; it still has to be read and placed
+    for (const t of [1000, 2000, 10_000, 600_000]) expect(Number(paceAt(p, t).toFixed(4)), `at ${t} ms`).toBeLessThan(1);
+    finishPace(p, 600_001);
+    expect(paceAt(p, 600_002)).toBe(1);
+  });
 });

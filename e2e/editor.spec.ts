@@ -3655,3 +3655,45 @@ test('files as phones make them — a rotated portrait recording, variable frame
   }
   console.log(`phone files (${info.project.name}):\n${rows.join('\n')}`);
 });
+
+// ---------- QA docs/11 §3.7: the speech model does not stay in memory ----------
+
+test('the speech model is let go: alive after captions, gone when an export starts and after a minute idle; captions again still work', async ({ page }, info) => {
+  test.setTimeout(480_000);
+  const asr = () => page.workers().filter((w) => /asr/i.test(w.url())).length;
+  // Resident memory of the Chromium renderers (one worker runs the tests, so they are this page's; a dedicated
+  // worker's model lives in its page's process).
+  const rss = async (): Promise<number | null> => {
+    if (info.project.name !== 'android-chromium') return null;
+    const { execFileSync } = await import('node:child_process');
+    const kb = execFileSync('ps', ['-axo', 'rss=,command=']).toString().split('\n')
+      .filter((l) => l.includes('chrome-headless-shell') && l.includes('--type=renderer'))
+      .reduce((a, l) => a + (Number(l.trim().split(/\s+/)[0]) || 0), 0);
+    return Math.round(kb / 1024);
+  };
+  const rows: string[] = [];
+  await newProject(page);
+  await importFiles(page, 'Media', ['speech_en.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  rows.push(`before: ${await rss() ?? '—'} MB`);
+  await tool(page, 'Captions').click(); // one tap on the selected clip
+  const caption = page.locator('.clip-caption');
+  await expect(caption).toHaveCount(1, { timeout: 300_000 });
+  await expect.poll(asr, { message: 'the model is kept right after captions' }).toBe(1);
+  rows.push(`after captions, worker alive: ${await rss() ?? '—'} MB`);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await exportAs(page, info, 'Video', 'Export video');
+  await expect.poll(asr, { message: 'an export lets the model go' }).toBe(0);
+  rows.push(`after an export: ${await rss() ?? '—'} MB`);
+  // The files stay in the browser cache: captions again need no download and work.
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Captions').click();
+  await page.getByRole('button', { name: 'Create again…' }).click();
+  await page.getByRole('button', { name: 'Create captions' }).click();
+  await expect(page.getByRole('button', { name: 'Save as .srt' })).toBeVisible({ timeout: 300_000 });
+  await expect(caption).toHaveCount(1);
+  expect(asr(), 'the model is back for the new captions').toBe(1);
+  await expect.poll(asr, { message: 'a minute without requests lets it go', timeout: 90_000, intervals: [5000] }).toBe(0);
+  rows.push(`a minute idle after captions again: ${await rss() ?? '—'} MB`);
+  console.log(`speech model memory (${info.project.name}):\n${rows.join('\n')}`);
+});

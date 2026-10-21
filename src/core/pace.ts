@@ -21,6 +21,11 @@ export interface Pace {
 const CREEP = 0.9;
 /** Every stage keeps a visible slice of the bar, however quick it is expected to be. */
 const MIN_SHARE = 0.03;
+/**
+ * Short of a stage's end by this share of it until the job moves on. A job's f = 1 means the part it can measure is
+ * done (a track downloaded), not the stage (the track still has to be read and placed): the bar sat at 100% meanwhile.
+ */
+const HOLD = 0.01;
 
 export function startPace(stages: PaceStage[], now: number): Pace {
   const w = stages.map((s) => Math.max(0, s.expected));
@@ -50,12 +55,12 @@ export function reportPace(p: Pace, id: string, f: number | null, now: number): 
 export function paceAt(p: Pace, now: number): number {
   const { a, b } = p.spans[p.i];
   const f = p.f ?? 0;
-  const floor = a + f * (b - a);
+  const floor = a + Math.min(f, 1 - HOLD) * (b - a);
   // Time constant: what is left of the stage by expectation (at least 0.3 s, so a tiny stage does not snap).
   const tau = Math.max(0.3, p.stages[p.i].expected * (1 - f));
   const dt = Math.max(0, now - p.at) / 1000;
   const value = floor + (b - floor) * CREEP * (dt / (dt + tau));
-  p.shown = Math.max(p.shown, Math.min(value, b - 1e-6));
+  p.shown = Math.max(p.shown, Math.min(value, b - HOLD * (b - a)));
   return p.shown;
 }
 
