@@ -3735,3 +3735,53 @@ test('an export never waits forever: an encoder probe that never answers and sto
   expect(Math.abs(Number(pr.format.duration) - 6)).toBeLessThan(0.1);
   expect(took, 'the waits are bounded').toBeLessThan(60);
 });
+
+// ---------- QA docs/11 §1.6: a sound decoder that fails for a moment ----------
+
+test('a sound decoder that fails once (as WebKit\'s both did under load) does not cost a video its sound; one that never works says so', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  // Both of the page's sound decoders refuse while `__decodeFails` lasts, with the errors WebKit gave in a loaded run:
+  // WebCodecs "InternalAudioDecoderCocoa decoding failed", then decodeAudioData "Decoding failed".
+  await page.addInitScript(() => {
+    const w = window as unknown as { __decodeFails: { webcodecs: number; native: number }; AudioDecoder?: typeof AudioDecoder };
+    w.__decodeFails = { webcodecs: 0, native: 0 };
+    const Real = w.AudioDecoder;
+    if (Real) {
+      w.AudioDecoder = class extends Real {
+        constructor(init: AudioDecoderInit) {
+          super(init);
+          if (w.__decodeFails.webcodecs > 0) {
+            w.__decodeFails.webcodecs--;
+            this.decode = () => { throw new DOMException('InternalAudioDecoderCocoa decoding failed', 'EncodingError'); };
+          }
+        }
+      };
+    }
+    const real = BaseAudioContext.prototype.decodeAudioData;
+    BaseAudioContext.prototype.decodeAudioData = function (this: BaseAudioContext, ...a: Parameters<typeof real>) {
+      if (w.__decodeFails.native > 0) { w.__decodeFails.native--; return Promise.reject(new DOMException('Decoding failed', 'EncodingError')); }
+      return real.apply(this, a);
+    } as typeof real;
+  });
+  const fail = (n: number) => page.evaluate((k) => { (window as unknown as { __decodeFails: object }).__decodeFails = { webcodecs: k, native: k }; }, n);
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  // Once: a moment later both decoders work again.
+  await fail(1);
+  await importFiles(page, 'Media', ['landscape.mp4']); // 6 s with a 440 Hz tone
+  await expect(main).toHaveCount(1);
+  const once = await loudnessOf(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
+  console.log(`decoder that fails once (${info.project.name}): the video's sound at ${once.lufs.toFixed(1)} LUFS`);
+  expect.soft(once.lufs, 'a decoder that failed once: the sound is kept').toBeGreaterThan(-30);
+  // Never (a project of its own, so no other clip's sound is being decoded meanwhile): the video is still added, and a
+  // note says it came without its sound.
+  await newProject(page);
+  await fail(1000);
+  await importFiles(page, 'Media', ['portrait.mp4']);
+  await expect(main).toHaveCount(1);
+  const note = page.locator('.toast').filter({ hasText: 'without sound' });
+  await expect(note).toBeVisible({ timeout: 20_000 });
+  const said = (await note.textContent()) ?? '';
+  console.log(`decoder that never works (${info.project.name}): "${said}"`);
+  expect(said).toContain('portrait.mp4');
+});

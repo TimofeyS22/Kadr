@@ -23,7 +23,8 @@ export function pickFiles(accept: string, multiple = true): Promise<File[]> {
   });
 }
 
-export async function importFile(file: File | Blob, name = (file as File).name ?? 'media'): Promise<Asset> {
+/** `onSoundLost`: the video is added, but its sound does not decode in this browser (the reason is given). */
+export async function importFile(file: File | Blob, name = (file as File).name ?? 'media', onSoundLost?: (reason: string) => void): Promise<Asset> {
   if (file.size > MAX_FILE_BYTES) throw new MediaError('{name} is larger than 4 GB', { name });
   // The first bytes decide when they are known: a photo without an extension, a video renamed to .jpg.
   const sniffed = sniffMime(new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer()));
@@ -31,19 +32,23 @@ export async function importFile(file: File | Blob, name = (file as File).name ?
   // The stored type is what later decoding goes by (thumbnails, frames), so it must agree.
   if (sniffed && image !== file.type.startsWith('image/')) file = new Blob([file], { type: sniffed });
   if (image) file = await toDecodableImage(file);
-  const info = await probe(file);
+  const { soundError, ...info } = await probe(file);
+  if (soundError) onSoundLost?.(soundError);
   const asset: Asset = { id: uid(), name, mime: file.type, size: file.size, ...info };
   await putBlob(asset.id, file);
   return asset;
 }
 
 /** Imports files one by one; failures are reported per file instead of aborting the batch. */
-export async function importFiles(files: File[], onError: (name: string, e: unknown) => void, onProgress?: (done: number, total: number) => void): Promise<Asset[]> {
+export async function importFiles(
+  files: File[], onError: (name: string, e: unknown) => void, onProgress?: (done: number, total: number) => void,
+  onSoundLost?: (name: string, reason: string) => void,
+): Promise<Asset[]> {
   const out: Asset[] = [];
   for (const [i, f] of files.entries()) {
     onProgress?.(i, files.length);
     try {
-      out.push(await importFile(f));
+      out.push(await importFile(f, f.name, (reason) => onSoundLost?.(f.name, reason)));
     } catch (e) {
       onError(f.name, e);
     }

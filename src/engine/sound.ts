@@ -24,6 +24,8 @@ const WINDOW_S = 10;
 const PREROLL_S = 0.1;
 /** Size of the buffers handed out (one AudioBufferSourceNode each in the preview). */
 const SLICE_S = 2;
+/** Pause before a sound that decoded with neither decoder is tried again. */
+const RETRY_MS = 1000;
 
 const CONTAINERS: (() => OutputFormat)[] = [
   () => new Mp4OutputFormat({ fastStart: 'in-memory' }), () => new WebMOutputFormat(), () => new OggOutputFormat(),
@@ -142,11 +144,16 @@ export async function playableAudioTrack(input: Input, onFail?: (reason: string)
   const ranked = await input.getAudioTracks({
     sortBy: async (t) => [(await t.getDisposition()).default === false ? 1 : 0, (await t.getNumberOfChannels()) > 2 ? 1 : 0],
   });
-  for (const track of ranked) {
-    if (refused.has(track)) continue;
-    if (await decodesFirst(new AudioBufferSink(track), 'WebCodecs', onFail)) return track;
-    refused.add(track);
+  for (let attempt = 0; attempt < 2 && ranked.length; attempt++) {
+    // A decoder can fail for a moment and work a moment later: in a loaded QA run both of WebKit's refused the same
+    // file together ("decoding failed"), and a video was added without its sound for good. So once more, after a pause.
+    if (attempt) await new Promise((r) => setTimeout(r, RETRY_MS));
+    for (const track of ranked) {
+      if (!attempt && refused.has(track)) continue;
+      if (await decodesFirst(new AudioBufferSink(track), 'WebCodecs', onFail)) { refused.delete(track); return track; }
+      refused.add(track);
+    }
+    for (const track of ranked) if (await decodesFirst(new NativeSink(track), 'decodeAudioData', onFail)) return track;
   }
-  for (const track of ranked) if (await decodesFirst(new NativeSink(track), 'decodeAudioData', onFail)) return track;
   return null;
 }

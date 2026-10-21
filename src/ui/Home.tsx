@@ -61,6 +61,7 @@ export function Home() {
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const toast = useEditor((s) => s.toast);
+  const soundLost = (name: string, error: string) => toast(t('{name}: its sound does not decode in this browser ({error}). The video is added without sound.', { name, error }), 'info', 10_000);
   const { locale, setLocale } = useLocale();
   const supported = browserSupported();
 
@@ -76,7 +77,7 @@ export function Home() {
     const onError = (n: string, e: unknown) => toast(`${n}: ${errorMessage(e)}`, 'error');
     setBusy(t('Adding {i} of {n}…', { i: 1, n: files.length }));
     try {
-      const assets = await importFiles(files, onError, (i, n) => setBusy(t('Adding {i} of {n}…', { i: i + 1, n })));
+      const assets = await importFiles(files, onError, (i, n) => setBusy(t('Adding {i} of {n}…', { i: i + 1, n })), soundLost);
       if (assets.length) await openWithTask(projectFromAssets(name, assets), task);
     } catch (e) {
       toast(errorMessage(e), 'error');
@@ -174,7 +175,7 @@ export function Home() {
     setBusy(t('Building “{name}”…', { name: t(tpl.name) }));
     try {
       const onError = (name: string, e: unknown) => toast(`${name}: ${errorMessage(e)}`, 'error');
-      const visuals = await importFiles(visualFiles.slice(0, tpl.visuals[1]), onError);
+      const visuals = await importFiles(visualFiles.slice(0, tpl.visuals[1]), onError, undefined, soundLost);
       const [music] = tpl.music === 'none' ? [] : (await importFiles(musicFiles.slice(0, 1), onError)).filter((a) => a.hasAudio);
       if (visuals.length < tpl.visuals[0] || (tpl.music === 'required' && !music)) return;
       const assets = music ? [...visuals, music] : visuals;

@@ -38,7 +38,8 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   mark('import:start');
   let assets: Asset[] = [];
   try {
-    assets = await importFiles(files, (name, e) => s.toast(t('Could not add {name}: {error}', { name, error: errorMessage(e) }), 'error'), busy);
+    assets = await importFiles(files, (name, e) => s.toast(t('Could not add {name}: {error}', { name, error: errorMessage(e) }), 'error'), busy,
+      (name, error) => s.toast(t('{name}: its sound does not decode in this browser ({error}). The video is added without sound.', { name, error }), 'info', 10_000));
   } finally {
     useEditor.setState({ busy: null });
   }

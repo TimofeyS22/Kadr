@@ -509,6 +509,7 @@ export const RU: Record<string, string> = {
   'The timeline is empty': 'Таймлайн пуст',
   'This device cannot encode {w}×{h} video. Try a lower resolution.': 'Устройство не может закодировать видео {w}×{h}. Выберите разрешение ниже.',
   'This file is not a Kadr project backup (or it was made by a newer version).': 'Это не резервная копия Kadr (или она из более новой версии).',
+  '{name}: its sound does not decode in this browser ({error}). The video is added without sound.': '{name}: звук не декодируется в этом браузере ({error}). Видео добавлено без звука.',
   'The backup is damaged: its project cannot be read': 'Копия повреждена: проект в ней не читается',
   'Some parts of the backup could not be restored: {n}': 'Не удалось восстановить части копии: {n}',
   'Could not read this frame': 'Не удалось прочитать кадр',

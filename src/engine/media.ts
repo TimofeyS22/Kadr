@@ -14,7 +14,11 @@ export class MediaError extends Error {
   constructor(message: string, readonly vars?: Record<string, string | number>) { super(message); }
 }
 
-export interface Probe { kind: AssetKind; duration: number; width: number; height: number; hasAudio: boolean }
+export interface Probe {
+  kind: AssetKind; duration: number; width: number; height: number; hasAudio: boolean;
+  /** A video whose sound is there but does not decode in this browser: why (it is added without sound). */
+  soundError?: string;
+}
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -45,6 +49,7 @@ export async function probe(file: Blob): Promise<Probe> {
       width: video ? await video.getDisplayWidth() : 0,
       height: video ? await video.getDisplayHeight() : 0,
       hasAudio,
+      ...(video && !hasAudio && why ? { soundError: why } : {}),
     };
   } finally {
     input.dispose();
