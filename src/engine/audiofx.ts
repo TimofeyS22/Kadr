@@ -7,6 +7,7 @@ import { Limiter, LoudnessMeter, normalizeGain, voiceChain } from '../core/dsp';
 import { VOICE_LABEL, VOICE_PITCH, voiceStages, type VoiceId } from '../core/voicefx';
 import { SOUND_SYNC, expectedAudioKey, keepsPitch } from '../core/timeline';
 import type { Asset, AudioClip, Project, SoundClip } from '../core/types';
+import { abandon } from './abandon';
 import { renderAudioWindow } from './audio';
 import { importFile } from './importer';
 import { encoderDelay } from './encoderDelay';
@@ -86,7 +87,7 @@ async function processAssetAudio(
     const type = mp4 ? 'audio/mp4' : 'audio/webm';
     return await importFile(new Blob([output.target.buffer!], { type }), `${name}.${mp4 ? 'm4a' : 'webm'}`);
   } catch (e) {
-    await output.cancel().catch(() => undefined);
+    await abandon(output, signal, [source]);
     throw e;
   } finally {
     proc.dispose();

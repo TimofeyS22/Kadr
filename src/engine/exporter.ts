@@ -4,6 +4,7 @@ import {
   AudioBufferSource, BufferTarget, CanvasSource, Mp4OutputFormat, Output, QUALITY_HIGH, QUALITY_VERY_HIGH,
   StreamTarget, WebMOutputFormat, canEncodeVideo, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
 } from 'mediabunny';
+import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
 import { Limiter, LoudnessMeter, normalizeGain } from '../core/dsp';
 import { buildFrame } from '../core/frame';
@@ -214,7 +215,7 @@ export async function exportProject(
     const blob = await result();
     return { blob, fileName: `${fileBase(p)}.${mp4 ? 'mp4' : 'webm'}`, seconds: (performance.now() - started) / 1000 };
   } catch (e) {
-    await output.cancel().catch(() => undefined);
+    await abandon(output, signal, audio ? [video, audio] : [video]);
     throw e;
   } finally {
     frames.dispose();
@@ -250,7 +251,7 @@ export async function exportAudio(p: Project, loudness: boolean, onProgress: (f:
     const blob = new Blob([output.target.buffer!], { type: m4a ? 'audio/mp4' : 'audio/webm' });
     return { blob, fileName: `${fileBase(p)}.${m4a ? 'm4a' : 'webm'}`, seconds: (performance.now() - started) / 1000 };
   } catch (e) {
-    await output.cancel().catch(() => undefined);
+    await abandon(output, signal, [audio]);
     throw e;
   } finally {
     pool.dispose();

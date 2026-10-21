@@ -47,6 +47,15 @@ export const rateAt = (c: MediaClip, t: number): number =>
 /** Natural voice at any speed is the default (v1.0); only an explicit `keepPitch: false` lets the pitch follow the speed. */
 export const keepsPitch = (c: SoundClip): boolean => c.keepPitch !== false;
 
+/**
+ * Fades as they sound. A clip trimmed shorter than its fades (3 s in and out, then cut to 1 s) used to stay near
+ * silent in its middle (−31 dB): fades that do not fit share the clip's length in proportion instead.
+ */
+export function fitFades(duration: number, fadeIn: number, fadeOut: number): [number, number] {
+  const k = fadeIn + fadeOut > duration ? Math.max(0, duration) / (fadeIn + fadeOut) : 1;
+  return [fadeIn * k, fadeOut * k];
+}
+
 /** Version of processed sounds: 2 = encoder delay removed (v1.2.1; older ones were ~44 ms late and are rebuilt). */
 export const SOUND_SYNC = 2;
 /** What the processed sound must contain: clean-up (e/d), voice effect (v…), natural pitch at speed (p…), and the

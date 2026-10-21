@@ -2,7 +2,7 @@
 // and export (OfflineAudioContext rendered in windows), so the exported mix matches the preview.
 import { duckBreakpoints, duckGain, mergeRanges } from '../core/duck';
 import { speechRanges } from '../core/silence';
-import { clipEnd, soundAssetId, sourceSpan, sourceTime, timelineTimeOf } from '../core/timeline';
+import { clipEnd, fitFades, soundAssetId, sourceSpan, sourceTime, timelineTimeOf } from '../core/timeline';
 import type { Project, SoundClip } from '../core/types';
 import type { WrappedAudioBuffer } from 'mediabunny';
 import { MediaError, PEAKS_PER_SEC, waveform, type MediaPool } from './media';
@@ -24,6 +24,7 @@ export function soundEntries(p: Project): SoundEntry[] {
         if (c.kind === 'video' && c.transitionIn) fadeIn = Math.max(fadeIn, c.transitionIn.duration);
         if (next && next.kind !== 'audio' && next.transitionIn) fadeOut = Math.max(fadeOut, next.transitionIn.duration);
       }
+      [fadeIn, fadeOut] = fitFades(c.duration, fadeIn, fadeOut);
       out.push({ clip: c, fadeIn, fadeOut, duck: c.duck ?? 0 });
     });
   }

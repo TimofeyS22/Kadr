@@ -104,23 +104,46 @@ function drawWord(ctx: CanvasRenderingContext2D, w: string, x: number, y: number
   }
 }
 
-/** Word-wraps paragraphs; returns lines as lists of word indices into `words`. */
-function layout(ctx: CanvasRenderingContext2D, paragraphs: string[][], maxW: number, ls: number): { words: string[]; lines: number[][] } {
+/** Graphemes, so a broken word never splits an emoji or a letter from its accent. */
+const graphemes = (w: string): string[] => (typeof Intl.Segmenter === 'function'
+  ? Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(w), (x) => x.segment) : [...w]);
+
+/**
+ * Word-wraps paragraphs; returns lines as lists of indices into `words`. A word wider than the line (a long word in
+ * big letters, a hashtag, Chinese without spaces) is broken between letters instead of being cut off at the frame's
+ * edges; `owner` maps each piece to the word it came from, counted across paragraphs (caption highlight and reveal).
+ */
+function layout(ctx: CanvasRenderingContext2D, paragraphs: string[][], maxW: number, ls: number): { words: string[]; owner: number[]; lines: number[][] } {
   const words: string[] = [];
+  const owner: number[] = [];
   const lines: number[][] = [];
+  let k = 0;
   for (const para of paragraphs) {
     let line: number[] = [];
     let text = '';
+    const put = (w: string) => { line.push(words.length); words.push(w); owner.push(k); };
     for (const w of para) {
-      const next = text ? `${text} ${w}` : w;
-      if (line.length && wordWidth(ctx, next, ls) > maxW) { lines.push(line); line = []; text = w; }
-      else text = next;
-      line.push(words.length);
-      words.push(w);
+      if (wordWidth(ctx, w, ls) > maxW) {
+        if (line.length) { lines.push(line); line = []; }
+        let piece = '', pw = 0;
+        for (const g of graphemes(w)) {
+          const gw = wordWidth(ctx, g, ls) + (piece ? ls : 0);
+          if (piece && pw + gw > maxW) { put(piece); lines.push(line); line = []; piece = g; pw = gw; }
+          else { piece += g; pw += gw; }
+        }
+        put(piece);
+        text = piece;
+      } else {
+        const next = text ? `${text} ${w}` : w;
+        if (line.length && wordWidth(ctx, next, ls) > maxW) { lines.push(line); line = []; text = w; }
+        else text = next;
+        put(w);
+      }
+      k++;
     }
     lines.push(line);
   }
-  return { words, lines };
+  return { words, owner, lines };
 }
 
 /**
@@ -172,7 +195,7 @@ export class TextRasterizer {
     const ls = (s.letterSpacing ?? 0) * px;
     const bgPad = s.background ? px * (s.background.padding ?? TEXT_BG_PADDING) : 0;
     // A wide background padding narrows the lines, so the block still fits the frame.
-    const { words, lines } = layout(ctx, paras, Math.max(px * 2, W * 0.9 - 2 * Math.max(0, bgPad - px * TEXT_BG_PADDING)), ls);
+    const { words, owner, lines } = layout(ctx, paras, Math.max(px * 2, W * 0.9 - 2 * Math.max(0, bgPad - px * TEXT_BG_PADDING)), ls);
     const space = ctx.measureText(' ').width + ls * 2;
     const wordW = words.map((w) => wordWidth(ctx, w, ls));
     const lineW = lines.map((l) => l.reduce((a, i) => a + wordW[i], 0) + space * Math.max(0, l.length - 1));
@@ -206,7 +229,7 @@ export class TextRasterizer {
     if (s.stroke && stroke > 0) {
       ctx.strokeStyle = s.stroke.color;
       ctx.lineWidth = stroke * 2;
-      for (const p of positions) if (p.i < shown) drawWord(ctx, words[p.i], p.x, p.y, ls, true);
+      for (const p of positions) if (owner[p.i] < shown) drawWord(ctx, words[p.i], p.x, p.y, ls, true);
     }
     if (s.shadow && !s.background) {
       ctx.shadowColor = s.shadowColor ?? 'rgba(0,0,0,0.55)';
@@ -214,8 +237,8 @@ export class TextRasterizer {
       ctx.shadowOffsetY = glow ? 0 : px * 0.05;
     }
     for (const p of positions) {
-      if (p.i >= shown) continue;
-      ctx.fillStyle = p.i === active && highlight ? highlight : s.color;
+      if (owner[p.i] >= shown) continue;
+      ctx.fillStyle = owner[p.i] === active && highlight ? highlight : s.color;
       drawWord(ctx, words[p.i], p.x, p.y, ls, false);
     }
     return { image: canvas, w, h, key: '' };

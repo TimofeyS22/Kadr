@@ -3418,3 +3418,240 @@ test('a photo, a 1D LUT or a zip picked as a LUT and a video or a cut font picke
   await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
   expect(await savedProject(page), 'the project is unchanged').toBe(before);
 });
+
+// ---------- QA docs/11 §3.5: export at its edges ----------
+
+test('export edges: cancelled midway then again, 60 and 24 fps, the shortest project (0.1 s) in every format — whole files, nothing left open', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  const codecs = await countCodecs(page);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']); // 6 s, 30 fps, with sound
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await page.waitForTimeout(2500);
+  const idle = (await codecs()).total;
+  const save = async () => {
+    await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
+    const dl = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Save / Share' }).click();
+    const file = info.outputPath((await dl).suggestedFilename());
+    await (await dl).saveAs(file);
+    return file;
+  };
+  const rows: string[] = [];
+  let step = 'start';
+  page.on('pageerror', (e) => rows.push(`uncaught during "${step}": ${e.message}`)); // where, if afterEach finds one
+  // Cancelled at a third: back to the settings, the encoders and decoders it opened are closed.
+  step = 'cancel';
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('radio', { name: 'Small file' }).click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  await expect(page.getByText(/([3-9]\d)% — keep this screen open/)).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('button', { name: 'Export video' })).toBeVisible();
+  await page.waitForTimeout(2500);
+  const afterCancel = await codecs();
+  rows.push(`after a cancel at a third: open ${afterCancel.total} (idle ${idle}) ${JSON.stringify(afterCancel.open)}`);
+  expect.soft(afterCancel.open.VideoEncoder ?? 0, 'video encoder closed').toBe(0);
+  expect.soft(afterCancel.open.AudioEncoder ?? 0, 'audio encoder closed').toBe(0);
+  expect.soft(afterCancel.total, 'nothing more open than before the export').toBeLessThanOrEqual(idle);
+  // Then again, at 60 fps: the whole file, every frame.
+  for (const fps of [60, 24]) {
+    step = `${fps} fps`;
+    await page.getByRole('radio', { name: String(fps), exact: true }).click();
+    await page.getByRole('button', { name: 'Export video' }).click();
+    const pr = await probe(await save());
+    const v = pr.streams.find((s) => s.codec_type === 'video')!;
+    rows.push(`${fps} fps: ${pr.format.duration} s, ${v.nb_read_frames} frames, ${pr.streams.map((s) => s.codec_type).join('+')}`);
+    expect.soft(Number(v.nb_read_frames), `${fps} fps: frames`).toBe(6 * fps);
+    expect.soft(Number(pr.format.duration), `${fps} fps: length`).toBeCloseTo(6, 1);
+    expect.soft(pr.streams.some((s) => s.codec_type === 'audio'), `${fps} fps: sound`).toBe(true);
+    await page.getByRole('button', { name: 'Export again' }).click();
+  }
+  await page.getByRole('button', { name: 'Done' }).click();
+  // The shortest project the timeline allows: 0.1 s (three frames at 30 fps). Select first: a click on a clip moves the playhead.
+  step = 'split at 0.1 s';
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 6; });
+  await expect.poll(() => time(page)).toBe('0:00.1');
+  await tool(page, 'Split').click();
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  await selectClip(page, page.locator('.tl-row.main .clip').nth(1));
+  await tool(page, 'Delete').click();
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  step = '0.1 s video';
+  const video = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  const v = video.streams.find((s) => s.codec_type === 'video')!;
+  rows.push(`0.1 s video: ${video.format.duration} s, ${v.nb_read_frames} frames, ${video.streams.map((s) => s.codec_type).join('+')}`);
+  expect.soft(Number(v.nb_read_frames), '0.1 s: frames').toBe(3);
+  expect.soft(Number(video.format.duration), '0.1 s: length').toBeLessThan(0.2);
+  step = '0.1 s audio';
+  const audio = await probe(await exportAs(page, info, 'Audio', 'Export audio'));
+  rows.push(`0.1 s audio: ${audio.format.duration} s`);
+  expect.soft(Number(audio.format.duration), '0.1 s audio: length').toBeCloseTo(0.1, 1);
+  step = '0.1 s GIF';
+  const gif = await probe(await exportAs(page, info, 'GIF', 'Export GIF'));
+  rows.push(`0.1 s GIF: ${gif.streams[0]?.nb_read_frames} frames`);
+  expect.soft(Number(gif.streams[0]?.nb_read_frames), '0.1 s GIF: frames').toBeGreaterThanOrEqual(1);
+  step = '0.1 s photo';
+  const photo = await probe(await exportAs(page, info, 'Photo', 'Save photo'));
+  rows.push(`0.1 s photo: ${photo.streams[0]?.width}×${photo.streams[0]?.height}`);
+  expect.soft(photo.streams[0]?.width, '0.1 s photo').toBeGreaterThan(0);
+  console.log(`export edges (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('a word wider than the frame (a long Russian word, a hashtag, a row of emoji, Chinese without spaces) stays inside the frame', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  /** Leftmost and rightmost columns with text (bright on the black canvas), of 270. */
+  const span = (g: Buffer) => {
+    let lo = 270, hi = -1;
+    for (let y = 0; y < 480; y++) for (let x = 0; x < 270; x++) if (g[y * 270 + x] > 60) { lo = Math.min(lo, x); hi = Math.max(hi, x); }
+    return [lo, hi];
+  };
+  const rows: string[] = [];
+  let first = true;
+  for (const text of ['Достопримечательности', '#путешествиявроссиизимой2026', '🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥', '我们今天去看看这座城市最有名的地方吧']) {
+    await tool(page, first ? 'Text' : 'Edit text').click();
+    first = false;
+    await page.getByRole('textbox', { name: 'Text', exact: true }).fill(text);
+    await page.getByRole('button', { name: 'Done' }).click();
+    await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 1.5 * 60; }); // past the entrance animation
+    const [lo, hi] = span(await photo(page, info));
+    rows.push(`${text}: columns ${lo}–${hi} of 270`);
+    expect.soft(lo, `${text}: left edge`).toBeGreaterThan(2);
+    expect.soft(hi, `${text}: right edge`).toBeLessThan(267);
+    await selectClip(page, page.locator('.tl-row .clip-text').first());
+  }
+  console.log(`long words (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('extreme speeds, 10× and 0.1×: the file is as long as the timeline, shows the right source frames and keeps the tone at its pitch', async ({ page }, info) => {
+  test.setTimeout(420_000);
+  test.skip(!fs.existsSync(fx('counter.mp4')), 'needs npm run fixtures');
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4', 'counter.mp4']); // 6 s each, frame N in binary, a 440 Hz tone
+  await expect(main).toHaveCount(2);
+  for (const [i, key] of [[0, 'End'], [1, 'Home']] as const) { // the slider's ends: 10× and 0.1×
+    await selectClip(page, main.nth(i));
+    await tool(page, 'Speed').click();
+    await page.getByRole('slider', { name: 'Speed' }).press(key);
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.locator('.busy')).toHaveCount(0, { timeout: 120_000 });
+  }
+  // A: 0–0.6 s, source frame 10k. B: 0.6–60.6 s, each source frame for 10 frames.
+  const source = (k: number) => (k < 18 ? 10 * k : Math.floor((k - 18) / 10 + 1e-6));
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const pr = await probe(video);
+  const rows = [`duration ${pr.format.duration} s, ${pr.streams.find((s) => s.codec_type === 'video')!.nb_read_frames} frames`];
+  expect.soft(Number(pr.format.duration), 'length').toBeCloseTo(60.6, 1);
+  for (const k of [0, 5, 17, 18, 33, 1018, 1817]) {
+    const got = await counterAt(video, k);
+    rows.push(`frame ${k}: ${got} (expected ${source(k)})`);
+    expect.soft(got, `frame ${k}`).toBe(source(k));
+  }
+  // The tone in each part: there, and at 440 Hz (natural pitch), not 4400 or 44.
+  const pcm = await samples(video);
+  for (const [what, from, to] of [['10×', 0.1, 0.5], ['0.1× early', 5, 15], ['0.1× late', 50, 60]] as const) {
+    const x = pcm.subarray(Math.round(from * 48000), Math.round(to * 48000));
+    let crossings = 0, sq = 0;
+    for (let i = 1; i < x.length; i++) { if ((x[i - 1] < 0) !== (x[i] < 0)) crossings++; sq += x[i] * x[i]; }
+    const hz = crossings / 2 / (to - from), rms = Math.sqrt(sq / x.length);
+    rows.push(`${what}: ${hz.toFixed(0)} Hz, rms ${rms.toFixed(3)}`);
+    expect.soft(rms, `${what}: the tone is there`).toBeGreaterThan(0.05);
+    expect.soft(Math.abs(hz - 440), `${what}: pitch`).toBeLessThan(30);
+  }
+  console.log(`extreme speeds (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('a clip trimmed shorter than its fades still reaches full level in the middle (preview and export share the fades)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  test.skip(!fs.existsSync(fx('counter.mp4')), 'needs npm run fixtures');
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4']); // 6 s, a steady 440 Hz tone (rms 0.088)
+  await expect(main).toHaveCount(1);
+  await selectClip(page, main.first());
+  await tool(page, 'Volume').click();
+  for (const name of ['Fade in', 'Fade out']) await page.getByRole('slider', { name, exact: true }).press('End'); // 3 s each
+  await page.getByRole('button', { name: 'Done' }).click();
+  // Trim the end from 6 s to about 2 s (60 px per second), with the end in view.
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 3.5 * 60; });
+  const h = (await main.first().getByLabel('Trim end').boundingBox())!;
+  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(h.x + h.width / 2 - 240, h.y + h.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await expect.poll(async () => (await main.first().boundingBox())!.width).toBeLessThan(150);
+  const file = await exportAs(page, info, 'Audio', 'Export audio', { loudness: false });
+  const pcm = await samples(file);
+  let peak = 0;
+  for (let i = 0; i + 960 <= pcm.length; i += 480) { // 20 ms windows
+    let sq = 0;
+    for (let k = i; k < i + 960; k++) sq += pcm[k] * pcm[k];
+    peak = Math.max(peak, Math.sqrt(sq / 960));
+  }
+  const length = pcm.length / 48000;
+  console.log(`trimmed fades (${info.project.name}): ${length.toFixed(2)} s, loudest 20 ms rms ${peak.toFixed(4)} of 0.0884`);
+  expect(length).toBeLessThan(3);
+  expect(peak, 'the tone reaches full level').toBeGreaterThan(0.8 * 0.0884);
+});
+
+// ---------- QA docs/11 §1.3: files as phones make them ----------
+
+test('files as phones make them — a rotated portrait recording, variable frame rate, mono 44.1 kHz, 5.1 and no sound — play and export right', async ({ page }, info) => {
+  test.setTimeout(360_000);
+  const files = ['rotated.mp4', 'vfr.mp4', 'mono44.mp4', 'surround.mp4', 'silent.mp4'];
+  test.skip(!files.every((f) => fs.existsSync(fx(f))), 'needs npm run fixtures');
+  const { execFileSync } = await import('node:child_process');
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', files); // on the timeline: 0–4, 4–10, 10–14, 14–18, 18–22 s
+  await expect(main).toHaveCount(5, { timeout: 60_000 });
+  const rows: string[] = [];
+  const video = await exportAs(page, info, 'Video', 'Export video', { loudness: false });
+  const pr = await probe(video);
+  rows.push(`duration ${pr.format.duration} s, ${pr.streams.map((s) => s.codec_type).join('+')}`);
+  expect.soft(Number(pr.format.duration), 'length').toBeCloseTo(22, 1);
+  // Rotated: upright and filling the 9:16 frame — the white mark at the top left, no black bands.
+  const frame = execFileSync('ffmpeg', ['-v', 'error', '-ss', '2', '-i', video, '-frames:v', '1', '-vf', 'scale=90:160,format=gray', '-f', 'rawvideo', '-']);
+  const at = (x: number, y: number) => frame[y * 90 + x];
+  const blackRows = Array.from({ length: 160 }, (_, y) => y).filter((y) => Array.from({ length: 90 }, (_, x) => at(x, y)).every((v) => v < 30)).length;
+  rows.push(`rotated: top left ${at(8, 8)}, top right ${at(81, 8)}, bottom left ${at(8, 151)}, black rows ${blackRows}/160`);
+  expect.soft(at(8, 8), 'rotated: the mark is at the top left').toBeGreaterThan(200);
+  expect.soft(Math.max(at(81, 8), at(8, 151)), 'rotated: nowhere else').toBeLessThan(170);
+  expect.soft(blackRows, 'rotated: fills the frame').toBeLessThan(4);
+  // VFR: at every output frame, the source frame shown is the latest one at or before that moment.
+  const pts = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'packet=pts_time', '-of', 'csv=p=0', fx('vfr.mp4')])
+    .toString().trim().split('\n').map(Number).sort((a, b) => a - b);
+  const expected = (t: number) => pts.filter((p) => p <= t + 1e-4).length - 1;
+  for (const local of [0, 1.9, 2.0, 2.1, 3.0, 3.97, 4.0, 4.03, 5.0, 5.97]) {
+    const k = Math.round((4 + local) * 30);
+    const got = await counterAt(video, k);
+    rows.push(`vfr ${local.toFixed(2)} s: ${got} (expected ${expected(k / 30 - 4)})`);
+    expect.soft(got, `vfr at ${local} s`).toBe(expected(k / 30 - 4));
+  }
+  // Sound: each part at its pitch and level; mono and 5.1 are heard, the silent file is silent.
+  const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', video, '-ac', '2', '-ar', '48000', '-f', 'f32le', '-'], { maxBuffer: 64 << 20 });
+  const lr = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4); // L, R, L, R…
+  for (const [what, from, to, hz] of [['mono 44.1 kHz', 10.5, 13.5, 330], ['5.1', 14.5, 17.5, 330], ['no sound', 18.5, 21.5, 0]] as const) {
+    const [a, b] = [Math.round(from * 48000), Math.round(to * 48000)];
+    let crossings = 0, peak = 0;
+    const sq = [0, 0];
+    for (let i = a; i < b; i++) {
+      for (const c of [0, 1]) { const v = lr[2 * i + c]; sq[c] += v * v; peak = Math.max(peak, Math.abs(v)); }
+      if (i > a && (lr[2 * i - 2] < 0) !== (lr[2 * i] < 0)) crossings++;
+    }
+    const f = crossings / 2 / (to - from), [l, r] = sq.map((v) => Math.sqrt(v / (b - a)));
+    rows.push(`${what}: ${f.toFixed(0)} Hz, rms L ${l.toFixed(3)} R ${r.toFixed(3)}, peak ${peak.toFixed(3)}`);
+    if (hz) {
+      expect.soft(Math.abs(f - hz), `${what}: pitch`).toBeLessThan(10);
+      expect.soft(Math.min(l, r), `${what}: heard in both ears`).toBeGreaterThan(0.04);
+      expect.soft(peak, `${what}: not clipped`).toBeLessThan(0.99);
+    } else expect.soft(Math.max(l, r), `${what}: silent`).toBeLessThan(0.001);
+  }
+  console.log(`phone files (${info.project.name}):\n${rows.join('\n')}`);
+});
