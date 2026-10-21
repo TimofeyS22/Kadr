@@ -133,23 +133,45 @@ export async function supportedResolutions(s: ProjectSettings): Promise<Resoluti
 // MessageChannel instead of setTimeout: timers are throttled to ~1/s in background tabs, messages are not.
 const yieldToUi = () => new Promise<void>((r) => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
 
-/**
- * Streams the file into the origin-private file system when possible, so long exports don't have to fit
- * in memory; falls back to an in-memory buffer (older Safari has no createWritable).
- */
-async function openTarget(ext: string, type: string): Promise<{ target: BufferTarget | StreamTarget; result: () => Promise<Blob> }> {
+type Target = { target: BufferTarget | StreamTarget; result: () => Promise<Blob> };
+
+/** The file system gets this long to open the export file; then the export goes to memory (QA, docs/11 §1.6). */
+const OPFS_MS = 5000;
+
+/** The export file in the origin-private file system, or null where it cannot be had. */
+async function openStream(ext: string, type: string): Promise<(Target & { drop: () => void }) | null> {
   try {
     const root = await navigator.storage.getDirectory();
     for await (const name of root.keys()) if (name.startsWith('export-')) await root.removeEntry(name).catch(() => undefined);
     const handle = await root.getFileHandle(`export-${Date.now()}.${ext}`, { create: true });
-    if ('createWritable' in handle) {
-      const writable = await handle.createWritable();
-      // Some WebKit contexts open the stream but fail on the first write: probe before committing to it.
-      await writable.write(new Uint8Array(1));
-      await writable.truncate(0);
-      return { target: new StreamTarget(writable, { chunked: true }), result: async () => new Blob([await handle.getFile()], { type }) };
-    }
-  } catch { /* OPFS unavailable (private mode, old browser) */ }
+    if (!('createWritable' in handle)) return null;
+    const writable = await handle.createWritable();
+    // Some WebKit contexts open the stream but fail on the first write: probe before committing to it.
+    await writable.write(new Uint8Array(1));
+    await writable.truncate(0);
+    return {
+      target: new StreamTarget(writable, { chunked: true }),
+      result: async () => new Blob([await handle.getFile()], { type }),
+      drop: () => void writable.abort().catch(() => undefined),
+    };
+  } catch {
+    return null; // OPFS unavailable (private mode, old browser)
+  }
+}
+
+/**
+ * Streams the file into the origin-private file system when possible, so long exports don't have to fit
+ * in memory; falls back to an in-memory buffer (older Safari has no createWritable). A file system that does not
+ * answer must not hold the export at 0%: after OPFS_MS the export goes to memory, and a stream that opens later is
+ * let go so it holds no lock.
+ */
+async function openTarget(ext: string, type: string): Promise<Target> {
+  const stream = openStream(ext, type);
+  let timer = 0;
+  const late = new Promise<null>((resolve) => { timer = self.setTimeout(() => resolve(null), OPFS_MS); });
+  const got = await Promise.race([stream, late]).finally(() => clearTimeout(timer));
+  if (got) return got;
+  void stream.then((s) => s?.drop());
   const target = new BufferTarget();
   return {
     target,

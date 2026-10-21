@@ -8,22 +8,39 @@ import { ResilientSink } from './sound';
 
 const measured = new Map<string, Promise<number>>();
 
-/** Samples an encode with this codec puts ahead of the sound (0 when it puts none, or the measure fails). */
+/**
+ * The probe gets this long. A codec that never answers (it happens: WebCodecs has no timeout of its own) held every
+ * export at 0% for good, since the first export after a page load measures first (QA, docs/11 §1.6).
+ */
+const PROBE_MS = 10_000;
+
+/**
+ * Samples an encode with this codec puts ahead of the sound (0 when it puts none). A probe that fails or does not
+ * answer in time gives 0 for this export and is tried again by the next one.
+ */
 export function encoderDelay(codec: AudioCodec, channels: number, sampleRate: number): Promise<number> {
   const key = `${codec}:${channels}:${sampleRate}`;
   let d = measured.get(key);
   if (!d) {
-    d = measure(codec, channels, sampleRate).catch((e: unknown) => { console.warn('encoder delay not measured, assuming 0', e); return 0; });
+    const stop = new AbortController();
+    let timer = 0;
+    const late = new Promise<never>((_, reject) => {
+      timer = self.setTimeout(() => { stop.abort(); reject(new Error(`no answer in ${PROBE_MS / 1000} s`)); }, PROBE_MS);
+    });
+    d = Promise.race([measure(codec, channels, sampleRate, stop.signal), late])
+      .finally(() => clearTimeout(timer))
+      .catch((e: unknown) => { console.warn('encoder delay not measured, assuming 0', e); measured.delete(key); return 0; });
     measured.set(key, d);
   }
   return d;
 }
 
-async function measure(codec: AudioCodec, channels: number, sr: number): Promise<number> {
+async function measure(codec: AudioCodec, channels: number, sr: number, signal: AbortSignal): Promise<number> {
   const len = sr, on = Math.round(0.3 * sr), f = 1000;
   const x = new Float32Array(len);
   for (let i = on; i < on + 0.1 * sr; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * f * (i - on)) / sr);
   const output = new Output({ format: codec === 'aac' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new BufferTarget() });
+  signal.addEventListener('abort', () => void output.cancel().catch(() => undefined)); // releases a codec that hung
   const source = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
   output.addAudioTrack(source);
   await output.start();
@@ -33,6 +50,7 @@ async function measure(codec: AudioCodec, channels: number, sr: number): Promise
   source.close();
   await output.finalize();
   const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(new Blob([output.target.buffer!])) });
+  signal.addEventListener('abort', () => input.dispose());
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track) return 0;

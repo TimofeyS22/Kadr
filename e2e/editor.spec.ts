@@ -3697,3 +3697,41 @@ test('the speech model is let go: alive after captions, gone when an export star
   rows.push(`a minute idle after captions again: ${await rss() ?? '—'} MB`);
   console.log(`speech model memory (${info.project.name}):\n${rows.join('\n')}`);
 });
+
+// ---------- QA docs/11 §1.6: an export never waits forever on the device ----------
+
+test('an export never waits forever: an encoder probe that never answers and storage that never opens — the video is still made', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  // As a busy phone can: the page's first audio encoder (the delay probe) takes frames and never answers, and the
+  // file system never opens the export file. Once, an export after a reload stood at 0% for good (1 run in 7).
+  await page.addInitScript(() => {
+    const w = window as unknown as { AudioEncoder?: typeof AudioEncoder; __hung: number };
+    w.__hung = 0;
+    const Real = w.AudioEncoder;
+    if (Real) {
+      let first = true;
+      w.AudioEncoder = class extends Real {
+        constructor(init: AudioEncoderInit) {
+          const hang = first;
+          first = false;
+          super(hang ? { output: () => undefined, error: () => undefined } : init);
+          if (hang) { w.__hung++; this.encode = () => undefined; this.flush = () => new Promise<void>(() => undefined); }
+        }
+      };
+    }
+    const proto = (window as unknown as { FileSystemFileHandle?: { prototype: Record<string, unknown> } }).FileSystemFileHandle?.prototype;
+    if (proto && 'createWritable' in proto) proto.createWritable = () => { w.__hung++; return new Promise(() => undefined); };
+  });
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']); // 6 s, picture and a tone
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const started = Date.now();
+  const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  const took = (Date.now() - started) / 1000;
+  const hung = await page.evaluate(() => (window as unknown as { __hung: number }).__hung);
+  console.log(`export with a hung probe and storage (${info.project.name}): ${hung} parts hung, made in ${took.toFixed(1)} s, ${Number(pr.format.duration).toFixed(2)} s long`);
+  expect(hung, 'something was actually held up').toBeGreaterThan(0);
+  expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
+  expect(Math.abs(Number(pr.format.duration) - 6)).toBeLessThan(0.1);
+  expect(took, 'the waits are bounded').toBeLessThan(60);
+});
