@@ -2,9 +2,12 @@
 // Speech recognition worker: Whisper via transformers.js (ONNX Runtime WASM), and GigaAM v3 for Russian (v1.4).
 // Audio never leaves the device; only the model files are downloaded once (and cached by the browser).
 import { AutoModel, Tensor, env, pipeline, type AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
+import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.mjs?url';
+import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
 import { ctcDecode, gigaamFeatures, parseCtcVocab, type CtcVocab } from '../core/gigaam';
 import { alignScript, type ScriptCaptions } from '../core/script';
 import type { CaptionWord } from '../core/types';
+import { capSharedMemory, type HeapInfo } from './wasmMemory';
 
 /** Whisper sizes, and 'ru': GigaAM v3, Russian only, far more accurate on Russian speech (docs/10). */
 export type AsrModel = 'tiny' | 'base' | 'small' | 'ru';
@@ -13,7 +16,8 @@ export type AsrRequest =
   | { type: 'transcribe'; id: number; audio: Float32Array; language: string | null; model: AsrModel }
   | { type: 'detect'; id: number; audio: Float32Array; candidates: string[] }
   | { type: 'align'; id: number; script: string; words: CaptionWord[]; speech: [number, number][] }
-  | { type: 'vad'; id: number; audio: Float32Array };
+  | { type: 'vad'; id: number; audio: Float32Array }
+  | { type: 'heap'; id: number };
 export type AsrResponse =
   | { type: 'download'; loaded: number; total: number }
   | { type: 'ready' }
@@ -21,15 +25,20 @@ export type AsrResponse =
   | { type: 'vad'; id: number; probs: Float32Array }
   | { type: 'language'; id: number; code: string; p: number }
   | { type: 'aligned'; id: number; result: ScriptCaptions | null }
-  | { type: 'error'; id?: number; message: string };
+  | ({ type: 'heap'; id: number } & HeapInfo)
+  | { type: 'error'; id?: number; message: string; heap: HeapInfo };
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
-// ONNX Runtime WASM (~27 MB): in development it is served from public/ort (scripts/copy-ort.mjs); production
-// builds emit it as a hashed asset on our own origin. Hosting must allow files > 25 MB (not Cloudflare Pages).
-const onnx = env.backends.onnx as { wasm?: { wasmPaths?: string; numThreads?: number } };
+// ONNX Runtime's heap below 4 GB, or iOS cannot reserve it and speech never starts (docs/12 §1.2).
+const heapInfo = capSharedMemory();
+// ONNX Runtime WASM, the plain CPU build (~14 MB), from our own origin. transformers.js would take the asyncify build
+// (for WebGPU, which we don't use) from a CDN; in WebKit that build peaks several times higher (onnxruntime#33516).
+// In development the files are served from public/ort (scripts/copy-assets.mjs --dev).
+const onnx = env.backends.onnx as { wasm?: { wasmPaths?: string | { mjs: string; wasm: string }; numThreads?: number } };
 if (onnx.wasm) {
-  if (import.meta.env.DEV) onnx.wasm.wasmPaths = `${self.location.origin}/ort/`;
+  const at = (file: string) => new URL(import.meta.env.DEV ? `/ort/${file}` : file, self.location.href).href;
+  onnx.wasm.wasmPaths = { mjs: at(import.meta.env.DEV ? 'ort-wasm-simd-threaded.mjs' : ortMjs), wasm: at(import.meta.env.DEV ? 'ort-wasm-simd-threaded.wasm' : ortWasm) };
   if (!self.crossOriginIsolated) onnx.wasm.numThreads = 1;
 }
 
@@ -173,6 +182,10 @@ self.onmessage = async (e: MessageEvent<AsrRequest>) => {
       post({ type: 'ready' });
       return;
     }
+    if (msg.type === 'heap') {
+      post({ type: 'heap', id: msg.id, ...heapInfo() });
+      return;
+    }
     if (msg.type === 'align') { // pure CPU work, off the main thread so a long talk never freezes the UI
       post({ type: 'aligned', id: msg.id, result: alignScript(msg.script, msg.words, msg.speech) });
       return;
@@ -201,6 +214,6 @@ self.onmessage = async (e: MessageEvent<AsrRequest>) => {
       .filter((w) => w.text);
     post({ type: 'result', id: msg.id, words });
   } catch (err) {
-    post({ type: 'error', id: msg.type !== 'load' ? msg.id : undefined, message: err instanceof Error ? err.message : String(err) });
+    post({ type: 'error', id: msg.type !== 'load' ? msg.id : undefined, message: err instanceof Error ? err.message : String(err), heap: heapInfo() });
   }
 };

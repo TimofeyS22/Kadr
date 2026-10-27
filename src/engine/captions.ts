@@ -7,6 +7,7 @@ import type { CaptionWord, Project } from '../core/types';
 import type { AsrModel, AsrRequest, AsrResponse } from './asr.worker';
 import { renderAudioWindow, soundEntries } from './audio';
 import { MediaError, MediaPool } from './media';
+import type { HeapInfo } from './wasmMemory';
 import { useLocale } from '../lib/i18n';
 
 export type { AsrModel };
@@ -107,6 +108,25 @@ function getWorker(): Worker {
 }
 
 /**
+ * A worker whose engine failed is replaced: ONNX Runtime remembers a backend that did not start and refuses every
+ * later request in that worker, so "try again" could never work (docs/12 §1.2). Requests to it run one at a time.
+ */
+function retire(w: Worker): void {
+  if (worker === w) worker = null;
+  w.terminate();
+  w.dispatchEvent(new ErrorEvent('error', { message: 'the speech engine restarted' })); // nothing left waits forever
+}
+
+/** ONNX Runtime ran out of WASM memory (iPhone, docs/12): said plainly, the engine's own words go to the log. */
+const outOfMemory = (message: string) => /out of memory|maximum memory|cannot enlarge memory|failed to allocate/i.test(message);
+function engineError(message: string, error: string): MediaError {
+  console.error('speech engine:', message);
+  return outOfMemory(message)
+    ? new MediaError('Not enough memory on this device for the speech model. Close other tabs and apps and try again, or choose a smaller model.')
+    : new MediaError(error, { error: message });
+}
+
+/**
  * A model in the worker holds hundreds of MB (GigaAM 225 MB plus its runtime), and a phone tab has little memory: the
  * worker goes a minute after its last request (so "Create again" stays quick) and at once when an export starts.
  * It was never let go before (QA, docs/11 §3.7).
@@ -143,8 +163,13 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
     const onMessage = (e: MessageEvent<AsrResponse>) => {
       const r = e.data;
       if (r.type === 'download') { onDownload?.(r.loaded, r.total); return; }
-      if (msg.type === 'load' && (r.type === 'ready' || r.type === 'error')) { done(); resolve(r); }
-      if (msg.type !== 'load' && (r.type === 'result' || r.type === 'vad' || r.type === 'language' || r.type === 'aligned' || r.type === 'error') && 'id' in r && r.id === id) { done(); resolve(r); }
+      const mine = msg.type === 'load'
+        ? r.type === 'ready' || r.type === 'error'
+        : (r.type === 'result' || r.type === 'vad' || r.type === 'language' || r.type === 'aligned' || r.type === 'heap' || r.type === 'error') && r.id === id;
+      if (!mine) return;
+      done();
+      if (r.type === 'error') retire(w);
+      resolve(r);
     };
     if (signal?.aborted) { reject(new DOMException('Cancelled', 'AbortError')); return; }
     inFlight++;
@@ -172,7 +197,7 @@ export async function transcribeProject(
     if (loaded.type === 'error') {
       // Offline before the first download: say what to do, not "Failed to fetch" (docs/11 QA).
       if (!navigator.onLine) throw new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: ASR_MODELS[m].mb });
-      throw new MediaError('Could not load the speech model ({error})', { error: loaded.message });
+      throw engineError(loaded.message, 'Could not load the speech model ({error})');
     }
   };
   await load(engine);
@@ -187,7 +212,7 @@ export async function transcribeProject(
   // Whisper invents text over music and silence, so only speech found by the VAD is transcribed.
   onProgress({ phase: 'listen' });
   const vad = await request(w, { type: 'vad', id: 0, audio: audio.slice() }, undefined, signal);
-  if (vad.type === 'error') throw new MediaError('Speech detection failed ({error})', { error: vad.message });
+  if (vad.type === 'error') throw engineError(vad.message, 'Speech detection failed ({error})');
   // Speech segments for the engine at work: lenient for GigaAM, strict for Whisper (it invents text over music).
   let speech: [number, number][] = [], windows: [number, number][] = [];
   const segment = () => {
@@ -198,7 +223,7 @@ export async function transcribeProject(
   const transcribe = async (i: number) => {
     const [a0, a1] = windows[i];
     const r = await request(w, { type: 'transcribe', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), language: engine === 'ru' ? null : language, model: engine }, undefined, signal);
-    if (r.type === 'error') throw new MediaError('Transcription failed ({error})', { error: r.message });
+    if (r.type === 'error') throw engineError(r.message, 'Transcription failed ({error})');
     return r.type === 'result' ? r : null;
   };
   const done = new Map<number, NonNullable<Awaited<ReturnType<typeof transcribe>>>>();
@@ -213,7 +238,7 @@ export async function transcribeProject(
     }
     if (!language) {
       const r = await request(w, { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code) }, undefined, signal);
-      if (r.type === 'error') throw new MediaError('Speech detection failed ({error})', { error: r.message });
+      if (r.type === 'error') throw engineError(r.message, 'Speech detection failed ({error})');
       if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
       // GigaAM was unsure (Russian under loud music) but it is Russian: GigaAM still reads it best.
       if (model === 'ru' && language === 'russian') { engine = 'ru'; segment(); await load(engine); }
@@ -247,6 +272,46 @@ export async function alignToScript(script: string, tr: Transcript): Promise<Scr
   const r = await request(getWorker(), { type: 'align', id: 0, script, words: tr.words, speech: tr.speech });
   if (r.type === 'error') throw new Error(r.message);
   return r.type === 'aligned' ? r.result : null;
+}
+
+export interface SpeechCheck {
+  ok: boolean;
+  /** Milliseconds: start of the engine, or download and start of a model. */
+  loadMs: number;
+  /** Milliseconds to read the sample (model check). */
+  runMs?: number;
+  text?: string;
+  error?: string;
+  heap: HeapInfo | null;
+}
+
+async function heapOf(w: Worker): Promise<HeapInfo | null> {
+  const r = await request(w, { type: 'heap', id: 0 });
+  return r.type === 'heap' ? { capMb: r.capMb, mb: r.mb, refused: r.refused } : null;
+}
+
+/** Diagnostics (`?diag`, docs/12 stage 0): starts ONNX Runtime with the 2 MB speech detector on a second of silence. */
+export async function checkSpeechEngine(): Promise<SpeechCheck> {
+  const w = getWorker();
+  const t0 = performance.now();
+  const r = await request(w, { type: 'vad', id: 0, audio: new Float32Array(SR) });
+  const loadMs = performance.now() - t0;
+  return r.type === 'error' ? { ok: false, loadMs, error: r.message, heap: r.heap } : { ok: true, loadMs, heap: await heapOf(w) };
+}
+
+/** Diagnostics: downloads and starts `model`, then reads `audio` (16 kHz mono, ≤ 28 s) in one piece. */
+export async function checkSpeechModel(model: AsrModel, audio: Float32Array, language: string | null, onDownload: (fraction: number) => void): Promise<SpeechCheck> {
+  const w = getWorker();
+  const t0 = performance.now();
+  const loaded = await request(w, { type: 'load', model }, (l, t) => onDownload(t ? l / t : 0));
+  const loadMs = performance.now() - t0;
+  if (loaded.type === 'error') return { ok: false, loadMs, error: loaded.message, heap: loaded.heap };
+  const t1 = performance.now();
+  const r = await request(w, { type: 'transcribe', id: 0, audio, language: model === 'ru' ? null : language, model });
+  const runMs = performance.now() - t1;
+  if (r.type === 'error') return { ok: false, loadMs, runMs, error: r.message, heap: r.heap };
+  const text = r.type === 'result' ? r.words.map((x) => x.text).join(' ') : '';
+  return { ok: true, loadMs, runMs, text, heap: await heapOf(w) };
 }
 
 /** Frees the model memory (the files stay cached for next time). Waits while a request is running. */

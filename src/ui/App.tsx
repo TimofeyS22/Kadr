@@ -6,6 +6,9 @@ import { t, useLocale } from '../lib/i18n';
 
 // The editor (and the media engine) load on demand so the home screen starts fast.
 const Editor = lazy(() => import('./Editor').then((m) => ({ default: m.Editor })));
+// Diagnostics for a phone (docs/12 stage 0): only with `?diag` in the address.
+const Diag = lazy(() => import('./Diag').then((m) => ({ default: m.Diag })));
+const diag = new URLSearchParams(location.search).has('diag');
 
 function useProjectRoute(): string | null {
   const [hash, setHash] = useState(location.hash);
@@ -51,7 +54,9 @@ export function App() {
   useEffect(() => { document.documentElement.lang = locale; }, [locale]);
   return (
     <ErrorBoundary key={locale}>
-      {id ? (
+      {diag ? (
+        <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><Diag /></Suspense>
+      ) : id ? (
         <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><Editor key={id} id={id} /></Suspense>
       ) : <Home />}
       <Toasts />

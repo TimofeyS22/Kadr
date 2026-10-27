@@ -9,7 +9,7 @@ function copy(src, dst, files) {
   mkdirSync(dst, { recursive: true });
   for (const f of files) if (!existsSync(`${dst}/${f}`)) copyFileSync(`${src}/${f}`, `${dst}/${f}`);
 }
-if (dev) copy('node_modules/onnxruntime-web/dist', 'public/ort', ['ort-wasm-simd-threaded.asyncify.mjs', 'ort-wasm-simd-threaded.asyncify.wasm']);
+if (dev) copy('node_modules/onnxruntime-web/dist', 'public/ort', ['ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']);
 copy('node_modules/@mediapipe/tasks-vision/wasm', 'public/mediapipe', ['vision_wasm_internal.js', 'vision_wasm_internal.wasm']);
 const model = 'public/models/selfie_segmenter.tflite';
 if (!existsSync(model)) {

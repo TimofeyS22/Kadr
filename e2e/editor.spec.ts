@@ -7,7 +7,7 @@ const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 const pageErrors: string[] = [];
 // Privacy audit on every scenario (docs/11 §3.12): the page talks only to its own origin and to the hosts the CSP
 // allows for models, and never sends anything out. A request with a body to anywhere but the share target fails.
-const ALLOWED_HOSTS = [/^localhost$/, /^127\.0\.0\.1$/, /^timofeys22\.github\.io$/, /^huggingface\.co$/, /\.huggingface\.co$/, /\.hf\.co$/, /^cdn\.jsdelivr\.net$/];
+const ALLOWED_HOSTS = [/^localhost$/, /^127\.0\.0\.1$/, /^timofeys22\.github\.io$/, /^huggingface\.co$/, /\.huggingface\.co$/, /\.hf\.co$/];
 const network: { method: string; url: string; body: number }[] = [];
 const consoleErrors: string[] = [];
 // Connections the CSP blocked (they never reach the network log above). MediaPipe's own telemetry tries Google's
