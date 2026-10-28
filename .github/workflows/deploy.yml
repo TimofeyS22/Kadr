@@ -53,6 +53,9 @@ jobs:
         with:
           path: dist
           retention-days: 30 # a known-good build to redeploy for a rollback (docs/12 G7)
+          # v4+ leaves out files starting with a dot; v1.4.15's voice-effects chunk is one (".dist-*.js"), and a tab
+          # still on it needs it (docs/12 G9: files of past versions stay ≥ 30 days).
+          include-hidden-files: true
 
   deploy:
     if: github.ref == 'refs/heads/main'
