@@ -7,9 +7,11 @@ import type { CaptionWord, Project } from '../core/types';
 import type { AsrModel, AsrRequest, AsrResponse } from './asr.worker';
 import { renderAudioWindow, soundEntries } from './audio';
 import { MediaError, MediaPool } from './media';
+import { DOWNLOAD_STOPPED, PARTS_CACHE } from './modelFiles';
 import type { HeapInfo } from './wasmMemory';
 import { useLocale } from '../lib/i18n';
 import { isStaleCode, newerVersionDeployed, reloadIntoUpdate, updatingMessage } from '../lib/update';
+import { keepAwake } from '../lib/wakeLock';
 
 export type { AsrModel };
 export const ASR_MODELS: Record<AsrModel, { label: string; mb: number }> = {
@@ -103,7 +105,14 @@ export function chunkBounds(audio: Float32Array, sr = SR): number[] {
 }
 
 let worker: Worker | null = null;
+/**
+ * The page holds the model parts' cache open: where the browser keeps site data only in memory (Safari Private
+ * Browsing; WebKit test sessions), what a worker alone wrote is dropped when it ends, and a download that broke
+ * would start over instead of going on (FACT, WebKit 2026-10-28).
+ */
+let partsHeld: Promise<Cache | null> | null = null;
 function getWorker(): Worker {
+  partsHeld ??= typeof caches === 'undefined' ? Promise.resolve(null) : caches.open(PARTS_CACHE).catch(() => null);
   worker ??= new Worker(new URL('./asr.worker.ts', import.meta.url), { type: 'module' });
   return worker;
 }
@@ -122,6 +131,8 @@ function retire(w: Worker): void {
 const outOfMemory = (message: string) => /out of memory|maximum memory|cannot enlarge memory|failed to allocate/i.test(message);
 function engineError(message: string, error: string): MediaError {
   console.error('speech engine:', message);
+  if (message.includes(DOWNLOAD_STOPPED)) return new MediaError('The speech model download stopped. Check the connection and tap again: it continues from where it stopped.');
+  if (/quota/i.test(message)) return new MediaError('Not enough storage for Kadr on this device. Delete old projects or free up space, then try again.');
   return outOfMemory(message)
     ? new MediaError('Not enough memory on this device for the speech model. Close other tabs and apps and try again, or choose a smaller model.')
     : new MediaError(error, { error: message });
@@ -135,6 +146,8 @@ function engineError(message: string, error: string): MediaError {
 const IDLE_MS = 60_000;
 let inFlight = 0;
 let idle: ReturnType<typeof setTimeout> | undefined;
+/** The screen stays on while the worker downloads or listens (a dark phone suspends the page, docs/12 stage 2). */
+let awake: (() => void) | null = null;
 
 /** Request ids, unique per page: a reply to a cancelled request can never be taken for a newer one. */
 let seq = 0;
@@ -151,7 +164,7 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
       w.removeEventListener('message', onMessage); w.removeEventListener('error', onError); signal?.removeEventListener('abort', onAbort);
       if (settled) return;
       settled = true;
-      if (--inFlight === 0) idle = setTimeout(releaseSpeechModel, IDLE_MS);
+      if (--inFlight === 0) { idle = setTimeout(releaseSpeechModel, IDLE_MS); awake?.(); awake = null; }
     };
     const onAbort = () => { done(); reject(new DOMException('Cancelled', 'AbortError')); };
     // While the version check below runs, Cancel still works (the request is no longer in flight).
@@ -186,7 +199,7 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
       resolve(r);
     };
     if (signal?.aborted) { reject(new DOMException('Cancelled', 'AbortError')); return; }
-    inFlight++;
+    if (inFlight++ === 0) awake ??= keepAwake();
     clearTimeout(idle);
     signal?.addEventListener('abort', onAbort);
     w.addEventListener('message', onMessage);

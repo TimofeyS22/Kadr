@@ -5,6 +5,7 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { APP_TITLE, DEFAULT_SITE, appMeta, buildSite } from './seo/render.ts';
+import { noReservePlugin } from './scripts/no-reserve.ts';
 
 // Dev-only e2e hook: lets browser tests save an exported file into fixtures/ for ffprobe checks.
 const e2eUpload: Plugin = {
@@ -63,6 +64,7 @@ export default defineConfig({
   build: { rollupOptions: { output: { chunkFileNames: (c) => `assets/${c.name.replace(/^\.+/, '') || 'chunk'}-[hash].js` } } },
   plugins: [
     react(),
+    noReservePlugin, // mediabunny reserves no 4 GiB of address space per output (docs/12 §1.3 item 14)
     e2eUpload,
     dropUnusedOrt,
     taskPages,
@@ -88,13 +90,20 @@ export default defineConfig({
         importScripts: ['share-target.js'],
         globPatterns: ['**/*.{js,css,html,svg}', '**/inter-*.woff2'],
         // On-device AI (speech model runtime, noise reduction) is large: cache it on first use instead of up front.
-        globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision_bundle-*.js', 'mediapipe/**', 'models/**', 'ru/**', 'en/**'],
+        globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision_bundle-*.js', '**/vision_wasm_internal-*.js', 'ru/**', 'en/**'],
         // Task pages are plain pages from the network, never the app shell.
         navigateFallbackDenylist: [/\/(ru|en)\//],
         maximumFileSizeToCacheInBytes: 4_000_000,
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => /\/(mediapipe|models)\//.test(url.pathname) || /\/assets\/(rnnoise|asr\.worker|vision_bundle|ort-wasm)[-.]/.test(url.pathname),
+            // Model files from Hugging Face are fetched by the service worker itself: when WebKit lets a request of a
+            // controlled page go past the worker, it drops the Range header (FACT, 2026-10-28), and the model would
+            // come whole instead of in resumable parts (src/engine/modelFiles.ts).
+            urlPattern: ({ url }) => /(^|\.)(huggingface\.co|hf\.co)$/.test(url.hostname),
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: ({ url }) => /\/assets\/(rnnoise|asr\.worker|vision_bundle|vision_wasm_internal|ort-wasm|selfie_segmenter|blaze_face)[-.]/.test(url.pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'kadr-ai', expiration: { maxEntries: 32 } }, // two generations of the speech runtime fit
           },
@@ -124,6 +133,10 @@ export default defineConfig({
   // the preview server relays to Hugging Face and follows its redirects to the file CDN itself.
   preview: { proxy: { '/hf/': { target: 'https://huggingface.co', changeOrigin: true, followRedirects: true, rewrite: (p) => p.replace(/^\/hf/, '') } } },
   // Pre-bundle lazily imported packages so the dev server doesn't reload the page when they are first used.
-  optimizeDeps: { include: ['@huggingface/transformers', '@soundtouchjs/core', '@mediapipe/tasks-vision', '@shiguredo/rnnoise-wasm', 'fflate'] },
+  optimizeDeps: {
+    include: ['@huggingface/transformers', '@soundtouchjs/core', '@mediapipe/tasks-vision', '@shiguredo/rnnoise-wasm', 'fflate'],
+    rolldownOptions: { plugins: [noReservePlugin] },
+  },
+  worker: { plugins: () => [noReservePlugin] },
   test: { include: ['src/**/*.test.ts', 'seo/**/*.test.ts', 'scripts/**/*.test.ts'] },
 });

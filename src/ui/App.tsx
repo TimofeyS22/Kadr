@@ -3,6 +3,8 @@ import { track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { Home } from './Home';
 import { t, useLocale } from '../lib/i18n';
+import { ErrorDetails } from './ErrorDetails';
+import { keepError } from '../lib/errorLog';
 
 // The editor (and the media engine) load on demand so the home screen starts fast.
 const Editor = lazy(() => import('./Editor').then((m) => ({ default: m.Editor })));
@@ -23,7 +25,7 @@ function useProjectRoute(): string | null {
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   override state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) { return { error }; }
-  override componentDidCatch(error: Error) { track('crash', { message: error.message.slice(0, 120) }); }
+  override componentDidCatch(error: Error) { track('crash', { message: error.message.slice(0, 120) }); keepError(error, 'screen'); }
   override render() {
     if (!this.state.error) return this.props.children;
     return (
@@ -39,11 +41,18 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 function Toasts() {
   const toasts = useEditor((s) => s.toasts);
   const dismiss = useEditor((s) => s.dismiss);
+  const keep = useEditor((s) => s.keep);
   return (
     <div className="toasts" role="status" aria-live="polite">
-      {toasts.map((t) => (
-        <button key={t.id} className={`toast ${t.kind}`} onClick={() => dismiss(t.id)}>{t.text}</button>
-      ))}
+      {toasts.map((x) => (x.detail ? (
+        <div key={x.id} className={`toast ${x.kind} with-detail`}>
+          <button className="toast-text" onClick={() => dismiss(x.id)}>{x.text}</button>
+          {x.kept ? <ErrorDetails entry={x.detail} /> : <button className="toast-more" onClick={() => keep(x.id)}>{t('Details')}</button>}
+          {x.kept && <button className="btn" onClick={() => dismiss(x.id)}>{t('Close')}</button>}
+        </div>
+      ) : (
+        <button key={x.id} className={`toast ${x.kind}`} onClick={() => dismiss(x.id)}>{x.text}</button>
+      )))}
     </div>
   );
 }

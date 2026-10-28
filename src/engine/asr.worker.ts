@@ -7,6 +7,7 @@ import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
 import { ctcDecode, gigaamFeatures, parseCtcVocab, type CtcVocab } from '../core/gigaam';
 import { alignScript, type ScriptCaptions } from '../core/script';
 import type { CaptionWord } from '../core/types';
+import { ensureFile, isModelFileName, keptFile, modelFile } from './modelFiles';
 import { capSharedMemory, type HeapInfo } from './wasmMemory';
 
 /** Whisper sizes, and 'ru': GigaAM v3, Russian only, far more accurate on Russian speech (docs/10). */
@@ -29,7 +30,33 @@ export type AsrResponse =
   | { type: 'error'; id?: number; message: string; heap: HeapInfo };
 
 env.allowLocalModels = false;
-env.useBrowserCache = true;
+// Large model files come part by part, checked and resumable (modelFiles.ts, docs/12 stage 5); the small ones
+// (configs, tokenizers) are kept whole in the Cache API as before.
+const small = caches.open('transformers-cache').catch(() => null);
+env.useBrowserCache = false;
+env.useCustomCache = true;
+env.customCache = {
+  match: async (req: string) => (modelFile(String(req)) ? keptFile(String(req)) : (await small)?.match(String(req))),
+  put: async (req: string, res: Response) => { if (!modelFile(String(req))) await (await small)?.put(String(req), res); },
+};
+const plainFetch = env.fetch;
+env.fetch = async (input: string | URL, init?: RequestInit) => {
+  const url = String(input);
+  if (!modelFile(url)) {
+    // A small file (config, tokenizer): a phone that changes networks mid-request ("network changed") gets two more tries.
+    for (let attempt = 1; ; attempt++) {
+      try { return await plainFetch(input, init); } catch (e) {
+        if (attempt === 3 || !(e instanceof TypeError)) throw e;
+        await new Promise((r) => setTimeout(r, attempt * 1000));
+      }
+    }
+  }
+  await ensureFile(url, (loaded, total) => fileProgress?.(modelFile(url)![0], loaded, total));
+  const kept = await keptFile(url);
+  if (kept) return kept;
+  console.warn('model parts were not kept (storage); downloading the file whole', url);
+  return plainFetch(input, init); // a storage that does not keep must not stop captions
+};
 // Where model files come from: Hugging Face, or a host of our own (VITE_MODEL_HOST, docs/12 stage 5). The iOS
 // Simulator behind this Mac's VPN cannot resolve huggingface.co: a build with VITE_MODEL_HOST=/hf/ asks its own
 // origin, and `vite preview` relays to Hugging Face (vite.config.ts).
@@ -47,20 +74,33 @@ if (onnx.wasm) {
   if (!self.crossOriginIsolated) onnx.wasm.numThreads = 1;
 }
 
+/** Whisper revisions the checksums in models.json were made from (scripts/model-manifest.mjs). */
+const WHISPER_REV: Record<Exclude<AsrModel, 'ru'>, string> = {
+  tiny: '517244293732ee2d58139af5814231b7e6830a0d',
+  base: '608c49e61301901684bc36cac8f74b95ff6b5a8e',
+  small: '65caa70f294b46e1c33ff820aae6b16d048ab818',
+};
+
 let asr: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
 let loadedModel: Exclude<AsrModel, 'ru'> | null = null;
 const post = (m: AsrResponse, transfer: Transferable[] = []) => (self as DedicatedWorkerGlobalScope).postMessage(m, transfer);
 
+/** Progress of a large file coming part by part (env.fetch above), for the model being loaded. */
+let fileProgress: ((file: string, loaded: number, total: number) => void) | null = null;
+
 /** Reports the download of a model's files as one total. */
 function downloadProgress() {
   const files = new Map<string, { loaded: number; total: number }>();
-  return (p: { status: string; file?: string; loaded?: number; total?: number }) => {
+  const report = (p: { status: string; file?: string; loaded?: number; total?: number }) => {
     if (p.status !== 'progress' || !p.file) return;
     files.set(p.file, { loaded: p.loaded ?? 0, total: p.total ?? 0 });
     let loaded = 0, total = 0;
     for (const f of files.values()) { loaded += f.loaded; total += f.total; }
     post({ type: 'download', loaded, total });
   };
+  fileProgress = (file, loaded, total) => report({ status: 'progress', file, loaded, total });
+  // transformers.js reads a large file again from its kept parts: counted once, under the part loader's name.
+  return (p: { status: string; file?: string; loaded?: number; total?: number }) => { if (!p.file || !isModelFileName(p.file)) report(p); };
 }
 
 function load(model: AsrModel): Promise<unknown> {
@@ -72,6 +112,7 @@ function load(model: AsrModel): Promise<unknown> {
   asr = pipeline('automatic-speech-recognition', `onnx-community/whisper-${model}_timestamped`, {
     device: 'wasm',
     dtype: 'q8',
+    revision: WHISPER_REV[model], // pinned: the files must match their checksums in models.json
     progress_callback: downloadProgress(),
   }) as Promise<AutomaticSpeechRecognitionPipeline>;
   asr.catch(() => { asr = null; loadedModel = null; });

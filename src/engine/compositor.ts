@@ -246,9 +246,11 @@ export class Compositor {
   private emptyLut: WebGLTexture | null = null;
   private frameNo = 0;
   lost = false;
+  /** The context was lost at some point: a restore brings a new context, but not the textures and LUTs of the old one. */
+  everLost = false;
 
   constructor(readonly canvas: HTMLCanvasElement, private preserve = false) {
-    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; });
+    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; this.everLost = true; });
     canvas.addEventListener('webglcontextrestored', () => { this.init(); });
     this.init();
   }
@@ -362,9 +364,12 @@ export class Compositor {
     }
   }
 
+  /** The context is gone now (the browser's event can come later than the loss itself). */
+  isLost(): boolean { return this.lost || this.gl.isContextLost(); }
+
   /** Draws the frame; returns on-canvas bounds of selectable layers (for hit testing). */
   draw(desc: FrameDesc, sources: Map<string, Drawable>): LayerBounds[] {
-    if (this.lost) return [];
+    if (this.isLost()) return [];
     const gl = this.gl;
     const W = this.canvas.width, H = this.canvas.height;
     this.frameNo++;

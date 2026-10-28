@@ -132,7 +132,7 @@ describe('timeline operations keep the project sound under any sequence of edits
       const { log, bad } = run(seed, 60);
       if (bad.length) expect.fail(`seed ${seed}, after:\n${log.slice(-6).join('\n')}\n→ ${bad.join('; ')}`);
     }
-  });
+  }, 60_000); // 18 000 edits: ~1 s on an idle Mac, several on a loaded one (a time limit here is no property)
 });
 
 it('×10 on the last 0.46 s of a video lowers the speed so the 0.1 s piece still ends inside the source (fuzz seed 15)', () => {

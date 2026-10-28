@@ -8,6 +8,7 @@ import { errorMessage, track } from './lib/telemetry';
 import { holdUpdates, newerVersionDeployed, othersWorking, reloadIntoUpdate, setUpdateApplier, shareWork, takeUpdateNotice, updatesHeld, whenUpdatesFree, whenUpdatesHeld } from './lib/update';
 import { useEditor } from './state/store';
 import { App } from './ui/App';
+import { keepError } from './lib/errorLog';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -40,8 +41,10 @@ useEditor.subscribe((s) => {
 
 window.addEventListener('unhandledrejection', (e) => {
   track('unhandled_rejection', { message: errorMessage(e.reason).slice(0, 120) });
+  keepError(e.reason, 'page'); // kept on this device for "Details" and ?diag (lib/errorLog.ts)
   console.error(e.reason);
 });
+window.addEventListener('error', (e) => { if (e.error) keepError(e.error, 'page'); });
 
 // A new version never replaces the running one under the person's hands (docs/12): 'autoUpdate' reloaded the page
 // the moment a new service worker took over, mid-export included, and the new worker deleted the old files from the

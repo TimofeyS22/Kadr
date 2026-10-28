@@ -2,16 +2,15 @@
 import type { ImageSegmenter, ImageSource } from '@mediapipe/tasks-vision';
 import type { SegMask } from './text';
 import { modelLoad } from './modelLoad';
+import { SEGMENTER_MODEL, visionFiles } from './vision';
 
 let segmenter: Promise<ImageSegmenter> | null = null;
 
 function getSegmenter(): Promise<ImageSegmenter> {
   segmenter ??= modelLoad((async () => {
-    const { FilesetResolver, ImageSegmenter } = await import('@mediapipe/tasks-vision');
-    const base = new URL(import.meta.env.BASE_URL, location.origin).href; // works under a sub-path (GitHub Pages)
-    const files = await FilesetResolver.forVisionTasks(`${base}mediapipe`);
-    const make = (delegate: 'GPU' | 'CPU') => ImageSegmenter.createFromOptions(files, {
-      baseOptions: { modelAssetPath: `${base}models/selfie_segmenter.tflite`, delegate },
+    const { ImageSegmenter } = await import('@mediapipe/tasks-vision');
+    const make = (delegate: 'GPU' | 'CPU') => ImageSegmenter.createFromOptions(visionFiles(), {
+      baseOptions: { modelAssetPath: SEGMENTER_MODEL(), delegate },
       runningMode: 'IMAGE',
       outputCategoryMask: false,
       outputConfidenceMasks: true,

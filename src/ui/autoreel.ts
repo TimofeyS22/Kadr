@@ -15,6 +15,7 @@ import { t } from '../lib/i18n';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { downloadLibraryTrack, loadManifest } from './actions';
+import { keepAwake } from '../lib/wakeLock';
 
 export interface ReelOptions {
   pauses: boolean; fillers: boolean; captions: boolean; preset: string; zoom: boolean; hook: boolean;
@@ -60,6 +61,7 @@ export async function makeReel(o: ReelOptions, onProgress: (stage: string, label
   };
   const check = () => { if (signal.aborted) throw new DOMException('Cancelled', 'AbortError'); };
   track('reel_started', { ...o, music: o.music ?? 'none', clips: mainTrack(p0).clips.length, seconds: Math.round(r.before) });
+  const awake = keepAwake(); // minutes of work: a dark screen would suspend it
   try {
     const clips = soundMainClips(p0);
     let words: CaptionWord[] = [];
@@ -153,6 +155,8 @@ export async function makeReel(o: ReelOptions, onProgress: (stage: string, label
     undoSteps(r.steps);
     if ((e as Error).name === 'AbortError') track('reel_cancelled', { steps: r.steps });
     throw e;
+  } finally {
+    awake();
   }
 }
 

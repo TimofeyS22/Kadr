@@ -5,17 +5,21 @@ import {
 } from '../engine/exporter';
 import { releaseSpeechModel } from '../engine/captions';
 import { player } from '../engine/player';
+import { within } from '../lib/limits';
 import { errorMessage, track } from '../lib/telemetry';
+import { keepAwake } from '../lib/wakeLock';
 import { editor, useEditor } from '../state/store';
 import { IOS, prepareStaleSounds, staleSoundClips } from './actions';
 import { Chips, Sheet, Toggle } from './controls';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
+import { keepError, type ErrorEntry } from '../lib/errorLog';
+import { ErrorDetails } from './ErrorDetails';
 
 type Format = 'video' | 'photo' | 'gif' | 'audio';
 const FORMATS: Record<Format, string> = { video: 'Video', photo: 'Photo', gif: 'GIF', audio: 'Audio' };
 
-type Phase = { kind: 'setup' } | { kind: 'running'; progress: number; label?: string } | { kind: 'done'; result: ExportResult; quick?: boolean } | { kind: 'error'; message: string };
+type Phase = { kind: 'setup' } | { kind: 'running'; progress: number; label?: string } | { kind: 'done'; result: ExportResult; quick?: boolean } | { kind: 'error'; message: string; detail: ErrorEntry };
 
 /**
  * Quick export (v1.3, owner's feedback "saving should not take a dance"): on by default, the Export button renders
@@ -39,6 +43,9 @@ export function startExport(): void {
   editor().openSheet('export');
 }
 
+/** The encoder gets this long to say which sizes it can do (docs/12 stage 2); then these are offered. */
+const RESOLUTIONS_MS = 8000;
+const FALLBACK_RESOLUTIONS: Resolution[] = [720, 1080];
 const QUALITY_MBPS: Record<Resolution, number> = { 720: 5, 1080: 10, 1440: 18, 2160: 35 };
 const LABEL: Record<Resolution, string> = { 720: '720p', 1080: '1080p', 1440: '2K', 2160: '4K' };
 const PRESETS = [
@@ -64,7 +71,8 @@ export function ExportSheet() {
   const abort = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    supportedResolutions(project.settings).then((r) => {
+    // The encoder is asked about each size; a browser that never answers gets the sizes every phone encodes.
+    void within(supportedResolutions(project.settings), RESOLUTIONS_MS, () => FALLBACK_RESOLUTIONS).catch(() => FALLBACK_RESOLUTIONS).then((r) => {
       setSupported(r);
       // The saved resolution, or the best this device can encode below it.
       const fit = r.includes(prefs.resolution) ? prefs.resolution : r.filter((x) => x <= prefs.resolution).at(-1) ?? r.at(-1);
@@ -84,9 +92,9 @@ export function ExportSheet() {
     const ac = new AbortController();
     abort.current = ac;
     setPhase({ kind: 'running', progress: 0 });
-    // Keep the screen on: a phone going to sleep is the most common way long exports die.
-    const lock = await (navigator as Navigator & { wakeLock?: { request(t: 'screen'): Promise<{ release(): Promise<void> }> } })
-      .wakeLock?.request('screen').catch(() => null);
+    // Keep the screen on: a phone going to sleep is the most common way long exports die. Not awaited: a lock that
+    // never answers must not hold the export.
+    const awake = keepAwake();
     track('export_started', { format, resolution: res, fps, quality, loudness, quick: isQuick, duration: Math.round(duration) });
     releaseSpeechModel(); // an export needs the memory more than a speech model kept for later
     try {
@@ -106,11 +114,12 @@ export function ExportSheet() {
     } catch (e) {
       // An encoder or decoder interrupted by Cancel fails with its own error: that is a cancel, not a failure.
       if ((e as Error).name === 'AbortError' || ac.signal.aborted) { setPhase({ kind: 'setup' }); track('export_cancelled'); return; }
-      setPhase({ kind: 'error', message: errorMessage(e) });
-      track('export_failed', { resolution: res, fps, quick: isQuick, error: errorMessage(e).slice(0, 80) });
+      const message = errorMessage(e);
+      setPhase({ kind: 'error', message, detail: keepError(e, 'export') });
+      track('export_failed', { resolution: res, fps, quick: isQuick, error: message.slice(0, 80) });
     }
     finally {
-      void lock?.release().catch(() => undefined);
+      awake();
     }
   }
 
@@ -188,6 +197,7 @@ export function ExportSheet() {
       {phase.kind === 'error' && (
         <div className="export-progress">
           <p className="error-text">{t('Export failed: {error}', { error: phase.message })}</p>
+          <details className="error-more"><summary>{t('Details')}</summary><ErrorDetails entry={phase.detail} /></details>
           <button className="btn" onClick={() => setPhase({ kind: 'setup' })}>{t('Back')}</button>
         </div>
       )}

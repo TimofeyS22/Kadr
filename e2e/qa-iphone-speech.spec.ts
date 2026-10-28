@@ -42,7 +42,11 @@ test('?diag on an iPhone-like device: the speech engine starts with a 1 GB heap,
   await expect(report(page)).toContainText('## Video export', { timeout: 120_000 });
   await expect(page.locator('.diag [role=status]')).toHaveCount(0, { timeout: 60_000 }); // every step finished
   const text = (await report(page).textContent()) ?? '';
-  for (const section of ['## Device', '## Codecs', '## Speech engine', '## WebAssembly memory', '## Video export']) expect(text).toContain(section);
+  for (const section of ['## Device', '## Codecs', '## Speech engine', '## WebAssembly memory', '## Address space pool', '## Video export']) expect(text).toContain(section);
+  // The pool (docs/12 §1.3 item 14): how many 4 GiB reservations the process gets, and the heap beside three of them.
+  expect(text).toMatch(/shared WebAssembly memories of 4 GiB at once: \d+/);
+  expect(text).toMatch(/resizable ArrayBuffers of 4 GiB at once: \d+/);
+  expect(text).toMatch(/heap 1024 MB with 3 resizable 4 GiB alive \(other worker\): \S+/);
   expect(text).toMatch(/## Speech engine\nresult: ok\n/);
   expect(text).toMatch(/heap: [\d.]+ MB of 1024 MB max/);
   // The plain ONNX Runtime build, from our own origin; nothing from the CDN transformers.js would pick.

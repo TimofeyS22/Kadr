@@ -4,6 +4,7 @@ import { produce } from 'immer';
 import { ASPECTS, createProject } from '../core/defaults';
 import { TEMPLATES, buildTemplate, type TemplateSpec } from '../core/templates';
 import type { AspectId } from '../core/types';
+import { IOS, standalone } from '../lib/device';
 import { errorMessage, track } from '../lib/telemetry';
 import { pickFiles } from '../lib/pickFiles';
 import { holdUpdates, useHoldUpdates } from '../lib/update';
@@ -65,6 +66,7 @@ export const browserSupported = (): boolean =>
   'VideoDecoder' in window && 'VideoEncoder' in window && !!document.createElement('canvas').getContext('webgl2');
 
 const open = (id: string) => { location.hash = `#/p/${id}`; };
+const KEEP_TIP_KEY = 'kadr.keepTip';
 
 export function Home() {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
@@ -75,6 +77,15 @@ export function Home() {
   const soundLost = (name: string, error: string) => toast(t('{name}: its sound does not decode in this browser ({error}). The video is added without sound.', { name, error }), 'info', 10_000);
   const { locale, setLocale } = useLocale();
   const supported = browserSupported();
+
+  // Safari's 7-day rule (docs/12 §1.3 item 4): a site not on the Home Screen loses its data after a week away.
+  const [keepTipSeen, setKeepTipSeen] = useState(() => { try { return !!localStorage.getItem(KEEP_TIP_KEY); } catch { return true; } });
+  const keepTip = IOS && !standalone() && !keepTipSeen && !busy && !!projects?.some((m) => m.duration > 0);
+  const dismissKeepTip = () => {
+    try { localStorage.setItem(KEEP_TIP_KEY, '1'); } catch { /* shown again next time */ }
+    setKeepTipSeen(true);
+    track('keep_tip_dismissed');
+  };
 
   const route = useStartRoute();
   const install = useInstall();
@@ -299,6 +310,13 @@ export function Home() {
         ))}
       </div>
 
+      {keepTip && (
+        <div className="banner keep-tip" role="note">
+          <p>{t('iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen so your projects stay: Share → Add to Home Screen. For an important project, also save a backup (↓).')}</p>
+          <button className="btn" onClick={dismissKeepTip}>{t('Got it')}</button>
+        </div>
+      )}
+
       <h2 className="section-title">{t('Your projects')}</h2>
       {projects === null ? <p className="hint">{t('Loading…')}</p> : projects.length === 0 ? (
         <p className="hint">{t('No projects yet. Start a new one or try the sample.')}</p>
@@ -322,7 +340,10 @@ export function Home() {
           ))}
         </ul>
       )}
-      <footer className="home-foot">{t('Projects and media are stored in this browser.')} Kadr v{__APP_VERSION__}</footer>
+      <footer className="home-foot">
+        {t('Projects and media are stored in this browser.')} Kadr v{__APP_VERSION__}
+        {' · '}<a href={`${locale}/privacy/`}>{t('Privacy')}</a>{' · '}<a href={`${locale}/licenses/`}>{t('Licenses')}</a>
+      </footer>
     </main>
   );
 }

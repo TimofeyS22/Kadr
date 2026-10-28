@@ -54,6 +54,8 @@ h1, h2, h3 { margin: 0; }
 .diag-report { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin: 12px 0 16px; }
 .banner { padding: 12px 14px; border-radius: var(--radius); background: var(--panel-2); margin: 16px 0; font-size: 14px; }
 .banner.error { background: #3a1c1c; color: #ffc9c9; }
+.banner.keep-tip { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.banner.keep-tip p { margin: 0; }
 
 /* ---------- Home ---------- */
 .home { max-width: 760px; margin: 0 auto; padding: calc(20px + var(--safe-top)) 16px calc(24px + var(--safe-bottom)); }
@@ -82,6 +84,7 @@ h1, h2, h3 { margin: 0; }
 .project-actions { position: absolute; top: 4px; right: 4px; display: flex; }
 .project-actions .icon-btn { width: 36px; height: 36px; background: rgba(0, 0, 0, 0.55); margin-left: 4px; }
 .home-foot { margin-top: 32px; color: var(--muted); font-size: 12px; }
+.home-foot a { display: inline-block; padding: 14px 4px; color: inherit; } /* a 44 px tap target in small type */
 
 /* ---------- Editor layout ---------- */
 .editor {
@@ -219,6 +222,12 @@ h1, h2, h3 { margin: 0; }
 .toasts { position: fixed; left: 50%; top: calc(58px + var(--safe-top)); transform: translateX(-50%); z-index: 50; display: grid; gap: 8px; width: min(92vw, 420px); }
 .toast { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: #24242e; font-size: 13px; text-align: left; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); }
 .toast.error { background: #3a1c1c; border-color: #5b2a2a; }
+.toast.with-detail { display: grid; gap: 8px; }
+.toast .toast-text { all: unset; cursor: pointer; }
+.toast .toast-more { justify-self: start; min-height: 44px; padding: 0 4px; background: none; border: 0; color: inherit; text-decoration: underline; font-size: 13px; }
+.error-details { display: grid; gap: 8px; }
+.error-details pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; background: rgba(0, 0, 0, 0.25); border-radius: 8px; padding: 8px; }
+.error-details .hint { margin: 0; }
 
 /* Phones: while a tool sheet is open the preview shrinks above it, so edits stay visible. */
 @media (max-width: 899px) {

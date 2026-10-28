@@ -1,9 +1,10 @@
 // Generates a sample project entirely in the browser (no network): two short synthesized clips
 // with music, a transition, a filter and an animated title. Doubles as an end-to-end fixture.
 import {
-  AudioBufferSource, BufferTarget, CanvasSource, Mp4OutputFormat, Output, QUALITY_MEDIUM, WebMOutputFormat,
+  AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, QUALITY_MEDIUM, WebMOutputFormat,
   getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
 } from 'mediabunny';
+import { MemoryTarget } from './memTarget';
 import { produce } from 'immer';
 import { anim, createProject, createTextClip, createVideoClip } from '../core/defaults';
 import { insertMain, placeClip, setTransition } from '../core/timeline';
@@ -73,7 +74,7 @@ async function synthClip(scene: number): Promise<Asset> {
   if (!codec) throw new MediaError('Video encoding is not supported in this browser');
   const mp4 = codec === 'avc';
   const audioCodec = await getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus']);
-  const output = new Output({ format: mp4 ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new BufferTarget() });
+  const output = new Output({ format: mp4 ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new MemoryTarget() });
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
@@ -92,7 +93,7 @@ async function synthClip(scene: number): Promise<Asset> {
   audio?.close();
   await output.finalize();
   const type = mp4 ? 'video/mp4' : 'video/webm';
-  return importFile(new Blob([output.target.buffer!], { type }), `${scene === 0 ? 'sunrise' : 'waves'}.${mp4 ? 'mp4' : 'webm'}`);
+  return importFile(output.target.blob(type), `${scene === 0 ? 'sunrise' : 'waves'}.${mp4 ? 'mp4' : 'webm'}`);
 }
 
 export async function createSampleProject(): Promise<Project> {

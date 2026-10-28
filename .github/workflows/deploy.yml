@@ -21,8 +21,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Actions on Node 24 (GitHub retires Node 20 for actions).
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -33,15 +34,25 @@ jobs:
         run: npm run build
         env:
           KADR_BASE: /Kadr/
+      # The main path on Chromium before anything is deployed (docs/12 stage 6): open, sample, split, undo, export.
+      - name: Smoke test the build in a browser
+        run: |
+          npx playwright install --with-deps chromium
+          npx vite preview --port 4191 --strictPort &
+          for i in $(seq 60); do curl -sf http://localhost:4191/Kadr/ > /dev/null && break; sleep 1; done
+          E2E_URL=http://localhost:4191/Kadr/ npx playwright test e2e/qa-smoke.spec.ts --project android-chromium
+        env:
+          KADR_BASE: /Kadr/
       # A tab opened before this deploy keeps loading its own code (docs/12, deploy skew): the files of the last
       # deployments go back into the site next to the new ones.
       - name: Keep the files of recent deployments
         if: github.ref == 'refs/heads/main'
         run: node scripts/keep-assets.mjs https://timofeys22.github.io/Kadr/ dist
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: github.ref == 'refs/heads/main'
         with:
           path: dist
+          retention-days: 30 # a known-good build to redeploy for a rollback (docs/12 G7)
 
   deploy:
     if: github.ref == 'refs/heads/main'
@@ -52,7 +63,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
-      - uses: actions/checkout@v4
+        uses: actions/deploy-pages@v5
+      - uses: actions/checkout@v6
       - name: Smoke test the live site (the new version and every kept file)
         run: node scripts/smoke-live.mjs https://timofeys22.github.io/Kadr/ "$(node -p "require('./package.json').version")"

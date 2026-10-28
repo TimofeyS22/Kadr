@@ -1,5 +1,9 @@
 // Voice-over recording with MediaRecorder (Safari records AAC/MP4, Chrome Opus/WebM; both import fine).
+import { within } from '../lib/limits';
+
 const TYPES = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+/** A recorder gets this long to hand over its last data after stop (docs/12 G2). */
+const STOP_MS = 3000;
 
 export class VoiceRecorder {
   private stream: MediaStream | null = null;
@@ -31,17 +35,22 @@ export class VoiceRecorder {
     return { level: Math.min(1, peak * 1.5), peak };
   }
 
+  /** The recording. A recorder that never reports its stop (seen in WebKit) gives what it has after STOP_MS. */
   stop(): Promise<Blob> {
     const rec = this.recorder;
-    return new Promise((resolve, reject) => {
-      if (!rec) { reject(new Error('Not recording')); return; }
-      rec.onstop = () => {
-        const blob = new Blob(this.chunks, { type: rec.mimeType || 'audio/webm' });
-        this.release();
-        resolve(blob);
-      };
-      rec.stop();
+    if (!rec) return Promise.reject(new Error('Not recording'));
+    const finish = () => {
+      const blob = new Blob(this.chunks, { type: rec.mimeType || 'audio/webm' });
+      this.release();
+      if (!blob.size) throw new Error('The recording is empty');
+      return blob;
+    };
+    const stopped = new Promise<Blob>((resolve, reject) => {
+      rec.onstop = () => { try { resolve(finish()); } catch (e) { reject(e as Error); } };
+      if (rec.state === 'inactive') rec.onstop(new Event('stop'));
+      else rec.stop();
     });
+    return within(stopped, STOP_MS, () => { rec.onstop = null; return finish(); });
   }
 
   cancel(): void {

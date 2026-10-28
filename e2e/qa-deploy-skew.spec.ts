@@ -17,7 +17,7 @@ const root = path.join(import.meta.dirname, '..');
 const fx = (n: string) => path.join(root, 'fixtures', n);
 const BUILD = process.env.NEW_DIST ?? path.join(root, 'dist');
 const OLD = process.env.OLD_DIST;
-const BIG = ['music', 'mediapipe', 'models', 'ru', 'en', 'diag']; // unhashed folders: linked, not copied
+const BIG = ['music', 'ru', 'en', 'diag']; // unhashed folders: linked, not copied
 
 /** A script CI runs around a deploy (.github/workflows/deploy.yml). Not execFileSync: the site is served from this process. */
 const run = async (script: string, ...args: string[]) => (await promisify(execFile)('node', [script, ...args], { cwd: root, encoding: 'utf8' })).stdout;

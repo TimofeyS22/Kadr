@@ -8,10 +8,11 @@ import { mark } from '../lib/perf';
 import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
 import { getBlob, getPeaks, putPeaks } from '../storage/db';
 import { ResilientSink, playableAudioTrack, type SoundSink } from './sound';
+import { within } from '../lib/limits';
 
 /** Error with a user-facing English message (a translation key); `vars` fill its {placeholders}. */
 export class MediaError extends Error {
-  constructor(message: string, readonly vars?: Record<string, string | number>) { super(message); }
+  constructor(message: string, readonly vars?: Record<string, string | number>) { super(message); this.name = 'MediaError'; }
 }
 
 export interface Probe {
@@ -281,6 +282,8 @@ export class MediaPool {
 
 export interface Thumb { t: number; bmp: ImageBitmap }
 const thumbCache = new Map<string, Promise<Thumb[]>>();
+/** One clip's thumbnails get this long (a decoder that hangs in the worker must not hold them forever, docs/12 G2). */
+const THUMBS_MS = 60_000;
 
 let thumbWorker: Worker | null | undefined;
 let nextJob = 0;
@@ -319,7 +322,13 @@ export function thumbnails(assetId: string, duration: number, height = 96): Prom
       const job: ThumbJob = { id: ++nextJob, blob, duration, height, count: Math.min(40, Math.max(2, Math.ceil(duration / 1.5))) };
       const w = worker();
       const out = w
-        ? await new Promise<Thumb[]>((resolve, reject) => { waiting.set(job.id, { out: [], resolve, reject }); w.postMessage(job); })
+        ? await within(new Promise<Thumb[]>((resolve, reject) => { waiting.set(job.id, { out: [], resolve, reject }); w.postMessage(job); }), THUMBS_MS, () => {
+          // A decoder in the worker hung: the worker goes (with what it holds), the strip retries on its next showing.
+          if (thumbWorker === w) { w.terminate(); thumbWorker = undefined; }
+          for (const x of waiting.values()) x.reject(new Error('thumbnails took too long'));
+          waiting.clear();
+          throw new Error('thumbnails took too long');
+        })
         : await (async () => { const list: Thumb[] = []; await renderThumbs(job, (t, bmp) => list.push({ t, bmp }), document.createElement('canvas')); return list; })();
       mark(`thumbs:${assetId}`);
       return out;

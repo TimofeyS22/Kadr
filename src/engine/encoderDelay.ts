@@ -3,7 +3,8 @@
 // its picture, and every processed sound (noise reduction, natural pitch, voice effects) added another 44 ms.
 // The delay is measured once per codec and channel count: a burst is encoded and decoded the way the app plays
 // sound (ResilientSink, by timestamp), and that many samples are then dropped before encoding.
-import { ALL_FORMATS, AudioBufferSource, BlobSource, BufferTarget, Input, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, type AudioCodec } from 'mediabunny';
+import { ALL_FORMATS, AudioBufferSource, BlobSource, Input, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, type AudioCodec } from 'mediabunny';
+import { MemoryTarget } from './memTarget';
 import { ResilientSink } from './sound';
 
 const measured = new Map<string, Promise<number>>();
@@ -39,7 +40,7 @@ async function measure(codec: AudioCodec, channels: number, sr: number, signal: 
   const len = sr, on = Math.round(0.3 * sr), f = 1000;
   const x = new Float32Array(len);
   for (let i = on; i < on + 0.1 * sr; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * f * (i - on)) / sr);
-  const output = new Output({ format: codec === 'aac' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new BufferTarget() });
+  const output = new Output({ format: codec === 'aac' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new MemoryTarget() });
   signal.addEventListener('abort', () => void output.cancel().catch(() => undefined)); // releases a codec that hung
   const source = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
   output.addAudioTrack(source);
@@ -49,7 +50,7 @@ async function measure(codec: AudioCodec, channels: number, sr: number, signal: 
   await source.add(buf);
   source.close();
   await output.finalize();
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(new Blob([output.target.buffer!])) });
+  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(output.target.blob()) });
   signal.addEventListener('abort', () => input.dispose());
   try {
     const track = await input.getPrimaryAudioTrack();

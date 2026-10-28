@@ -16,6 +16,8 @@ import { MediaError, captureFrame } from '../engine/media';
 import { importFile, importFiles, pickFiles } from '../engine/importer';
 import { putBlob } from '../storage/db';
 import { player } from '../engine/player';
+import { IOS } from '../lib/device';
+import { readBody, within } from '../lib/limits';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { mark } from '../lib/perf';
@@ -69,7 +71,7 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   if (assets.some((a) => a.kind === 'video')) iosVideoTip();
 }
 
-export const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+export { IOS };
 const IOS_TIP_KEY = 'kadr.iosVideoTip.v3';
 
 /**
@@ -454,33 +456,50 @@ export async function addCustomFont(clipId: string): Promise<void> {
   }
 }
 
+/** A music request that sends nothing for this long has hung. */
+const MUSIC_STALL_MS = 20_000;
+
 export const musicUrl = (path: string): string => new URL(`${import.meta.env.BASE_URL}music/${path}`, location.origin).href;
 
 /** Downloads a library track (with progress), imports it with its beat grid and puts it under the video. */
 let manifest: Promise<MusicManifest> | null = null;
 export function loadManifest(): Promise<MusicManifest> {
-  manifest ??= fetch(musicUrl('music.json')).then((r) => {
-    if (!r.ok) throw new Error('The music library is not available right now');
+  const unavailable = () => new MediaError('The music library is not available right now');
+  manifest ??= within(fetch(musicUrl('music.json')).then((r) => {
+    if (!r.ok) throw unavailable();
     return r.json() as Promise<MusicManifest>;
-  });
+  }), MUSIC_STALL_MS, () => { throw unavailable(); });
   manifest.catch(() => { manifest = null; });
   return manifest;
 }
 
 /** Downloads a library track (cached by the service worker afterwards) and stores it as a project asset. */
 export async function downloadLibraryTrack(tr: LibraryTrack, progress: (f: number) => void, signal: AbortSignal): Promise<Asset> {
-  const res = await fetch(musicUrl(tr.file), { signal });
-  if (!res.ok || !res.body) throw new MediaError('Could not download the track. Check the connection and try again.');
-  const reader = res.body.getReader();
-  const parts: Uint8Array<ArrayBuffer>[] = [];
-  let got = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parts.push(value as Uint8Array<ArrayBuffer>);
-    got += value.length;
-    progress(Math.min(0.95, got / tr.bytes));
+  // A connection that hangs fails after MUSIC_STALL_MS of silence instead of holding the reel forever (docs/12 G2).
+  const failed = () => new MediaError('Could not download the track. Check the connection and try again.');
+  const ctrl = new AbortController();
+  const cancel = () => ctrl.abort();
+  signal.addEventListener('abort', cancel);
+  try {
+    const res = await within(fetch(musicUrl(tr.file), { signal: ctrl.signal }), MUSIC_STALL_MS, () => { ctrl.abort(); throw failed(); });
+    if (!res.ok) throw failed();
+    const parts: Uint8Array<ArrayBuffer>[] = [];
+    let got = 0;
+    await readBody(res, (value) => {
+      parts.push(value);
+      got += value.length;
+      progress(Math.min(0.95, got / tr.bytes));
+    }, MUSIC_STALL_MS, failed, signal);
+    return await libraryAsset(tr, parts);
+  } catch (e) {
+    if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+    throw e;
+  } finally {
+    signal.removeEventListener('abort', cancel);
   }
+}
+
+async function libraryAsset(tr: LibraryTrack, parts: Uint8Array<ArrayBuffer>[]): Promise<Asset> {
   const a = await importFile(new File(parts, `${tr.title}.m4a`, { type: 'audio/mp4' }), `${tr.title} — ${tr.artist}`);
   return {
     ...a,

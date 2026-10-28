@@ -1,3 +1,4 @@
+import { noteError } from './errorLog';
 import { t } from './i18n';
 import { isStaleCode, updatingMessage } from './update';
 // Privacy-first product telemetry: event names and coarse numbers only, never media or text content.
@@ -20,6 +21,7 @@ export const telemetryEvents = (): readonly { name: string; props: Props; at: nu
 
 /** User-facing, translated message; MediaError-style errors carry `vars` for their placeholders. */
 export function errorMessage(e: unknown): string {
+  noteError(e); // the error toast showing this text keeps the details (lib/errorLog.ts)
   if (isStaleCode(e)) return updatingMessage(); // the page is reloading into a new version (lib/update.ts)
   // The browser's own words ("Load failed", "The quota has been exceeded.") say nothing a person can act on.
   if (e instanceof DOMException && e.name === 'QuotaExceededError') return t('Not enough storage for Kadr on this device. Delete old projects or free up space, then try again.');

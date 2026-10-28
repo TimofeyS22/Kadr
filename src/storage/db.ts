@@ -74,7 +74,7 @@ export async function saveProject(p: Project, thumb?: string): Promise<void> {
 
 export async function deleteProject(id: string): Promise<void> {
   const p = await loadProject(id);
-  if (p) await Promise.all([...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)].map(deleteMedia));
+  if (p) await Promise.all([...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)].map(deleteBlob));
   await del(`p:${id}`, store);
   await withIndex((index) => index.filter((m) => m.id !== id));
 }
@@ -86,14 +86,31 @@ const CHUNK = 16 * 1024 * 1024;
 interface Chunked { type: string; size: number; chunks: number }
 const assembled = new Map<string, Promise<Blob>>();
 
+/** The storage is full: as the one error the app explains (some engines say "quota" under another name). */
+function quotaError(e: unknown): DOMException | null {
+  if (!(e instanceof DOMException)) return null;
+  if (e.name === 'QuotaExceededError') return e;
+  return /quota/i.test(e.message) ? new DOMException(e.message, 'QuotaExceededError') : null;
+}
+
 export async function putBlob(assetId: string, blob: Blob): Promise<void> {
   try {
     await set(`b:${assetId}`, blob, store);
     return;
-  } catch { /* Blob storage unsupported here → chunks */ }
+  } catch (e) {
+    // Out of room is out of room in chunks too. Anything else is Safari refusing Blobs here (docs/12 stage 3).
+    const full = quotaError(e);
+    if (full) throw full;
+  }
   const chunks = Math.max(1, Math.ceil(blob.size / CHUNK));
-  for (let i = 0; i < chunks; i++) await set(`c:${assetId}:${i}`, await blob.slice(i * CHUNK, (i + 1) * CHUNK).arrayBuffer(), store);
-  await set(`c:${assetId}`, { type: blob.type, size: blob.size, chunks } satisfies Chunked, store);
+  try {
+    for (let i = 0; i < chunks; i++) await set(`c:${assetId}:${i}`, await blob.slice(i * CHUNK, (i + 1) * CHUNK).arrayBuffer(), store);
+    await set(`c:${assetId}`, { type: blob.type, size: blob.size, chunks } satisfies Chunked, store);
+  } catch (e) {
+    // A file written halfway is no file: its chunks go, or they would hold the space for nothing.
+    await Promise.all(Array.from({ length: chunks }, (_, i) => del(`c:${assetId}:${i}`, store).catch(() => undefined)));
+    throw quotaError(e) ?? e;
+  }
 }
 
 export async function getBlob(assetId: string): Promise<Blob | undefined> {
@@ -122,7 +139,8 @@ export async function getBlob(assetId: string): Promise<Blob | undefined> {
   }
 }
 
-async function deleteMedia(assetId: string): Promise<void> {
+/** A stored file and what was made from it (chunks, waveform). */
+export async function deleteBlob(assetId: string): Promise<void> {
   const meta = await get<Chunked>(`c:${assetId}`, store).catch(() => undefined);
   const keys = [`b:${assetId}`, `w:${assetId}`, `c:${assetId}`, ...Array.from({ length: meta?.chunks ?? 0 }, (_, i) => `c:${assetId}:${i}`)];
   assembled.delete(assetId);

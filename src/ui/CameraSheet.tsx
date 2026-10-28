@@ -10,11 +10,14 @@ import { addFiles } from './actions';
 import { Slider } from './controls';
 import { formatTime } from './format';
 import { useHoldUpdates } from '../lib/update';
+import { within } from '../lib/limits';
 
 const MAX_S = 10 * 60;
 const SCRIPT_KEY = 'kadr.script';
 type State = 'starting' | 'ready' | 'countdown' | 'recording' | 'saving' | 'error';
 type WakeLock = { release(): Promise<void> };
+/** The recorder gets this long to hand over its last chunk after stop (docs/12 G2). */
+const STOP_MS = 3000;
 
 const load = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
 const save = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* storage blocked */ } };
@@ -175,7 +178,11 @@ export function CameraSheet() {
     const r = rec.current;
     if (!r) return;
     setState('saving');
-    await new Promise<void>((res) => { r.recorder.onstop = () => res(); r.recorder.stop(); });
+    // A recorder that never reports its stop (seen in WebKit) keeps what it has: the 1 s chunks are already here.
+    await within(new Promise<void>((res) => {
+      r.recorder.onstop = () => res();
+      if (r.recorder.state === 'inactive') res(); else r.recorder.stop();
+    }), STOP_MS, () => undefined);
     r.mirror?.stop();
     void r.lock?.release().catch(() => undefined);
     rec.current = null;

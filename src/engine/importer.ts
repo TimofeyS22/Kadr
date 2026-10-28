@@ -1,7 +1,8 @@
 import { uid } from '../core/defaults';
 import { SNIFF_BYTES, sniffMime } from '../core/sniff';
 import type { Asset } from '../core/types';
-import { putBlob } from '../storage/db';
+import { within } from '../lib/limits';
+import { putBlob, requestPersistence } from '../storage/db';
 import { MediaError, probe } from './media';
 
 export const MAX_FILE_BYTES = 4 * 1024 ** 3;
@@ -20,8 +21,33 @@ export async function importFile(file: File | Blob, name = (file as File).name ?
   const { soundError, ...info } = await probe(file);
   if (soundError) onSoundLost?.(soundError);
   const asset: Asset = { id: uid(), name, mime: file.type, size: file.size, ...info };
+  await ensureRoom(file.size, name);
   await putBlob(asset.id, file);
+  persistOnce();
   return asset;
+}
+
+/** Room kept free beyond the file itself: the project, thumbnails and the browser's own bookkeeping. */
+const ROOM_MARGIN = 64 * 2 ** 20;
+
+/**
+ * Says before writing when the file will not fit (docs/12 stage 3): a full disk otherwise fails halfway, after the
+ * person waited. Where the browser does not say how much room there is, the write itself is the check.
+ */
+export async function ensureRoom(bytes: number, name: string): Promise<void> {
+  const est = await within(navigator.storage?.estimate?.() ?? Promise.resolve(undefined), 2000, () => undefined).catch(() => undefined);
+  const free = est?.quota ? est.quota - (est.usage ?? 0) : Infinity;
+  if (free < bytes + ROOM_MARGIN) {
+    throw new MediaError('Not enough storage on this device for “{name}” ({mb} MB). Delete old projects or free up space, then try again.', { name, mb: Math.ceil(bytes / 1e6) });
+  }
+}
+
+let persisted = false;
+/** Media are in: the browser is asked again to keep this site's data (it may say yes now that the site is used). */
+function persistOnce(): void {
+  if (persisted) return;
+  persisted = true;
+  void requestPersistence();
 }
 
 /** Imports files one by one; failures are reported per file instead of aborting the batch. */

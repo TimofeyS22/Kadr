@@ -4,10 +4,11 @@
 // Every sound is decoded with WebCodecs first; when the browser refuses, the rest of it is decoded by the
 // browser's own media stack (decodeAudioData) in short windows, so memory stays bounded on a phone.
 import {
-  AudioBufferSink, BufferTarget, EncodedAudioPacketSource, EncodedPacketSink, Mp3OutputFormat, Mp4OutputFormat,
+  AudioBufferSink, EncodedAudioPacketSource, EncodedPacketSink, Mp3OutputFormat, Mp4OutputFormat,
   OggOutputFormat, Output, WavOutputFormat, WebMOutputFormat,
   type EncodedPacket, type InputAudioTrack, type Input, type OutputFormat, type WrappedAudioBuffer,
 } from 'mediabunny';
+import { MemoryTarget } from './memTarget';
 
 export interface SoundSink {
   buffers(start?: number, end?: number): AsyncGenerator<WrappedAudioBuffer, void, unknown>;
@@ -82,14 +83,14 @@ export class NativeSink implements SoundSink {
       const format = CONTAINERS[i]();
       if (!format.getSupportedAudioCodecs().includes(codec)) continue;
       try {
-        const output = new Output({ format, target: new BufferTarget() });
+        const output = new Output({ format, target: new MemoryTarget() });
         const source = new EncodedAudioPacketSource(codec);
         output.addAudioTrack(source);
         await output.start();
         for (const [k, q] of list.entries()) await source.add(q.clone({ timestamp: q.timestamp - base }), k === 0 ? { decoderConfig } : undefined);
         source.close();
         await output.finalize();
-        const buffer = await ctx.decodeAudioData(output.target.buffer!);
+        const buffer = await ctx.decodeAudioData(output.target.buffer());
         this.container = i;
         // A decoder that trims its priming returns less than the packets hold: the cut is at the start.
         return { buffer, timestamp: base + Math.max(0, expected - buffer.duration) };

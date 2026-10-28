@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ASR_MODELS, checkSpeechEngine, checkSpeechModel, type AsrModel, type SpeechCheck } from '../engine/captions';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
+import type { DiagAsk } from '../engine/diag.worker';
+import { errorLog } from '../lib/errorLog';
 
 type Rows = [string, string][];
 const SR = 16000;
@@ -55,18 +57,66 @@ async function codecs(): Promise<Rows> {
   return rows;
 }
 
-/** Each size in a worker of its own (see diag.worker.ts). */
+type Answer = { ok: boolean; count?: number; error?: string };
+
+/** One question to a fresh diagnostics worker (see diag.worker.ts). The worker is ended by `end`, not here. */
+async function ask(msg: DiagAsk, ms = 10_000): Promise<{ answer: Answer; end: () => void }> {
+  const w = new Worker(new URL('../engine/diag.worker.ts', import.meta.url), { type: 'module' });
+  const answer = await timeout(new Promise<Answer>((res) => {
+    w.onmessage = (e) => res(e.data as Answer);
+    w.onerror = (e) => res({ ok: false, error: e.message || 'worker failed' });
+    w.postMessage(msg);
+  }), ms, { ok: false, error: `no answer in ${ms / 1000} s` });
+  return { answer, end: () => w.terminate() };
+}
+
+/** Each size in a worker of its own. */
 async function memory(): Promise<Rows> {
   const rows: Rows = [];
   for (const [size, shared] of [[4096, true], [2048, true], [1024, true], [512, true], [4096, false]] as const) {
-    const w = new Worker(new URL('../engine/diag.worker.ts', import.meta.url), { type: 'module' });
-    const r = await timeout(new Promise<{ ok: boolean; error?: string }>((res) => {
-      w.onmessage = (e) => res(e.data as { ok: boolean; error?: string });
-      w.onerror = (e) => res({ ok: false, error: e.message || 'worker failed' });
-      w.postMessage({ mb: size, shared });
-    }), 10_000, { ok: false, error: 'no answer in 10 s' });
-    w.terminate();
+    const { answer: r, end } = await ask({ mb: size, shared });
+    end();
     rows.push([`${shared ? 'shared' : 'plain'} ${size} MB`, r.ok ? 'ok' : r.error ?? 'failed']);
+  }
+  return rows;
+}
+
+/** At most this many 4 GiB reservations are counted: 64 GiB of address space is more than any phone has. */
+const POOL_MAX = 16;
+/** Resizable 4 GiB buffers kept while the speech heap is tried: three live mediabunny BufferTargets. */
+const POOL_HOLD = 3;
+
+/**
+ * The address-space pool (docs/12 §1.3 item 14): how many 4 GiB reservations this process gets, and whether the
+ * speech heap still fits while three resizable 4 GiB buffers are alive, in the same worker and in another one.
+ * Every step in fresh workers, ended right after.
+ */
+async function pool(): Promise<Rows> {
+  const rows: Rows = [];
+  const counted = (r: Answer) => `${r.count ?? 0}${(r.count ?? 0) >= POOL_MAX ? '+' : ''}${r.error ? ` (then ${r.error})` : ''}`;
+  for (const kind of ['shared', 'resizable'] as const) {
+    const { answer, end } = await ask({ op: 'count', kind, max: POOL_MAX }, 20_000);
+    end();
+    rows.push([`${kind === 'shared' ? 'shared WebAssembly memories' : 'resizable ArrayBuffers'} of 4 GiB at once`, counted(answer)]);
+  }
+  const verdict = (r: Answer) => (r.ok ? 'ok' : r.error ?? 'failed');
+  for (const mb of [1024, 512]) {
+    const { answer, end } = await ask({ op: 'heap', mb, hold: POOL_HOLD });
+    end();
+    rows.push([`heap ${mb} MB with ${POOL_HOLD} resizable 4 GiB alive (same worker)`, answer.count === POOL_HOLD ? verdict(answer) : `could not keep ${POOL_HOLD}: ${counted(answer)}`]);
+  }
+  for (const mb of [1024, 512]) {
+    const holder = await ask({ op: 'hold', kind: 'resizable', n: POOL_HOLD });
+    const label = `heap ${mb} MB with ${POOL_HOLD} resizable 4 GiB alive (other worker)`;
+    if (holder.answer.count !== POOL_HOLD) {
+      holder.end();
+      rows.push([label, `could not keep ${POOL_HOLD}: ${counted(holder.answer)}`]);
+      continue;
+    }
+    const { answer, end } = await ask({ op: 'heap', mb, hold: 0 });
+    end();
+    holder.end();
+    rows.push([label, verdict(answer)]);
   }
   return rows;
 }
@@ -128,11 +178,20 @@ async function sample(): Promise<Float32Array> {
   return out;
 }
 
+/** Errors this device showed (lib/errorLog.ts), newest first: what failed before the owner opened ?diag. */
+async function errors(): Promise<Rows> {
+  const list = await errorLog();
+  if (!list.length) return [['entries', 'none']];
+  return list.slice(-20).reverse().map((x) => [new Date(x.at).toISOString(), `Kadr ${x.version}, ${x.where}: ${x.kind}: ${x.message}`]);
+}
+
 const STEPS: [string, () => Promise<Rows>][] = [
+  ['Error log', errors],
   ['Device', device],
   ['Codecs', codecs],
   ['Speech engine', async () => speechRows(await checkSpeechEngine())],
   ['WebAssembly memory', memory],
+  ['Address space pool', pool],
   ['Video export', encoder],
 ];
 

@@ -1,9 +1,11 @@
 // Export: renders every frame through the same buildFrame → Compositor path as the preview,
 // mixes audio in sample-aligned windows, and muxes with Mediabunny (MP4 H.264/AAC when available).
 import {
-  AudioBufferSource, BufferTarget, CanvasSource, Mp4OutputFormat, Output, QUALITY_HIGH, QUALITY_VERY_HIGH,
+  AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, QUALITY_HIGH, QUALITY_VERY_HIGH,
   StreamTarget, WebMOutputFormat, canEncodeVideo, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
 } from 'mediabunny';
+import { MemoryTarget } from './memTarget';
+import { diskFile } from './opfs';
 import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
 import { Limiter, LoudnessMeter, normalizeGain } from '../core/dsp';
@@ -19,6 +21,7 @@ import { warmFaces } from './faces';
 import { warmSegmenter } from './segment';
 import { TextRasterizer } from './text';
 import { matchStreamRange } from './videoRange';
+import { within } from '../lib/limits';
 
 export type Resolution = 720 | 1080 | 1440 | 2160;
 export interface ExportOptions {
@@ -53,7 +56,17 @@ class FrameRenderer {
   }
   async draw(t: number): Promise<void> {
     const desc = buildFrame(this.p, Math.min(t, Math.max(0, projectDuration(this.p) - 1e-3)));
-    this.compositor.draw(desc, await resolveDrawables(desc, this.pool, this.text, this.width, this.height));
+    const sources = await resolveDrawables(desc, this.pool, this.text, this.width, this.height);
+    this.check();
+    this.compositor.draw(desc, sources);
+    this.check();
+  }
+  /**
+   * A lost WebGL context draws nothing, and a restored one has lost its textures: frames would be empty or wrong
+   * (docs/12 §1.3 item 12). The export fails and says why instead.
+   */
+  check(): void {
+    if (this.compositor.everLost || this.compositor.isLost()) throw new MediaError(GPU_LOST);
   }
   dispose(): void {
     this.pool.dispose();
@@ -135,7 +148,12 @@ export async function supportedResolutions(s: ProjectSettings): Promise<Resoluti
 // MessageChannel instead of setTimeout: timers are throttled to ~1/s in background tabs, messages are not.
 const yieldToUi = () => new Promise<void>((r) => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
 
-type Target = { target: BufferTarget | StreamTarget; result: () => Promise<Blob> };
+type Target = { target: StreamTarget; result: () => Promise<Blob> };
+
+const GPU_LOST = 'The graphics of this device were reset during the export (usually too little memory). Close other apps and export again.';
+/** The browser gets this long to say which codecs it can encode (docs/12 G2): a query that never answers is a failure. */
+const CAPS_MS = 10_000;
+const noAnswer = (): never => { throw new MediaError('This device did not say whether it can encode video. Restart the browser and try again.'); };
 
 /** The file system gets this long to open the export file; then the export goes to memory (QA, docs/11 §1.6). */
 const OPFS_MS = 5000;
@@ -199,23 +217,13 @@ async function warmModels(p: Project) {
 
 /** The export file in the origin-private file system, or null where it cannot be had. */
 async function openStream(ext: string, type: string): Promise<(Target & { drop: () => void }) | null> {
-  try {
-    const root = await navigator.storage.getDirectory();
-    for await (const name of root.keys()) if (name.startsWith('export-')) await root.removeEntry(name).catch(() => undefined);
-    const handle = await root.getFileHandle(`export-${Date.now()}.${ext}`, { create: true });
-    if (!('createWritable' in handle)) return null;
-    const writable = await handle.createWritable();
-    // Some WebKit contexts open the stream but fail on the first write: probe before committing to it.
-    await writable.write(new Uint8Array(1));
-    await writable.truncate(0);
-    return {
-      target: new StreamTarget(writable, { chunked: true }),
-      result: async () => new Blob([await handle.getFile()], { type }),
-      drop: () => void writable.abort().catch(() => undefined),
-    };
-  } catch {
-    return null; // OPFS unavailable (private mode, old browser)
-  }
+  const disk = await diskFile('export', ext);
+  if (!disk) return null; // OPFS unavailable (private mode, old browser)
+  return {
+    target: new StreamTarget(disk.writable, { chunked: true }),
+    result: async () => new Blob([await disk.file()], { type }),
+    drop: disk.drop,
+  };
 }
 
 /**
@@ -231,14 +239,8 @@ async function openTarget(ext: string, type: string): Promise<Target> {
   const got = await Promise.race([stream, late]).finally(() => clearTimeout(timer));
   if (got) return got;
   void stream.then((s) => s?.drop());
-  const target = new BufferTarget();
-  return {
-    target,
-    result: async () => {
-      if (!target.buffer) throw new MediaError('Export produced no data');
-      return new Blob([target.buffer], { type });
-    },
-  };
+  const target = new MemoryTarget();
+  return { target, result: async () => target.blob(type) };
 }
 
 export async function exportProject(
@@ -248,14 +250,14 @@ export async function exportProject(
   const duration = projectDuration(p);
   if (duration <= 0) throw new MediaError('The timeline is empty');
   const [width, height] = outputSize(p.settings, opts.resolution);
-  const videoCodec = await getFirstEncodableVideoCodec(['avc', 'vp9', 'av1'], { width, height });
+  const videoCodec = await within(getFirstEncodableVideoCodec(['avc', 'vp9', 'av1'], { width, height }), CAPS_MS, noAnswer);
   if (!videoCodec) throw new MediaError('This device cannot encode {w}×{h} video. Try a lower resolution.', { w: width, h: height });
   const mp4 = videoCodec === 'avc';
-  const audioCodec = await getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus'], { numberOfChannels: 2, sampleRate: SAMPLE_RATE });
+  const audioCodec = await within(getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus'], { numberOfChannels: 2, sampleRate: SAMPLE_RATE }), CAPS_MS, noAnswer);
 
   const type = mp4 ? 'video/mp4' : 'video/webm';
   const { target, result } = await openTarget(mp4 ? 'mp4' : 'webm', type);
-  const streaming = target instanceof StreamTarget;
+  const streaming = !(target instanceof MemoryTarget); // to the file system: the index goes at the end
   const output = new Output({
     format: mp4 ? new Mp4OutputFormat({ fastStart: streaming ? false : 'in-memory' }) : new WebMOutputFormat(),
     target,
@@ -293,6 +295,7 @@ export async function exportProject(
       if (i % 8 === 0) await yieldToUi();
     }
     await guard.race(pumpAudio(Infinity));
+    frames.check(); // the last frame went to the encoder with the context it was drawn with
     video.close();
     audio?.close();
     await guard.race(output.finalize());
@@ -324,7 +327,7 @@ export async function exportAudio(p: Project, loudness: boolean, onProgress: (f:
   const codec = await getFirstEncodableAudioCodec(['aac', 'opus'], { numberOfChannels: 2, sampleRate: SAMPLE_RATE });
   if (!codec) throw new MediaError('This browser cannot encode audio');
   const m4a = codec === 'aac';
-  const output = new Output({ format: m4a ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new BufferTarget() });
+  const output = new Output({ format: m4a ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new MemoryTarget() });
   const audio = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
   output.addAudioTrack(audio);
   const pool = new MediaPool(16);
@@ -342,7 +345,7 @@ export async function exportAudio(p: Project, loudness: boolean, onProgress: (f:
     }
     audio.close();
     await output.finalize();
-    const blob = new Blob([output.target.buffer!], { type: m4a ? 'audio/mp4' : 'audio/webm' });
+    const blob = output.target.blob(m4a ? 'audio/mp4' : 'audio/webm');
     return { blob, fileName: `${fileBase(p)}.${m4a ? 'm4a' : 'webm'}`, seconds: (performance.now() - started) / 1000 };
   } catch (e) {
     await abandon(output, signal, [audio]);

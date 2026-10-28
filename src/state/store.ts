@@ -2,13 +2,15 @@ import { produce } from 'immer';
 import { create } from 'zustand';
 import { findClip } from '../core/timeline';
 import type { Project } from '../core/types';
+import { entryFor, logError, takeNoted, type ErrorEntry } from '../lib/errorLog';
 import { reloadPending, updatingMessage } from '../lib/update';
 
 export type SheetId =
   | 'speed' | 'volume' | 'adjust' | 'filters' | 'transform' | 'text' | 'transition' | 'canvas' | 'export'
   | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera' | 'music' | 'reel' | 'chroma' | 'voice';
 
-export interface Toast { id: number; text: string; kind: 'info' | 'error' }
+/** `detail`: what an error toast offers under "Details" (lib/errorLog.ts); `kept`: opened, so it stays until closed. */
+export interface Toast { id: number; text: string; kind: 'info' | 'error'; detail?: ErrorEntry; kept?: boolean }
 /** A long on-device job (reverse, cutout model load…) shown as a progress bar with Cancel. */
 export interface Busy { label: string; progress: number | null; cancel?: () => void }
 
@@ -60,6 +62,8 @@ export interface EditorState {
   setZoom(z: number): void;
   toast(text: string, kind?: Toast['kind'], ms?: number): void;
   dismiss(id: number): void;
+  /** Keeps a toast on screen (its details are open). */
+  keep(id: number): void;
 }
 
 let toastId = 0;
@@ -134,10 +138,15 @@ export const useEditor = create<EditorState>()((set, get) => ({
     // The page is reloading into a new version (lib/update.ts): what failed on the way is that, not a fault to report.
     if (kind === 'error' && reloadPending()) { text = updatingMessage(); kind = 'info'; }
     const id = ++toastId;
-    set((s) => ({ toasts: [...s.toasts.slice(-2), { id, text, kind }] }));
-    setTimeout(() => get().dismiss(id), ms ?? (kind === 'error' ? 6000 : 3000));
+    // The error behind the text (noted by errorMessage) is kept on this device and offered under "Details".
+    const cause = kind === 'error' ? takeNoted() : null;
+    const detail = cause ? entryFor(cause.e, get().sheet ?? (get().project ? 'editor' : 'home')) : undefined;
+    if (detail) void logError(detail);
+    set((s) => ({ toasts: [...s.toasts.slice(-2), { id, text, kind, detail }] }));
+    setTimeout(() => { if (!get().toasts.find((x) => x.id === id)?.kept) get().dismiss(id); }, ms ?? (kind === 'error' ? 6000 : 3000));
   },
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  keep: (id) => set((s) => ({ toasts: s.toasts.map((x) => (x.id === id ? { ...x, kept: true } : x)) })),
 }));
 
 export const editor = () => useEditor.getState();

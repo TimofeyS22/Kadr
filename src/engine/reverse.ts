@@ -1,10 +1,11 @@
 // Reverse: re-encodes the used part of a clip backwards (frames and sound) into a new asset.
 // Frames are decoded in short windows from the end so memory stays bounded on phones.
 import {
-  ALL_FORMATS, AudioBufferSource, BlobSource, BufferTarget, CanvasSink, CanvasSource, Input,
+  ALL_FORMATS, AudioBufferSource, BlobSource, CanvasSink, CanvasSource, Input,
   Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
   type WrappedCanvas,
 } from 'mediabunny';
+import { MemoryTarget } from './memTarget';
 import type { Asset, Project, VideoClip } from '../core/types';
 import { getBlob } from '../storage/db';
 import { importFile } from './importer';
@@ -36,7 +37,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     if (!vCodec) throw new MediaError('This browser cannot encode video');
     const mp4 = vCodec === 'avc';
     const aCodec = audio ? await getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus']) : null;
-    const output = new Output({ format: mp4 ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new BufferTarget() });
+    const output = new Output({ format: mp4 ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new MemoryTarget() });
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -91,7 +92,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     aSource?.close();
     await output.finalize();
     const type = mp4 ? 'video/mp4' : 'video/webm';
-    return await importFile(new Blob([output.target.buffer!], { type }), `${asset.name.replace(/\.[^.]+$/, '')} (reversed).${mp4 ? 'mp4' : 'webm'}`);
+    return await importFile(output.target.blob(type), `${asset.name.replace(/\.[^.]+$/, '')} (reversed).${mp4 ? 'mp4' : 'webm'}`);
   } finally {
     input.dispose();
   }

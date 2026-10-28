@@ -2,16 +2,15 @@
 import type { FaceDetector } from '@mediapipe/tasks-vision';
 import type { Rect } from '../core/types';
 import { modelLoad } from './modelLoad';
+import { FACE_MODEL, visionFiles } from './vision';
 
 let detector: Promise<FaceDetector> | null = null;
 
 function getDetector(): Promise<FaceDetector> {
   detector ??= modelLoad((async () => {
-    const { FilesetResolver, FaceDetector } = await import('@mediapipe/tasks-vision');
-    const base = new URL(import.meta.env.BASE_URL, location.origin).href;
-    const files = await FilesetResolver.forVisionTasks(`${base}mediapipe`);
-    const make = (delegate: 'GPU' | 'CPU') => FaceDetector.createFromOptions(files, {
-      baseOptions: { modelAssetPath: `${base}models/blaze_face_short_range.tflite`, delegate },
+    const { FaceDetector } = await import('@mediapipe/tasks-vision');
+    const make = (delegate: 'GPU' | 'CPU') => FaceDetector.createFromOptions(visionFiles(), {
+      baseOptions: { modelAssetPath: FACE_MODEL(), delegate },
       runningMode: 'IMAGE',
       minDetectionConfidence: 0.4,
     });

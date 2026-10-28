@@ -5,7 +5,10 @@ import { PAGES } from './tasks';
 
 const SITE = 'https://example.test/Kadr/';
 const files = buildSite(SITE);
-const html = Object.entries(files).filter(([f]) => f.endsWith('.html'));
+const all = Object.entries(files).filter(([f]) => f.endsWith('.html'));
+const isLegal = (f: string) => /\/(privacy|licenses)\/index\.html$/.test(f);
+const html = all.filter(([f]) => !isLegal(f));
+const legal = all.filter(([f]) => isLegal(f));
 const tag = (s: string, re: RegExp) => re.exec(s)?.[1] ?? '';
 const decode = (s: string) => s.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
@@ -68,7 +71,30 @@ describe('task pages (docs/08 C)', () => {
       for (const l of LANGS) expect(s, f).toMatch(new RegExp(`hreflang="${l}" href="${SITE.replace(/\./g, '\\.')}${l}/`));
     }
     const locs = [...files['sitemap.xml'].matchAll(/<loc>(.*?)<\/loc>/g)].map((m) => m[1]);
-    expect(locs.length).toBe(html.length + 1);
+    expect(locs.length).toBe(all.length + 1);
     expect(files['robots.txt']).toContain(`Sitemap: ${SITE}sitemap.xml`);
+  });
+});
+
+describe('privacy and licenses (docs/12 stage 6)', () => {
+  it('exist in both languages with a title, a description, an H1 and no scripts', () => {
+    expect(legal.map(([f]) => f).sort()).toEqual(['en/licenses/index.html', 'en/privacy/index.html', 'ru/licenses/index.html', 'ru/privacy/index.html']);
+    for (const [f, s] of legal) {
+      expect(decode(tag(s, /<title>(.*?)<\/title>/)).length, f).toBeLessThanOrEqual(60);
+      expect(decode(tag(s, /<meta name="description" content="(.*?)">/)).length, f).toBeLessThanOrEqual(160);
+      expect(s, f).toMatch(/<h1>.+<\/h1>/);
+      expect(s.match(/<script(?! type="application\/ld\+json")/g), f).toBeNull();
+      expect(s.match(/src="https?:/g), f).toBeNull(); // links out, never loads anything from elsewhere
+    }
+  });
+  it('give the attributions the licenses ask for: SOVA (CC BY 4.0) with changes, MPL source, every model', () => {
+    for (const lang of LANGS) {
+      const s = files[`${lang}/licenses/index.html`];
+      expect(s).toContain('href="https://huggingface.co/datasets/bond005/sova_rudevices"');
+      expect(s).toContain('href="https://creativecommons.org/licenses/by/4.0/"');
+      expect(s).toContain('href="https://github.com/Vanilagy/mediabunny"');
+      expect(s).toContain('scripts/no-reserve.ts');
+      for (const m of ['GigaAM v3', 'Whisper', 'Silero VAD', 'Selfie Segmenter', 'BlazeFace', 'RNNoise', 'SIL Open Font License', 'CC0 1.0']) expect(s, `${lang}: ${m}`).toContain(m);
+    }
   });
 });
