@@ -5,6 +5,8 @@ import { ASPECTS, createProject } from '../core/defaults';
 import { TEMPLATES, buildTemplate, type TemplateSpec } from '../core/templates';
 import type { AspectId } from '../core/types';
 import { errorMessage, track } from '../lib/telemetry';
+import { pickFiles } from '../lib/pickFiles';
+import { holdUpdates, useHoldUpdates } from '../lib/update';
 import { useEditor } from '../state/store';
 import { deleteProject, listProjects, loadProject, requestPersistence, saveProject, type ProjectMeta } from '../storage/db';
 import { formatTime } from './format';
@@ -28,12 +30,15 @@ function useStartRoute(): TaskId | 'share' | null {
   return r;
 }
 
-/** Files shared from another app (parked by public/share-target.js), as File objects; the cache is emptied. */
+/**
+ * Files shared from another app (parked by public/share-target.js), as File objects. `clear` empties the cache once
+ * they are in a project: a page that reloads or is killed before that finds them again.
+ */
 let taking = false; // React StrictMode runs effects twice in development; the shared files are taken once
 /** null: another call is already taking them. */
-async function takeSharedFiles(): Promise<File[] | null> {
+async function takeSharedFiles(): Promise<{ files: File[]; clear(): Promise<void> } | null> {
   if (taking) return null;
-  if (!('caches' in window)) return [];
+  if (!('caches' in window)) return { files: [], clear: async () => undefined };
   taking = true;
   const cache = await caches.open('kadr-share');
   const keys = await cache.keys();
@@ -41,10 +46,15 @@ async function takeSharedFiles(): Promise<File[] | null> {
   for (const k of keys) {
     const res = await cache.match(k);
     if (res) files.push(new File([await res.blob()], decodeURIComponent(res.headers.get('x-file-name') ?? 'shared'), { type: res.headers.get('content-type') ?? '' }));
-    await cache.delete(k);
   }
   taking = false;
-  return files;
+  return { files, clear: async () => { await Promise.all(keys.map((k) => cache.delete(k))); } };
+}
+
+/** A tap's whole job (the picker, the import, opening the project) holds updates: a reload in the picker loses the files. */
+async function held<T>(job: () => Promise<T>): Promise<T> {
+  const release = holdUpdates(); // before the job's first await, so the picker still opens inside the tap
+  try { return await job(); } finally { release(); }
 }
 
 const ASPECT_HINT: Record<AspectId, string> = {
@@ -60,6 +70,7 @@ export function Home() {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  useHoldUpdates(!!busy);
   const toast = useEditor((s) => s.toast);
   const soundLost = (name: string, error: string) => toast(t('{name}: its sound does not decode in this browser ({error}). The video is added without sound.', { name, error }), 'info', 10_000);
   const { locale, setLocale } = useLocale();
@@ -90,20 +101,25 @@ export function Home() {
     const spec = TASKS[task];
     track(fromLink ? 'deeplink_started' : 'task_started', { task });
     if (!spec.accept) { await openWithTask(createProject(t(spec.title), '9:16'), task); return; }
-    const { pickFiles } = await import('../engine/importer');
-    const files = await pickFiles(spec.accept);
-    if (files.length) await fromFiles(files, task, t(spec.title));
+    const accept = spec.accept;
+    await held(async () => {
+      const files = await pickFiles(accept);
+      if (files.length) await fromFiles(files, task, t(spec.title));
+    });
   }
 
   // Android "Share → Kadr": the files are waiting in the cache.
   useEffect(() => {
     if (route !== 'share') return;
     history.replaceState(null, '', location.pathname + location.hash); // drop ?shared=N
-    void takeSharedFiles().then((files) => {
-      if (!files) return;
+    void held(async () => { // #/share counts as work too (main.tsx): no new version until the files are in a project
+      const shared = await takeSharedFiles();
+      if (!shared) return;
+      const { files, clear } = shared;
       track('share_target_received', { files: files.length, kinds: [...new Set(files.map((f) => f.type.split('/')[0]))].join(',') });
-      if (files.length) void fromFiles(files, null, t('Shared video'));
+      if (files.length) await fromFiles(files, null, t('Shared video'));
       else { history.replaceState(null, '', location.pathname); toast(t('Nothing to add was shared')); }
+      await clear();
     }).catch((e) => toast(errorMessage(e), 'error'));
   }, [route]);
 
@@ -130,7 +146,6 @@ export function Home() {
   }
 
   async function restore() {
-    const { pickFiles } = await import('../engine/importer');
     const [file] = await pickFiles('.kadr,.zip,application/zip', false);
     if (!file) return;
     setBusy(t('Restoring the backup…'));
@@ -165,8 +180,8 @@ export function Home() {
   }
 
   async function fromTemplate(tpl: TemplateSpec) {
-    const { pickFiles, importFiles } = await import('../engine/importer');
     const files = await pickFiles(tpl.music === 'none' ? 'video/*,image/*' : 'video/*,image/*,audio/*');
+    const { importFiles } = await import('../engine/importer');
     if (!files.length) return;
     const musicFiles = files.filter((f) => f.type.startsWith('audio/'));
     const visualFiles = files.filter((f) => !musicFiles.includes(f));
@@ -252,7 +267,7 @@ export function Home() {
         <div className="home-actions">
           <button className="btn primary big" disabled={!supported} onClick={() => setPicking((v) => !v)}><Plus size={20} /> {t('New project')}</button>
           <button className="btn big" disabled={!supported} onClick={() => void sample()}><Sparkles size={18} /> {t('Try a sample')}</button>
-          <button className="btn big" onClick={() => void restore()}><ArchiveRestore size={18} /> {t('Restore backup')}</button>
+          <button className="btn big" onClick={() => void held(restore)}><ArchiveRestore size={18} /> {t('Restore backup')}</button>
           {install && <button className="btn big" onClick={() => void install()}><Smartphone size={18} /> {t('Install Kadr')}</button>}
         </div>
       )}
@@ -276,7 +291,7 @@ export function Home() {
       <h2 className="section-title">{t('Start from a template')}</h2>
       <div className="template-grid">
         {TEMPLATES.map((tpl) => (
-          <button key={tpl.id} className="template-card" disabled={!supported || !!busy} onClick={() => void fromTemplate(tpl)}>
+          <button key={tpl.id} className="template-card" disabled={!supported || !!busy} onClick={() => void held(() => fromTemplate(tpl))}>
             <span className={`template-art t-${tpl.id}`} style={{ aspectRatio: ASPECTS[tpl.aspect].join(' / ') }} aria-hidden />
             <b>{t(tpl.name)}</b>
             <small>{t(tpl.description)}</small>

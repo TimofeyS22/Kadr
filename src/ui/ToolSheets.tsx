@@ -25,6 +25,7 @@ import { PaceBar, learnPace, speechStage, speechStages } from './pace';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
 import { StyleSwatch } from './swatch';
+import { useHoldUpdates } from '../lib/update';
 
 // ---------- Crop ----------
 
@@ -96,6 +97,7 @@ const extFor = (type: string) => (type.includes('mp4') ? 'm4a' : type.includes('
 
 export function VoiceoverBody() {
   const [state, setState] = useState<'idle' | 'asking' | 'recording' | 'saving'>('idle');
+  useHoldUpdates(state !== 'idle'); // a reload would lose the recording
   const [elapsed, setElapsed] = useState(0);
   const [level, setLevel] = useState(0);
   const [meter, setMeter] = useState<ReturnType<typeof meterStep>>({ ...METER_IDLE, clip: false });
@@ -239,6 +241,7 @@ export function CaptionsBody() {
   const [source, setSource] = useState<'speech' | 'script'>(() => (script ? 'script' : 'speech'));
   // What the job is doing, as words; the bar itself is drawn from the pace (docs/09 Q4).
   const [progress, setProgress] = useState<string | null>(null);
+  useHoldUpdates(progress !== null);
   const pace = useRef<Pace | null>(null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);

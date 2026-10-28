@@ -1,6 +1,6 @@
 /// <reference types="vitest/config" />
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -23,11 +23,21 @@ const e2eUpload: Plugin = {
   },
 };
 
-// public/ort exists only for the dev server; the production bundle ships its own hashed copy of the WASM.
-const dropDevOrt: Plugin = {
-  name: 'kadr-drop-dev-ort',
+// public/ort exists only for the dev server; the production bundle ships its own hashed copy of the WASM. The
+// asyncify ONNX Runtime (27 MB) is the build transformers.js would pick; the speech worker loads the plain one
+// (asr.worker.ts), so it is never requested and stays out of the site (every deploy keeps old files, docs/12).
+let outDir = 'dist';
+const dropUnusedOrt: Plugin = {
+  name: 'kadr-drop-unused-ort',
   apply: 'build',
-  closeBundle() { rmSync(join(import.meta.dirname, 'dist', 'ort'), { recursive: true, force: true }); },
+  configResolved(c) { outDir = resolve(c.root, c.build.outDir); },
+  closeBundle() {
+    rmSync(join(outDir, 'ort'), { recursive: true, force: true });
+    if (!existsSync(join(outDir, 'assets'))) return;
+    for (const f of readdirSync(join(outDir, 'assets'), { withFileTypes: true })) {
+      if (f.isFile() && /^ort-wasm-simd-threaded\.asyncify-.*\.wasm$/.test(f.name)) rmSync(join(outDir, 'assets', f.name));
+    }
+  },
 };
 
 // Task pages, sitemap and robots.txt (docs/08 C) next to the app, plus the app's own description and Open Graph.
@@ -48,13 +58,16 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
   // GitHub Pages serves the app from /<repo>/; CI sets KADR_BASE=/Kadr/.
   base: process.env.KADR_BASE ?? '/',
+  // A chunk named after a dot-folder (@soundtouchjs/core's "dist" → ".dist-*.js") is skipped by the precache glob:
+  // voice effects and pitch-kept speed then fail offline. Chunk names never start with a dot.
+  build: { rollupOptions: { output: { chunkFileNames: (c) => `assets/${c.name.replace(/^\.+/, '') || 'chunk'}-[hash].js` } } },
   plugins: [
     react(),
     e2eUpload,
-    dropDevOrt,
+    dropUnusedOrt,
     taskPages,
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt', // the app decides when a new version takes over (src/main.tsx)
       includeAssets: ['icon.svg'],
       manifest: {
         name: 'Kadr — video editor',
@@ -83,7 +96,7 @@ export default defineConfig({
           {
             urlPattern: ({ url }) => /\/(mediapipe|models)\//.test(url.pathname) || /\/assets\/(rnnoise|asr\.worker|vision_bundle|ort-wasm)[-.]/.test(url.pathname),
             handler: 'CacheFirst',
-            options: { cacheName: 'kadr-ai', expiration: { maxEntries: 16 } },
+            options: { cacheName: 'kadr-ai', expiration: { maxEntries: 32 } }, // two generations of the speech runtime fit
           },
           {
             // Music library: the list refreshes in the background; tracks are kept once heard or added. Range
@@ -107,7 +120,10 @@ export default defineConfig({
       },
     }),
   ],
+  // Builds with VITE_MODEL_HOST=/hf/ (simulator and device tests, asr.worker.ts) fetch models from their own origin;
+  // the preview server relays to Hugging Face and follows its redirects to the file CDN itself.
+  preview: { proxy: { '/hf/': { target: 'https://huggingface.co', changeOrigin: true, followRedirects: true, rewrite: (p) => p.replace(/^\/hf/, '') } } },
   // Pre-bundle lazily imported packages so the dev server doesn't reload the page when they are first used.
   optimizeDeps: { include: ['@huggingface/transformers', '@soundtouchjs/core', '@mediapipe/tasks-vision', '@shiguredo/rnnoise-wasm', 'fflate'] },
-  test: { include: ['src/**/*.test.ts', 'seo/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.ts', 'seo/**/*.test.ts', 'scripts/**/*.test.ts'] },
 });

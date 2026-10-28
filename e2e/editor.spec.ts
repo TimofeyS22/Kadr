@@ -3736,6 +3736,46 @@ test('an export never waits forever: an encoder probe that never answers and sto
   expect(took, 'the waits are bounded').toBeLessThan(60);
 });
 
+test('an encoder that stops answering mid-export ends the export with a clear message, not a percent that never moves', async ({ page }) => {
+  test.setTimeout(180_000);
+  // As the iOS Simulator's H.264 encoder does (docs/12): the first frames are encoded, then nothing comes back and a
+  // flush never ends. Before, the export stood at the same percent for good.
+  await page.addInitScript(() => {
+    const w = window as unknown as { VideoEncoder?: typeof VideoEncoder; __stuck: number; __encoders: VideoEncoder[] };
+    w.__stuck = 0;
+    w.__encoders = [];
+    const Real = w.VideoEncoder;
+    if (!Real) return;
+    w.VideoEncoder = class extends Real {
+      constructor(init: VideoEncoderInit) {
+        super(init);
+        w.__encoders.push(this);
+        let frames = 0;
+        const encode = this.encode.bind(this);
+        const flush = this.flush.bind(this);
+        this.encode = (frame, o) => { if (++frames <= 10) encode(frame, o); else w.__stuck++; };
+        this.flush = () => (frames > 10 ? new Promise<void>(() => undefined) : flush());
+      }
+    };
+  });
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('radio', { name: 'Video', exact: true }).click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  const started = Date.now();
+  await expect(page.getByText(/video encoder of this device stopped responding/)).toBeVisible({ timeout: 60_000 });
+  const took = (Date.now() - started) / 1000;
+  console.log(`stuck encoder: the export ended in ${took.toFixed(1)} s`);
+  expect(await page.evaluate(() => (window as unknown as { __stuck: number }).__stuck), 'the encoder really stopped').toBeGreaterThan(0);
+  expect(took).toBeLessThan(45);
+  // The stuck encoder is closed, not left holding its frames and the hardware (CLAUDE.md: resources released).
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __encoders: VideoEncoder[] }).__encoders.filter((e) => e.state !== 'closed').length)).toBe(0);
+  // Nothing is left holding the encoder: the next export with a working encoder would start (the sheet is usable).
+  await expect(page.getByRole('button', { name: /Back|Export again/ }).first()).toBeVisible();
+});
+
 // ---------- QA docs/11 §1.6: a sound decoder that fails for a moment ----------
 
 test('a sound decoder that fails once (as WebKit\'s both did under load) does not cost a video its sound; one that never works says so', async ({ page }, info) => {

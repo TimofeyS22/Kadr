@@ -16,6 +16,7 @@ import { PaceBar, learnPace, speechStages } from './pace';
 import { Chips, Toggle } from './controls';
 import { MOOD_LABEL } from './MusicSheet';
 import { StyleSwatch } from './swatch';
+import { useHoldUpdates } from '../lib/update';
 
 const KEY = 'kadr.reel';
 function loadOptions(): ReelOptions {
@@ -32,6 +33,7 @@ type Phase = { kind: 'setup' } | { kind: 'running'; label: string } | { kind: 'd
 export function ReelBody() {
   const [o, setO] = useState(loadOptions);
   const [phase, setPhase] = useState<Phase>({ kind: 'setup' });
+  useHoldUpdates(phase.kind === 'running');
   const abort = useRef<AbortController | null>(null);
   const pace = useRef<Pace | null>(null);
   const set = (patch: Partial<ReelOptions>) => setO((x) => { const n = { ...x, ...patch }; saveOptions(n); return n; });

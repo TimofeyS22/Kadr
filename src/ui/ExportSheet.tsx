@@ -10,6 +10,7 @@ import { editor, useEditor } from '../state/store';
 import { IOS, prepareStaleSounds, staleSoundClips } from './actions';
 import { Chips, Sheet, Toggle } from './controls';
 import { t } from '../lib/i18n';
+import { useHoldUpdates } from '../lib/update';
 
 type Format = 'video' | 'photo' | 'gif' | 'audio';
 const FORMATS: Record<Format, string> = { video: 'Video', photo: 'Photo', gif: 'GIF', audio: 'Audio' };
@@ -56,6 +57,7 @@ export function ExportSheet() {
   // Consumed once: the Export button asked for a quick export (see startExport). It opens straight on the progress.
   const [auto] = useState(() => { const a = useEditor.getState().startAuto; if (a) useEditor.setState({ startAuto: false }); return a; });
   const [phase, setPhase] = useState<Phase>(() => (auto ? { kind: 'running', progress: 0 } : { kind: 'setup' }));
+  useHoldUpdates(phase.kind === 'running' || phase.kind === 'done'); // a reload would lose the export or the file
   const [format, setFormat] = useState<Format>('video');
   const [loudness, setLoudness] = useState(prefs.loudness);
   const [quick, setQuick] = useState(prefs.quick);

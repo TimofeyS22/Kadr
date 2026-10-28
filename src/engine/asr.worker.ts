@@ -30,6 +30,11 @@ export type AsrResponse =
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
+// Where model files come from: Hugging Face, or a host of our own (VITE_MODEL_HOST, docs/12 stage 5). The iOS
+// Simulator behind this Mac's VPN cannot resolve huggingface.co: a build with VITE_MODEL_HOST=/hf/ asks its own
+// origin, and `vite preview` relays to Hugging Face (vite.config.ts).
+const MODEL_HOST = import.meta.env.VITE_MODEL_HOST ? new URL(import.meta.env.VITE_MODEL_HOST as string, self.location.href).href : 'https://huggingface.co/';
+env.remoteHost = MODEL_HOST;
 // ONNX Runtime's heap below 4 GB, or iOS cannot reserve it and speech never starts (docs/12 §1.2).
 const heapInfo = capSharedMemory();
 // ONNX Runtime WASM, the plain CPU build (~14 MB), from our own origin. transformers.js would take the asyncify build
@@ -101,7 +106,7 @@ function loadGigaam(): Promise<{ run: Ctc; vocab: CtcVocab }> {
       config: { model_type: 'custom' } as never, model_file_name: 'v3_e2e_ctc.int8', subfolder: '', dtype: 'fp32', device: 'wasm',
       revision: GIGAAM_REV, progress_callback: downloadProgress(),
     }) as unknown as Promise<Ctc>,
-    cachedText(`https://huggingface.co/${GIGAAM_REPO}/resolve/${GIGAAM_REV}/v3_e2e_ctc_vocab.txt`),
+    cachedText(`${MODEL_HOST}${GIGAAM_REPO}/resolve/${GIGAAM_REV}/v3_e2e_ctc_vocab.txt`),
   ]).then(([run, text]) => ({ run, vocab: parseCtcVocab(text) }));
   giga.catch(() => { giga = null; });
   return giga;

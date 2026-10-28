@@ -3,6 +3,7 @@ name: Test and deploy
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', 'reports/**'] # notes do not change the site: no deploy
   pull_request:
   workflow_dispatch:
 
@@ -11,9 +12,10 @@ permissions:
   pages: write
   id-token: write
 
+# A deploy of main is never cancelled halfway (GitHub's Pages template); pull requests only cancel their own runs.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -31,6 +33,11 @@ jobs:
         run: npm run build
         env:
           KADR_BASE: /Kadr/
+      # A tab opened before this deploy keeps loading its own code (docs/12, deploy skew): the files of the last
+      # deployments go back into the site next to the new ones.
+      - name: Keep the files of recent deployments
+        if: github.ref == 'refs/heads/main'
+        run: node scripts/keep-assets.mjs https://timofeys22.github.io/Kadr/ dist
       - uses: actions/upload-pages-artifact@v3
         if: github.ref == 'refs/heads/main'
         with:
@@ -46,3 +53,6 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+      - uses: actions/checkout@v4
+      - name: Smoke test the live site (the new version and every kept file)
+        run: node scripts/smoke-live.mjs https://timofeys22.github.io/Kadr/ "$(node -p "require('./package.json').version")"

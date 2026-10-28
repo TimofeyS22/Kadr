@@ -28,6 +28,7 @@ import { EffectsBody, LutSection, PrivacyBody } from './FxSheets';
 import { CaptionEditBody, CaptionsBody, CropBody, StickersBody, VoiceoverBody } from './ToolSheets';
 import { BeatsBody, MaskBody, PausesBody, SfxBody } from './MoreSheets';
 import { t } from '../lib/i18n';
+import { useHoldUpdates } from '../lib/update';
 
 function useSelected(): Clip | null {
   return useEditor((s) => (s.project && s.selection ? findClip(s.project, s.selection)?.clip ?? null : null));
@@ -350,6 +351,7 @@ function CanvasBody() {
 /** Runs on-device sound processing for a clip setting and shows its progress inline. */
 function useSoundJob(clipId: string) {
   const [busy, setBusy] = useState<number | null>(null);
+  useHoldUpdates(busy !== null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
   const run = async (change: (c: SoundClip) => void) => {

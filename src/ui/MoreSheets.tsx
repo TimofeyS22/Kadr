@@ -11,6 +11,7 @@ import { editor, useEditor } from '../state/store';
 import { addSfx, editClip } from './actions';
 import { Chips, Slider, Toggle, pct, secs } from './controls';
 import { t } from '../lib/i18n';
+import { useHoldUpdates } from '../lib/update';
 
 // ---------- Remove pauses ----------
 
@@ -133,6 +134,7 @@ export function clipBeatTimes(p: Project, clip: AudioClip): number[] {
 export function BeatsBody({ clip }: { clip: AudioClip }) {
   const grid = useEditor((s) => s.project?.assets[clip.assetId]?.beats);
   const [busy, setBusy] = useState<number | null>(null);
+  useHoldUpdates(busy !== null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
 

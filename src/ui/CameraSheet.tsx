@@ -9,6 +9,7 @@ import { editor } from '../state/store';
 import { addFiles } from './actions';
 import { Slider } from './controls';
 import { formatTime } from './format';
+import { useHoldUpdates } from '../lib/update';
 
 const MAX_S = 10 * 60;
 const SCRIPT_KEY = 'kadr.script';
@@ -54,6 +55,7 @@ export function CameraSheet() {
   const rec = useRef<{ recorder: MediaRecorder; chunks: Blob[]; lock: WakeLock | null; mirror: { stop: () => void } | null } | null>(null);
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
   const [state, setState] = useState<State>('starting');
+  useHoldUpdates(state === 'countdown' || state === 'recording' || state === 'saving');
   const [error, setError] = useState('');
   const [count, setCount] = useState(3);
   const [elapsed, setElapsed] = useState(0);

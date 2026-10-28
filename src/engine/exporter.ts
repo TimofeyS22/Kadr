@@ -15,6 +15,8 @@ import { renderAudioWindow } from './audio';
 import { Compositor } from './compositor';
 import { MediaError, MediaPool } from './media';
 import { resolveDrawables } from './render';
+import { warmFaces } from './faces';
+import { warmSegmenter } from './segment';
 import { TextRasterizer } from './text';
 import { matchStreamRange } from './videoRange';
 
@@ -138,6 +140,63 @@ type Target = { target: BufferTarget | StreamTarget; result: () => Promise<Blob>
 /** The file system gets this long to open the export file; then the export goes to memory (QA, docs/11 §1.6). */
 const OPFS_MS = 5000;
 
+/** No frame got through the encoder for this long while Kadr was on screen: it is stuck (the iOS Simulator's H.264
+ * encoder stops after a few frames, docs/12) and the export says so instead of standing at the same percent forever. */
+const STALL_MS = 20_000;
+/** An export that failed gets this long to close its encoders before they are dropped. */
+const ABANDON_MS = 5000;
+
+/**
+ * Fails the export once it makes no progress for STALL_MS (time in the background, a suspended page, does not count),
+ * and at once on Cancel: a stuck encoder must not hold the Cancel button either.
+ */
+function stallGuard(signal: AbortSignal) {
+  let last = performance.now();
+  let stalled = false;
+  let fail!: (e: Error) => void;
+  const stop = new Promise<never>((_, reject) => { fail = reject; });
+  stop.catch(() => undefined);
+  const awake = () => { last = performance.now(); };
+  const cancel = () => fail(new DOMException('Export cancelled', 'AbortError'));
+  signal.addEventListener('abort', cancel);
+  document.addEventListener('visibilitychange', awake);
+  const timer = setInterval(() => {
+    if (document.hidden) awake();
+    else if (performance.now() - last > STALL_MS) {
+      stalled = true;
+      fail(new MediaError('The video encoder of this device stopped responding. Try a lower resolution or frame rate.'));
+    }
+  }, 1000);
+  return {
+    tick: awake,
+    race: <T>(work: Promise<T>): Promise<T> => Promise.race([work, stop]),
+    get stalled() { return stalled; },
+    stop() { clearInterval(timer); signal.removeEventListener('abort', cancel); document.removeEventListener('visibilitychange', awake); },
+  };
+}
+
+/**
+ * Closes the WebCodecs encoders inside mediabunny's sources. A stuck one never finishes its flush, and mediabunny has
+ * no public way to force it once closing has begun; closing it rejects the flush, which lets the frames and the file go.
+ */
+function closeEncoders(...sources: unknown[]) {
+  for (const s of sources) {
+    const encoder = (s as { _encoder?: { encoder?: VideoEncoder | AudioEncoder | null } } | null)?._encoder?.encoder;
+    if (encoder && encoder.state !== 'closed') {
+      try { encoder.close(); } catch { /* closing already */ }
+    }
+  }
+}
+
+/** Models the project's effects need, loaded before the stall guard starts: a first download is not a stuck encoder. */
+async function warmModels(p: Project) {
+  const clips = p.tracks.flatMap((t) => t.clips);
+  await Promise.all([ // a failure shows per frame, as in the preview (render.ts)
+    clips.some((c) => 'removeBg' in c && c.removeBg) ? warmSegmenter().catch(() => undefined) : undefined,
+    clips.some((c) => 'privacy' in c && c.privacy?.faces) ? warmFaces().catch(() => undefined) : undefined,
+  ]);
+}
+
 /** The export file in the origin-private file system, or null where it cannot be had. */
 async function openStream(ext: string, type: string): Promise<(Target & { drop: () => void }) | null> {
   try {
@@ -214,9 +273,11 @@ export async function exportProject(
   // Loudness pre-pass takes the first 5% of the progress bar (audio renders far faster than video).
   const pre = audio && opts.loudness !== false ? 0.05 : 0;
 
+  await warmModels(p);
+  const guard = stallGuard(signal);
   try {
-    await output.start();
-    if (pre) await mix.normalize(signal, (f) => onProgress(f * pre));
+    await guard.race(output.start());
+    if (pre) await guard.race(mix.normalize(signal, (f) => { guard.tick(); onProgress(f * pre); }));
     const count = Math.max(1, Math.round(duration * opts.fps));
     const pumpAudio = async (untilS: number) => {
       while (audio && mix.due(untilS)) { const b = await mix.read(); if (b) await audio.add(b); }
@@ -224,22 +285,33 @@ export async function exportProject(
     for (let i = 0; i < count; i++) {
       if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
       const t = i / opts.fps;
-      await pumpAudio(t + 1);
-      await frames.draw(t);
-      await video.add(t, 1 / opts.fps);
+      await guard.race(pumpAudio(t + 1));
+      await guard.race(frames.draw(t));
+      await guard.race(video.add(t, 1 / opts.fps));
+      guard.tick();
       onProgress(pre + ((i + 1) / count) * (1 - pre));
       if (i % 8 === 0) await yieldToUi();
     }
-    await pumpAudio(Infinity);
+    await guard.race(pumpAudio(Infinity));
     video.close();
     audio?.close();
-    await output.finalize();
+    await guard.race(output.finalize());
     const blob = await result();
     return { blob, fileName: `${fileBase(p)}.${mp4 ? 'mp4' : 'webm'}`, seconds: (performance.now() - started) / 1000 };
   } catch (e) {
-    await abandon(output, signal, audio ? [video, audio] : [video]);
+    // A stuck encoder holds a graceful end forever: after a stall, or a Cancel that cannot end within ABANDON_MS,
+    // the encoders are closed outright.
+    const ended = !guard.stalled && await Promise.race([
+      abandon(output, signal, audio ? [video, audio] : [video]).then(() => true),
+      new Promise<false>((r) => setTimeout(() => r(false), ABANDON_MS)),
+    ]);
+    if (!ended) {
+      closeEncoders(video, audio);
+      void output.cancel().catch(() => undefined);
+    }
     throw e;
   } finally {
+    guard.stop();
     frames.dispose();
   }
 }

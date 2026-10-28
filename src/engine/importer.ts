@@ -6,22 +6,7 @@ import { MediaError, probe } from './media';
 
 export const MAX_FILE_BYTES = 4 * 1024 ** 3;
 
-/** Opens the system file picker. Must be called from a user gesture. */
-export function pickFiles(accept: string, multiple = true): Promise<File[]> {
-  return new Promise((resolve) => {
-    // Attached to the document: iOS Safari does not reliably fire `change` on detached file inputs.
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = accept;
-    input.multiple = multiple;
-    input.style.cssText = 'position:fixed;left:-9999px;opacity:0';
-    document.body.appendChild(input);
-    const done = (files: File[]) => { input.remove(); resolve(files); };
-    input.addEventListener('change', () => done(Array.from(input.files ?? [])), { once: true });
-    input.addEventListener('cancel', () => done([]), { once: true });
-    input.click();
-  });
-}
+export { pickFiles } from '../lib/pickFiles';
 
 /** `onSoundLost`: the video is added, but its sound does not decode in this browser (the reason is given). */
 export async function importFile(file: File | Blob, name = (file as File).name ?? 'media', onSoundLost?: (reason: string) => void): Promise<Asset> {

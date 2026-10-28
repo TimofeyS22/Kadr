@@ -9,6 +9,7 @@ import { renderAudioWindow, soundEntries } from './audio';
 import { MediaError, MediaPool } from './media';
 import type { HeapInfo } from './wasmMemory';
 import { useLocale } from '../lib/i18n';
+import { isStaleCode, newerVersionDeployed, reloadIntoUpdate, updatingMessage } from '../lib/update';
 
 export type { AsrModel };
 export const ASR_MODELS: Record<AsrModel, { label: string; mb: number }> = {
@@ -153,12 +154,21 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
       if (--inFlight === 0) idle = setTimeout(releaseSpeechModel, IDLE_MS);
     };
     const onAbort = () => { done(); reject(new DOMException('Cancelled', 'AbortError')); };
-    // The worker script itself failed to load (offline before captions were ever used): fail, never wait forever.
+    // While the version check below runs, Cancel still works (the request is no longer in flight).
+    const cancellable = () => signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
+    // The worker script itself failed to load (offline before captions were ever used, or a deploy removed it under
+    // this tab — docs/12): fail, never wait forever; after a deploy the page reloads into the new version.
     const onError = (e: ErrorEvent) => {
       done();
       if (worker === w) worker = null; // a new one next time
-      reject(navigator.onLine ? new MediaError('Could not load the speech model ({error})', { error: e.message || 'worker' })
-        : new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: msg.type === 'load' ? ASR_MODELS[msg.model].mb : 0 }));
+      if (!navigator.onLine) {
+        reject(new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: msg.type === 'load' ? ASR_MODELS[msg.model].mb : 0 }));
+        return;
+      }
+      cancellable();
+      void newerVersionDeployed().then((updated) => reject(updated && reloadIntoUpdate(true)
+        ? new Error(updatingMessage())
+        : new MediaError('Could not load the speech model ({error})', { error: e.message || 'worker' })));
     };
     const onMessage = (e: MessageEvent<AsrResponse>) => {
       const r = e.data;
@@ -168,7 +178,11 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
         : (r.type === 'result' || r.type === 'vad' || r.type === 'language' || r.type === 'aligned' || r.type === 'heap' || r.type === 'error') && r.id === id;
       if (!mine) return;
       done();
-      if (r.type === 'error') retire(w);
+      if (r.type === 'error') {
+        retire(w);
+        // ONNX Runtime could not import its own files: a deploy removed them under this tab (docs/12).
+        if (isStaleCode(r.message)) { cancellable(); void newerVersionDeployed().then((updated) => { if (updated) reloadIntoUpdate(true); resolve(r); }); return; }
+      }
       resolve(r);
     };
     if (signal?.aborted) { reject(new DOMException('Cancelled', 'AbortError')); return; }

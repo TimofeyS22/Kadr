@@ -2,6 +2,7 @@ import { produce } from 'immer';
 import { create } from 'zustand';
 import { findClip } from '../core/timeline';
 import type { Project } from '../core/types';
+import { reloadPending, updatingMessage } from '../lib/update';
 
 export type SheetId =
   | 'speed' | 'volume' | 'adjust' | 'filters' | 'transform' | 'text' | 'transition' | 'canvas' | 'export'
@@ -130,6 +131,8 @@ export const useEditor = create<EditorState>()((set, get) => ({
   setPlaying: (playing) => set({ playing }),
   setZoom: (zoom) => set({ zoom: Math.min(600, Math.max(8, zoom)) }),
   toast(text, kind = 'info', ms) {
+    // The page is reloading into a new version (lib/update.ts): what failed on the way is that, not a fault to report.
+    if (kind === 'error' && reloadPending()) { text = updatingMessage(); kind = 'info'; }
     const id = ++toastId;
     set((s) => ({ toasts: [...s.toasts.slice(-2), { id, text, kind }] }));
     setTimeout(() => get().dismiss(id), ms ?? (kind === 'error' ? 6000 : 3000));

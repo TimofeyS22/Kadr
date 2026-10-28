@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ASR_MODELS, checkSpeechEngine, checkSpeechModel, type AsrModel, type SpeechCheck } from '../engine/captions';
 import { t } from '../lib/i18n';
+import { useHoldUpdates } from '../lib/update';
 
 type Rows = [string, string][];
 const SR = 16000;
@@ -138,6 +139,7 @@ const STEPS: [string, () => Promise<Rows>][] = [
 export function Diag() {
   const [sections, setSections] = useState<[string, Rows][]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  useHoldUpdates(!!busy);
   const [copied, setCopied] = useState(false);
   const started = useRef(false);
 
