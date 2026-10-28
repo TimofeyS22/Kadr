@@ -98,7 +98,10 @@ async function main(site, dist) {
     for (const f of g.files) {
       const name = typeof f === 'string' ? f : f.name;
       if (fs.existsSync(path.join(assets, name))) { present.push(f); continue; }
-      const body = await get(`${base}assets/${name}`, 'bytes');
+      // The same bytes under another name are the same file (names carry a content hash): v1.4.15's ".dist-*.js"
+      // is v1.4.16's "dist-*.js", and a dot-file once missed the Pages artifact (upload-pages-artifact v5).
+      const twin = typeof f !== 'string' ? own.find((o) => o.sha256 === f.sha256 && o.size === f.size) : undefined;
+      const body = twin ? fs.readFileSync(path.join(assets, twin.name)) : await get(`${base}assets/${name}`, 'bytes');
       if (!body) {
         // A file this script kept (it has a hash) is never gone on its own: something is wrong with the site.
         if (typeof f !== 'string' && !process.env.KEEP_ASSETS_ALLOW_MISSING) throw new Error(`keep-assets: ${name} is listed in the live manifest but the site answers 404; not deploying (KEEP_ASSETS_ALLOW_MISSING=1 drops it)`);
