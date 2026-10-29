@@ -9,8 +9,8 @@ type Learned = Record<string, number>;
 const load = (): Learned => { try { return JSON.parse(localStorage.getItem(KEY) ?? '{}') as Learned; } catch { return {}; } };
 
 /** Seconds of work per second of audio, until this device has shown its own. */
-const RATE: Record<string, number> = { prepare: 0.05, listen: 0.04, 'transcribe:tiny': 0.25, 'transcribe:base': 0.6, 'transcribe:small': 2, 'transcribe:ru': 0.4, pauses: 0.03 };
-const MODEL_MB: Record<AsrModel, number> = { tiny: 41, base: 77, small: 249, ru: 225 };
+const RATE: Record<string, number> = { prepare: 0.05, listen: 0.04, 'transcribe:tiny': 0.25, 'transcribe:base': 0.6, 'transcribe:small': 2, 'transcribe:ru': 0.4, 'transcribe:ru-fast': 0.15, pauses: 0.03 };
+const MODEL_MB: Record<AsrModel, number> = { tiny: 41, base: 77, small: 249, ru: 225, 'ru-fast': 132 };
 
 /** The stages of a speech job over `seconds` of audio, with what this device is expected to take. */
 export function speechStages(model: AsrModel, seconds: number, extra: { script?: boolean; pauses?: boolean; music?: boolean } = {}): PaceStage[] {

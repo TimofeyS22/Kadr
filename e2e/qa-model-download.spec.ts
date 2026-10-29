@@ -1,6 +1,7 @@
-// Speech model download (docs/12 stage 5): large files come in 16 MiB parts, each checked by sha256 and kept, so a
-// connection that breaks, hangs or sends broken bytes costs one part, never the whole model, and never a wait
-// without end. These tests break the network on the way to Hugging Face and check what the person gets.
+// Speech model download (docs/12 stage 5): large files come in 16 MiB parts — from Kadr's own site as files, from
+// Hugging Face (the fallback) as byte ranges — each checked by sha256 and kept, so a connection that breaks, hangs
+// or sends broken bytes costs one part, never the whole model, and never a wait without end. These tests break the
+// network on the way to both and check what the person gets.
 import { expect, test, type Page, type Route } from '@playwright/test';
 import path from 'node:path';
 
@@ -23,18 +24,22 @@ test.beforeEach(async ({ page }) => {
 });
 const toasts = (page: Page) => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts);
 
+/** Requests for Whisper's large files, from Kadr's site (…onnx.parts/<i>) or Hugging Face (…onnx with a Range). */
+const MODEL_FILES = /\/(encoder|decoder)_model\w*\.onnx(\.parts\/\d+)?$/;
 /**
- * Model parts asked of Hugging Face: "encoder@0", "decoder@2" (file, part number). transformers.js's own one-byte
- * probes (bytes=0-0, it checks a file is there) are not downloads and are left out.
+ * The part a request asks for, whatever the host: "encoder@0", "decoder@2" (file, part number); "…@whole" for the
+ * whole file. transformers.js's one-byte probes (bytes=0-0) are not downloads and are left out.
  */
 const part = (route: Route): string | null => {
+  const m = /\/(encoder|decoder)_model\w*\.onnx(?:\.parts\/(\d+))?$/.exec(new URL(route.request().url()).pathname);
+  if (!m) return null;
+  if (m[2] !== undefined) return `${m[1]}@${m[2]}`;
   const range = /bytes=(\d+)-(\d*)/.exec(route.request().headers().range ?? '');
-  const file = /\/(encoder|decoder)_model[\w]*\.onnx$/.exec(new URL(route.request().url()).pathname)?.[1];
-  if (!file) return null;
-  if (!range) return `${file}@whole`;
+  if (!range) return `${m[1]}@whole`;
   if (range[2] && Number(range[2]) - Number(range[1]) < 1024) return null;
-  return `${file}@${Math.floor(Number(range[1]) / MiB16)}`;
+  return `${m[1]}@${Math.floor(Number(range[1]) / MiB16)}`;
 };
+const fromSite = (route: Route) => route.request().url().includes('.parts/');
 
 async function speechProject(page: Page) {
   await page.goto('./');
@@ -51,7 +56,7 @@ test('the connection breaks mid-download: a plain message, and the next tap goes
   test.setTimeout(500_000);
   const asked: string[] = [];
   let broken = true;
-  await page.context().route(/huggingface\.co\/.+_model\w*\.onnx$/, async (route) => {
+  await page.context().route(MODEL_FILES, async (route) => {
     const p = part(route);
     if (p) asked.push(p);
     if (broken && p === 'decoder@2') return route.abort('connectionreset');
@@ -78,7 +83,7 @@ test('the connection breaks mid-download: a plain message, and the next tap goes
 test('a broken part is caught by its checksum and a hung part is asked for again: the captions are made', async ({ page }) => {
   test.setTimeout(500_000);
   const asked: string[] = [];
-  await page.context().route(/huggingface\.co\/.+_model\w*\.onnx$/, async (route) => {
+  await page.context().route(MODEL_FILES, async (route) => {
     const p = part(route);
     if (p) asked.push(p);
     const n = asked.filter((x) => x === p).length;
@@ -99,10 +104,11 @@ test('a broken part is caught by its checksum and a hung part is asked for again
   expect(await toasts(page)).toEqual([]);
 });
 
-test('a host that ignores Range (WebKit under a service worker drops it): the file comes whole, checked part by part', async ({ page }) => {
+test('Kadr\'s site is down and the fallback host ignores Range (as WebKit under a service worker did): the file comes whole, checked part by part', async ({ page }) => {
   test.setTimeout(500_000);
   const asked: string[] = [];
-  await page.context().route(/huggingface\.co\/.+_model\w*\.onnx$/, async (route) => {
+  await page.context().route(MODEL_FILES, async (route) => {
+    if (fromSite(route)) return route.abort('connectionrefused');
     const p = part(route);
     if (p) asked.push(p);
     const headers = { ...route.request().headers() };
@@ -114,6 +120,24 @@ test('a host that ignores Range (WebKit under a service worker drops it): the fi
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
   // One ranged try per file, answered with the whole file, then that whole file read once and cut into parts.
   expect(asked.filter((p) => p.endsWith('@whole')).sort()).toEqual(['decoder@whole', 'encoder@whole']);
+  expect(await toasts(page)).toEqual([]);
+});
+
+test('Kadr\'s site does not have the file (404: a tab of an older Kadr after the models moved on): Hugging Face takes over, and the site is not asked again when Hugging Face stumbles', async ({ page }) => {
+  test.setTimeout(500_000);
+  const site: string[] = [], asked: string[] = [];
+  await page.context().route(MODEL_FILES, async (route) => {
+    const p = part(route);
+    if (fromSite(route)) { if (p) site.push(p); return route.fulfill({ status: 404, body: 'Not Found' }); }
+    if (p) asked.push(p);
+    if (p === 'decoder@1' && asked.filter((x) => x === p).length === 1) return route.abort('connectionreset');
+    return route.continue();
+  });
+  await speechProject(page);
+  await tool(page, 'Captions').click();
+  await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
+  expect(site.sort()).toEqual(['decoder@0', 'encoder@0']); // one look per file, not one per stumble
+  expect(asked.filter((p) => p === 'decoder@1')).toHaveLength(2);
   expect(await toasts(page)).toEqual([]);
 });
 
@@ -129,7 +153,7 @@ test('a model kept whole by an older Kadr moves into parts without being downloa
     }
   });
   const asked: string[] = [];
-  await page.context().route(/huggingface\.co\/.+_model\w*\.onnx$/, async (route) => {
+  await page.context().route(MODEL_FILES, async (route) => {
     const p = part(route);
     if (p) asked.push(p);
     return route.continue();

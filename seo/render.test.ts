@@ -94,7 +94,7 @@ describe('privacy and licenses (docs/12 stage 6)', () => {
       expect(s).toContain('href="https://creativecommons.org/licenses/by/4.0/"');
       expect(s).toContain('href="https://github.com/Vanilagy/mediabunny"');
       expect(s).toContain('scripts/no-reserve.ts');
-      for (const m of ['GigaAM v3', 'Whisper', 'Silero VAD', 'Selfie Segmenter', 'BlazeFace', 'RNNoise', 'SIL Open Font License', 'CC0 1.0']) expect(s, `${lang}: ${m}`).toContain(m);
+      for (const m of ['GigaAM v3', 'FastConformer', 'Whisper', 'Silero VAD', 'Selfie Segmenter', 'BlazeFace', 'RNNoise', 'SIL Open Font License', 'CC0 1.0']) expect(s, `${lang}: ${m}`).toContain(m);
     }
   });
 });

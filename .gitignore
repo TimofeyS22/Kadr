@@ -16,3 +16,4 @@ fixtures/*.aiff
 test-results
 playwright-report
 scripts/.music-cache/
+scripts/.model-cache/

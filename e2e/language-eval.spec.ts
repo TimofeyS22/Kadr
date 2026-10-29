@@ -1,6 +1,7 @@
 // Speech language detection eval: with "Auto", does Kadr pick the right language (English interface throughout,
 // so a miss shows up as English or translated captions)? Prints a table; asserts every sample is detected right.
 // Run: EVAL=1 npx playwright test --project=eval language-eval  (needs `npm run fixtures`).
+// With EVAL_MODEL='Russian speech, compact' it runs with that model chosen instead of the default.
 import { expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -51,6 +52,8 @@ for (const s of SAMPLES) {
     await page.getByRole('button', { name: 'Captions', exact: true }).click();
     await page.getByRole('button', { name: 'Settings' }).click(); // the tool starts with the defaults (v1.3)
     await page.getByRole('combobox', { name: 'Language' }).selectOption({ label: 'Auto' });
+    // EVAL_MODEL='Russian speech, compact' (a chip's label): detection as it runs with that model chosen.
+    if (process.env.EVAL_MODEL) await page.locator('.sheet .chip', { hasText: new RegExp(`^${process.env.EVAL_MODEL}, \\d+ MB$`) }).click();
     await page.getByRole('button', { name: 'Create captions' }).click();
     await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 540_000 });
     const toast = page.locator('.toast', { hasText: 'Speech language:' });

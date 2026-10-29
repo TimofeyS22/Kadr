@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const texts = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'eval', 'texts.json'), 'utf8')) as Record<string, string>;
-const models = (process.env.EVAL_MODELS ?? 'tiny,base,small,ru').split(',');
+const models = (process.env.EVAL_MODELS ?? 'tiny,base,small,ru,ru-fast').split(',');
 const samples = (process.env.EVAL_SAMPLES ?? 'ru,ru_music,en,en_music,ru_live,ru_live_music').split(',');
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
 
@@ -40,7 +40,7 @@ for (const model of models) for (const sample of samples) {
   test(`captions eval: ${model} on ${sample}`, async ({ browser }) => {
     test.setTimeout(Number(process.env.EVAL_TIMEOUT ?? 900_000));
     const lang = sample.split('_')[0];
-    test.skip(model === 'ru' && lang !== 'ru', 'GigaAM reads Russian only');
+    test.skip((model === 'ru' || model === 'ru-fast') && lang !== 'ru', 'the Russian models read Russian only');
     if (pageModel !== model) {
       await page?.context().close();
       page = await (await browser.newContext({ baseURL: test.info().project.use.baseURL })).newPage();
@@ -58,7 +58,7 @@ for (const model of models) for (const sample of samples) {
     await page.getByRole('button', { name: 'Captions', exact: true }).click();
     await page.getByRole('button', { name: 'Settings' }).click(); // the tool starts with the defaults (v1.3)
     await page.getByRole('combobox', { name: 'Language' }).selectOption(lang === 'ru' ? 'russian' : 'english');
-    const chip = { tiny: 'Fast', base: 'Accurate', small: 'Most accurate', ru: 'Russian speech' }[model];
+    const chip = { tiny: 'Fast', base: 'Accurate', small: 'Most accurate', ru: 'Russian speech', 'ru-fast': 'Russian speech, compact' }[model];
     await page.locator('.sheet .chip', { hasText: new RegExp(`${chip},`) }).first().click();
     const t0 = Date.now();
     await page.getByRole('button', { name: 'Create captions' }).click();

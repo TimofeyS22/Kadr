@@ -30,30 +30,61 @@ async function projectWith(page: Page, file: string) {
   await page.getByRole('button', { name: 'Close tools' }).click();
 }
 
-test('the GPU resets mid-export: the export stops with a plain message instead of a file of empty frames', async ({ page }) => {
-  test.setTimeout(240_000);
-  // The export draws into a WebGL context of its own (preserveDrawingBuffer): keep it to lose it on cue.
-  await page.addInitScript(() => {
-    const native = HTMLCanvasElement.prototype.getContext;
-    const kept: WebGL2RenderingContext[] = ((window as unknown as { __exportGl: WebGL2RenderingContext[] }).__exportGl = []);
-    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, opts?: { preserveDrawingBuffer?: boolean }) {
-      const ctx = (native as (t: string, o?: unknown) => RenderingContext | null).call(this, type, opts);
-      if (type === 'webgl2' && opts?.preserveDrawingBuffer && ctx) kept.push(ctx as WebGL2RenderingContext);
-      return ctx;
-    } as typeof native;
-  });
-  await projectWith(page, 'long_1.mp4');
-  await page.getByRole('button', { name: 'Export' }).first().click();
-  await page.getByRole('radio', { name: 'Video', exact: true }).click();
-  await page.getByRole('button', { name: 'Export video' }).click();
+/** The export draws into a WebGL context of its own (preserveDrawingBuffer): each one is kept, to lose it on cue. */
+const keepExportContexts = (page: Page) => page.addInitScript(() => {
+  const native = HTMLCanvasElement.prototype.getContext;
+  const kept: WebGL2RenderingContext[] = ((window as unknown as { __exportGl: WebGL2RenderingContext[] }).__exportGl = []);
+  HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, opts?: { preserveDrawingBuffer?: boolean }) {
+    const ctx = (native as (t: string, o?: unknown) => RenderingContext | null).call(this, type, opts);
+    if (type === 'webgl2' && opts?.preserveDrawingBuffer && ctx) kept.push(ctx as WebGL2RenderingContext);
+    return ctx;
+  } as typeof native;
+});
+/** Once the export is past 20%, the GPU resets: the newest export context is lost. */
+async function loseGpuMidExport(page: Page, round: number) {
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __exportGl: unknown[] }).__exportGl.length), { timeout: 60_000 }).toBeGreaterThanOrEqual(round);
   await expect(page.getByText(/\b([2-9]\d)% — keep this screen open/)).toBeVisible({ timeout: 120_000 });
-  const lost = await page.evaluate(() => {
+  expect(await page.evaluate(() => {
     const gl = (window as unknown as { __exportGl: WebGL2RenderingContext[] }).__exportGl.at(-1);
     gl?.getExtension('WEBGL_lose_context')?.loseContext();
     return !!gl;
-  });
-  expect(lost).toBe(true);
-  await expect(page.locator('.error-text')).toContainText('The graphics of this device were reset during the export', { timeout: 30_000 });
+  })).toBe(true);
+}
+async function startVideoExport(page: Page) {
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('radio', { name: 'Video', exact: true }).click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+}
+
+test('the GPU resets mid-export: the export starts again by itself and the file is whole, not empty frames', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await keepExportContexts(page);
+  await projectWith(page, 'long_1.mp4');
+  await startVideoExport(page);
+  await loseGpuMidExport(page, 1);
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 240_000 });
+  await expect(page.locator('.error-text')).toHaveCount(0);
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  const file = info.outputPath((await dl).suggestedFilename());
+  await (await dl).saveAs(file);
+  const { execFileSync } = await import('node:child_process');
+  const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type:format=duration', '-of', 'json', file]).toString()) as { streams: { codec_type: string }[]; format: { duration: string } };
+  expect(probe.streams.map((x) => x.codec_type).sort()).toEqual(['audio', 'video']);
+  expect(Number(probe.format.duration)).toBeGreaterThan(10);
+  // A frame from late in the file, made after the reset: the clip's picture, not an empty (black) frame.
+  const y = Number(execFileSync('ffmpeg', ['-v', 'error', '-sseof', '-2', '-i', file, '-frames:v', '1', '-vf', 'scale=32:32,format=gray', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 20 }).reduce((a, b) => a + b, 0)) / 1024;
+  expect(y).toBeGreaterThan(20); // the clip letterboxed in 9:16; an empty frame is the black background, ~0
+});
+
+test('the GPU keeps resetting: after one fresh start the export stops with a plain message', async ({ page }) => {
+  test.setTimeout(300_000);
+  await keepExportContexts(page);
+  await projectWith(page, 'long_1.mp4');
+  await startVideoExport(page);
+  await loseGpuMidExport(page, 1);
+  await loseGpuMidExport(page, 2); // the fresh start loses its context too
+  await expect(page.locator('.error-text')).toContainText('The graphics of this device were reset during the export', { timeout: 60_000 });
   await expect(page.getByText(/Ready: .* MB/)).toHaveCount(0);
   await page.locator('.error-more summary').click(); // what support needs, kept on the device (docs/12 stage 4)
   await expect(page.locator('.error-more pre')).toContainText(/export: MediaError: The graphics of this device were reset/);

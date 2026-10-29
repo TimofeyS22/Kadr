@@ -29,7 +29,7 @@ export const PRIVACY: Record<Lang, LegalPage> = {
       ] },
       { h: 'Что скачивается и откуда', items: [
         'Сам Kadr — с этого сайта (GitHub Pages). После первого визита он работает и без интернета.',
-        'Модели распознавания речи (41–249 МБ) — один раз, при первом использовании субтитров, с [Hugging Face](https://huggingface.co). Запрос содержит только адрес файла модели; ваши данные в нём не передаются. Hugging Face и его CDN видят ваш IP-адрес, как любой сайт.',
+        'Модели распознавания речи (41–249 МБ) — один раз, при первом использовании субтитров, с этого же сайта; если он недоступен, и для самой большой модели («Максимально точно», Whisper small) — с [Hugging Face](https://huggingface.co). Запрос содержит только адрес файла модели; ваши данные в нём не передаются. Сайт, с которого идёт файл, видит ваш IP-адрес, как любой сайт.',
         'Музыка из библиотеки — с этого сайта, когда вы её выбираете.',
       ] },
       { h: 'Что хранится и где', items: [
@@ -59,7 +59,7 @@ export const PRIVACY: Record<Lang, LegalPage> = {
       ] },
       { h: 'What is downloaded, and from where', items: [
         'Kadr itself, from this site (GitHub Pages). After the first visit it works offline.',
-        'Speech recognition models (41–249 MB), once, the first time you make captions, from [Hugging Face](https://huggingface.co). The request holds only the model file’s address, none of your data. Hugging Face and its CDN see your IP address, as any website does.',
+        'Speech recognition models (41–249 MB), once, the first time you make captions, from this same site; if it cannot be reached, and for the largest one (“Most accurate”, Whisper small), from [Hugging Face](https://huggingface.co). The request holds only the model file’s address, none of your data. The site a file comes from sees your IP address, as any website does.',
         'Library music, from this site, when you pick it.',
       ] },
       { h: 'What is stored, and where', items: [
@@ -83,6 +83,7 @@ const lic = (name: string, by: string, license: string, url: string, note = '') 
 const MODELS: Record<Lang, string[]> = {
   ru: [
     lic('GigaAM v3', 'Sber (ai-sage), экспорт в ONNX — istupakov', 'MIT', 'https://huggingface.co/istupakov/gigaam-v3-onnx', 'Русская речь'),
+    lic('FastConformer Hybrid Large RU P&C', 'NVIDIA, экспорт в ONNX int8 — istupakov', '[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)', 'https://huggingface.co/nvidia/stt_ru_fastconformer_hybrid_large_pc', 'Русская речь на телефонах. Изменения: преобразована в ONNX и квантована в int8 ([istupakov/stt_ru_fastconformer_hybrid_large_pc_onnx](https://huggingface.co/istupakov/stt_ru_fastconformer_hybrid_large_pc_onnx)); Kadr берёт выход CTC'),
     lic('Whisper tiny, base, small', 'OpenAI, преобразование в ONNX — onnx-community (Hugging Face)', 'Apache-2.0', 'https://huggingface.co/openai/whisper-base', 'Речь на других языках'),
     lic('Silero VAD', 'Silero Team, ONNX — onnx-community', 'MIT', 'https://huggingface.co/onnx-community/silero-vad', 'Поиск речи'),
     lic('Selfie Segmenter', 'Google (MediaPipe)', 'Apache-2.0', 'https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter', 'Удаление фона'),
@@ -91,6 +92,7 @@ const MODELS: Record<Lang, string[]> = {
   ],
   en: [
     lic('GigaAM v3', 'Sber (ai-sage), ONNX export by istupakov', 'MIT', 'https://huggingface.co/istupakov/gigaam-v3-onnx', 'Russian speech'),
+    lic('FastConformer Hybrid Large RU P&C', 'NVIDIA, ONNX int8 export by istupakov', '[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)', 'https://huggingface.co/nvidia/stt_ru_fastconformer_hybrid_large_pc', 'Russian speech on phones. Changes: converted to ONNX and quantized to int8 ([istupakov/stt_ru_fastconformer_hybrid_large_pc_onnx](https://huggingface.co/istupakov/stt_ru_fastconformer_hybrid_large_pc_onnx)); Kadr uses its CTC output'),
     lic('Whisper tiny, base, small', 'OpenAI, ONNX conversion by onnx-community (Hugging Face)', 'Apache-2.0', 'https://huggingface.co/openai/whisper-base', 'Speech in other languages'),
     lic('Silero VAD', 'Silero Team, ONNX by onnx-community', 'MIT', 'https://huggingface.co/onnx-community/silero-vad', 'Finding speech'),
     lic('Selfie Segmenter', 'Google (MediaPipe)', 'Apache-2.0', 'https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter', 'Background removal'),

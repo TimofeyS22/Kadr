@@ -493,6 +493,9 @@ export async function downloadLibraryTrack(tr: LibraryTrack, progress: (f: numbe
     return await libraryAsset(tr, parts);
   } catch (e) {
     if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+    // Aborted, but not by the person: the stall guard let the request go. In Chromium abort() rejects the fetch at
+    // once, ahead of the guard's own error, and an AbortError would read as Cancel — the reel was undone in silence.
+    if ((e as Error).name === 'AbortError') throw failed();
     throw e;
   } finally {
     signal.removeEventListener('abort', cancel);

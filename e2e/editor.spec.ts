@@ -1925,7 +1925,7 @@ async function captionsWithRussianModel(page: Page, file: string): Promise<strin
   return (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
 }
 
-test('Russian interface, one tap: GigaAM captions Russian speech with punctuation and never downloads Whisper', async ({ page }) => {
+test('Russian interface, one tap: the Russian model (GigaAM; FastConformer on an iPhone) captions Russian speech with punctuation and never downloads Whisper', async ({ page, browserName }) => {
   test.setTimeout(500_000);
   await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru')); // runs after the English default
   await page.goto('./');
@@ -1941,10 +1941,13 @@ test('Russian interface, one tap: GigaAM captions Russian speech with punctuatio
   await page.getByRole('button', { name: 'Сохранить .srt' }).click();
   const srt = (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
   for (const w of ['привет', 'видеоредактор', 'работает', 'телефоне']) expect(srt).toContain(w);
-  expect(srt).toMatch(/[.,!?]/); // GigaAM writes punctuation
-  // GigaAM confirmed the language itself: Whisper (77 MB more) was never downloaded.
+  expect(srt).toMatch(/[.,!?]/); // both Russian models write punctuation
+  // The Russian model confirmed the language itself: Whisper (77 MB more) was never downloaded. The iPhone profile
+  // gets the compact model (docs/12 §6.3), the rest GigaAM.
   const cached = await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async (n) => (await (await caches.open(n)).keys()).map((r) => r.url)))).flat());
-  expect(cached.some((u) => u.includes('gigaam'))).toBe(true);
+  const [chosen, other] = browserName === 'webkit' ? ['fastconformer', 'gigaam'] : ['gigaam', 'fastconformer'];
+  expect(cached.some((u) => u.includes(chosen))).toBe(true);
+  expect(cached.filter((u) => u.includes(other))).toEqual([]);
   expect(cached.filter((u) => u.includes('whisper'))).toEqual([]);
 });
 
@@ -1985,7 +1988,7 @@ test('captions listen to the voice, not the library music under it: live speech 
   expect(wer).toBeLessThanOrEqual(0.12); // 7.3% without music (docs/10)
 });
 
-test('GigaAM with its lenient speech detection invents no words over music without a voice', async ({ page }) => {
+test('the Russian model (GigaAM; FastConformer on an iPhone) with its lenient speech detection invents no words over music without a voice', async ({ page }) => {
   test.setTimeout(500_000);
   await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru'));
   await page.goto('./');
@@ -3765,7 +3768,8 @@ test('an encoder that stops answering mid-export ends the export with a clear me
   await page.getByRole('radio', { name: 'Video', exact: true }).click();
   await page.getByRole('button', { name: 'Export video' }).click();
   const started = Date.now();
-  await expect(page.getByText(/video encoder of this device stopped responding/)).toBeVisible({ timeout: 60_000 });
+  // The message, not its folded "Details" (v1.4.17), which carries the same words.
+  await expect(page.locator('.error-text', { hasText: /video encoder of this device stopped responding/ })).toBeVisible({ timeout: 60_000 });
   const took = (Date.now() - started) / 1000;
   console.log(`stuck encoder: the export ended in ${took.toFixed(1)} s`);
   expect(await page.evaluate(() => (window as unknown as { __stuck: number }).__stuck), 'the encoder really stopped').toBeGreaterThan(0);

@@ -43,6 +43,18 @@ jobs:
           E2E_URL=http://localhost:4191/Kadr/ npx playwright test e2e/qa-smoke.spec.ts --project android-chromium
         env:
           KADR_BASE: /Kadr/
+      # The speech models on Kadr's own site (docs/12 stage 5): downloaded from Hugging Face once, kept between runs,
+      # checked against src/engine/models.json, and put next to the app before the past versions are counted in.
+      - name: Cache the speech models
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache@v6
+        with:
+          path: scripts/.model-cache
+          key: models-${{ hashFiles('src/engine/models.json') }}
+          restore-keys: models- # an older cache still holds the files that did not change
+      - name: Put the speech models on the site
+        if: github.ref == 'refs/heads/main'
+        run: node scripts/mirror-models.mjs dist
       # A tab opened before this deploy keeps loading its own code (docs/12, deploy skew): the files of the last
       # deployments go back into the site next to the new ones.
       - name: Keep the files of recent deployments

@@ -242,7 +242,7 @@ export function Diag() {
       <h2>{t('Speech models')}</h2>
       <p className="hint">{t('Each downloads once and reads 10 seconds of Russian speech. Speech sample: SOVA RuDevices, CC BY 4.0.')}</p>
       <div className="diag-actions">
-        {(['tiny', 'base', 'ru'] as const).map((m) => (
+        {(['tiny', 'base', 'ru-fast', 'ru'] as const).map((m) => (
           <button key={m} className="btn" disabled={!!busy} onClick={() => void model(m)}>{t(ASR_MODELS[m].label)}, {ASR_MODELS[m].mb} MB</button>
         ))}
       </div>

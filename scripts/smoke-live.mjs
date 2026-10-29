@@ -28,5 +28,19 @@ for (let i = 0; i < files.length; i += 16) {
   }));
 }
 for (const p of ['sw.js', 'manifest.webmanifest']) if (!(await get(p)).ok) bad.push(p);
+// The speech models the site serves (scripts/mirror-models.mjs): every part at its size, every small file.
+const { default: models } = await import('../src/engine/models.json', { with: { type: 'json' } });
+const mirrored = (key) => models.mirror.some((prefix) => key.startsWith(prefix));
+const expected = [
+  ...Object.entries(models.files).filter(([k]) => mirrored(k)).flatMap(([k, f]) => f.parts.map((_, i) => [`models/${k}.parts/${i}`, Math.min(models.part, f.size - i * models.part)])),
+  ...Object.entries(models.small).filter(([k]) => mirrored(k)).map(([k]) => [`models/${k}`, 0]), // text is served compressed
+];
+for (let i = 0; i < expected.length; i += 16) {
+  await Promise.all(expected.slice(i, i + 16).map(async ([p, size]) => {
+    const res = await fetch(base + p, { method: 'HEAD', cache: 'no-store' });
+    const length = Number(res.headers.get('content-length'));
+    if (!res.ok || (size && length !== size)) bad.push(`${p} ${res.status} ${length || ''}`);
+  }));
+}
 if (bad.length) throw new Error(`smoke: ${bad.length} files missing on the live site: ${bad.slice(0, 10).join(', ')}`);
-console.log(`smoke: ${manifest.generations[0].version} live, ${files.length} files of ${manifest.generations.length} generations served`);
+console.log(`smoke: ${manifest.generations[0].version} live, ${files.length} files of ${manifest.generations.length} generations served, ${expected.length} model files`);

@@ -87,8 +87,8 @@ export interface CtcResult {
 
 const hasText = (s: string) => /[\p{L}\p{N}]/u.test(s);
 
-/** Greedy CTC over log-probabilities [frames × classes]: repeats collapse, blanks separate. */
-export function ctcDecode(logProbs: Float32Array, frames: number, classes: number, vocab: CtcVocab): CtcResult {
+/** Greedy CTC over log-probabilities [frames × classes]: repeats collapse, blanks separate. `frameS`: seconds per frame. */
+export function ctcDecode(logProbs: Float32Array, frames: number, classes: number, vocab: CtcVocab, frameS = GIGAAM_FRAME_S): CtcResult {
   const words: CaptionWord[] = [];
   let cur: CaptionWord | null = null;
   let prev = vocab.blank, sum = 0, emitted = 0, chars = 0;
@@ -108,9 +108,9 @@ export function ctcDecode(logProbs: Float32Array, frames: number, classes: numbe
         const token = vocab.tokens[best] ?? '';
         const piece = token.replace(/^▁/, '');
         chars += piece.replace(/[^\p{L}\p{N}]/gu, '').length;
-        if (token.startsWith('▁') || !cur) { finish(); cur = { t0: t * GIGAAM_FRAME_S, t1: (t + 1) * GIGAAM_FRAME_S, text: piece }; }
-        else { cur.text += piece; cur.t1 = (t + 1) * GIGAAM_FRAME_S; }
-      } else if (cur) cur.t1 = (t + 1) * GIGAAM_FRAME_S;
+        if (token.startsWith('▁') || !cur) { finish(); cur = { t0: t * frameS, t1: (t + 1) * frameS, text: piece }; }
+        else { cur.text += piece; cur.t1 = (t + 1) * frameS; }
+      } else if (cur) cur.t1 = (t + 1) * frameS;
     }
     prev = best;
   }

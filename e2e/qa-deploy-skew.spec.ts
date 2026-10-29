@@ -17,7 +17,7 @@ const root = path.join(import.meta.dirname, '..');
 const fx = (n: string) => path.join(root, 'fixtures', n);
 const BUILD = process.env.NEW_DIST ?? path.join(root, 'dist');
 const OLD = process.env.OLD_DIST;
-const BIG = ['music', 'ru', 'en', 'diag']; // unhashed folders: linked, not copied
+const BIG = ['music', 'ru', 'en', 'diag', 'models']; // unhashed folders: linked, not copied
 
 /** A script CI runs around a deploy (.github/workflows/deploy.yml). Not execFileSync: the site is served from this process. */
 const run = async (script: string, ...args: string[]) => (await promisify(execFile)('node', [script, ...args], { cwd: root, encoding: 'utf8' })).stdout;
@@ -38,7 +38,8 @@ function pages(dir: string): Promise<{ url: string; close(): void }> {
     if (!fs.existsSync(file) && !path.extname(file)) file = path.join(dir, 'index.html');
     fs.readFile(file, (err, body) => {
       if (err) { res.writeHead(404, { 'content-type': 'text/html' }).end('<h1>404</h1>'); return; }
-      res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream', 'cache-control': 'max-age=600' }).end(body);
+      // The length on HEAD too, as Pages sends it: scripts/smoke-live.mjs checks the model parts' sizes that way.
+      res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream', 'content-length': String(body.length), 'cache-control': 'max-age=600' }).end(body);
     });
   });
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/`, close: () => server.close() })));

@@ -243,7 +243,35 @@ async function openTarget(ext: string, type: string): Promise<Target> {
   return { target, result: async () => target.blob(type) };
 }
 
-export async function exportProject(
+/** A GPU reset during the export gets this many fresh starts; a device that keeps losing it is told so. */
+const GPU_RETRIES = 1;
+const gpuLost = (e: unknown) => e instanceof MediaError && e.message === GPU_LOST;
+
+/**
+ * A WebGL context lost mid-export (the GPU process reset, a phone short of memory) is not an error the person has
+ * to deal with: the export starts again with a fresh context, once (docs/12 rule 10). The progress bar goes back
+ * to the start; the file is whole either way.
+ */
+async function withGpuRetry<T>(run: () => Promise<T>, onRestart: () => void, signal?: AbortSignal): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run();
+    } catch (e) {
+      if (!gpuLost(e) || attempt >= GPU_RETRIES || signal?.aborted) throw e;
+      console.warn('the GPU was reset during the export; starting it again', e);
+      onRestart();
+      await new Promise((r) => setTimeout(r, 1000)); // the GPU process comes back first
+      if (signal?.aborted) throw new DOMException('Export cancelled', 'AbortError'); // Cancel in the pause starts nothing
+    }
+  }
+}
+
+/** Renders and encodes the project through the preview's render path (WYSIWYG), sound mixed in sample-aligned windows. */
+export function exportProject(p: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
+  return withGpuRetry(() => exportOnce(p, opts, onProgress, signal), () => onProgress(0), signal);
+}
+
+async function exportOnce(
   p: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal,
 ): Promise<ExportResult> {
   const started = performance.now();
@@ -356,7 +384,11 @@ export async function exportAudio(p: Project, loudness: boolean, onProgress: (f:
 }
 
 /** One frame at time `t` as a JPEG in the export resolution. */
-export async function exportFrame(p: Project, t: number, resolution: Resolution): Promise<ExportResult> {
+export function exportFrame(p: Project, t: number, resolution: Resolution): Promise<ExportResult> {
+  return withGpuRetry(() => frameOnce(p, t, resolution), () => undefined);
+}
+
+async function frameOnce(p: Project, t: number, resolution: Resolution): Promise<ExportResult> {
   const started = performance.now();
   const [width, height] = outputSize(p.settings, resolution);
   const r = new FrameRenderer(p, width, height);
@@ -376,7 +408,11 @@ export const gifSize = (s: ProjectSettings): [number, number] => {
 };
 
 /** Animated GIF (looping, 12 fps, 480 px long side) with one palette sampled across the video: no flicker. */
-export async function exportGif(p: Project, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
+export function exportGif(p: Project, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
+  return withGpuRetry(() => gifOnce(p, onProgress, signal), () => onProgress(0), signal);
+}
+
+async function gifOnce(p: Project, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
   const started = performance.now();
   const duration = projectDuration(p);
   if (duration <= 0) throw new MediaError('The timeline is empty');

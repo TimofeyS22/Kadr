@@ -13,7 +13,7 @@ import { soundEntries } from '../engine/audio';
 import { METER_IDLE, meterStep } from '../core/meter';
 import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
 import { projectScript } from '../core/script';
-import { ASR_MODELS, CAPTION_LANGUAGES, alignToScript, defaultAsrModel, languageLabel, transcribeProject, type AsrModel, type CaptionProgress } from '../engine/captions';
+import { ASR_MODELS, CAPTION_LANGUAGES, alignToScript, defaultAsrModel, fittingModel, languageLabel, transcribeProject, type AsrModel, type CaptionProgress } from '../engine/captions';
 import { importFile } from '../engine/importer';
 import { player } from '../engine/player';
 import { VoiceRecorder } from '../engine/recorder';
@@ -226,13 +226,14 @@ function savedLook(): { preset: string; layout: CaptionLayout } {
 }
 
 export function CaptionsBody() {
-  // GigaAM where the interface is Russian (v1.4: under half of Whisper small's errors on live Russian speech, docs/10),
-  // "Accurate" elsewhere (v1.0: on Russian speech tiny made 2× the errors of base); the others stay a choice.
+  // Where the interface is Russian: GigaAM (v1.4: under half of Whisper small's errors on live Russian speech, docs/10),
+  // on a phone FastConformer (v1.4.18, docs/12 §6.3); "Accurate" elsewhere (v1.0: on Russian speech tiny made 2× the
+  // errors of base). The others stay a choice.
   const [picked, setModel] = useState<AsrModel>(defaultAsrModel);
   // Auto by default: the language is detected from the speech (eval in docs/02, v1.1.1).
   const [lang, setLang] = useState('');
-  // GigaAM reads Russian only: offered while the language is Russian or Auto.
-  const models: readonly AsrModel[] = lang === '' || lang === 'russian' ? ['ru', 'tiny', 'base', 'small'] : ['tiny', 'base', 'small'];
+  // The Russian models read Russian only: offered while the language is Russian or Auto.
+  const models: readonly AsrModel[] = lang === '' || lang === 'russian' ? ['ru', 'ru-fast', 'tiny', 'base', 'small'] : ['tiny', 'base', 'small'];
   const model = models.includes(picked) ? picked : 'base';
   const [preset, setPreset] = useState(() => savedLook().preset);
   const [layout, setLayout] = useState<CaptionLayout>(() => savedLook().layout);
@@ -323,7 +324,10 @@ export function CaptionsBody() {
       <p className="hint">{t('Pick the language if the video mixes languages or the result looks wrong.')}</p>
       <h3>{t('Recognition')}</h3>
       <Chips options={models} value={model} onChange={setModel} render={(m) => `${t(ASR_MODELS[m].label)}, ${ASR_MODELS[m].mb} MB`} />
-      {model === 'ru' && <p className="hint">{t('GigaAM reads Russian speech best. Speech in other languages is recognized by “Accurate”.')}</p>}
+      {fittingModel(model) !== model
+        ? <p className="hint">{t('This device ran out of memory for it before: captions are made by “{name}”.', { name: t(ASR_MODELS[fittingModel(model)].label) })}</p>
+        : model === 'ru' ? <p className="hint">{t('GigaAM reads Russian speech best. Speech in other languages is recognized by “Accurate”.')}</p>
+        : model === 'ru-fast' && <p className="hint">{t('Reads Russian speech with punctuation, made for phones. Speech in other languages is recognized by “Accurate”.')}</p>}
       <CaptionLook layout={layout} preset={preset} onLayout={setLayout} onPreset={setPreset} />
       <p className="hint">{t('Speech is recognized on this device and your audio is never uploaded. The model downloads once and is kept in this browser.')}</p>
       <button className="btn primary big" disabled={source === 'script' && !script.trim()} onClick={() => void run()}>{t('Create captions')}</button>

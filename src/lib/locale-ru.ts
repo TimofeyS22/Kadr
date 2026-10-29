@@ -676,4 +676,7 @@ export const RU: Record<string, string> = {
   'Close': 'Закрыть',
   'Privacy': 'Конфиденциальность',
   'Licenses': 'Лицензии',
+  'Russian speech, compact': 'Русская речь, компактная',
+  'This device ran out of memory for it before: captions are made by “{name}”.': 'Этому устройству раньше не хватило для неё памяти: субтитры делает «{name}».',
+  'Reads Russian speech with punctuation, made for phones. Speech in other languages is recognized by “Accurate”.': 'Читает русскую речь с пунктуацией, сделана для телефонов. Речь на других языках распознаёт «Точно».',
 };

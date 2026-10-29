@@ -9,6 +9,7 @@ import { renderAudioWindow, soundEntries } from './audio';
 import { MediaError, MediaPool } from './media';
 import { DOWNLOAD_STOPPED, PARTS_CACHE } from './modelFiles';
 import type { HeapInfo } from './wasmMemory';
+import { IOS } from '../lib/device';
 import { useLocale } from '../lib/i18n';
 import { isStaleCode, newerVersionDeployed, reloadIntoUpdate, updatingMessage } from '../lib/update';
 import { keepAwake } from '../lib/wakeLock';
@@ -19,17 +20,73 @@ export const ASR_MODELS: Record<AsrModel, { label: string; mb: number }> = {
   base: { label: 'Accurate', mb: 77 },
   small: { label: 'Most accurate', mb: 249 },
   ru: { label: 'Russian speech', mb: 225 },
+  'ru-fast': { label: 'Russian speech, compact', mb: 132 },
 };
-
-/** GigaAM for Russian where the interface is Russian (its speech is mostly Russian), Whisper base elsewhere. */
-export const defaultAsrModel = (): AsrModel => (useLocale.getState().locale === 'ru' ? 'ru' : 'base');
+const isRussian = (m: AsrModel): m is 'ru' | 'ru-fast' => m === 'ru' || m === 'ru-fast';
 
 /**
- * GigaAM confirms Russian speech by itself (no Whisper download) when it is at least this sure and reads at least
- * this many letters per second; otherwise Whisper detects the language. Measured on the eval set (docs/10 §2):
- * Russian 0.96–0.99, Russian under music 0.88; Ukrainian 0.84, English 0.82–0.84, Spanish 0.92 with almost no letters.
+ * The next lighter model, for when one does not fit this device's memory: captions still come, from a smaller
+ * model, instead of an error (docs/12 rule 10). GigaAM's heap peaks at ~480 MB, FastConformer's at a fraction.
  */
-const RU_SURE = 0.93, RU_LETTERS_PER_S = 5;
+const LIGHTER: Partial<Record<AsrModel, AsrModel>> = { ru: 'ru-fast', small: 'base', base: 'tiny' };
+
+// iOS gives no error when a tab takes too much memory: it ends the page and loads it again, in the same tab. A big
+// model that was loading or listening in this tab, on screen, when that happened is too big for this device: it is
+// not tried here again for TOO_BIG_MS (a browser update or a freer phone may fit it later). The mark lives in
+// sessionStorage — this tab only, so another tab's work is never taken for this tab's crash — and only while the
+// page is on screen: a page ended in the background, or swiped away, was not necessarily short of memory.
+const WORKING_KEY = 'kadr.speech.working', TOO_BIG_KEY = 'kadr.speech.tooBig', TOO_BIG_MS = 14 * 864e5;
+const tooBigAt = (): Partial<Record<AsrModel, number>> => { try { return JSON.parse(localStorage.getItem(TOO_BIG_KEY) ?? '{}') as Partial<Record<AsrModel, number>>; } catch { return {}; } };
+const tooBig = (): AsrModel[] => Object.entries(tooBigAt()).filter(([, at]) => Date.now() - (at ?? 0) < TOO_BIG_MS).map(([m]) => m as AsrModel);
+function rememberTooBig(m: AsrModel): void {
+  try { localStorage.setItem(TOO_BIG_KEY, JSON.stringify({ ...tooBigAt(), [m]: Date.now() })); } catch { /* storage off */ }
+}
+let working: AsrModel | null = null;
+function markWorking(): void {
+  try {
+    if (working && document.visibilityState === 'visible') sessionStorage.setItem(WORKING_KEY, JSON.stringify({ model: working, at: Date.now() }));
+    else sessionStorage.removeItem(WORKING_KEY);
+  } catch { /* storage off */ }
+}
+const setWorking = (m: AsrModel | null) => { working = m; markWorking(); };
+if (typeof document !== 'undefined') {
+  try {
+    const died = JSON.parse(sessionStorage.getItem(WORKING_KEY) ?? 'null') as { model: AsrModel; at: number } | null;
+    if (died && Date.now() - died.at < 30 * 60_000) { rememberTooBig(died.model); console.warn(`this tab ended while ${died.model} was working: it is too big for this device`); }
+    sessionStorage.removeItem(WORKING_KEY);
+  } catch { /* storage off */ }
+  document.addEventListener('visibilitychange', markWorking);
+  addEventListener('pagehide', () => { working = null; markWorking(); }); // closing the page on purpose
+}
+
+/** `m`, or the lighter model that replaces it on this device (it did not fit before). */
+export function fittingModel(m: AsrModel): AsrModel {
+  const banned = tooBig();
+  while (banned.includes(m) && LIGHTER[m]) m = LIGHTER[m]!;
+  return m;
+}
+
+/** A phone or tablet whose memory does not hold GigaAM: every iPhone and iPad (docs/12 §1.2), Android with ≤ 4 GB. */
+const smallMemory = () => IOS || ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
+
+/**
+ * Where the interface is Russian (its speech is mostly Russian): GigaAM, or on a phone FastConformer (docs/12 §6.3).
+ * Elsewhere Whisper base.
+ */
+export const defaultAsrModel = (): AsrModel => fittingModel(useLocale.getState().locale === 'ru' ? (smallMemory() ? 'ru-fast' : 'ru') : 'base');
+
+/**
+ * A Russian model confirms Russian speech by itself (no Whisper download) when it is at least this sure and reads at
+ * least this many letters per second; otherwise Whisper detects the language. Measured on the eval set:
+ * - GigaAM (docs/10 §2): Russian 0.96–0.99, under music 0.88; Ukrainian 0.84, English 0.82–0.84, Spanish 0.92 with
+ *   almost no letters.
+ * - FastConformer (2026-10-29): Russian 0.925–0.96, under music 0.85; Ukrainian 0.79, German 0.68, English 0.69,
+ *   Italian 0.59, Spanish 0.55. Russian reads 7–12 letters/s.
+ */
+const SURE: Record<'ru' | 'ru-fast', { confidence: number; letters: number }> = {
+  ru: { confidence: 0.93, letters: 5 },
+  'ru-fast': { confidence: 0.88, letters: 5 },
+};
 
 export const CAPTION_LANGUAGES: { id: string | null; code: string; label: string }[] = [
   { id: null, code: '', label: 'Auto' }, { id: 'english', code: 'en', label: 'English' }, { id: 'russian', code: 'ru', label: 'Русский' },
@@ -128,7 +185,14 @@ function retire(w: Worker): void {
 }
 
 /** ONNX Runtime ran out of WASM memory (iPhone, docs/12): said plainly, the engine's own words go to the log. */
-const outOfMemory = (message: string) => /out of memory|maximum memory|cannot enlarge memory|failed to allocate/i.test(message);
+// ONNX Runtime words it as "std::bad_alloc" when a session does not fit the heap it has (FACT, 2026-10-29: GigaAM in a
+// 384 MB heap).
+const outOfMemory = (message: string) => /out of memory|maximum memory|cannot enlarge memory|failed to allocate|bad_alloc|\bOOM\b/i.test(message);
+/**
+ * The model, not the device, is the problem: the engine had its heap and the model outgrew it. Without a heap the
+ * engine did not start at all, and a lighter model would not either.
+ */
+const tooBigFor = (r: Extract<AsrResponse, { type: 'error' }>) => outOfMemory(r.message) && r.heap?.capMb != null;
 function engineError(message: string, error: string): MediaError {
   console.error('speech engine:', message);
   if (message.includes(DOWNLOAD_STOPPED)) return new MediaError('The speech model download stopped. Check the connection and tap again: it continues from where it stopped.');
@@ -158,7 +222,7 @@ let seq = 0;
  */
 function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<AsrResponse> {
   return new Promise((resolve, reject) => {
-    const id = msg.type !== 'load' ? (msg.id = ++seq) : undefined;
+    const id = (msg.id = ++seq);
     let settled = false;
     const done = () => {
       w.removeEventListener('message', onMessage); w.removeEventListener('error', onError); signal?.removeEventListener('abort', onAbort);
@@ -185,10 +249,10 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
     };
     const onMessage = (e: MessageEvent<AsrResponse>) => {
       const r = e.data;
-      if (r.type === 'download') { onDownload?.(r.loaded, r.total); return; }
-      const mine = msg.type === 'load'
-        ? r.type === 'ready' || r.type === 'error'
-        : (r.type === 'result' || r.type === 'vad' || r.type === 'language' || r.type === 'aligned' || r.type === 'heap' || r.type === 'error') && r.id === id;
+      // Every answer names its request: a load given up on (Cancel) still runs in the worker, and its progress or
+      // its error must not be taken for a later request's.
+      if (r.type === 'download') { if (r.id === id) onDownload?.(r.loaded, r.total); return; }
+      const mine = r.id === id && (msg.type === 'load' ? r.type === 'ready' || r.type === 'error' : r.type !== 'ready');
       if (!mine) return;
       done();
       if (r.type === 'error') {
@@ -215,19 +279,51 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
 export async function transcribeProject(
   p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal,
 ): Promise<Transcript> {
-  const w = getWorker();
-  // 'ru' is GigaAM for Russian speech; speech in another language goes to Whisper base.
-  let engine: AsrModel = model === 'ru' && language && language !== 'russian' ? 'base' : model;
-  const load = async (m: AsrModel) => {
-    onProgress({ phase: 'download', fraction: 0, mb: ASR_MODELS[m].mb });
-    const loaded = await request(w, { type: 'load', model: m }, (l, t) => onProgress({ phase: 'download', fraction: t ? l / t : 0, mb: ASR_MODELS[m].mb }), signal);
-    if (loaded.type === 'error') {
+  model = fittingModel(model);
+  try {
+    return await transcribeWith(p, model, language, onProgress, signal);
+  } finally {
+    setWorking(null);
+  }
+}
+
+async function transcribeWith(
+  p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal,
+): Promise<Transcript> {
+  // A Russian model reads Russian speech; speech in another language goes to Whisper base.
+  let engine: AsrModel = isRussian(model) && language && language !== 'russian' ? fittingModel('base') : model;
+  // The Russian model of this run: the chosen one, or the lighter one that replaced it.
+  let russian: AsrModel = model;
+  /** Loads `m`, or the lighter model when `m` does not fit in memory; returns the one loaded. */
+  const load = async (m: AsrModel): Promise<AsrModel> => {
+    for (;;) {
+      onProgress({ phase: 'download', fraction: 0, mb: ASR_MODELS[m].mb });
+      setWorking(m);
+      // A worker whose engine failed was replaced (retire): each request goes to the current one.
+      const loaded = await request(getWorker(), { type: 'load', id: 0, model: m }, (l, t) => onProgress({ phase: 'download', fraction: t ? l / t : 0, mb: ASR_MODELS[m].mb }), signal);
+      if (loaded.type !== 'error') return m;
       // Offline before the first download: say what to do, not "Failed to fetch" (docs/11 QA).
       if (!navigator.onLine) throw new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: ASR_MODELS[m].mb });
-      throw engineError(loaded.message, 'Could not load the speech model ({error})');
+      const lighter = tooBigFor(loaded) ? LIGHTER[m] : undefined;
+      if (!lighter) throw engineError(loaded.message, 'Could not load the speech model ({error})');
+      console.warn(`speech model ${m} does not fit in this device's memory; ${lighter} takes over:`, loaded.message);
+      rememberTooBig(m);
+      m = lighter;
     }
   };
-  await load(engine);
+  /** Moves to the lighter model after the current one ran out of memory; false if there is none. */
+  const lighten = async (r: Extract<AsrResponse, { type: 'error' }>): Promise<boolean> => {
+    const lighter = tooBigFor(r) ? LIGHTER[engine] : undefined;
+    if (!lighter) return false;
+    console.warn(`speech model ${engine} ran out of memory; ${lighter} takes over:`, r.message);
+    rememberTooBig(engine);
+    engine = await load(lighter);
+    if (isRussian(engine)) russian = engine;
+    segment();
+    return true;
+  };
+  engine = await load(engine);
+  if (isRussian(engine)) russian = engine;
   onProgress({ phase: 'prepare' });
   const skipped = new Set<string>();
   const heard = captionSource(p); // the voice, without background music (v1.4.1)
@@ -238,19 +334,23 @@ export async function transcribeProject(
   }
   // Whisper invents text over music and silence, so only speech found by the VAD is transcribed.
   onProgress({ phase: 'listen' });
-  const vad = await request(w, { type: 'vad', id: 0, audio: audio.slice() }, undefined, signal);
+  const vad = await request(getWorker(), { type: 'vad', id: 0, audio: audio.slice() }, undefined, signal);
   if (vad.type === 'error') throw engineError(vad.message, 'Speech detection failed ({error})');
-  // Speech segments for the engine at work: lenient for GigaAM, strict for Whisper (it invents text over music).
+  // Speech segments for the engine at work: lenient for the Russian CTC models, strict for Whisper (it invents text
+  // over music; CTC models do not).
   let speech: [number, number][] = [], windows: [number, number][] = [];
-  const segment = () => {
-    speech = vad.type === 'vad' ? vadSegments(vad.probs, 512 / SR, engine === 'ru' ? GIGAAM_VAD : DEFAULT_VAD) : [];
+  function segment() {
+    speech = vad.type === 'vad' ? vadSegments(vad.probs, 512 / SR, isRussian(engine) ? GIGAAM_VAD : DEFAULT_VAD) : [];
     windows = speechWindows(speech);
-  };
+  }
   segment();
-  const transcribe = async (i: number) => {
+  const transcribe = async (i: number): Promise<Extract<AsrResponse, { type: 'result' }> | null> => {
     const [a0, a1] = windows[i];
-    const r = await request(w, { type: 'transcribe', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), language: engine === 'ru' ? null : language, model: engine }, undefined, signal);
-    if (r.type === 'error') throw engineError(r.message, 'Transcription failed ({error})');
+    const r = await request(getWorker(), { type: 'transcribe', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), language: isRussian(engine) ? null : language, model: engine }, undefined, signal);
+    if (r.type === 'error') {
+      if (await lighten(r)) return transcribe(i);
+      throw engineError(r.message, 'Transcription failed ({error})');
+    }
     return r.type === 'result' ? r : null;
   };
   const done = new Map<number, NonNullable<Awaited<ReturnType<typeof transcribe>>>>();
@@ -258,17 +358,18 @@ export async function transcribeProject(
   if (detected) {
     const longest = windows.reduce((best, x, i) => (x[1] - x[0] > windows[best][1] - windows[best][0] ? i : best), 0);
     const [a0, a1] = windows[longest];
-    if (engine === 'ru') {
+    if (isRussian(engine)) {
       const r = await transcribe(longest);
-      if (r && (r.confidence ?? 0) >= RU_SURE && (r.chars ?? 0) / (a1 - a0) >= RU_LETTERS_PER_S) { language = 'russian'; done.set(longest, r); }
-      else { engine = 'base'; segment(); await load(engine); }
+      const sure = SURE[isRussian(engine) ? engine : 'ru'];
+      if (r && (r.confidence ?? 0) >= sure.confidence && (r.chars ?? 0) / (a1 - a0) >= sure.letters) { language = 'russian'; done.set(longest, r); }
+      else { engine = await load(fittingModel('base')); segment(); }
     }
     if (!language) {
-      const r = await request(w, { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code) }, undefined, signal);
+      const r = await request(getWorker(), { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code) }, undefined, signal);
       if (r.type === 'error') throw engineError(r.message, 'Speech detection failed ({error})');
       if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
-      // GigaAM was unsure (Russian under loud music) but it is Russian: GigaAM still reads it best.
-      if (model === 'ru' && language === 'russian') { engine = 'ru'; segment(); await load(engine); }
+      // The Russian model was unsure (Russian under loud music) but it is Russian: it still reads it best.
+      if (isRussian(model) && language === 'russian') { engine = await load(russian); segment(); }
     }
   }
   const words: CaptionWord[] = [];
@@ -330,11 +431,11 @@ export async function checkSpeechEngine(): Promise<SpeechCheck> {
 export async function checkSpeechModel(model: AsrModel, audio: Float32Array, language: string | null, onDownload: (fraction: number) => void): Promise<SpeechCheck> {
   const w = getWorker();
   const t0 = performance.now();
-  const loaded = await request(w, { type: 'load', model }, (l, t) => onDownload(t ? l / t : 0));
+  const loaded = await request(w, { type: 'load', id: 0, model }, (l, t) => onDownload(t ? l / t : 0));
   const loadMs = performance.now() - t0;
   if (loaded.type === 'error') return { ok: false, loadMs, error: loaded.message, heap: loaded.heap };
   const t1 = performance.now();
-  const r = await request(w, { type: 'transcribe', id: 0, audio, language: model === 'ru' ? null : language, model });
+  const r = await request(w, { type: 'transcribe', id: 0, audio, language: isRussian(model) ? null : language, model });
   const runMs = performance.now() - t1;
   if (r.type === 'error') return { ok: false, loadMs, runMs, error: r.message, heap: r.heap };
   const text = r.type === 'result' ? r.words.map((x) => x.text).join(' ') : '';
