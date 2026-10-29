@@ -8,7 +8,7 @@ import { NEMO_FRAME_S, nemoFeatures } from '../core/fastconformer';
 import { ctcDecode, gigaamFeatures, parseCtcVocab, type CtcVocab } from '../core/gigaam';
 import { alignScript, type ScriptCaptions } from '../core/script';
 import type { CaptionWord } from '../core/types';
-import { ensureFile, isLarge, isModelFileName, keptFile, legacySmall, mirrored, modelHosts, modelKey, probeAnswer, setModelHosts, smallFile } from './modelFiles';
+import { absentOnSite, ensureFile, isLarge, isModelFileName, keptFile, legacySmall, mirrored, modelHosts, modelKey, probeAnswer, setModelHosts, smallFile } from './modelFiles';
 import { capSharedMemory, type HeapInfo } from './wasmMemory';
 
 /**
@@ -78,11 +78,12 @@ env.fetch = async (input: string | URL, init?: RequestInit) => {
 };
 
 /**
- * A file models.json does not list (an optional one transformers.js looks for). Kadr's site answers for the
- * repositories it mirrors (a 404 there means the file does not exist); the rest goes to Hugging Face. A phone that
- * changes networks mid-request ("network changed") gets two more tries.
+ * A file models.json does not list (an optional one transformers.js looks for). For the repositories Kadr's site
+ * mirrors the answer is known without asking: not there. The rest goes to Hugging Face. A phone that changes
+ * networks mid-request ("network changed") gets two more tries.
  */
 async function unlisted(url: string, init?: RequestInit): Promise<Response> {
+  if (absentOnSite(url)) return new Response(null, { status: 404, statusText: 'Not Found' });
   const { own, ranges } = modelHosts();
   const target = own && url.startsWith(own) && !mirrored(url.slice(own.length)) ? ranges + url.slice(own.length) : url;
   for (let attempt = 1; ; attempt++) {

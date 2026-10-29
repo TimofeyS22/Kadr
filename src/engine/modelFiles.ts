@@ -44,6 +44,17 @@ export const modelHosts = () => hosts;
 /** Kadr's site has this file (its repository is mirrored). */
 export const mirrored = (key: string) => MIRROR.some((prefix) => key.startsWith(prefix));
 
+/**
+ * A URL on Kadr's site of a file models.json does not list, in a repository the site mirrors: the site has exactly
+ * the listed files, so this one is not there, and asking would only put a 404 in the console (transformers.js 4.3.0
+ * looks for onnx/<name>.onnx whatever subfolder it is given) — or, offline, wait for a network that is not there.
+ */
+export function absentOnSite(url: string): boolean {
+  if (!hosts.own || !url.startsWith(hosts.own)) return false;
+  const key = url.slice(hosts.own.length).split(/[?#]/)[0];
+  return mirrored(key) && !(key in FILES || key in SMALL);
+}
+
 /** The models.json key (`<repo>/resolve/<rev>/<path>`) of a model URL on any host, or null for files not listed. */
 export function modelKey(url: string): string | null {
   const path = url.split(/[?#]/)[0];

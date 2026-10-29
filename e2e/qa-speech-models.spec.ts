@@ -16,6 +16,24 @@ function requests(context: BrowserContext): string[] {
   return urls;
 }
 const from = (urls: string[], repo: RegExp) => urls.filter((u) => repo.test(u));
+
+/**
+ * The speech models the page asks its worker to load, in order (since this page load). Requests alone cannot tell:
+ * a model kept on the device loads without the network.
+ */
+async function recordLoads(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __loads: string[] };
+    w.__loads = [];
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, ...args: Parameters<Worker['postMessage']>) {
+      const msg = args[0] as { type?: string; model?: string } | null;
+      if (msg?.type === 'load' && msg.model) w.__loads.push(msg.model);
+      return post.apply(this, args as [unknown, StructuredSerializeOptions]);
+    };
+  });
+}
+const loads = (page: Page) => page.evaluate(() => (window as unknown as { __loads: string[] }).__loads);
 const FAST = /stt_ru_fastconformer/, GIGAAM = /gigaam-v3-onnx/, WHISPER = /whisper-/, HF = /huggingface\.co|\.hf\.co/;
 
 /** iOS Safari, in the speech worker: a shared memory above `limitMb` cannot be reserved (qa-iphone-speech.spec.ts). */
@@ -46,9 +64,11 @@ async function russianCaptions(page: Page) {
 test('a phone (an iPhone; Android with 4 GB): Russian captions come from the compact model on Kadr\'s site — no GigaAM, no Whisper, no Hugging Face', async ({ page, context, browserName }) => {
   test.setTimeout(500_000);
   if (browserName !== 'webkit') await page.addInitScript(() => Object.defineProperty(navigator, 'deviceMemory', { value: 4 }));
+  await recordLoads(page);
   const urls = requests(context);
   const text = (await russianCaptions(page))?.toLowerCase() ?? '';
   for (const w of ['привет', 'видеоредактор', 'телефоне']) expect(text).toContain(w);
+  expect(await loads(page)).toEqual(['ru-fast']);
   expect(from(urls, FAST).filter((u) => u.includes('/models/')).length).toBeGreaterThan(0);
   expect(from(urls, GIGAAM)).toEqual([]);
   expect(from(urls, WHISPER)).toEqual([]);
@@ -60,16 +80,16 @@ test('GigaAM does not fit in memory: the compact model takes over without a word
   test.setTimeout(600_000);
   // 400 MB of heap at most: the compact model needs ~360, GigaAM ~480 (?diag, 2026-10-29).
   await memoryLimit(context, 400);
+  await recordLoads(page);
   const urls = requests(context);
   await russianCaptions(page);
-  expect(from(urls, GIGAAM).length).toBeGreaterThan(0); // tried first: a desktop-sized phone
+  expect(await loads(page)).toEqual(['ru', 'ru-fast']); // GigaAM first (a phone with the memory of a desktop), then the compact one
+  expect(from(urls, GIGAAM).length).toBeGreaterThan(0);
   expect(from(urls, FAST).length).toBeGreaterThan(0);
   expect(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('kadr.speech.tooBig') ?? '{}')))).toEqual(['ru']);
-  // Next time, in a new project: straight to the compact model, GigaAM is not asked for at all.
-  urls.length = 0;
+  // Next time, in a new project: straight to the compact model (now kept on the device), GigaAM is not tried.
   await russianCaptions(page);
-  expect(from(urls, GIGAAM)).toEqual([]);
-  expect(from(urls, FAST).length).toBeGreaterThan(0);
+  expect(await loads(page)).toEqual(['ru-fast']);
 });
 
 test('Kadr\'s site does not answer for the models: they come from Hugging Face, and the captions are made', async ({ page, context }) => {
