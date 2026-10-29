@@ -37,7 +37,9 @@ const expected = [
 ];
 for (let i = 0; i < expected.length; i += 16) {
   await Promise.all(expected.slice(i, i + 16).map(async ([p, size]) => {
-    const res = await fetch(base + p, { method: 'HEAD', cache: 'no-store' });
+    // Uncompressed: Pages gzips application/octet-stream for a client that accepts it (Node's fetch does), and the
+    // length is then the gzip's (FACT, 2026-10-29: 4546883 for a 6381951-byte part). Browsers unpack it themselves.
+    const res = await fetch(base + p, { method: 'HEAD', cache: 'no-store', headers: { 'accept-encoding': 'identity' } });
     const length = Number(res.headers.get('content-length'));
     if (!res.ok || (size && length !== size)) bad.push(`${p} ${res.status} ${length || ''}`);
   }));
