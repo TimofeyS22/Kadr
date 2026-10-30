@@ -446,7 +446,11 @@ export class Compositor {
       console.warn('WebGL refused a decoder frame', e);
       ok = false;
     }
-    if (!ok) { // from now on through canvases; an export starts again (FrameRenderer.check)
+    if (!ok) {
+      // A GPU reset answers getError with CONTEXT_LOST_WEBGL too: that is no refusal, decoder frames stay on. The export
+      // starts again on a fresh context all the same (FrameRenderer.check sees the loss).
+      if (gl.isContextLost()) return false;
+      // Refused: from now on through canvases; an export starts again (FrameRenderer.check).
       framesRefused = true;
       this.frameMax = 0;
       this.framesFailed = true;

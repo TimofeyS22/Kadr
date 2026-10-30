@@ -173,3 +173,42 @@ test('WebGL refuses decoder frames mid-export: the export starts again through c
     expect(y.reduce((s, v) => s + v, 0) / y.length, `the picture at ${t} s`).toBeGreaterThan(40);
   }
 });
+
+// A GPU reset can land on the first frame of a clip, the one whose upload is checked with getError, and WebGL then
+// answers CONTEXT_LOST_WEBGL. That is no refusal: the export starts again on a fresh context with decoder frames still
+// on. Taken for a refusal (v1.4.20), it sent every video of the page through canvases, slow again until a reload.
+test('a GPU reset on the first decoder frame is not a refusal: the export starts again, still without canvases', async ({ page }, info) => {
+  test.skip(info.project.name !== 'iphone-webkit', 'decoder frames go to WebGL only in WebKit');
+  test.setTimeout(240_000);
+  await page.addInitScript(() => {
+    const w = window as unknown as { __lost: number };
+    w.__lost = 0;
+    const tex = WebGL2RenderingContext.prototype.texImage2D;
+    WebGL2RenderingContext.prototype.texImage2D = function (this: WebGL2RenderingContext, ...a: unknown[]) {
+      (tex as (...x: unknown[]) => void).apply(this, a);
+      const src = a[a.length - 1];
+      // The export's context (it keeps its drawing buffer) loses the GPU right after its first decoder frame (not the probe).
+      if (!w.__lost && src instanceof VideoFrame && src.displayWidth > 2 && this.getContextAttributes()?.preserveDrawingBuffer) {
+        w.__lost++;
+        this.getExtension('WEBGL_lose_context')?.loseContext();
+      }
+    } as typeof tex;
+  });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await tool(page, 'Media').click();
+  await (await chooser).setFiles([fx('landscape.mp4')]);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  const file = info.outputPath('reset.mp4');
+  const { canvasUploads } = await exportVideo(page, file, 6);
+  expect(await page.evaluate(() => (window as unknown as { __lost: number }).__lost), 'the GPU was reset once').toBe(1);
+  expect(canvasUploads, 'video frames copied from a 2D canvas into WebGL after the reset').toBe(0);
+  expect(await page.locator('.error-text, .toast.error').count(), 'no error shown').toBe(0);
+  for (const t of [0.2, 3, 5.8]) {
+    const y = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(t), '-i', file, '-frames:v', '1', '-vf', 'crop=iw:ih/4,scale=32:32,format=gray', '-f', 'rawvideo', '-']);
+    expect(y.reduce((s, v) => s + v, 0) / y.length, `the picture at ${t} s`).toBeGreaterThan(40);
+  }
+});
