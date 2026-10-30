@@ -56,7 +56,7 @@ class FrameRenderer {
   }
   async draw(t: number): Promise<void> {
     const desc = buildFrame(this.p, Math.min(t, Math.max(0, projectDuration(this.p) - 1e-3)));
-    const sources = await resolveDrawables(desc, this.pool, this.text, this.width, this.height);
+    const sources = await resolveDrawables(desc, this.pool, this.text, this.width, this.height, false, this.compositor.frameMax);
     this.check();
     this.compositor.draw(desc, sources);
     this.check();
@@ -66,7 +66,8 @@ class FrameRenderer {
    * (docs/12 §1.3 item 12). The export fails and says why instead.
    */
   check(): void {
-    if (this.compositor.everLost || this.compositor.isLost()) throw new MediaError(GPU_LOST);
+    // A refused decoder frame left a layer out of this frame: the export starts again, its videos through canvases.
+    if (this.compositor.everLost || this.compositor.isLost() || this.compositor.framesFailed) throw new MediaError(GPU_LOST);
   }
   dispose(): void {
     this.pool.dispose();

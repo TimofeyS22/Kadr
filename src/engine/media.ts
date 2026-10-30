@@ -81,6 +81,18 @@ async function fitBitmap(bmp: ImageBitmap, maxDim: number): Promise<ImageBitmap>
 /** A decoded frame ready to draw: a canvas in display orientation, reused by the stream. */
 export interface StreamFrame { canvas: HTMLCanvasElement; timestamp: number; /** false: a keyframe shown while scrubbing */ exact: boolean }
 
+/** How a decoder frame turns upright: degrees clockwise, then a mirror (Mediabunny's rotation and flip). */
+export interface Turn { rotation: 0 | 90 | 180 | 270; flip: boolean }
+
+/**
+ * A frame to draw on the GPU (preview and export). An exact frame is the decoder's own `VideoFrame` with its `turn`:
+ * WebGL takes it as it is, and the compositor turns it upright at `width`×`height`. Drawn through a 2D canvas instead,
+ * WebKit copied every canvas back through the CPU into WebGL, ~11 ms per 1080p layer and ~28 ms per 4K one: an overlay
+ * made an iPhone export 3× slower (2026-10-30). A keyframe while scrubbing, and a frame too big for a texture, still come
+ * as an upright canvas. The decoder frame stays open until the stream reads on: draw it before the clip's next read.
+ */
+export interface Picture { image: HTMLCanvasElement | VideoFrame; width: number; height: number; turn?: Turn; timestamp: number; exact: boolean }
+
 /**
  * Sequential per-clip decoding (docs/04, H4). Frames the preview skips are closed without being drawn: only the
  * frame actually shown is converted to a canvas. Converting every decoded frame used to take ~90% of the main
@@ -93,17 +105,19 @@ class VideoStream {
   private nxt: VideoSample | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   private closed = false;
-  // Two canvases alternate so a frame being uploaded is never overwritten by the next one.
-  private readonly canvases: HTMLCanvasElement[];
+  // Two canvases alternate so a frame being uploaded is never overwritten by the next one. Made on first use: frames
+  // that go to the GPU as they are never need them.
+  private canvases: HTMLCanvasElement[] | null = null;
   private flip = 0;
   private shown: StreamFrame | null = null;
+  /** The decoder frame handed out last: a copy of the sample's, so it stays valid if Mediabunny closes the sample. */
+  private out: { sample: VideoSample; frame: VideoFrame } | null = null;
 
-  constructor(private sink: VideoSampleSink, private packets: EncodedPacketSink, width: number, height: number) {
-    this.canvases = [0, 1].map(() => Object.assign(document.createElement('canvas'), { width, height }));
-  }
+  constructor(private sink: VideoSampleSink, private packets: EncodedPacketSink, private width: number, private height: number) {}
 
-  frameAt(t: number, fast = false): Promise<StreamFrame | null> {
-    const run = this.queue.then(() => this.readSafe(t, fast));
+  /** `frameMax`: an exact frame at most this big on its long side comes as the decoder's frame (0: always a canvas). */
+  frameAt(t: number, fast = false, frameMax = 0): Promise<Picture | null> {
+    const run = this.queue.then(() => this.readSafe(t, fast, frameMax));
     this.queue = run.catch(() => undefined);
     return run;
   }
@@ -130,14 +144,14 @@ class VideoStream {
    * A sample can be closed under us: the browser reclaims a phone's hardware decoder, or Mediabunny's iterator closes
    * the last frame of a clip on cleanup. That used to surface as "VideoSample is closed"; now decoding restarts once.
    */
-  private async readSafe(t: number, fast: boolean): Promise<StreamFrame | null> {
+  private async readSafe(t: number, fast: boolean, frameMax: number): Promise<Picture | null> {
     try {
-      return await this.read(t, fast);
+      return await this.read(t, fast, frameMax);
     } catch (e) {
       if (this.closed) return null;
       if (!/closed/i.test(errorText(e))) throw e;
       await this.reset();
-      return await this.read(t, fast);
+      return await this.read(t, fast, frameMax);
     }
   }
 
@@ -145,20 +159,35 @@ class VideoStream {
     this.cur?.close();
     this.nxt?.close();
     this.cur = this.nxt = null;
+    this.out?.frame.close();
+    this.out = null;
   }
 
-  private show(s: VideoSample, exact: boolean): StreamFrame {
+  private canvasPicture(f: StreamFrame): Picture {
+    return { image: f.canvas, width: f.canvas.width, height: f.canvas.height, timestamp: f.timestamp, exact: f.exact };
+  }
+
+  private show(s: VideoSample, exact: boolean, frameMax: number): Picture {
+    if (exact && Math.max(s.codedWidth, s.codedHeight) <= frameMax) {
+      if (this.out?.sample !== s) {
+        this.out?.frame.close();
+        this.out = { sample: s, frame: s.toVideoFrame() };
+      }
+      this.shown = null; // a scrub that finds no keyframe must not bring back an older canvas
+      return { image: this.out.frame, width: this.width, height: this.height, turn: { rotation: s.rotation, flip: s.flip }, timestamp: s.timestamp, exact };
+    }
     if (this.shown?.timestamp !== s.timestamp || this.shown.exact !== exact) {
+      this.canvases ??= [0, 1].map(() => Object.assign(document.createElement('canvas'), { width: this.width, height: this.height }));
       const canvas = this.canvases[(this.flip ^= 1)];
       const ctx = canvas.getContext('2d')!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       s.drawWithFit(ctx, { fit: 'contain' }); // applies the rotation of phone videos
       this.shown = { canvas, timestamp: s.timestamp, exact };
     }
-    return this.shown;
+    return this.canvasPicture(this.shown);
   }
 
-  private async read(t: number, fast: boolean): Promise<StreamFrame | null> {
+  private async read(t: number, fast: boolean, frameMax: number): Promise<Picture | null> {
     if (this.closed) return null;
     const cur = this.cur;
     const far = !this.it || !cur || t < cur.timestamp - 1e-4 || t > cur.timestamp + 2.5;
@@ -166,8 +195,8 @@ class VideoStream {
       // Scrubbing: show the nearest keyframe right away (one decode); the exact frame follows when asked.
       const key = await this.packets.getKeyPacket(t);
       const s = await this.sink.getSample(key?.timestamp ?? t);
-      if (!s || this.closed) { s?.close(); return this.shown; }
-      const f = this.show(s, false);
+      if (!s || this.closed) { s?.close(); return this.shown && this.canvasPicture(this.shown); }
+      const f = this.show(s, false, 0);
       s.close();
       return f;
     }
@@ -186,7 +215,7 @@ class VideoStream {
     }
     const c = this.cur;
     if (!c || this.closed) return null;
-    return this.show(c, true);
+    return this.show(c, true, frameMax);
   }
 
   close(): void {
@@ -238,7 +267,14 @@ export class MediaPool {
     return p;
   }
 
+  /** The clip at `t` as an upright canvas: pixels to read (a still, finding a person). */
   async frame(clipId: string, assetId: string, t: number, fast = false): Promise<StreamFrame | null> {
+    const p = await this.picture(clipId, assetId, t, fast);
+    return p && { canvas: p.image as HTMLCanvasElement, timestamp: p.timestamp, exact: p.exact }; // frameMax 0: a canvas
+  }
+
+  /** The clip at `t` to draw on the GPU; `frameMax` as in `VideoStream.frameAt` (the compositor's `frameMax`). */
+  async picture(clipId: string, assetId: string, t: number, fast = false, frameMax = 0): Promise<Picture | null> {
     let s = this.streams.get(clipId);
     if (!s) {
       const h = await this.handle(assetId);
@@ -251,7 +287,7 @@ export class MediaPool {
       }
     }
     s.lastUsed = performance.now();
-    return s.frameAt(t, fast);
+    return s.frameAt(t, fast, frameMax);
   }
 
   async audioSink(assetId: string): Promise<SoundSink | null> {

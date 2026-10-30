@@ -149,7 +149,7 @@ export class Player {
     const { width, height } = comp.canvas;
     const fast = this.fast;
     this.fast = false;
-    const sources = await resolveDrawables(desc, this.pool, this.text, width, height, fast);
+    const sources = await resolveDrawables(desc, this.pool, this.text, width, height, fast, comp.frameMax);
     if (this.compositor !== comp) return;
     this.bounds = comp.draw(desc, sources);
     const approx = [...sources.values()].some((d) => d.approx);
@@ -166,7 +166,7 @@ export class Player {
         const f = findClip(p, l.source.clipId);
         if (!f || !isMedia(f.clip)) continue;
         keep.add(l.source.clipId);
-        void this.pool.frame(l.source.clipId, l.source.assetId, f.clip.in).catch(() => undefined);
+        void this.pool.picture(l.source.clipId, l.source.assetId, f.clip.in, false, comp.frameMax).catch(() => undefined);
       }
     }
     this.pool.sweep(keep);

@@ -3,7 +3,8 @@ import type { FrameDesc, Layer } from '../core/frame';
 import { fromBase64 } from '../core/lut';
 import { ADJUST_KEYS, type BlendMode, type LutData } from '../core/types';
 import type { Drawable } from './text';
-import { MediaError } from './media';
+import { MediaError, type Turn } from './media';
+import { WEBKIT } from '../lib/device';
 
 const VS = `#version 300 es
 in vec2 aPos;
@@ -216,6 +217,44 @@ void main() {
   outColor = vec4(c * a, a);
 }`;
 
+// A decoder frame as WebGL takes it, turned upright at the slot's size (`Compositor.fromFrame`). Shrinking, each output
+// pixel averages a box of taps across its footprint, so a 4K frame drawn small does not shimmer.
+const VS_FRAME = `#version 300 es
+in vec2 aPos;
+void main() { gl_Position = vec4(aPos * 2.0, 0.0, 1.0); }`;
+
+const FS_FRAME = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uOut;
+uniform int uTurn;
+uniform float uMirror;
+uniform int uTaps;
+out vec4 outColor;
+// Upright position (row 0 at the top, as texImage2D puts a canvas) → position in the frame as decoded.
+vec2 decoded(vec2 p) {
+  p.x = mix(p.x, 1.0 - p.x, uMirror);
+  return uTurn == 1 ? vec2(p.y, 1.0 - p.x) : uTurn == 2 ? 1.0 - p : uTurn == 3 ? vec2(1.0 - p.y, p.x) : p;
+}
+void main() {
+  vec4 acc = vec4(0.0);
+  float n = float(uTaps);
+  for (int i = 0; i < 4; i++) {
+    if (i >= uTaps) break;
+    for (int j = 0; j < 4; j++) {
+      if (j >= uTaps) break;
+      acc += texture(uSrc, decoded((gl_FragCoord.xy + (vec2(float(i), float(j)) + 0.5) / n - 0.5) / uOut));
+    }
+  }
+  outColor = acc / (n * n);
+}`;
+
+/** What a layer draws; with `turn`, `image` is a decoder frame (`Picture` in media.ts), drawn upright by `fromFrame`. */
+export type Source = Drawable & { turn?: Turn };
+
+/** WebGL refused a decoder frame once (an untried format, say): from then on every video comes through a 2D canvas. */
+let framesRefused = false;
+
 const FULL = { x: 0, y: 0, w: 1, h: 1 };
 
 export interface LayerBounds { id: string; cx: number; cy: number; w: number; h: number; rot: number; hidden: boolean }
@@ -245,6 +284,23 @@ export class Compositor {
   private luts = new Map<string, WebGLTexture>();
   private emptyLut: WebGLTexture | null = null;
   private frameNo = 0;
+  /** Decoder frames: the program that turns them upright and the target it draws to. */
+  private frameProg!: WebGLProgram;
+  private frameU!: Record<'uOut' | 'uTurn' | 'uMirror' | 'uTaps', WebGLUniformLocation | null>;
+  private target!: WebGLFramebuffer;
+  /**
+   * Textures decoder frames arrive in, one per frame size: clips of one size share it (a 4K one is 33 MB), and a size
+   * that alternates with another every frame is not reallocated twice a frame.
+   */
+  private raws = new Map<string, { tex: WebGLTexture; lastFrame: number }>();
+  /** A decoder frame was refused while drawing: an export starts again, through canvases (`FrameRenderer.check`). */
+  framesFailed = false;
+  /**
+   * Decoder frames up to this size on the long side go to WebGL as they are (the texture limit). 0 elsewhere: every
+   * video comes through a 2D canvas, which Chromium hands to WebGL on the GPU (there a frame as it is, often 4K, plus
+   * the pass to turn it upright, measured slower: 11.1 s against 8.7 s for a 30 s export with a 4K overlay).
+   */
+  frameMax = 0;
   lost = false;
   /** The context was lost at some point: a restore brings a new context, but not the textures and LUTs of the old one. */
   everLost = false;
@@ -266,32 +322,62 @@ export class Compositor {
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(`Shader: ${gl.getShaderInfoLog(s)}`);
       return s;
     };
-    const prog = gl.createProgram()!;
-    gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS));
-    gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(`Program: ${gl.getProgramInfoLog(prog)}`);
+    const link = (vs: string, fs: string) => {
+      const prog = gl.createProgram()!;
+      gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs));
+      gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+      gl.bindAttribLocation(prog, 0, 'aPos'); // both programs draw the same quad
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(`Program: ${gl.getProgramInfoLog(prog)}`);
+      return prog;
+    };
+    const fp = (this.frameProg = link(VS_FRAME, FS_FRAME));
+    gl.useProgram(fp);
+    gl.uniform1i(gl.getUniformLocation(fp, 'uSrc'), 0);
+    this.frameU = { uOut: gl.getUniformLocation(fp, 'uOut'), uTurn: gl.getUniformLocation(fp, 'uTurn'), uMirror: gl.getUniformLocation(fp, 'uMirror'), uTaps: gl.getUniformLocation(fp, 'uTaps') };
+    const prog = link(VS, FS);
     this.prog = prog;
     gl.useProgram(prog);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]), gl.STATIC_DRAW);
-    const loc = gl.getAttribLocation(prog, 'aPos');
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.enable(gl.BLEND);
     this.u.clear();
     this.slots.clear();
     this.luts.clear();
+    this.raws.clear();
     // Something must always be bound to the 3D sampler unit, even when no layer uses a LUT.
     this.emptyLut = gl.createTexture();
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_3D, this.emptyLut);
     this.upload3d(1, new Uint8Array(3));
     gl.activeTexture(gl.TEXTURE0);
+    this.target = gl.createFramebuffer()!;
+    this.frameMax = WEBKIT && this.takesFrames() ? (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number) : 0;
     this.lost = false;
+  }
+
+  /** Whether this browser's WebGL takes a `VideoFrame` (tried once with a 2×2 one). */
+  private takesFrames(): boolean {
+    if (typeof VideoFrame === 'undefined' || framesRefused) return false;
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    let f: VideoFrame | null = null;
+    try {
+      f = new VideoFrame(new Uint8Array(16), { format: 'RGBA', codedWidth: 2, codedHeight: 2, timestamp: 0 });
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, f);
+      return gl.getError() === gl.NO_ERROR;
+    } catch {
+      return false;
+    } finally {
+      f?.close();
+      gl.deleteTexture(tex);
+    }
   }
 
   private loc(name: string): WebGLUniformLocation | null {
@@ -299,7 +385,8 @@ export class Compositor {
     return this.u.get(name)!;
   }
 
-  private upload(slotId: string, d: Drawable, mips: boolean): Slot {
+  /** The slot holding the drawable's picture; null when there is none to draw yet (a decoder frame was refused). */
+  private upload(slotId: string, d: Source, mips: boolean): Slot | null {
     const gl = this.gl;
     let s = this.slots.get(slotId);
     if (!s) {
@@ -309,7 +396,8 @@ export class Compositor {
     }
     gl.bindTexture(gl.TEXTURE_2D, s.tex);
     if (s.key !== d.key || (mips && !s.mips)) {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, d.image);
+      if (!d.turn) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, d.image);
+      else if (!this.fromFrame(s, d as Source & { image: VideoFrame; turn: Turn })) return s.key ? s : null; // keeps its last picture
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -328,6 +416,66 @@ export class Compositor {
       s.segKey = d.seg.key;
     }
     return s;
+  }
+
+  /**
+   * Draws a decoder frame into the slot's texture (bound), upright and at the drawable's size, as a 2D canvas would hold
+   * it. The frame itself goes to WebGL as it is: WebKit uploads a `VideoFrame` on the GPU, while a 2D canvas it copied
+   * back through the CPU on every frame (`Picture` in media.ts). False when the frame did not go in.
+   */
+  private fromFrame(s: Slot, d: Source & { image: VideoFrame; turn: Turn }): boolean {
+    const gl = this.gl, f = d.image;
+    if (!f.displayWidth) return false; // closed under us (never expected)
+    const size = `${f.displayWidth}x${f.displayHeight}`;
+    let raw = this.raws.get(size);
+    const first = !raw;
+    if (!raw) {
+      raw = { tex: gl.createTexture()!, lastFrame: 0 };
+      this.raws.set(size, raw);
+      gl.bindTexture(gl.TEXTURE_2D, raw.tex);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    } else gl.bindTexture(gl.TEXTURE_2D, raw.tex);
+    raw.lastFrame = this.frameNo;
+    let ok = true;
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, f);
+      // The probe took a 2×2 RGBA frame; a decoder's own (NV12, 10-bit) is checked once per size. getError waits for
+      // the GPU process in WebKit, so not every frame.
+      if (first && gl.getError() !== gl.NO_ERROR) ok = false;
+    } catch (e) {
+      console.warn('WebGL refused a decoder frame', e);
+      ok = false;
+    }
+    if (!ok) { // from now on through canvases; an export starts again (FrameRenderer.check)
+      framesRefused = true;
+      this.frameMax = 0;
+      this.framesFailed = true;
+      gl.bindTexture(gl.TEXTURE_2D, s.tex);
+      return false;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, s.tex);
+    if (s.w !== d.w || s.h !== d.h || !s.key) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, d.w, d.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindTexture(gl.TEXTURE_2D, raw.tex);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.target);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, s.tex, 0);
+    gl.viewport(0, 0, d.w, d.h);
+    gl.useProgram(this.frameProg);
+    gl.disable(gl.BLEND);
+    const quarter = d.turn.rotation / 90;
+    const [fw, fh] = quarter % 2 ? [f.displayHeight, f.displayWidth] : [f.displayWidth, f.displayHeight];
+    const u = this.frameU;
+    gl.uniform2f(u.uOut, d.w, d.h);
+    gl.uniform1i(u.uTurn, quarter);
+    gl.uniform1f(u.uMirror, d.turn.flip ? 1 : 0);
+    gl.uniform1i(u.uTaps, Math.min(4, Math.max(1, Math.ceil(Math.max(fw / d.w, fh / d.h) / 2 - 0.01))));
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0); // a swept slot is not kept alive
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.useProgram(this.prog);
+    gl.enable(gl.BLEND);
+    gl.bindTexture(gl.TEXTURE_2D, s.tex);
+    return true;
   }
 
   /** Fills the bound 3D texture. WebGL2 rejects ArrayBufferView uploads while UNPACK_PREMULTIPLY_ALPHA is on. */
@@ -368,7 +516,7 @@ export class Compositor {
   isLost(): boolean { return this.lost || this.gl.isContextLost(); }
 
   /** Draws the frame; returns on-canvas bounds of selectable layers (for hit testing). */
-  draw(desc: FrameDesc, sources: Map<string, Drawable>): LayerBounds[] {
+  draw(desc: FrameDesc, sources: Map<string, Source>): LayerBounds[] {
     if (this.isLost()) return [];
     const gl = this.gl;
     const W = this.canvas.width, H = this.canvas.height;
@@ -405,6 +553,7 @@ export class Compositor {
         gl.uniform4f(this.loc('uColor'), r, g, b, 1);
       } else {
         const s = this.upload(slotId, d, needMips.has(slotId));
+        if (!s) continue;
         const seg = l.removeBg && d.seg && s.seg ? s.seg : null;
         gl.uniform1i(this.loc('uHasSeg'), seg ? 1 : 0);
         if (seg && d.seg) gl.uniform2f(this.loc('uSegTexel'), 1 / d.seg.w, 1 / d.seg.h);
@@ -472,6 +621,7 @@ export class Compositor {
     for (const [id, s] of this.slots) {
       if (this.frameNo - s.lastFrame > 90) { gl.deleteTexture(s.tex); if (s.seg) gl.deleteTexture(s.seg); this.slots.delete(id); }
     }
+    for (const [size, r] of this.raws) if (this.frameNo - r.lastFrame > 90) { gl.deleteTexture(r.tex); this.raws.delete(size); }
     return bounds;
   }
 
@@ -479,6 +629,9 @@ export class Compositor {
   dispose(loseContext = false): void {
     for (const s of this.slots.values()) { this.gl.deleteTexture(s.tex); if (s.seg) this.gl.deleteTexture(s.seg); }
     for (const tex of this.luts.values()) this.gl.deleteTexture(tex);
+    for (const r of this.raws.values()) this.gl.deleteTexture(r.tex);
+    this.raws.clear();
+    this.gl.deleteFramebuffer(this.target);
     this.slots.clear();
     this.luts.clear();
     if (loseContext) this.gl.getExtension('WEBGL_lose_context')?.loseContext();

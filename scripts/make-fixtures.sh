@@ -12,6 +12,12 @@ ff -f lavfi -i "color=c=black:s=640x360:r=30:d=6,format=yuv420p,geq=lum='if(bita
 # mono 44.1 kHz sound; 5.1 sound; no sound at all.
 ff -f lavfi -i "color=c=gray:s=360x640:r=30:d=4,drawbox=x=0:y=0:w=90:h=90:color=white:t=fill,format=yuv420p" -f lavfi -i sine=frequency=550:duration=4 -vf transpose=2 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest rotated_raw.mp4
 ff -display_rotation -90 -i rotated_raw.mp4 -c copy rotated.mp4 && rm rotated_raw.mp4
+# The same mark under the other turns (v1.4.20: WebKit turns decoder frames upright on the GPU): none, 180°, 270°.
+if [ ! -f rotated_270.mp4 ]; then
+  ff -f lavfi -i "color=c=gray:s=360x640:r=30:d=2,drawbox=x=0:y=0:w=90:h=90:color=white:t=fill,format=yuv420p" -c:v libx264 -pix_fmt yuv420p rotated_0.mp4
+  ff -i rotated_0.mp4 -vf "hflip,vflip" -c:v libx264 -pix_fmt yuv420p rotated_raw.mp4 && ff -display_rotation 180 -i rotated_raw.mp4 -c copy rotated_180.mp4
+  ff -i rotated_0.mp4 -vf transpose=1 -c:v libx264 -pix_fmt yuv420p rotated_raw.mp4 && ff -display_rotation 90 -i rotated_raw.mp4 -c copy rotated_270.mp4 && rm rotated_raw.mp4
+fi
 ff -f lavfi -i "color=c=black:s=640x360:r=30:d=7,format=yuv420p,geq=lum='if(bitand(N,pow(2,floor(X*8/W))),235,16)':cb=128:cr=128,trim=end_frame=210,settb=1/600,setpts='if(lt(N,60),N/30,if(lt(N,90),2+(N-60)/15,4+(N-90)/60))/TB'" -f lavfi -i sine=frequency=440:duration=6 -fps_mode passthrough -enc_time_base:v 1/600 -c:v libx264 -pix_fmt yuv420p -video_track_timescale 600 -c:a aac -shortest vfr.mp4
 ff -f lavfi -i testsrc2=size=640x360:rate=30:duration=4 -f lavfi -i "sine=frequency=330:duration=4:sample_rate=44100" -ac 1 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest mono44.mp4
 ff -f lavfi -i testsrc2=size=640x360:rate=30:duration=4 -f lavfi -i sine=frequency=330:duration=4 -filter_complex "[1:a]pan=5.1|FL=c0|FR=c0|FC=c0|LFE=0*c0|BL=c0|BR=c0[a]" -map 0:v -map "[a]" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest surround.mp4
@@ -122,4 +128,25 @@ for i in 1 2 3 4; do
 done
 if [ -n "$PERF_S2" ] && [ ! -f long_15m.mp4 ]; then
   ffmpeg -v error -f lavfi -i "testsrc2=s=1280x720:r=30:d=900" -f lavfi -i "sine=f=330:d=900" -filter_complex "[0:v]noise=alls=12:allf=t+u,format=yuv420p[v]" -map "[v]" -map 1:a -c:v libx264 -preset ultrafast -b:v 2500k -maxrate 2500k -bufsize 5M -g 30 -c:a aac -b:a 96k -shortest long_15m.mp4
+fi
+
+# Videos as a phone records them, at a phone's bitrates (v1.4.20, an overlay's cost): 1080p and 4K, H.264 and HEVC,
+# no B-frames, a keyframe a second. The overlay e2e uses the first three; e2e/overlay-cost.spec.ts measures them all.
+# The Mac's hardware encoders when there are, x264/x265 elsewhere.
+phone() { # name size fps seconds codec bitrate
+  [ -f "$1" ] && return
+  case $5 in
+    hevc) enc=$(ffmpeg -hide_banner -encoders 2>/dev/null | grep -q hevc_videotoolbox && echo hevc_videotoolbox || echo libx265); tag="-tag:v hvc1" ;;
+    *) enc=$(ffmpeg -hide_banner -encoders 2>/dev/null | grep -q h264_videotoolbox && echo h264_videotoolbox || echo libx264); tag="" ;;
+  esac
+  ffmpeg -y -v error -f lavfi -i "testsrc2=s=$2:r=$3:d=$4" -f lavfi -i "sine=f=523:sample_rate=48000:d=$4" \
+    -filter_complex "[0:v]noise=alls=14:allf=t+u,format=yuv420p[v]" -map "[v]" -map 1:a \
+    -c:v "$enc" $tag -b:v "$6" -g "$3" -bf 0 -c:a aac -b:a 128k -ac 2 -shortest "$1"
+}
+phone phone_1080_h264.mp4 1920x1080 30 30 h264 17M
+phone phone_4k_h264.mp4 3840x2160 30 30 h264 45M
+phone phone_4k_hevc.mov 3840x2160 30 30 hevc 24M
+if [ -n "$PHONE_ALL" ]; then
+  phone phone_1080_hevc.mov 1920x1080 30 60 hevc 8M
+  phone phone_4k60_hevc.mov 3840x2160 60 30 hevc 50M
 fi
