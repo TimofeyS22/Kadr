@@ -11,6 +11,9 @@ const Editor = lazy(() => import('./Editor').then((m) => ({ default: m.Editor })
 // Diagnostics for a phone (docs/12 stage 0): only with `?diag` in the address.
 const Diag = lazy(() => import('./Diag').then((m) => ({ default: m.Diag })));
 const diag = new URLSearchParams(location.search).has('diag');
+// Template check (v1.5): every caption and text template drawn by this device, only with `?styles` in the address.
+const StylesCheck = lazy(() => import('./StylesCheck').then((m) => ({ default: m.StylesCheck })));
+const styles = new URLSearchParams(location.search).has('styles');
 
 function useProjectRoute(): string | null {
   const [hash, setHash] = useState(location.hash);
@@ -65,6 +68,8 @@ export function App() {
     <ErrorBoundary key={locale}>
       {diag ? (
         <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><Diag /></Suspense>
+      ) : styles ? (
+        <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><StylesCheck /></Suspense>
       ) : id ? (
         <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><Editor key={id} id={id} /></Suspense>
       ) : <Home />}

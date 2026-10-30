@@ -1,3 +1,4 @@
+import { applyCaptionLook, type CaptionLook } from './captions';
 import {
   ADJUST_KEYS, SCHEMA_VERSION,
   type Adjustments, type Anim, type AspectId, type Asset, type AudioClip, type CaptionClip, type CaptionWord, type ChromaKey, type ImageClip,
@@ -85,15 +86,17 @@ export function createTextClip(start = 0, text = 'Your text'): TextClip {
 }
 
 /** Caption clip from words in timeline time; word times are stored relative to the clip start. */
-export function createCaptionClip(words: CaptionWord[], preset: { id: string; style: CaptionClip['style']; highlight: string | null; wordsPerPage: number }): CaptionClip {
+export function createCaptionClip(words: CaptionWord[], preset: CaptionLook): CaptionClip {
   const start = Math.max(0, words[0]?.t0 ?? 0);
   const end = words.length ? words[words.length - 1].t1 + 0.5 : start + 3;
   const transform = defaultTransform();
   transform.y = anim(0.18); // above the caption/music zone of TikTok, Reels and Shorts
-  return {
+  const c: CaptionClip = {
     kind: 'caption', id: uid(), start, duration: end - start,
     words: words.map((w) => ({ ...w, t0: w.t0 - start, t1: w.t1 - start })),
-    style: { ...preset.style }, highlight: preset.highlight, wordsPerPage: preset.wordsPerPage, preset: preset.id,
+    style: preset.style, highlight: preset.highlight, wordsPerPage: preset.wordsPerPage, preset: preset.id,
     transform, blend: 'normal',
   };
+  applyCaptionLook(c, preset);
+  return c;
 }

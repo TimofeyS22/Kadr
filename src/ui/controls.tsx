@@ -131,6 +131,9 @@ export function Swatches({ value, onChange, label }: { value: string; onChange: 
 const OPTION_LABELS: Record<string, string> = {
   none: 'None', fade: 'Fade', rise: 'Rise', pop: 'Pop', typewriter: 'Typewriter', normal: 'Normal', screen: 'Screen',
   multiply: 'Multiply', add: 'Add', left: 'Left', center: 'Center', right: 'Right',
+  // v1.5 text motion
+  slideLeft: 'Slide from left', slideRight: 'Slide from right', drop: 'Drop', zoom: 'Zoom', spin: 'Spin', blur: 'Blur',
+  pulse: 'Pulse', float: 'Float', swing: 'Swing', shake: 'Shake', blink: 'Blink',
 };
 function chipLabel<T extends string | number>(o: T, render?: (v: T) => ReactNode): ReactNode {
   const r = render ? render(o) : typeof o === 'string' ? OPTION_LABELS[o] ?? o : String(o);

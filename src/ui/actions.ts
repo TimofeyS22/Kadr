@@ -277,7 +277,8 @@ export function addCaptions(words: CaptionWord[], presetId = 'pop', layout?: Cap
   editor().commit((d) => {
     deleteClips(d, d.tracks.flatMap((tr) => tr.clips.filter((c) => c.kind === 'caption').map((c) => c.id)));
     const c = createCaptionClip(words, typeof layout === 'object' ? { ...preset, ...layout } : preset);
-    if (typeof layout === 'string') setCaptionLayout(c, layout, preset.highlight ?? CAPTION_ACCENT);
+    // The template brings its layout (v1.5); another one chosen in the sheet wins.
+    if (typeof layout === 'string' && layout !== preset.layout) setCaptionLayout(c, layout, preset.highlight ?? CAPTION_ACCENT);
     endWithContent(d, c);
     placeClip(d, c);
     id = c.id;

@@ -1,14 +1,14 @@
 import { Mic, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { CAPTION_LAYOUTS, captionLayout, captionPages, setCaptionLayout, wordsFromSegment, type CaptionLayout } from '../core/captions';
+import { CAPTION_LAYOUTS, applyCaptionLook, captionLayout, captionPages, setCaptionLayout, wordsFromSegment, type CaptionLayout } from '../core/captions';
 import { fillerIndices } from '../core/reframe';
 import { wordCutRange } from '../core/silence';
 import { clipEnd, cutTimelineRanges, mainTrack, projectDuration, soundAssetId, sourceTime, timelineTimeOf } from '../core/timeline';
 import { PEAKS_PER_SEC, waveform } from '../engine/media';
 import { createAudioClip } from '../core/defaults';
-import { CAPTION_ACCENT, CAPTION_PRESETS, STICKERS } from '../core/presets';
+import { CAPTION_ACCENT, CAPTION_CATEGORIES, CAPTION_PRESETS, STICKER_GROUPS } from '../core/presets';
 import { placeClip } from '../core/timeline';
-import type { CaptionClip, ImageClip, Rect, VideoClip } from '../core/types';
+import { CAPTION_EMPHASES, CAPTION_MOTIONS, type CaptionClip, type CaptionEmphasis, type CaptionMotion, type ImageClip, type Rect, type VideoClip } from '../core/types';
 import { soundEntries } from '../engine/audio';
 import { METER_IDLE, meterStep } from '../core/meter';
 import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
@@ -24,7 +24,8 @@ import { Chips, Slider, Swatches, Toggle, pct } from './controls';
 import { PaceBar, learnPace, speechStage, speechStages } from './pace';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
-import { StyleSwatch } from './swatch';
+import { StylePicker } from './picker';
+import { drawCaptionTile } from './tiles';
 import { useHoldUpdates } from '../lib/update';
 
 // ---------- Crop ----------
@@ -183,10 +184,18 @@ export function VoiceoverBody() {
 // ---------- Stickers ----------
 
 export function StickersBody() {
+  // Groups as headings in one scroll (v1.5): the popular set first, the rest by theme.
   return (
-    <div className="sticker-grid">
-      {STICKERS.map((s) => <button key={s} className="sticker" onClick={() => addSticker(s)} aria-label={`Add ${s}`}>{s}</button>)}
-    </div>
+    <>
+      {STICKER_GROUPS.map((g) => (
+        <section key={g.id} aria-label={t(g.name)}>
+          <h3>{t(g.name)}</h3>
+          <div className="sticker-grid">
+            {g.items.map((s) => <button key={s} className="sticker" onClick={() => addSticker(s)} aria-label={`Add ${s}`}>{s}</button>)}
+          </div>
+        </section>
+      ))}
+    </>
   );
 }
 
@@ -201,16 +210,19 @@ function progressLabel(p: CaptionProgress): string {
 }
 
 const LAYOUT_LABELS: Record<CaptionLayout, string> = { phrase: 'Phrase', word: 'Word by word', highlight: 'Highlight the word', reveal: 'Words appear' };
+const EMPHASIS_LABELS: Record<CaptionEmphasis, string> = {
+  color: 'Color', box: 'Box', underline: 'Underline', scale: 'Bigger', fill: 'Karaoke fill', past: 'Said so far', dim: 'Dim the rest',
+};
+const MOTION_LABELS: Record<CaptionMotion, string> = { none: 'None', pop: 'Pop', fade: 'Fade', rise: 'Rise', slide: 'Slide', zoom: 'Zoom', bounce: 'Bounce' };
 
-/** Caption look: layout chips plus styles drawn as themselves. Shared by "create" and "edit". */
+/** Caption look: the template catalog (v1.5: categories, live previews) and layout chips. Shared by "create" and "edit". */
 function CaptionLook({ layout, preset, onLayout, onPreset }: { layout: CaptionLayout; preset: string | null; onLayout: (l: CaptionLayout) => void; onPreset: (id: string) => void }) {
   return (
     <>
+      <h3>{t('Style')}</h3>
+      <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={preset} onChange={onPreset} label={t('Style')} draw={drawCaptionTile} animated />
       <h3>{t('Layout')}</h3>
       <Chips options={CAPTION_LAYOUTS} value={layout} onChange={onLayout} render={(l) => t(LAYOUT_LABELS[l])} />
-      <h3>{t('Style')}</h3>
-      <Chips options={CAPTION_PRESETS.map((x) => x.id)} value={preset} onChange={onPreset} scroll label={t('Style')}
-        render={(id) => { const pr = CAPTION_PRESETS.find((x) => x.id === id)!; return <StyleSwatch style={pr.style} label={t(pr.name)} />; }} />
     </>
   );
 }
@@ -328,7 +340,8 @@ export function CaptionsBody() {
         ? <p className="hint">{t('This device ran out of memory for it before: captions are made by “{name}”.', { name: t(ASR_MODELS[fittingModel(model)].label) })}</p>
         : model === 'ru' ? <p className="hint">{t('GigaAM reads Russian speech best. Speech in other languages is recognized by “Accurate”.')}</p>
         : model === 'ru-fast' && <p className="hint">{t('Reads Russian speech with punctuation, made for phones. Speech in other languages is recognized by “Accurate”.')}</p>}
-      <CaptionLook layout={layout} preset={preset} onLayout={setLayout} onPreset={setPreset} />
+      <CaptionLook layout={layout} preset={preset} onLayout={setLayout}
+        onPreset={(id) => { setPreset(id); setLayout(CAPTION_PRESETS.find((x) => x.id === id)?.layout ?? layout); }} />
       <p className="hint">{t('Speech is recognized on this device and your audio is never uploaded. The model downloads once and is kept in this browser.')}</p>
       <button className="btn primary big" disabled={source === 'script' && !script.trim()} onClick={() => void run()}>{t('Create captions')}</button>
       <button className="btn" onClick={() => void importSubtitles()}>{t('Import .srt or .vtt')}</button>
@@ -354,11 +367,9 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
       <CaptionLook layout={captionLayout(clip)} preset={clip.preset ?? null}
         onLayout={(l) => e((c) => { setCaptionLayout(c, l, CAPTION_PRESETS.find((x) => x.id === c.preset)?.highlight ?? CAPTION_ACCENT); })}
         onPreset={(id) => e((c) => {
-          // A new style keeps the chosen layout (phrase, word by word…), only the look changes.
-          const pr = CAPTION_PRESETS.find((x) => x.id === id)!;
-          const l = captionLayout(c);
-          Object.assign(c, { style: { ...pr.style }, preset: pr.id, highlight: c.highlight ? pr.highlight ?? CAPTION_ACCENT : null });
-          setCaptionLayout(c, l, pr.highlight ?? CAPTION_ACCENT);
+          // A template is the whole look (v1.5): font and colours, how the spoken word stands out and moves, and its
+          // layout, which the chips below can change after. The text and timing stay.
+          applyCaptionLook(c, CAPTION_PRESETS.find((x) => x.id === id)!);
         })} />
       <Slider label={t('Words at once')} value={clip.wordsPerPage} min={1} max={12} step={1} format={(v) => String(v)} reset={4}
         onChange={(v) => e((c) => { c.wordsPerPage = v; }, 'wpp')} />
@@ -367,7 +378,17 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
       <h3>{t('Text color')}</h3>
       <Swatches label={t('Text color')} value={clip.style.color} onChange={(col) => e((c) => { c.style.color = col; })} />
       <Toggle label={t('Highlight the spoken word')} value={!!clip.highlight} onChange={(v) => e((c) => { c.highlight = v ? '#ffc53d' : null; })} />
-      {clip.highlight && <Swatches label={t('Highlight color')} value={clip.highlight} onChange={(col) => e((c) => { c.highlight = col; })} />}
+      {clip.highlight && (
+        <>
+          <Swatches label={t('Highlight color')} value={clip.highlight} onChange={(col) => e((c) => { c.highlight = col; })} />
+          <h3>{t('The spoken word')}</h3>
+          <Chips options={CAPTION_EMPHASES} value={clip.emphasis ?? 'color'} label={t('The spoken word')} render={(m) => t(EMPHASIS_LABELS[m])}
+            onChange={(m) => e((c) => { c.emphasis = m; })} />
+        </>
+      )}
+      <h3>{t('Animation')}</h3>
+      <Chips options={CAPTION_MOTIONS} value={clip.motion ?? (clip.wordsPerPage === 1 && !clip.reveal ? 'pop' : 'none')} label={t('Animation')} render={(m) => t(MOTION_LABELS[m])}
+        onChange={(m) => e((c) => { c.motion = m; })} />
       <h3>{t('Text ({n} lines)', { n: pages.length })}</h3>
       <div className="caption-list">
         {pages.map((pg, i) => {

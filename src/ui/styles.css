@@ -382,8 +382,22 @@ h1, h2, h3 { margin: 0; }
 .music-meta b, .music-meta small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .music-meta small { color: var(--muted); }
 
-/* Text style buttons show the style itself (v0.8) */
-.style-swatch { display: inline-block; padding: 1px 6px; border-radius: 6px; font-size: 15px; line-height: 1.3; }
+/* Template catalogs (v1.5): category buttons over a two-row strip of live previews, edge to edge like the chip rows */
+.pick-cats { position: relative; display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin: 0 -16px 6px; padding: 0 16px; }
+.pick-cats::-webkit-scrollbar, .pick-strip::-webkit-scrollbar { display: none; }
+.pick-cat { flex: 0 0 auto; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 13px; }
+.pick-cat.on { border-color: var(--text); color: var(--text); background: var(--panel-2); }
+.pick-strip { position: relative; display: flex; gap: 14px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin: 0 -16px; padding: 2px 16px 6px; scroll-padding-inline: 16px; }
+.pick-group { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, 78px); grid-auto-columns: 104px; gap: 8px; flex: none; }
+.tile {
+  position: relative; display: block; width: 104px; height: 78px; padding: 0; overflow: hidden; border-radius: 12px; border: 0;
+  /* a mid-tone "photo" behind every preview: light sky to dark ground, so light and dark templates both show how they read */
+  background: linear-gradient(170deg, #9fb0c2 0%, #5a6878 48%, #2c2a28 100%); color: #fff; font: inherit;
+}
+.tile canvas { position: absolute; left: 0; top: 0; width: 100%; height: 60px; }
+.tile span { position: absolute; left: 0; right: 0; bottom: 0; height: 18px; padding: 0 6px; background: rgba(0, 0, 0, 0.62); font-size: 11px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile.on { box-shadow: inset 0 0 0 3px var(--accent); }
+.tile.on span { background: var(--accent); color: var(--on-accent); font-weight: 700; }
 
 /* Trim handles: a finger-sized hit area around the 16 px grip of the selected clip */
 .clip.sel .handle::before { content: ''; position: absolute; top: -6px; bottom: -6px; left: -10px; right: -10px; }
@@ -409,3 +423,9 @@ h1, h2, h3 { margin: 0; }
 .flip-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
 .flip-row .btn { margin: 0; }
 .btn[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
+
+/* ?styles (v1.5): every template drawn on a busy background, with its edge contrast */
+.styles-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.styles-thumbs figure { margin: 0; display: grid; gap: 4px; }
+.styles-thumbs canvas { width: 100%; height: auto; border-radius: 8px; }
+.styles-thumbs figcaption { font-size: 11px; color: var(--muted); }

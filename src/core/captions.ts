@@ -1,5 +1,5 @@
 // Caption logic: grouping words into on-screen pages, the active word, SRT import/export.
-import type { CaptionClip, CaptionWord, Clip, Project } from './types';
+import type { CaptionClip, CaptionEmphasis, CaptionMotion, CaptionWord, Clip, Project, TextStyle } from './types';
 
 const SENTENCE_END = /[.!?…]$/;
 
@@ -22,22 +22,101 @@ export function captionPages(words: CaptionWord[], maxWords: number, maxGap = 0.
 
 /**
  * Page shown at clip-local time `t`: its words, the index of the word being spoken (-1 between words), how many of its
- * words have started (`shown`, for word-by-word reveal) and the seconds since the page appeared (`since`).
+ * words have started (`shown`, for word-by-word reveal) and the seconds since the page appeared (`since`). v1.5: the
+ * latest word that has started — seconds since it started (`wordSince`) and its length (`wordDur`) — for karaoke
+ * fills and words that come in.
  */
-export function captionAt(c: Pick<CaptionClip, 'words' | 'wordsPerPage'>, t: number): { words: string[]; active: number; shown: number; since: number } | null {
+export function captionAt(c: Pick<CaptionClip, 'words' | 'wordsPerPage'>, t: number): { words: string[]; active: number; shown: number; since: number; wordSince: number; wordDur: number } | null {
   const pages = captionPages(c.words, Math.max(1, c.wordsPerPage));
   for (let i = 0; i < pages.length; i++) {
     const p = pages[i];
     const next = pages[i + 1];
     const end = Math.min(p[p.length - 1].t1 + 0.5, next ? next[0].t0 : Infinity);
     if (t >= p[0].t0 && t < end) {
+      const shown = p.filter((w) => w.t0 <= t).length;
+      const last = p[Math.max(0, shown - 1)];
       return {
         words: p.map((w) => w.text), active: p.findIndex((w) => t >= w.t0 && t < w.t1),
-        shown: p.filter((w) => w.t0 <= t).length, since: t - p[0].t0,
+        shown, since: t - p[0].t0, wordSince: t - last.t0, wordDur: Math.max(0.05, last.t1 - last.t0),
       };
     }
   }
   return null;
+}
+
+/** How long a line (`PAGE_IN_S`) or a word (`WORD_IN_S`) takes to come in, in seconds (v1.5). */
+export const PAGE_IN_S = 0.25, WORD_IN_S = 0.2;
+/**
+ * Times that change a caption's picture (a karaoke fill, a word coming in) are stepped to 1/30 s: a word is drawn a
+ * bounded number of times, and the export (30 fps) shows every step the preview shows. The bigger word's short pop
+ * steps at 1/15 s: half the drawings of a whole caption, for a 0.2 s pop the eye does not count.
+ */
+export const stepTime = (s: number, rate = 30): number => Math.floor(s * rate + 1e-6) / rate;
+
+const smooth = (p: number) => p * p * (3 - 2 * p);
+const backOut = (p: number) => 1 + 2.70158 * (p - 1) ** 3 + 1.70158 * (p - 1) ** 2;
+/** Springs past 1 and settles: 0 → ~1.12 → ~0.97 → 1. */
+const springOut = (p: number) => 1 - Math.cos(p * Math.PI * 2.5) * Math.exp(-5 * p);
+
+/**
+ * A line or word coming in at progress `q` (0..1): scale `k`, sideways `x` and downward `y` shift (−1..1, scaled by
+ * the caller: canvas fractions for a line, font sizes for a word) and opacity `a`. Pure, so preview = export.
+ */
+export function motionAt(m: CaptionMotion, q: number): { k: number; x: number; y: number; a: number } {
+  const p = Math.min(1, Math.max(0, q)), s = smooth(p);
+  switch (m) {
+    case 'pop': return { k: 0.5 + 0.5 * backOut(p), x: 0, y: 0, a: Math.min(1, p * 3) };
+    case 'fade': return { k: 1, x: 0, y: 0, a: s };
+    case 'rise': return { k: 1, x: 0, y: 1 - s, a: s };
+    case 'slide': return { k: 1, x: s - 1, y: 0, a: s };
+    case 'zoom': return { k: 1 + 0.4 * (1 - s), x: 0, y: 0, a: s };
+    case 'bounce': return { k: 0.4 + 0.6 * springOut(p), x: 0, y: 0, a: Math.min(1, p * 4) };
+    default: return { k: 1, x: 0, y: 0, a: 1 }; // 'none', or a motion of a newer version
+  }
+}
+/** The largest scale `motionAt` reaches for a motion (room the drawing must leave around a word). */
+export const motionGrow = (m: CaptionMotion | undefined): number => (m === 'zoom' ? 1.4 : m === 'bounce' ? 1.15 : m === 'pop' ? 1.06 : 1);
+/** The spoken word with "bigger" emphasis: 1.18×, popping from 1.32× as it starts. */
+export const bigScale = (enter: number): number => 1.18 + 0.14 * (1 - smooth(Math.min(1, Math.max(0, enter))));
+
+/** What a caption word looks like at a moment (v1.5), decided here so the drawing has no rules of its own. */
+export interface WordRole {
+  /** Share of the word in the highlight colour, from the left: 1 lit, 0 not, in between a karaoke fill. */
+  lit: number;
+  box: boolean;
+  underline: boolean;
+  big: boolean;
+  dim: boolean;
+  /** The word is coming in (words appear with a motion). */
+  enter: boolean;
+}
+const PLAIN: WordRole = { lit: 0, box: false, underline: false, big: false, dim: false, enter: false };
+
+/**
+ * Roles of a page's words: `active` is the word being spoken (-1 between words), `said` how many have started, `fill`
+ * the karaoke share of the latest one, `entering` whether the latest drawn word is still coming in. Unset emphasis
+ * lights only the word being spoken (as before v1.5); the v1.5 emphases stay on the latest word through pauses.
+ */
+export function wordRoles(c: Pick<CaptionClip, 'highlight' | 'emphasis' | 'reveal' | 'motion'>, n: number, active: number, said: number, fill: number, entering: boolean): WordRole[] {
+  const last = said - 1;
+  const roles = Array.from({ length: n }, (): WordRole => ({ ...PLAIN }));
+  if (c.highlight) {
+    for (let i = 0; i < n; i++) {
+      const r = roles[i];
+      switch (c.emphasis) {
+        case undefined: r.lit = i === active ? 1 : 0; break;
+        case 'color': r.lit = i === last ? 1 : 0; break;
+        case 'box': r.box = i === last; break;
+        case 'underline': r.underline = i === last; break;
+        case 'scale': r.big = i === last; r.lit = i === last ? 1 : 0; break;
+        case 'fill': r.lit = i < last ? 1 : i === last ? Math.min(1, Math.max(0, fill)) : 0; break;
+        case 'past': r.lit = i <= last ? 1 : 0; break;
+        case 'dim': r.lit = i === last ? 1 : 0; r.dim = i > last; break;
+      }
+    }
+  }
+  if (entering && c.reveal && c.motion && c.motion !== 'none' && last >= 0 && last < n) roles[last].enter = true;
+  return roles;
 }
 
 /** How captions appear (v1.0), chosen before and after generating: CapCut-style layouts. */
@@ -57,6 +136,31 @@ export function setCaptionLayout(c: Pick<CaptionClip, 'wordsPerPage' | 'highligh
   c.highlight = layout === 'highlight' || layout === 'reveal' ? (c.highlight ?? accent) : null;
   if (layout === 'reveal') c.reveal = true;
   else delete c.reveal;
+}
+
+/** Highlight color for layouts that need one when the style has none. */
+export const CAPTION_ACCENT = '#ffd23f';
+
+/** What a caption template sets (core/presets): the look, how the spoken word stands out and moves, the layout. */
+export interface CaptionLook {
+  id: string; style: TextStyle; highlight: string | null; wordsPerPage: number;
+  layout?: CaptionLayout; emphasis?: CaptionEmphasis; motion?: CaptionMotion;
+}
+
+/**
+ * Puts a template on a caption (v1.5): its look, emphasis and motion, and its layout — a template is the whole result,
+ * as in CapCut; the layout can be changed after. The style is copied, so editing the caption never touches the catalog.
+ */
+export function applyCaptionLook(c: Pick<CaptionClip, 'style' | 'highlight' | 'wordsPerPage' | 'reveal' | 'preset' | 'emphasis' | 'motion'>, look: CaptionLook): void {
+  c.style = structuredClone(look.style);
+  c.preset = look.id;
+  c.highlight = look.highlight;
+  c.wordsPerPage = look.wordsPerPage;
+  if (look.emphasis) c.emphasis = look.emphasis; else delete c.emphasis;
+  if (look.motion) c.motion = look.motion; else delete c.motion;
+  if (!look.layout) return;
+  setCaptionLayout(c, look.layout, look.highlight ?? CAPTION_ACCENT);
+  if (look.layout !== 'word') c.wordsPerPage = look.wordsPerPage;
 }
 
 /** Spreads a phrase over [t0, t1] proportionally to word length (for SRT import and plain segments). */

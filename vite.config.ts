@@ -120,10 +120,11 @@ export default defineConfig({
             options: { cacheName: 'kadr-music', expiration: { maxEntries: 60 } },
           },
           {
-            // Text fonts download when first used and then work offline.
+            // Text fonts download when first used and then work offline. Room for every face (115 files in v1.5): a
+            // template whose font the cache let go would draw with a fallback face offline.
             urlPattern: ({ url }) => /\.woff2$/.test(url.pathname),
             handler: 'CacheFirst',
-            options: { cacheName: 'kadr-fonts', expiration: { maxEntries: 120 } },
+            options: { cacheName: 'kadr-fonts', expiration: { maxEntries: 200 } },
           },
         ],
       },

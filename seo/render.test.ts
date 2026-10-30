@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { TASK_IDS } from '../src/ui/tasks';
 import { LANGS, buildSite } from './render';
@@ -95,6 +96,17 @@ describe('privacy and licenses (docs/12 stage 6)', () => {
       expect(s).toContain('href="https://github.com/Vanilagy/mediabunny"');
       expect(s).toContain('scripts/no-reserve.ts');
       for (const m of ['GigaAM v3', 'FastConformer', 'Whisper', 'Silero VAD', 'Selfie Segmenter', 'BlazeFace', 'RNNoise', 'SIL Open Font License', 'CC0 1.0']) expect(s, `${lang}: ${m}`).toContain(m);
+    }
+  });
+  it('name every bundled font family, each one under the OFL (CLAUDE.md §4)', () => {
+    const deps = Object.keys((JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string> }).dependencies);
+    const fonts = deps.filter((d) => d.startsWith('@fontsource/'));
+    expect(fonts.length).toBeGreaterThan(30);
+    for (const f of fonts) {
+      const dir = new URL(`../node_modules/${f}/`, import.meta.url);
+      const family = (JSON.parse(readFileSync(new URL('metadata.json', dir), 'utf8')) as { family: string }).family;
+      expect((JSON.parse(readFileSync(new URL('package.json', dir), 'utf8')) as { license: string }).license, f).toBe('OFL-1.1');
+      for (const lang of LANGS) expect(files[`${lang}/licenses/index.html`], `${lang}: ${family}`).toContain(family);
     }
   });
 });

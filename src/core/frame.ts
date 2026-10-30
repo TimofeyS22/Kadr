@@ -1,19 +1,23 @@
 // buildFrame: project + time → a flat list of layers with resolved parameters.
 // Shared by preview and export, so what you see is what you export.
 import { evalAnim } from './anim';
-import { captionAt } from './captions';
+import { PAGE_IN_S, WORD_IN_S, captionAt, motionAt, stepTime } from './captions';
 import { effectCode, punchScale, seedOf, shake } from './effects';
 import { resolveAdjust } from './filters';
 import { clamp, clipEnd, mainTrack, sourceTime } from './timeline';
 import type {
-  Adjustments, BlendMode, CaptionClip, ChromaKey, Clip, LutData, Mask, Project, Rect, TextAnim, TextClip, TransitionType, VisualClip,
+  Adjustments, BlendMode, CaptionClip, ChromaKey, Clip, LutData, Mask, Project, Rect, TextAnim, TextClip, TextLoop, TransitionType, VisualClip,
 } from './types';
 
 export type LayerSource =
   | { kind: 'video'; clipId: string; assetId: string; time: number }
   | { kind: 'image'; assetId: string }
   | { kind: 'text'; clip: TextClip; chars: number }
-  | { kind: 'caption'; clip: CaptionClip; words: string[]; active: number; /** words drawn (reveal layout) */ shown: number }
+  | {
+    kind: 'caption'; clip: CaptionClip; words: string[]; active: number; /** words drawn (reveal layout) */ shown: number;
+    /** v1.5: words started so far; karaoke share of the latest one (0..1); the latest drawn word coming in (0..1, 1 = in). */
+    said: number; fill: number; enter: number;
+  }
   | { kind: 'solid'; color: string };
 
 export interface Layer {
@@ -57,13 +61,33 @@ const WORD_POP_S = 0.16;
 
 function textAnim(a: TextAnim, p: number, layer: Layer, clip: TextClip): void {
   if (a.type === 'none' || p >= 1) return;
-  const q = clamp(p, 0, 1);
+  const q = clamp(p, 0, 1), s = smooth(q);
   switch (a.type) {
-    case 'fade': layer.opacity *= smooth(q); break;
-    case 'rise': layer.opacity *= smooth(q); layer.y += (1 - smooth(q)) * 0.04; break;
+    case 'fade': layer.opacity *= s; break;
+    case 'rise': layer.opacity *= s; layer.y += (1 - s) * 0.04; break;
     case 'pop': layer.scale *= Math.max(0.01, 0.5 + 0.5 * backOut(q)); layer.opacity *= Math.min(1, q * 3); break;
     case 'typewriter':
       if (layer.source.kind === 'text') layer.source.chars = Math.floor(q * [...clip.text].length); break;
+    // v1.5
+    case 'slideLeft': layer.opacity *= s; layer.x -= (1 - s) * 0.25; break;
+    case 'slideRight': layer.opacity *= s; layer.x += (1 - s) * 0.25; break;
+    case 'drop': layer.opacity *= Math.min(1, q * 3); layer.y -= (1 - backOut(q)) * 0.12; break;
+    case 'zoom': layer.opacity *= s; layer.scale *= 1 + (1 - s) * 0.8; break;
+    case 'spin': layer.opacity *= s; layer.rotation -= (1 - s) * 120; layer.scale *= Math.max(0.01, 0.4 + 0.6 * s); break;
+    case 'blur': layer.opacity *= s; layer.fx = { code: 3, amount: 1 - s, time: 0, seed: 0 }; break;
+  }
+}
+
+/** v1.5: repeating motion, deterministic in clip time (preview = export). */
+function textLoop(loop: TextLoop, local: number, layer: Layer): void {
+  if (loop.type === 'none' || loop.period <= 0) return;
+  const w = Math.sin((local / loop.period) * Math.PI * 2);
+  switch (loop.type) {
+    case 'pulse': layer.scale *= 1 + 0.06 * w; break;
+    case 'float': layer.y += 0.012 * w; break;
+    case 'swing': layer.rotation += 6 * w; break;
+    case 'shake': { const s = shake(local, 0.6, 0.29); layer.x += s.dx * 0.5; layer.y += s.dy * 0.5; layer.rotation += s.rot; break; }
+    case 'blink': layer.opacity *= 0.55 + 0.45 * (0.5 + 0.5 * Math.cos((local / loop.period) * Math.PI * 2)); break;
   }
 }
 
@@ -95,6 +119,7 @@ export function visualLayer(p: Project, c: VisualClip, t: number): Layer {
   if (c.kind === 'text') {
     layer.fit = 'native';
     layer.source = { kind: 'text', clip: c, chars: Infinity };
+    if (c.loop) textLoop(c.loop, local, layer);
     if (c.animIn.duration > 0) textAnim(c.animIn, local / c.animIn.duration, layer, c);
     if (c.animOut.duration > 0) textAnim(c.animOut, (c.duration - local) / c.animOut.duration, layer, c);
     return layer;
@@ -103,9 +128,30 @@ export function visualLayer(p: Project, c: VisualClip, t: number): Layer {
     const at = captionAt(c, local);
     layer.fit = 'native';
     const words = at?.words ?? [];
-    layer.source = { kind: 'caption', clip: c, words, active: at?.active ?? -1, shown: c.reveal ? (at?.shown ?? 0) : words.length };
-    // One word at a time: each word pops in (CapCut's "bounce"), so the rhythm of speech is visible.
-    if (at && c.wordsPerPage === 1 && !c.reveal && at.since < WORD_POP_S) layer.scale *= 0.75 + 0.25 * backOut(at.since / WORD_POP_S);
+    const emphasis = c.highlight ? c.emphasis : undefined;
+    const motion = c.motion ?? 'none';
+    // Karaoke fill and a word coming in change the picture within a word: stepped (stepTime) so each word is drawn a
+    // bounded number of times; everything else stays 1 and is drawn once per word.
+    const step = at ? stepTime(at.wordSince) : 0;
+    const fill = at && emphasis === 'fill' ? clamp(step / at.wordDur, 0, 1) : 1;
+    const wordIn = !!c.reveal && motion !== 'none';
+    const enter = at && (wordIn || emphasis === 'scale') ? clamp((wordIn ? step : stepTime(at.wordSince, 15)) / WORD_IN_S, 0, 1) : 1;
+    layer.source = {
+      kind: 'caption', clip: c, words, active: at?.active ?? -1, shown: c.reveal ? (at?.shown ?? 0) : words.length,
+      said: at?.shown ?? 0, fill, enter,
+    };
+    if (!at) return layer;
+    if (c.motion === undefined) {
+      // One word at a time: each word pops in (CapCut's "bounce"), so the rhythm of speech is visible.
+      if (c.wordsPerPage === 1 && !c.reveal && at.since < WORD_POP_S) layer.scale *= 0.75 + 0.25 * backOut(at.since / WORD_POP_S);
+    } else if (!c.reveal && motion !== 'none' && at.since < PAGE_IN_S) {
+      // v1.5: the whole line comes in (words that appear come in one by one, drawn by the text renderer).
+      const m = motionAt(motion, at.since / PAGE_IN_S);
+      layer.scale *= Math.max(0.01, m.k);
+      layer.opacity *= m.a;
+      layer.x += m.x * 0.12;
+      layer.y += m.y * 0.03;
+    }
     return layer;
   }
   layer.adjust = resolveAdjust(c.adjust, c.filter);

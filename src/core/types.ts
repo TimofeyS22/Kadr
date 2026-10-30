@@ -41,7 +41,7 @@ export type TransitionType = (typeof TRANSITION_TYPES)[number];
 export interface Transition { type: TransitionType; duration: number }
 
 export const FONT_IDS = [
-  'inter', 'montserrat', 'rubik', 'raleway', 'exo', 'comfortaa', 'unbounded', 'oswald', 'anton', 'bebas', 'russo', 'rubikMono', 'pixel', 'playfair', 'lora', 'ptSerif', 'yeseva', 'pacifico', 'lobster', 'caveat', 'marck', 'amatic', 'mono',
+  'inter', 'montserrat', 'rubik', 'nunito', 'raleway', 'exo', 'comfortaa', 'unbounded', 'oswald', 'anton', 'bebas', 'russo', 'dela', 'days', 'tektur', 'rubikMono', 'glitch', 'bubbles', 'spray', 'pixel', 'playfair', 'lora', 'ptSerif', 'cormorant', 'yeseva', 'pacifico', 'lobster', 'caveat', 'pangolin', 'marck', 'amatic', 'mono',
 ] as const;
 export type FontId = (typeof FONT_IDS)[number];
 /** A font the user added (v0.8): `custom:<id>` keyed into `Project.fonts`. */
@@ -55,8 +55,11 @@ export interface TextStyle {
   color: string;
   align: 'left' | 'center' | 'right';
   stroke: { color: string; width: number } | null;
-  /** `padding` (v0.9, optional): space around the text, as a fraction of the font size. */
-  background: { color: string; opacity: number; padding?: number } | null;
+  /**
+   * `padding` (v0.9, optional): space around the text, as a fraction of the font size. v1.5, optional: `lines` draws
+   * one box per line, hugging it; `radius` is the corner radius (× font size, 0.3 by default).
+   */
+  background: { color: string; opacity: number; padding?: number; lines?: boolean; radius?: number } | null;
   shadow: boolean;
   /** Optional (added in v0.2): render in upper case; shadow/glow color. */
   uppercase?: boolean;
@@ -64,9 +67,33 @@ export interface TextStyle {
   /** Optional (v0.9): extra space between letters (fraction of the font size), line height (× font size). */
   letterSpacing?: number;
   lineHeight?: number;
+  /** Optional (v1.5): second fill colour; the letters fade from `color` at the top to it at the bottom. */
+  gradient?: string;
+  /** Optional (v1.5): a second outline around the first one, `width` a fraction of the font size like the stroke's. */
+  outline2?: { color: string; width: number };
+  /**
+   * Optional (v1.5): solid copies of the letters under them, offset by (x, y) font sizes: a hard shadow, a 3D block
+   * (`depth`: every step in between is drawn) or a two-colour glitch.
+   */
+  copies?: { color: string; x: number; y: number; depth?: boolean }[];
 }
-export type TextAnimType = 'none' | 'fade' | 'rise' | 'pop' | 'typewriter';
+export const TEXT_ANIM_TYPES = ['none', 'fade', 'rise', 'pop', 'typewriter', 'slideLeft', 'slideRight', 'drop', 'zoom', 'spin', 'blur'] as const;
+export type TextAnimType = (typeof TEXT_ANIM_TYPES)[number];
 export interface TextAnim { type: TextAnimType; duration: number }
+/** v1.5: motion that repeats while the text is on screen (period in seconds). */
+export const TEXT_LOOP_TYPES = ['none', 'pulse', 'float', 'swing', 'shake', 'blink'] as const;
+export type TextLoopType = (typeof TEXT_LOOP_TYPES)[number];
+export interface TextLoop { type: TextLoopType; period: number }
+
+/**
+ * How the spoken word stands out (v1.5), in the caption's `highlight` colour: its colour; a box behind it; a line
+ * under it; bigger; filled as it is sung (karaoke); every word said so far; the words still to come dimmed.
+ */
+export const CAPTION_EMPHASES = ['color', 'box', 'underline', 'scale', 'fill', 'past', 'dim'] as const;
+export type CaptionEmphasis = (typeof CAPTION_EMPHASES)[number];
+/** How captions come in (v1.5): each line; word by word, each word; words appear, each new word. */
+export const CAPTION_MOTIONS = ['none', 'pop', 'fade', 'rise', 'slide', 'zoom', 'bounce'] as const;
+export type CaptionMotion = (typeof CAPTION_MOTIONS)[number];
 
 interface ClipBase { id: string; start: number; duration: number }
 interface Visual { transform: Transform; blend: BlendMode; transitionIn?: Transition }
@@ -130,6 +157,8 @@ export type ImageClip = ClipBase & Visual & Look & { kind: 'image'; assetId: str
 export type AudioClip = ClipBase & MediaRef & Sound & { kind: 'audio' };
 export type TextClip = ClipBase & Visual & {
   kind: 'text'; text: string; style: TextStyle; animIn: TextAnim; animOut: TextAnim;
+  /** v1.5: repeating motion between the entrance and the exit. */
+  loop?: TextLoop;
 };
 /** Word timing relative to the caption clip start. */
 export interface CaptionWord {
@@ -145,6 +174,10 @@ export type CaptionClip = ClipBase & Visual & {
   preset?: string;
   /** v1.0: words appear one by one as they are spoken (the line keeps its final layout, so nothing jumps). */
   reveal?: boolean;
+  /** v1.5: how the spoken word stands out; unset = its colour, only while it is spoken (as before v1.5). */
+  emphasis?: CaptionEmphasis;
+  /** v1.5: how lines (or words) come in; unset = word by word pops, other layouts cut (as before v1.5). */
+  motion?: CaptionMotion;
 };
 export type Clip = VideoClip | ImageClip | AudioClip | TextClip | CaptionClip;
 export type VisualClip = VideoClip | ImageClip | TextClip | CaptionClip;

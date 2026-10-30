@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MOODS, type Mood } from '../core/music';
 import { player } from '../engine/player';
-import { CAPTION_PRESETS } from '../core/presets';
+import { CAPTION_CATEGORIES, CAPTION_PRESETS } from '../core/presets';
 import { CAPTION_LANGUAGES, defaultAsrModel } from '../engine/captions';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
@@ -15,7 +15,8 @@ import { DEFAULT_REEL, makeReel, reelUsesSpeech, undoSteps, type ReelOptions, ty
 import { PaceBar, learnPace, speechStages } from './pace';
 import { Chips, Toggle } from './controls';
 import { MOOD_LABEL } from './MusicSheet';
-import { StyleSwatch } from './swatch';
+import { StylePicker } from './picker';
+import { drawCaptionTile } from './tiles';
 import { useHoldUpdates } from '../lib/update';
 
 const KEY = 'kadr.reel';
@@ -120,8 +121,7 @@ export function ReelBody() {
       <Toggle label={t('Remove “um”, “uh” and repeats')} value={o.fillers} onChange={(v) => set({ fillers: v })} />
       <Toggle label={t('Captions with the spoken word highlighted')} value={o.captions} onChange={(v) => set({ captions: v })} />
       {o.captions && (
-        <Chips options={CAPTION_PRESETS.map((x) => x.id)} value={o.preset} onChange={(id) => set({ preset: id })} scroll label={t('Style')}
-          render={(id) => { const pr = CAPTION_PRESETS.find((x) => x.id === id)!; return <StyleSwatch style={pr.style} label={t(pr.name)} />; }} />
+        <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={o.preset} onChange={(id) => set({ preset: id })} label={t('Style')} draw={drawCaptionTile} animated />
       )}
       <Toggle label={t('Zoom in on cuts')} value={o.zoom} onChange={(v) => set({ zoom: v })} />
       <Toggle label={t('Title from the first phrase')} value={o.hook} onChange={(v) => set({ hook: v })} />

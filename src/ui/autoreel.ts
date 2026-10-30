@@ -2,7 +2,7 @@
 // history step, so "Undo all" (and plain undo) walks it back; a cancel mid-way restores the project as it was.
 import { projectScript } from '../core/script';
 import { fillerCuts, fitWordsToPauses, hookClip, hookText, jumpZoom, pauseCuts, soundMainClips, withoutIndices } from '../core/autoreel';
-import { setCaptionLayout } from '../core/captions';
+import { captionLayout, setCaptionLayout } from '../core/captions';
 import { createAudioClip, createCaptionClip } from '../core/defaults';
 import { fitTrack, type Mood } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
@@ -98,7 +98,9 @@ export async function makeReel(o: ReelOptions, onProgress: (stage: string, label
       const preset = CAPTION_PRESETS.find((x) => x.id === o.preset) ?? CAPTION_PRESETS[0];
       step((d) => {
         const c = createCaptionClip(spoken, preset);
-        setCaptionLayout(c, 'highlight', preset.highlight ?? CAPTION_ACCENT);
+        // A reel follows the speech word by word: a template of plain phrases gets the spoken word lit; the others keep
+        // their own layout (one word, words appearing).
+        if (captionLayout(c) === 'phrase') setCaptionLayout(c, 'highlight', preset.highlight ?? CAPTION_ACCENT);
         endWithContent(d, c);
         placeClip(d, c);
       });

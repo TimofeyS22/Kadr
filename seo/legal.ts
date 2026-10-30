@@ -127,9 +127,10 @@ const LIBRARIES: [string, string, string][] = [
   ['Workbox (service worker)', 'MIT', 'https://github.com/GoogleChrome/workbox'],
 ];
 
-const FONTS = ['Amatic SC', 'Anton', 'Bebas Neue', 'Caveat', 'Comfortaa', 'Exo 2', 'Inter', 'Lobster', 'Lora', 'Marck Script', 'Montserrat',
-  'Oswald', 'Pacifico', 'Playfair Display', 'Press Start 2P', 'PT Serif', 'Raleway', 'Roboto Mono', 'Rubik', 'Rubik Mono One', 'Russo One',
-  'Unbounded', 'Yeseva One'];
+const FONTS = ['Amatic SC', 'Anton', 'Bebas Neue', 'Caveat', 'Comfortaa', 'Cormorant Garamond', 'Days One', 'Dela Gothic One', 'Exo 2', 'Inter',
+  'Lobster', 'Lora', 'Marck Script', 'Montserrat', 'Nunito', 'Oswald', 'Pacifico', 'Pangolin', 'Playfair Display', 'Press Start 2P', 'PT Serif',
+  'Raleway', 'Roboto Mono', 'Rubik', 'Rubik Bubbles', 'Rubik Glitch', 'Rubik Mono One', 'Rubik Spray Paint', 'Russo One', 'Tektur', 'Unbounded',
+  'Yeseva One'];
 
 const SOVA: Record<Lang, string> = {
   ru: 'Образец живой речи на странице диагностики (10 с) — из набора [SOVA RuDevices](https://huggingface.co/datasets/bond005/sova_rudevices) (SOVA.ai; публикация на Hugging Face — Иван Бондаренко, bond005), лицензия [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Изменения: фрагменты вырезаны, склеены с паузами и пережаты в AAC.',

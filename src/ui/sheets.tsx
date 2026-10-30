@@ -1,14 +1,14 @@
 import { TrianglesCenterlineDashedVertical, TrianglesCenterlineDashedHorizontal } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { evalAnim, hasKeys, keyIndexAt, setAnim, toggleKey } from '../core/anim';
-import { TEXT_PRESETS } from '../core/presets';
+import { TEXT_CATEGORIES, TEXT_PRESETS } from '../core/presets';
 import { ASPECTS, defaultAdjust, defaultTransform } from '../core/defaults';
 import { FILTERS, adjustRange } from '../core/filters';
 import { CURVE_PRESETS } from '../core/speed';
 import { applyTransitionToAll, expectedAudioKey, findClip, keepsPitch, setCurve, setSpeed, setTransition, isSound } from '../core/timeline';
 import { CurveEditor } from './CurveEditor';
 import {
-  ADJUST_KEYS, FONT_IDS as FONT_ID_LIST, TRANSITION_TYPES,
+  ADJUST_KEYS, FONT_IDS as FONT_ID_LIST, TEXT_ANIM_TYPES, TEXT_LOOP_TYPES, TRANSITION_TYPES,
   type AdjustKey, type AspectId, type BlendMode, type Clip, type FontId, type SoundClip, type TextAnimType, type TextClip,
   type Transform, type Transition, type TransitionType,
 } from '../core/types';
@@ -17,7 +17,8 @@ import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { addCustomFont, detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
-import { StyleSwatch } from './swatch';
+import { StylePicker } from './picker';
+import { drawTextTile } from './tiles';
 import { CameraSheet } from './CameraSheet';
 import { licenseText } from '../core/music';
 import { VOICE_IDS, VOICE_LABEL } from '../core/voicefx';
@@ -234,7 +235,7 @@ function ChromaControls({ clip }: { clip: Extract<Clip, { chroma: unknown }> }) 
   );
 }
 
-const ANIMS: readonly TextAnimType[] = ['none', 'fade', 'rise', 'pop', 'typewriter'];
+const ANIMS: readonly TextAnimType[] = TEXT_ANIM_TYPES;
 const FONT_IDS = FONT_ID_LIST as readonly FontId[];
 
 function TextBody({ clip }: { clip: TextClip }) {
@@ -243,9 +244,8 @@ function TextBody({ clip }: { clip: TextClip }) {
   const s = clip.style;
   return (
     <>
-      <Chips options={TEXT_PRESETS.map((p) => p.id)} value={null} scroll label={t('Style')}
-        render={(id) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; return <StyleSwatch style={pr.style} label={t(pr.name)} />; }}
-        onChange={(id) => e((c) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; c.style = { ...pr.style }; if (pr.animIn) c.animIn = { ...pr.animIn }; })} />
+      <StylePicker items={TEXT_PRESETS} categories={TEXT_CATEGORIES} value={null} label={t('Style')} draw={drawTextTile}
+        onChange={(id) => e((c) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; c.style = structuredClone(pr.style); if (pr.animIn) c.animIn = { ...pr.animIn }; })} />
       <textarea className="text-input" value={clip.text} rows={2} maxLength={500} aria-label={t('Text')}
         onChange={(ev) => e((c) => { c.text = ev.target.value; }, 'txt')} />
       <Chips options={[...Object.keys(fonts ?? {}).map((id): AnyFontId => `custom:${id}`), ...FONT_IDS]} value={s.font} scroll label={t('Font')}
@@ -290,6 +290,11 @@ function TextBody({ clip }: { clip: TextClip }) {
       <h3>{t('Animation out')}</h3>
       <Chips options={ANIMS} value={clip.animOut.type} onChange={(t) => e((c) => { c.animOut.type = t; })} />
       <Slider label={t('Duration')} value={clip.animOut.duration} min={0.1} max={2} step={0.05} format={secs} reset={0.3} onChange={(v) => e((c) => { c.animOut.duration = v; }, 'aout')} />
+      <h3>{t('Repeat')}</h3>
+      <Chips options={TEXT_LOOP_TYPES} value={clip.loop?.type ?? 'none'} label={t('Repeat')}
+        onChange={(l) => e((c) => { if (l === 'none') delete c.loop; else c.loop = { type: l, period: c.loop?.period ?? 1.2 }; })} />
+      {clip.loop && <Slider label={t('Cycle')} value={clip.loop.period} min={0.3} max={3} step={0.05} format={secs} reset={1.2}
+        onChange={(v) => e((c) => { if (c.loop) c.loop.period = v; }, 'loop')} />}
     </>
   );
 }
