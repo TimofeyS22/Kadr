@@ -326,41 +326,66 @@ function colorAt(frame: HTMLCanvasElement, x: number, y: number): string {
  */
 function Eyedropper({ canvas }: { canvas: RefObject<HTMLCanvasElement | null> }) {
   const on = useEditor((s) => s.eyedropper !== null);
+  const host = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLCanvasElement | null>(null);
+  // The finger while the frame is still coming (a font or a video still loading): answered when it comes, so a quick
+  // tap before then still picks. Before, it closed the eyedropper with nothing picked (found on the live site, v1.6.0).
+  const waiting = useRef<{ x: number; y: number; up: boolean } | null>(null);
   const [loupe, setLoupe] = useState<{ x: number; y: number; color: string } | null>(null);
-  useEffect(() => {
-    frame.current = null;
-    setLoupe(null);
-    if (!on) return;
-    let live = true;
-    void player.capture(useEditor.getState().eyedropper?.from?.()).then((f) => { if (live) frame.current = f; });
-    return () => { live = false; frame.current = null; };
-  }, [on]);
-  if (!on) return null;
 
-  const sample = (e: RPointerEvent<HTMLDivElement>) => {
-    const c = canvas.current, f = frame.current;
-    if (!c || !f) return null;
-    const r = c.getBoundingClientRect(), host = e.currentTarget.getBoundingClientRect();
-    const cx = Math.min(r.right - 1, Math.max(r.left, e.clientX)), cy = Math.min(r.bottom - 1, Math.max(r.top, e.clientY));
-    const color = colorAt(f, ((cx - r.left) / r.width) * f.width, ((cy - r.top) / r.height) * f.height);
-    const next = { x: cx - host.left, y: cy - host.top, color };
+  const sampleAt = (x: number, y: number) => {
+    const c = canvas.current, f = frame.current, h = host.current;
+    if (!c || !f || !h) return null;
+    const r = c.getBoundingClientRect(), hr = h.getBoundingClientRect();
+    const cx = Math.min(r.right - 1, Math.max(r.left, x)), cy = Math.min(r.bottom - 1, Math.max(r.top, y));
+    const next = { x: cx - hr.left, y: cy - hr.top, color: colorAt(f, ((cx - r.left) / r.width) * f.width, ((cy - r.top) / r.height) * f.height) };
     setLoupe(next);
     return next;
   };
+  const finish = (x: number, y: number) => {
+    const got = sampleAt(x, y);
+    const d = useEditor.getState().eyedropper;
+    useEditor.setState({ eyedropper: null });
+    if (got && d) d.pick(got.color);
+  };
+  const touch = (e: RPointerEvent<HTMLDivElement>, up = false) => {
+    if (!frame.current) { waiting.current = { x: e.clientX, y: e.clientY, up }; return; }
+    if (up) finish(e.clientX, e.clientY);
+    else sampleAt(e.clientX, e.clientY);
+  };
+
+  useEffect(() => {
+    frame.current = null;
+    waiting.current = null;
+    setLoupe(null);
+    if (!on) return;
+    let live = true;
+    void (async () => {
+      // A frame that did not come (the preview was rebuilt meanwhile) is asked for again.
+      for (let i = 0; i < 3 && live && !frame.current; i++) {
+        const f = await player.capture(useEditor.getState().eyedropper?.from?.());
+        if (live) frame.current = f;
+      }
+      if (!live) return;
+      // No frame to read (rare: a lost GPU context): closed, so it never waits on a touch it cannot answer.
+      if (!frame.current) { useEditor.setState({ eyedropper: null }); return; }
+      const w = waiting.current;
+      if (!w) return;
+      waiting.current = null;
+      if (w.up) finish(w.x, w.y);
+      else sampleAt(w.x, w.y);
+    })();
+    return () => { live = false; frame.current = null; waiting.current = null; };
+  }, [on]); // sampleAt and finish read refs only
+  if (!on) return null;
+
   const stop = (e: RPointerEvent<HTMLDivElement>) => e.stopPropagation(); // the layer gestures below must not see it
   return (
-    <div className="eyedrop" role="application" aria-label={t('Eyedropper')}
-      onPointerDown={(e) => { stop(e); try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a pointer already gone */ } sample(e); }}
-      onPointerMove={(e) => { stop(e); if (e.buttons || e.pointerType !== 'mouse') sample(e); }}
-      onPointerUp={(e) => {
-        stop(e);
-        const got = sample(e);
-        const d = useEditor.getState().eyedropper;
-        useEditor.setState({ eyedropper: null });
-        if (got && d) d.pick(got.color);
-      }}
-      onPointerCancel={(e) => { stop(e); setLoupe(null); }}
+    <div ref={host} className="eyedrop" role="application" aria-label={t('Eyedropper')}
+      onPointerDown={(e) => { stop(e); try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a pointer already gone */ } touch(e); }}
+      onPointerMove={(e) => { stop(e); if (e.buttons || e.pointerType !== 'mouse') touch(e); }}
+      onPointerUp={(e) => { stop(e); touch(e, true); }}
+      onPointerCancel={(e) => { stop(e); waiting.current = null; setLoupe(null); }}
       onDoubleClick={(e) => e.stopPropagation()}>
       {!loupe && <p className="eyedrop-hint">{t('Touch the video and lift your finger on the color you want')}</p>}
       {loupe && <div className="eyedrop-loupe" style={{ left: loupe.x, top: loupe.y, background: loupe.color }} aria-live="polite" aria-label={loupe.color} />}
