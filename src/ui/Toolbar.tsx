@@ -1,5 +1,5 @@
 import {
-  Activity, ArrowRightToLine, TrianglesCenterlineDashedVertical, Pipette, AudioLines, Bell, Check, Clapperboard, CopyCheck, Disc3, EyeOff, Zap, ScanFace, Captions, CircleDashed, Copy, Crop, Film, Frame, Gauge, Layers, Mic, Move, Music, PersonStanding, Rewind, Scissors,
+  Activity, ArrowRightToLine, TrianglesCenterlineDashedVertical, Pipette, AudioLines, Bell, Check, Clapperboard, CopyCheck, Disc3, EyeOff, Zap, ScanFace, Captions, CircleDashed, Copy, Crop, Film, Frame, Gauge, Layers, Layers3, Mic, Move, Music, PersonStanding, Rewind, Scissors,
   SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Video, Volume2, WandSparkles, X,
   type LucideIcon,
 } from 'lucide-react';
@@ -45,6 +45,9 @@ export function Toolbar() {
     { icon: Move, label: t('Transform'), run: sheet('transform') },
   ];
   const crop: Tool = { icon: Crop, label: t('Crop'), run: sheet('crop') };
+  // Layers (v1.6) for clips over the main video: what is drawn over what.
+  const onTop = !!(clip && project && findClip(project, clip.id)?.track.kind === 'overlay');
+  const layers: Tool[] = onTop ? [{ icon: Layers3, label: t('Layers'), run: sheet('layers') }] : [];
   const pauses: Tool = { icon: WandSparkles, label: t('Remove pauses'), run: sheet('pauses') };
   const mask: Tool = { icon: CircleDashed, label: t('Mask'), run: sheet('mask'), on: !!(clip && 'mask' in clip && clip.mask) };
   const fx: Tool = { icon: Zap, label: t('Effects'), run: sheet('effects'), on: !!(clip && 'effect' in clip && clip.effect) };
@@ -63,13 +66,13 @@ export function Toolbar() {
 
   let tools: Tool[];
   switch (kind) {
-    case 'video': tools = [split, captions, ...sound, pauses, crop, mirror, { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() }, ...look, fx, mask, hide, cutout, chroma, { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() },
+    case 'video': tools = [split, ...layers, captions, ...sound, pauses, crop, mirror, { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() }, ...look, fx, mask, hide, cutout, chroma, { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() },
       { icon: Rewind, label: t('Reverse'), run: () => void reverseSelected(), on: !!(clip?.kind === 'video' && clip.reversedFrom) },
       { icon: AudioLines, label: t('Extract audio'), run: detachSelectedAudio }, pick, dup, del]; break;
-    case 'image': tools = [split, crop, mirror, ...look, fx, mask, hide, cutout, chroma, pick, dup, del]; break;
+    case 'image': tools = [split, ...layers, crop, mirror, ...look, fx, mask, hide, cutout, chroma, pick, dup, del]; break;
     case 'audio': tools = [split, captions, ...sound, { icon: Activity, label: t('Beat'), run: sheet('beats'), on: !!clip && clip.kind === 'audio' && !!useEditor.getState().project?.assets[clip.assetId]?.beats }, pauses, pick, dup, del]; break;
-    case 'text': tools = [{ icon: Type, label: t('Edit text'), run: sheet('text') }, look[2], split, pick, dup, del]; break;
-    case 'caption': tools = [{ icon: Captions, label: t('Edit captions'), run: sheet('captionEdit') }, look[2], split, pick, del]; break;
+    case 'text': tools = [{ icon: Type, label: t('Edit text'), run: sheet('text') }, look[2], ...layers, split, pick, dup, del]; break;
+    case 'caption': tools = [{ icon: Captions, label: t('Edit captions'), run: sheet('captionEdit') }, look[2], ...layers, split, pick, del]; break;
     default: tools = [
       { icon: Clapperboard, label: t('Reel in 1 tap'), run: sheet('reel') },
       { icon: Film, label: t('Media'), run: () => void addMedia('main') },

@@ -149,30 +149,99 @@ function overlaps(track: Track, start: number, end: number, ignoreId?: string): 
 
 const freeKind = (c: Clip): TrackKind => (c.kind === 'audio' ? 'audio' : 'overlay');
 
-function newTrack(p: Project, kind: TrackKind): Track {
+/** A new track at index `at` of `p.tracks`; by default overlays go above the main track and other overlays, below audio. */
+function newTrack(p: Project, kind: TrackKind, at?: number): Track {
   const track: Track = { id: uid(), kind, clips: [] };
   if (kind === 'audio') p.tracks.push(track);
   else {
-    // Overlays go above the main track and other overlays, below audio tracks.
-    let at = 0;
-    p.tracks.forEach((t, i) => { if (t.kind !== 'audio') at = i + 1; });
+    if (at === undefined) {
+      at = 0;
+      p.tracks.forEach((t, i) => { if (t.kind !== 'audio') at = i + 1; });
+    }
     p.tracks.splice(at, 0, track);
   }
   return track;
 }
 
-/** Places a clip on a free track: the preferred one if it fits, else the first that fits, else a new track. */
+const isWords = (c: Clip): boolean => c.kind === 'caption' || c.kind === 'text';
+
+/**
+ * Where pictures stop (v1.6, the owner: "an overlay must lie under the captions"): the index in `p.tracks` of the
+ * lowest overlay track with captions or text, or -1. Layers are drawn in track order, so a video or photo placed on its
+ * own never goes above it; moving it there is a choice made in Layers (`moveLayer`) or by dragging it onto that track.
+ */
+function wordsFloor(p: Project): number {
+  return p.tracks.findIndex((t) => t.kind === 'overlay' && t.clips.some(isWords));
+}
+
+/**
+ * Places a clip on a free track: the preferred one if it fits, else the first that fits, else a new track. A video or
+ * photo is placed below captions and text (`wordsFloor`), whichever overlay track it would otherwise land on.
+ */
 export function placeClip(p: Project, clip: Clip, preferredTrackId?: string): Track {
   const kind = freeKind(clip);
   const end = clipEnd(clip);
+  const floor = kind === 'overlay' && !isWords(clip) ? wordsFloor(p) : -1;
   const candidates = p.tracks.filter((t) => t.kind === kind);
   const preferred = candidates.find((t) => t.id === preferredTrackId);
+  const below = floor < 0 ? candidates : candidates.filter((t) => p.tracks.indexOf(t) < floor);
   const track = (preferred && !overlaps(preferred, clip.start, end, clip.id) ? preferred : undefined)
-    ?? candidates.find((t) => !overlaps(t, clip.start, end, clip.id))
-    ?? newTrack(p, kind);
+    ?? below.find((t) => !overlaps(t, clip.start, end, clip.id))
+    ?? newTrack(p, kind, floor < 0 ? undefined : floor);
   track.clips.push(clip);
   sortTrack(track);
   return track;
+}
+
+export type LayerMove = 'front' | 'up' | 'down' | 'back';
+
+/** An overlay clip's layers: its row among the overlay tracks and the rows of the clips it shares the screen with. */
+function layersOf(p: Project, id: string) {
+  const f = findClip(p, id);
+  if (!f || f.track.kind !== 'overlay') return null;
+  const rows = p.tracks.filter((t) => t.kind === 'overlay');
+  const i = rows.indexOf(f.track);
+  const hits = rows.flatMap((t, j) => (j !== i && overlaps(t, f.clip.start, clipEnd(f.clip), id) ? [j] : []));
+  return { f, rows, i, hits };
+}
+
+/**
+ * Where an overlay clip is among the clips it shares the screen with: `above` and `below` count them (the clips drawn
+ * over and under it). Null for clips that are not overlays.
+ */
+export function layerPlace(p: Project, id: string): { above: number; below: number } | null {
+  const L = layersOf(p, id);
+  if (!L) return null;
+  const { f, rows, i } = L;
+  const count = (j: number) => rows[j].clips.filter((c) => c.id !== id && c.start < clipEnd(f.clip) - EPS && clipEnd(c) > f.clip.start + EPS).length;
+  let above = 0, below = 0;
+  for (const j of L.hits) { if (j > i) above += count(j); else below += count(j); }
+  return { above, below };
+}
+
+/**
+ * Layers (v1.6): moves an overlay clip above or below the overlay clips it overlaps in time — one of them (`up`,
+ * `down`) or all of them (`front`, `back`). Clips that never share the screen with it are not layers above or below it,
+ * so they are not counted. The clip goes to a free track right past the one it passes, or to a new track there.
+ * Returns false when nothing is in the way (already at the front or the back).
+ */
+export function moveLayer(p: Project, id: string, dir: LayerMove): boolean {
+  const L = layersOf(p, id);
+  if (!L) return false;
+  const { f, rows, i, hits } = L;
+  const c = f.clip;
+  const up = dir === 'front' || dir === 'up';
+  const side = hits.filter((j) => (up ? j > i : j < i));
+  if (!side.length) return false;
+  const pass = dir === 'front' ? side[side.length - 1] : dir === 'up' ? side[0] : dir === 'down' ? side[side.length - 1] : side[0];
+  const next = up ? pass + 1 : pass - 1;
+  f.track.clips.splice(f.index, 1);
+  const free = next >= 0 && next < rows.length && next !== i && !hits.includes(next) ? rows[next] : null;
+  const to = free ?? newTrack(p, 'overlay', p.tracks.indexOf(rows[pass]) + (up ? 1 : 0));
+  to.clips.push(c);
+  sortTrack(to);
+  removeEmptyTracks(p);
+  return true;
 }
 
 function removeEmptyTracks(p: Project): void {

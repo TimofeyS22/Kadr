@@ -1,5 +1,8 @@
-import { Check, Diamond } from 'lucide-react';
-import { useRef, type PointerEvent, type ReactNode } from 'react';
+import { Check, Diamond, Pipette } from 'lucide-react';
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { player } from '../engine/player';
+import { track } from '../lib/telemetry';
+import type { Project } from '../core/types';
 import { useEditor } from '../state/store';
 import { t } from '../lib/i18n';
 
@@ -114,15 +117,78 @@ export function Toggle({ label, value, onChange }: { label: string; value: boole
   );
 }
 
-const SWATCHES = ['#ffffff', '#000000', '#ffc53d', '#ff5a36', '#3bd16f', '#2f9bff', '#a45bff', '#ff4fa3'];
+/**
+ * The colour row (v1.6, the owner: "more colours, and an eyedropper"): the eyedropper, any colour, the colours picked
+ * last, then 30 colours by hue. One scrolling row, every target 44 px.
+ */
+export const SWATCHES = [
+  '#ffffff', '#d9d9d9', '#9e9e9e', '#5c5c5c', '#000000',
+  '#ff4d4f', '#ff5a36', '#ff8a3d', '#ffc53d', '#ffe66d',
+  '#c8f560', '#3bd16f', '#12b886', '#2ad4c8', '#5ad8ff',
+  '#2f9bff', '#3366ff', '#5b4dff', '#a45bff', '#d36bff',
+  '#ff4fa3', '#ff8fc8', '#ffd6e0', '#fff1c1', '#d4f7dc',
+  '#cfe8ff', '#8b5e3c', '#c49a6c', '#1b2a49', '#7a1f2b',
+];
+const RECENT_KEY = 'kadr.recentColors';
+const RECENT_MAX = 8;
+function loadRecent(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as unknown;
+    return Array.isArray(v) ? v.filter((c): c is string => typeof c === 'string' && /^#[0-9a-f]{6}$/.test(c)).slice(0, RECENT_MAX) : [];
+  } catch { return []; }
+}
 
-export function Swatches({ value, onChange, label }: { value: string; onChange: (c: string) => void; label: string }) {
+export function Swatches({ value, onChange, label, from }: {
+  value: string; onChange: (c: string) => void; label: string;
+  /** The eyedropper reads this version of the project instead of the one on screen (the chroma key's colour, key off). */
+  from?: () => Project | null;
+}) {
+  const [recent, setRecent] = useState(loadRecent);
+  const owner = useRef({}).current;
+  const latest = useRef(onChange);
+  latest.current = onChange;
+  const picking = useEditor((s) => s.eyedropper?.owner === owner);
+  const custom = useRef<HTMLInputElement>(null);
+  const remember = (c: string) => {
+    const col = c.toLowerCase();
+    if (SWATCHES.includes(col)) return;
+    setRecent((r) => {
+      const next = [col, ...r.filter((x) => x !== col)].slice(0, RECENT_MAX);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* storage off: this session only */ }
+      return next;
+    });
+  };
+  // The native picker reports every move as "input"; "change" is the colour it closed on.
+  useEffect(() => {
+    const el = custom.current;
+    const done = () => { if (el) remember(el.value); };
+    el?.addEventListener('change', done);
+    return () => el?.removeEventListener('change', done);
+  }, []);
+  // A closed sheet takes its eyedropper with it.
+  useEffect(() => () => { if (useEditor.getState().eyedropper?.owner === owner) useEditor.setState({ eyedropper: null }); }, [owner]);
+  const toggleDropper = () => {
+    if (picking) { useEditor.setState({ eyedropper: null }); return; }
+    player.pause();
+    useEditor.setState({ eyedropper: { owner, from, pick: (c) => { latest.current(c); remember(c); track('eyedropper_used'); } } });
+  };
+  const lower = value.toLowerCase();
+  const swatch = (c: string) => (
+    <button key={c} className={`swatch ${c === lower ? 'on' : ''}`} onClick={() => onChange(c)} aria-label={c} aria-pressed={c === lower}>
+      <i style={{ background: c }} />
+    </button>
+  );
   return (
-    <div className="swatches" aria-label={label}>
-      {SWATCHES.map((c) => (
-        <button key={c} className={`swatch ${c === value ? 'on' : ''}`} style={{ background: c }} onClick={() => onChange(c)} aria-label={c} />
-      ))}
-      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} aria-label={`Custom ${label}`} />
+    <div className="swatches" role="group" aria-label={label}>
+      <button className={`swatch tool-dropper ${picking ? 'on' : ''}`} onClick={toggleDropper} aria-pressed={picking} aria-label={t('Eyedropper: {label}', { label })}>
+        <i><Pipette size={18} /></i>
+      </button>
+      <label className="swatch custom" title={t('Any color')}>
+        <i style={{ background: SWATCHES.includes(lower) || recent.includes(lower) ? undefined : value }} />
+        <input ref={custom} type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'} onChange={(e) => onChange(e.target.value)} aria-label={`Custom ${label}`} />
+      </label>
+      {recent.length > 0 && <>{recent.map(swatch)}<span className="swatch-sep" aria-hidden /></>}
+      {SWATCHES.map(swatch)}
     </div>
   );
 }

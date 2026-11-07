@@ -178,6 +178,8 @@ export type CaptionClip = ClipBase & Visual & {
   emphasis?: CaptionEmphasis;
   /** v1.5: how lines (or words) come in; unset = word by word pops, other layouts cut (as before v1.5). */
   motion?: CaptionMotion;
+  /** v1.6: every line starts with a small letter (`lowerStart`); unset = as the words are (imported subtitles, before v1.6). */
+  lowerStart?: boolean;
 };
 export type Clip = VideoClip | ImageClip | AudioClip | TextClip | CaptionClip;
 export type VisualClip = VideoClip | ImageClip | TextClip | CaptionClip;

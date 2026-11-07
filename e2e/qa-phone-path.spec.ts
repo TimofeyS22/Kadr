@@ -147,3 +147,93 @@ test('a recorder that never says it stopped: the voice-over is still added', asy
   await page.getByRole('button', { name: 'Stop recording' }).click();
   await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 20_000 });
 });
+
+// ---------- v1.6: a video decoder the system takes back ("Decoder failure", the owner's error) ----------
+
+/**
+ * VideoDecoder on this page fails like an iPhone's when the system takes it back: `__decoderFail` decodes from now on
+ * end with WebKit's own error ("Decoder failure", EncodingError) and the decoder is closed. `__decoded` counts frames.
+ */
+const breakableDecoder = (page: Page) => page.addInitScript(() => {
+  const w = window as unknown as { __decoderFail: number; __decoded: number; __errors: string[] };
+  w.__decoderFail = 0;
+  w.__decoded = 0;
+  // Error toasts go after a few seconds: every one shown is kept.
+  w.__errors = [];
+  new MutationObserver(() => document.querySelectorAll('.toast.error').forEach((el) => {
+    if (!w.__errors.includes(el.textContent ?? '')) w.__errors.push(el.textContent ?? '');
+  })).observe(document, { subtree: true, childList: true });
+  const VD = window.VideoDecoder;
+  if (!VD) return;
+  window.VideoDecoder = class extends VD {
+    private fail: (e: DOMException) => void;
+    constructor(init: VideoDecoderInit) {
+      super({ ...init, output: (f) => { w.__decoded++; init.output(f); } });
+      this.fail = init.error;
+    }
+    decode(chunk: EncodedVideoChunk) {
+      if (w.__decoderFail > 0 && this.state === 'configured') {
+        w.__decoderFail--;
+        // As WebCodecs does: the error callback with WebKit's words, then the codec is closed.
+        queueMicrotask(() => { this.fail(new DOMException('Decoder failure', 'EncodingError')); try { this.close(); } catch { /* closed already */ } });
+        return;
+      }
+      super.decode(chunk);
+    }
+  };
+});
+const decoderState = (page: Page) => page.evaluate(() => { const w = window as unknown as { __decoderFail: number; __decoded: number }; return { fail: w.__decoderFail, decoded: w.__decoded }; });
+
+test('the video decoder fails mid-preview (iPhone "Decoder failure"): playback restarts it, no error is shown', async ({ page }) => {
+  test.setTimeout(120_000);
+  await breakableDecoder(page);
+  await projectWith(page, 'long_1.mp4');
+  await expect.poll(async () => (await decoderState(page)).decoded, { timeout: 30_000 }).toBeGreaterThan(0);
+  await page.evaluate(() => { (window as unknown as { __decoderFail: number }).__decoderFail = 1; });
+  await page.getByRole('button', { name: 'Play' }).click();
+  await expect.poll(async () => (await decoderState(page)).fail, { timeout: 20_000 }).toBe(0); // the failure happened
+  const after = (await decoderState(page)).decoded;
+  // Within a second the picture moves on: before v1.6 it froze until playback was 2.5 s past the last frame.
+  await expect.poll(async () => (await decoderState(page)).decoded, { timeout: 1500, intervals: [100], message: 'frames decode again at once' }).toBeGreaterThan(after + 5);
+  await page.waitForTimeout(2000);
+  await page.getByRole('button', { name: 'Pause' }).click();
+  // Before v1.6 the toast said "Decoder failure".
+  expect(await page.evaluate(() => (window as unknown as { __errors: string[] }).__errors), 'error toasts').toEqual([]);
+});
+
+test('a decoder that keeps failing: one plain message, not one per frame', async ({ page }) => {
+  test.setTimeout(120_000);
+  await breakableDecoder(page);
+  await projectWith(page, 'long_1.mp4');
+  await expect.poll(async () => (await decoderState(page)).decoded, { timeout: 30_000 }).toBeGreaterThan(0);
+  await page.evaluate(() => { (window as unknown as { __decoderFail: number }).__decoderFail = 1e9; });
+  await page.getByRole('button', { name: 'Play' }).click();
+  await expect(page.locator('.toast.error')).toContainText('The video decoder of this device stopped. Close other apps', { timeout: 30_000 });
+  await page.waitForTimeout(3000);
+  await expect(page.locator('.toast.error')).toHaveCount(1);
+  await page.locator('.toast.error').getByRole('button', { name: 'Details' }).click(); // the browser's words, for support
+  await expect(page.getByText(/MediaError: The video decoder of this device stopped.* — .*(Decoder failure|closed codec)/)).toBeVisible();
+});
+
+test('the video decoder fails mid-export: the export goes on and the file is whole', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await breakableDecoder(page);
+  await projectWith(page, 'long_1.mp4');
+  await startVideoExport(page);
+  await expect(page.getByText(/\b([2-9]\d)% — keep this screen open/)).toBeVisible({ timeout: 120_000 });
+  await page.evaluate(() => { (window as unknown as { __decoderFail: number }).__decoderFail = 1; });
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 240_000 });
+  expect((await decoderState(page)).fail, 'the failure happened during the export').toBe(0);
+  await expect(page.locator('.error-text')).toHaveCount(0);
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  const file = info.outputPath((await dl).suggestedFilename());
+  await (await dl).saveAs(file);
+  const { execFileSync } = await import('node:child_process');
+  const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-select_streams', 'v', '-show_entries', 'stream=nb_read_frames:format=duration', '-of', 'json', file]).toString()) as { streams: { nb_read_frames: string }[]; format: { duration: string } };
+  const src = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', fx('long_1.mp4')]).toString()) as { format: { duration: string } };
+  expect(Math.abs(Number(probe.format.duration) - Number(src.format.duration))).toBeLessThan(0.2);
+  expect(Number(probe.streams[0].nb_read_frames)).toBeGreaterThan(Number(src.format.duration) * 29);
+  const y = Number(execFileSync('ffmpeg', ['-v', 'error', '-sseof', '-2', '-i', file, '-frames:v', '1', '-vf', 'scale=32:32,format=gray', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 20 }).reduce((a, b) => a + b, 0)) / 1024;
+  expect(y).toBeGreaterThan(20); // the picture, not the black background
+});

@@ -1,6 +1,6 @@
 import { Mic, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { CAPTION_LAYOUTS, applyCaptionLook, captionLayout, captionPages, setCaptionLayout, wordsFromSegment, type CaptionLayout } from '../core/captions';
+import { CAPTION_LAYOUTS, applyCaptionLook, captionLayout, captionPages, lineWords, setCaptionLayout, wordsFromSegment, type CaptionLayout } from '../core/captions';
 import { fillerIndices } from '../core/reframe';
 import { wordCutRange } from '../core/silence';
 import { clipEnd, cutTimelineRanges, mainTrack, projectDuration, soundAssetId, sourceTime, timelineTimeOf } from '../core/timeline';
@@ -26,6 +26,7 @@ import { formatTime } from './format';
 import { t } from '../lib/i18n';
 import { StylePicker } from './picker';
 import { drawCaptionTile } from './tiles';
+import { FontPicker } from './FontPicker';
 import { useHoldUpdates } from '../lib/update';
 
 // ---------- Crop ----------
@@ -249,9 +250,10 @@ export function CaptionsBody() {
   const model = models.includes(picked) ? picked : 'base';
   const [preset, setPreset] = useState(() => savedLook().preset);
   const [layout, setLayout] = useState<CaptionLayout>(() => savedLook().layout);
-  // Words from the user's own text (docs/09 S1): on by default when the recording was read from the teleprompter.
+  // Words from the user's own text (docs/09 S1) are a choice: captions say what the video says (v1.6, the owner: "from
+  // the video, not from the teleprompter"). The teleprompter text waits in the box for when it is chosen.
   const [script, setScript] = useState(() => { const p = editor().project; return p ? projectScript(p) : ''; });
-  const [source, setSource] = useState<'speech' | 'script'>(() => (script ? 'script' : 'speech'));
+  const [source, setSource] = useState<'speech' | 'script'>('speech');
   // What the job is doing, as words; the bar itself is drawn from the pace (docs/09 Q4).
   const [progress, setProgress] = useState<string | null>(null);
   useHoldUpdates(progress !== null);
@@ -354,9 +356,11 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
     editClip(clip.id, (c) => { if (c.kind === 'caption') fn(c); }, key && `${key}:${clip.id}`);
   const pages = captionPages(clip.words, Math.max(1, clip.wordsPerPage));
 
+  // A line reads as it is drawn (`lineWords`): with small first letters, the list shows them too.
+  const lineText = (c: CaptionClip, pg: { text: string }[]) => lineWords(c, pg.map((w) => w.text)).join(' ');
   const commitPage = (i: number, text: string) => e((c) => {
     const pg = captionPages(c.words, Math.max(1, c.wordsPerPage))[i];
-    if (!pg || pg.map((w) => w.text).join(' ') === text.trim()) return;
+    if (!pg || lineText(c, pg) === text.trim().replace(/\s+/g, ' ')) return;
     const at = c.words.indexOf(pg[0]);
     const words = text.trim() ? wordsFromSegment(pg[0].t0, pg[pg.length - 1].t1, text) : [];
     c.words.splice(at, pg.length, ...words);
@@ -371,6 +375,7 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
           // layout, which the chips below can change after. The text and timing stay.
           applyCaptionLook(c, CAPTION_PRESETS.find((x) => x.id === id)!);
         })} />
+      <FontPicker clipId={clip.id} style={clip.style} onFont={(f) => e((c) => { c.style.font = f; })} onWeight={(w) => e((c) => { c.style.weight = w; })} />
       <Slider label={t('Words at once')} value={clip.wordsPerPage} min={1} max={12} step={1} format={(v) => String(v)} reset={4}
         onChange={(v) => e((c) => { c.wordsPerPage = v; }, 'wpp')} />
       <Slider label={t('Size')} value={clip.style.size} min={0.02} max={0.15} step={0.001} format={(v) => `${Math.round(v * 1000) / 10}`} reset={0.055}
@@ -390,13 +395,15 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
       <Chips options={CAPTION_MOTIONS} value={clip.motion ?? (clip.wordsPerPage === 1 && !clip.reveal ? 'pop' : 'none')} label={t('Animation')} render={(m) => t(MOTION_LABELS[m])}
         onChange={(m) => e((c) => { c.motion = m; })} />
       <h3>{t('Text ({n} lines)', { n: pages.length })}</h3>
+      <Toggle label={t('Lines start with a small letter')} value={!!clip.lowerStart} onChange={(v) => e((c) => { if (v) c.lowerStart = true; else delete c.lowerStart; })} />
       <div className="caption-list">
         {pages.map((pg, i) => {
-          const text = pg.map((w) => w.text).join(' ');
+          const text = lineText(clip, pg);
           return (
             <label key={`${pg[0].t0.toFixed(3)}:${text}`} className="caption-row">
               <span>{formatTime(clip.start + pg[0].t0)}</span>
-              <input defaultValue={text} aria-label={t('Caption line {n}', { n: i + 1 })}
+              {/* No automatic capital: a phone keyboard would start every corrected line with one (v1.6). */}
+              <input defaultValue={text} aria-label={t('Caption line {n}', { n: i + 1 })} autoCapitalize="none"
                 onFocus={() => { player.pause(); player.seek(clip.start + pg[0].t0 + 0.01); useEditor.setState({ time: player.time }); }}
                 onBlur={(ev) => commitPage(i, ev.target.value)}
                 onKeyDown={(ev) => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); }} />

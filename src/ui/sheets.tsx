@@ -1,4 +1,5 @@
 import { TrianglesCenterlineDashedVertical, TrianglesCenterlineDashedHorizontal } from 'lucide-react';
+import { produce } from 'immer';
 import { useEffect, useRef, useState } from 'react';
 import { evalAnim, hasKeys, keyIndexAt, setAnim, toggleKey } from '../core/anim';
 import { TEXT_CATEGORIES, TEXT_PRESETS } from '../core/presets';
@@ -8,16 +9,17 @@ import { CURVE_PRESETS } from '../core/speed';
 import { applyTransitionToAll, expectedAudioKey, findClip, keepsPitch, setCurve, setSpeed, setTransition, isSound } from '../core/timeline';
 import { CurveEditor } from './CurveEditor';
 import {
-  ADJUST_KEYS, FONT_IDS as FONT_ID_LIST, TEXT_ANIM_TYPES, TEXT_LOOP_TYPES, TRANSITION_TYPES,
-  type AdjustKey, type AspectId, type BlendMode, type Clip, type FontId, type SoundClip, type TextAnimType, type TextClip,
+  ADJUST_KEYS, TEXT_ANIM_TYPES, TEXT_LOOP_TYPES, TRANSITION_TYPES,
+  type AdjustKey, type AspectId, type BlendMode, type Clip, type SoundClip, type TextAnimType, type TextClip,
   type Transform, type Transition, type TransitionType,
 } from '../core/types';
-import { TEXT_BG_PADDING, TEXT_LINE_HEIGHT, fontOf, fontWeight, type AnyFontId } from '../engine/text';
+import { TEXT_BG_PADDING, TEXT_LINE_HEIGHT } from '../engine/text';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
-import { addCustomFont, detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
+import { detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
 import { StylePicker } from './picker';
+import { FontPicker } from './FontPicker';
 import { drawTextTile } from './tiles';
 import { CameraSheet } from './CameraSheet';
 import { licenseText } from '../core/music';
@@ -27,7 +29,7 @@ import { ReelBody } from './ReelSheet';
 import { ExportSheet } from './ExportSheet';
 import { EffectsBody, LutSection, PrivacyBody } from './FxSheets';
 import { CaptionEditBody, CaptionsBody, CropBody, StickersBody, VoiceoverBody } from './ToolSheets';
-import { BeatsBody, MaskBody, PausesBody, SfxBody } from './MoreSheets';
+import { BeatsBody, LayersBody, MaskBody, PausesBody, SfxBody } from './MoreSheets';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
 
@@ -39,7 +41,7 @@ const TITLES: Record<SheetId, string> = {
   speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform & keyframes',
   text: 'Text', transition: 'Transition', canvas: 'Canvas', export: 'Export',
   crop: 'Crop', captions: 'Auto captions', captionEdit: 'Captions', voiceover: 'Voice-over', stickers: 'Stickers',
-  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap', chroma: 'Chroma key', voice: 'Voice',
+  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap', chroma: 'Chroma key', voice: 'Voice', layers: 'Layers',
 };
 
 export function Sheets() {
@@ -74,6 +76,7 @@ export function Sheets() {
       {sheet === 'beats' && clip.kind === 'audio' && <BeatsBody clip={clip} />}
       {sheet === 'effects' && (clip.kind === 'video' || clip.kind === 'image') && <EffectsBody clip={clip} />}
       {sheet === 'privacy' && (clip.kind === 'video' || clip.kind === 'image') && <PrivacyBody clip={clip} />}
+      {sheet === 'layers' && <LayersBody clip={clip} />}
     </Sheet>
   );
 }
@@ -226,7 +229,9 @@ function ChromaControls({ clip }: { clip: Extract<Clip, { chroma: unknown }> }) 
       <Toggle label={t('Remove color (green screen)')} value={k.enabled} onChange={(v) => e((ck) => { ck.enabled = v; })} />
       {k.enabled && (
         <>
-          <Swatches label={t('Key color')} value={k.color} onChange={(col) => e((ck) => { ck.color = col; })} />
+          {/* The eyedropper picks the key colour from the picture as it is, with the key off (else it is see-through). */}
+          <Swatches label={t('Key color')} value={k.color} onChange={(col) => e((ck) => { ck.color = col; })}
+            from={() => { const p = editor().project; return p && produce(p, (d) => { const f = findClip(d, clip.id); if (f && 'chroma' in f.clip) f.clip.chroma.enabled = false; }); }} />
           <Slider label={t('Strength')} value={k.similarity} min={0} max={1} format={pct} reset={0.3} onChange={(v) => e((ck) => { ck.similarity = v; }, 'cks')} />
           <Slider label={t('Softness')} value={k.smoothness} min={0} max={1} format={pct} reset={0.1} onChange={(v) => e((ck) => { ck.smoothness = v; }, 'ckf')} />
         </>
@@ -236,10 +241,8 @@ function ChromaControls({ clip }: { clip: Extract<Clip, { chroma: unknown }> }) 
 }
 
 const ANIMS: readonly TextAnimType[] = TEXT_ANIM_TYPES;
-const FONT_IDS = FONT_ID_LIST as readonly FontId[];
 
 function TextBody({ clip }: { clip: TextClip }) {
-  const fonts = useEditor((st) => st.project?.fonts);
   const e = (fn: (c: TextClip) => void, key?: string) => editClip(clip.id, (c) => { if (c.kind === 'text') fn(c); }, key && `${key}:${clip.id}`);
   const s = clip.style;
   return (
@@ -248,14 +251,9 @@ function TextBody({ clip }: { clip: TextClip }) {
         onChange={(id) => e((c) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; c.style = structuredClone(pr.style); if (pr.animIn) c.animIn = { ...pr.animIn }; })} />
       <textarea className="text-input" value={clip.text} rows={2} maxLength={500} aria-label={t('Text')}
         onChange={(ev) => e((c) => { c.text = ev.target.value; }, 'txt')} />
-      <Chips options={[...Object.keys(fonts ?? {}).map((id): AnyFontId => `custom:${id}`), ...FONT_IDS]} value={s.font} scroll label={t('Font')}
-        onChange={(f) => e((c) => { c.style.font = f; })}
-        render={(f) => <span style={{ fontFamily: fontOf(f).family, fontWeight: fontWeight(f, 700) }}>{f.startsWith('custom:') ? fonts?.[f.slice(7)]?.name : fontOf(f).label}</span>} />
-      <button className="btn" onClick={() => void addCustomFont(clip.id)}>{t('Add font')}</button>
+      <FontPicker clipId={clip.id} style={s} onFont={(f) => e((c) => { c.style.font = f; })} onWeight={(w) => e((c) => { c.style.weight = w; })} />
       <Slider label={t('Size')} value={s.size} min={0.02} max={0.2} step={0.001} format={(v) => `${Math.round(v * 1000) / 10}`} reset={0.055}
         onChange={(v) => e((c) => { c.style.size = v; }, 'tsize')} />
-      <Chips options={[400, 700, 900] as const} value={s.weight} render={(w) => (w === 400 ? t('Regular') : w === 700 ? t('Bold') : t('Black'))}
-        onChange={(w) => e((c) => { c.style.weight = w; })} />
       <Chips options={['left', 'center', 'right'] as const} value={s.align} onChange={(a) => e((c) => { c.style.align = a; })} />
       <Toggle label={t('Italic')} value={s.italic} onChange={(v) => e((c) => { c.style.italic = v; })} />
       <h3>{t('Spacing')}</h3>

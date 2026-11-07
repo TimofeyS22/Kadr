@@ -25,6 +25,8 @@ export class Player {
   private raf = 0;
   private frameListeners = new Set<() => void>();
   private thumbWaiters: ((url: string | null) => void)[] = [];
+  private captureWaiters: ((canvas: HTMLCanvasElement | null) => void)[] = [];
+  private captureFrom: Project | null = null;
   playing = false;
   time = 0;
   bounds: LayerBounds[] = [];
@@ -120,6 +122,16 @@ export class Player {
     if (!this.rendering) void this.drain();
   }
 
+  /**
+   * The next rendered frame copied to a 2D canvas at the preview's size, to read colours from (the eyedropper). With
+   * `from`, that frame is drawn from another version of the project (the chroma key's colour is picked with the key
+   * off), and the screen goes back to the real one right after.
+   */
+  capture(from?: Project | null): Promise<HTMLCanvasElement | null> {
+    this.captureFrom = from ?? null; // never an earlier capture's version
+    return new Promise((resolve) => { this.captureWaiters.push(resolve); this.requestRender(); });
+  }
+
   /** Resolves with a small JPEG data URL of the next rendered frame. */
   snapshot(): Promise<string | null> {
     return new Promise((resolve) => { this.thumbWaiters.push(resolve); this.requestRender(); });
@@ -141,8 +153,24 @@ export class Player {
   }
 
   private async renderAt(t: number): Promise<void> {
-    const p = this.project, comp = this.compositor;
-    if (!p || !comp) { for (const w of this.thumbWaiters.splice(0)) w(null); return; }
+    const comp = this.compositor;
+    if (!this.project || !comp) { for (const w of [...this.thumbWaiters.splice(0), ...this.captureWaiters.splice(0)]) w(null); return; }
+    // A capture gets a frame begun after it was asked for: one asked mid-frame waits for the next (requestRender), or
+    // the chroma key's eyedropper read the frame with the key on, already see-through.
+    const capture = this.captureWaiters.splice(0);
+    const from = capture.length ? this.captureFrom : null;
+    if (capture.length) this.captureFrom = null;
+    let shot: HTMLCanvasElement | null = null;
+    try {
+      shot = await this.drawFrame(t, comp, from, capture.length > 0);
+    } finally {
+      for (const w of capture) w(shot);
+    }
+  }
+
+  /** Draws the frame at `t` (from `from` instead of the project, if given); with `copy`, returns a copy of it. */
+  private async drawFrame(t: number, comp: Compositor, from: Project | null, copy: boolean): Promise<HTMLCanvasElement | null> {
+    const p = from ?? this.project!;
     const started = performance.now();
     const tt = Math.max(0, Math.min(t, this.duration - 1e-3));
     const desc = buildFrame(p, tt);
@@ -150,12 +178,14 @@ export class Player {
     const fast = this.fast;
     this.fast = false;
     const sources = await resolveDrawables(desc, this.pool, this.text, width, height, fast, comp.frameMax);
-    if (this.compositor !== comp) return;
+    if (this.compositor !== comp) return null;
     this.bounds = comp.draw(desc, sources);
     const approx = [...sources.values()].some((d) => d.approx);
     frameDrawn(tt, performance.now() - started, !approx);
     if (approx && this.pending === null) this.pending = tt; // refine to the exact frame unless scrubbing moved on
     if (this.thumbWaiters.length) this.flushThumb(comp.canvas);
+    const shot = copy ? copyCanvas(comp.canvas) : null;
+    if (from && this.pending === null) this.pending = tt; // the real frame again
     for (const fn of this.frameListeners) fn();
 
     const keep = new Set<string>();
@@ -170,6 +200,7 @@ export class Player {
       }
     }
     this.pool.sweep(keep);
+    return shot;
   }
 
   private flushThumb(src: HTMLCanvasElement): void {
@@ -184,6 +215,15 @@ export class Player {
     } catch { /* tainted or lost context */ }
     for (const w of this.thumbWaiters.splice(0)) w(url);
   }
+}
+
+/** Copies the frame just drawn: a WebGL canvas is readable only before the browser composites it. */
+function copyCanvas(src: HTMLCanvasElement): HTMLCanvasElement | null {
+  try {
+    const out = Object.assign(document.createElement('canvas'), { width: src.width, height: src.height });
+    out.getContext('2d', { willReadFrequently: true })!.drawImage(src, 0, 0);
+    return out;
+  } catch { return null; /* tainted or lost context */ }
 }
 
 export const player = new Player();

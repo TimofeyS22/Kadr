@@ -1,8 +1,8 @@
-import { Play } from 'lucide-react';
+import { ArrowDown, ArrowUp, BringToFront, Play, SendToBack } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_PAUSES, removedSeconds, speechRanges } from '../core/silence';
-import { clipEnd, cutMainToBeats, keepSourceRanges, soundAssetId, sourceSpan, timelineTimeOf } from '../core/timeline';
-import type { AudioClip, ImageClip, Mask, Project, SoundClip, VideoClip } from '../core/types';
+import { clipEnd, cutMainToBeats, keepSourceRanges, layerPlace, moveLayer, soundAssetId, sourceSpan, timelineTimeOf, type LayerMove } from '../core/timeline';
+import type { AudioClip, Clip, ImageClip, Mask, Project, SoundClip, VideoClip } from '../core/types';
 import { detectBeats } from '../engine/analysis';
 import { PEAKS_PER_SEC, waveform } from '../engine/media';
 import { SFX, renderSfx } from '../engine/sfx';
@@ -188,6 +188,44 @@ export function BeatsBody({ clip }: { clip: AudioClip }) {
       <Chips options={[1, 2, 4] as const} value={null} render={(n) => (n === 1 ? t('every beat') : t('every {n} beats', { n }))} onChange={cut} />
       <p className="hint">{t('Edges of clips also snap to the beat marks when you trim or move them.')}</p>
       <button className="btn" onClick={() => void detect()}>{t('Detect again')}</button>
+    </>
+  );
+}
+
+const LAYER_MOVES: { dir: LayerMove; label: string; icon: typeof ArrowUp }[] = [
+  { dir: 'front', label: 'To the front', icon: BringToFront },
+  { dir: 'up', label: 'Up one layer', icon: ArrowUp },
+  { dir: 'down', label: 'Down one layer', icon: ArrowDown },
+  { dir: 'back', label: 'To the back', icon: SendToBack },
+];
+
+/**
+ * Layers (v1.6, the owner: "a layers function, so the overlay lies under the captions"): what is drawn over what,
+ * among the clips on screen at the same time. The main video is always the bottom.
+ */
+export function LayersBody({ clip }: { clip: Clip }) {
+  const project = useEditor((s) => s.project); // a selector must not build a new object per call (zustand loops)
+  const place = useMemo(() => (project ? layerPlace(project, clip.id) : null), [project, clip.id]);
+  if (!place) return <p className="hint">{t('The main video is the bottom layer. Overlays, text and captions go over it.')}</p>;
+  const move = (dir: LayerMove) => {
+    let moved = false;
+    editor().commit((d) => { moved = moveLayer(d, clip.id, dir); });
+    if (moved) track('layer_moved', { dir, kind: clip.kind });
+  };
+  const alone = place.above + place.below === 0;
+  return (
+    <>
+      <p className="hint" role="status">
+        {alone ? t('Nothing else is on screen with this clip.') : t('Over it: {above}. Under it: {below}.', { above: place.above, below: place.below })}
+      </p>
+      <div className="layer-moves">
+        {LAYER_MOVES.map(({ dir, label, icon: Icon }) => (
+          <button key={dir} className="btn" disabled={dir === 'front' || dir === 'up' ? !place.above : !place.below} onClick={() => move(dir)}>
+            <Icon size={18} aria-hidden /> {t(label)}
+          </button>
+        ))}
+      </div>
+      <p className="hint">{t('Layers count only what is on screen at the same time. A new overlay goes under captions and text.')}</p>
     </>
   );
 }

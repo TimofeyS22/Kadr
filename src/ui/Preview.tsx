@@ -1,5 +1,5 @@
 // Preview canvas with direct manipulation: tap selects a layer, drag moves it, two fingers scale and rotate.
-import { useEffect, useLayoutEffect, useRef, type PointerEvent as RPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent, type RefObject } from 'react';
 import { evalAnim, setAnim } from '../core/anim';
 import { findClip } from '../core/timeline';
 import type { Project } from '../core/types';
@@ -7,6 +7,7 @@ import type { LayerBounds } from '../engine/compositor';
 import { player } from '../engine/player';
 import { useEditor } from '../state/store';
 import { t } from '../lib/i18n';
+import { toHex } from '../core/color';
 
 const PREVIEW_MAX_PX = 1280;
 const SNAP_PX = 8; // screen pixels within which a layer snaps to a guide
@@ -297,11 +298,74 @@ export function Preview() {
       <div ref={box} className="sel-box">
         <div className="sel-handle" onPointerDown={onHandleDown} role="button" aria-label={t('Drag to resize and rotate')} />
       </div>
+      <Eyedropper canvas={canvas} />
       {safeZones && (
         <div ref={zones} className={`safe-zones ${vertical ? 'vertical' : 'title-safe'}`} aria-hidden>
           {vertical ? <><i className="z-top" /><i className="z-right" /><i className="z-bottom" /></> : <i className="z-title" />}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The colour at (x, y) of a frame: the mean of the 3×3 pixels around it, so one noisy pixel does not decide. */
+function colorAt(frame: HTMLCanvasElement, x: number, y: number): string {
+  const ctx = frame.getContext('2d', { willReadFrequently: true })!;
+  const x0 = Math.max(0, Math.min(frame.width - 3, Math.round(x) - 1)), y0 = Math.max(0, Math.min(frame.height - 3, Math.round(y) - 1));
+  const d = ctx.getImageData(x0, y0, 3, 3).data;
+  let r = 0, g = 0, b = 0;
+  for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+  const n = d.length / 4;
+  return toHex(r / n / 255, g / n / 255, b / n / 255);
+}
+
+/**
+ * The eyedropper (v1.6): over the preview while a colour row asked for it. The finger shows the colour under it in a
+ * loupe above it (where the finger does not hide it); lifting the finger takes that colour. It reads a copy of the
+ * frame on screen, so it picks exactly what the preview shows; the browser's own EyeDropper exists only on desktop.
+ */
+function Eyedropper({ canvas }: { canvas: RefObject<HTMLCanvasElement | null> }) {
+  const on = useEditor((s) => s.eyedropper !== null);
+  const frame = useRef<HTMLCanvasElement | null>(null);
+  const [loupe, setLoupe] = useState<{ x: number; y: number; color: string } | null>(null);
+  useEffect(() => {
+    frame.current = null;
+    setLoupe(null);
+    if (!on) return;
+    let live = true;
+    void player.capture(useEditor.getState().eyedropper?.from?.()).then((f) => { if (live) frame.current = f; });
+    return () => { live = false; frame.current = null; };
+  }, [on]);
+  if (!on) return null;
+
+  const sample = (e: RPointerEvent<HTMLDivElement>) => {
+    const c = canvas.current, f = frame.current;
+    if (!c || !f) return null;
+    const r = c.getBoundingClientRect(), host = e.currentTarget.getBoundingClientRect();
+    const cx = Math.min(r.right - 1, Math.max(r.left, e.clientX)), cy = Math.min(r.bottom - 1, Math.max(r.top, e.clientY));
+    const color = colorAt(f, ((cx - r.left) / r.width) * f.width, ((cy - r.top) / r.height) * f.height);
+    const next = { x: cx - host.left, y: cy - host.top, color };
+    setLoupe(next);
+    return next;
+  };
+  const stop = (e: RPointerEvent<HTMLDivElement>) => e.stopPropagation(); // the layer gestures below must not see it
+  return (
+    <div className="eyedrop" role="application" aria-label={t('Eyedropper')}
+      onPointerDown={(e) => { stop(e); try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a pointer already gone */ } sample(e); }}
+      onPointerMove={(e) => { stop(e); if (e.buttons || e.pointerType !== 'mouse') sample(e); }}
+      onPointerUp={(e) => {
+        stop(e);
+        const got = sample(e);
+        const d = useEditor.getState().eyedropper;
+        useEditor.setState({ eyedropper: null });
+        if (got && d) d.pick(got.color);
+      }}
+      onPointerCancel={(e) => { stop(e); setLoupe(null); }}
+      onDoubleClick={(e) => e.stopPropagation()}>
+      {!loupe && <p className="eyedrop-hint">{t('Touch the video and lift your finger on the color you want')}</p>}
+      {loupe && <div className="eyedrop-loupe" style={{ left: loupe.x, top: loupe.y, background: loupe.color }} aria-live="polite" aria-label={loupe.color} />}
+      <button className="eyedrop-cancel" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
+        onClick={() => useEditor.setState({ eyedropper: null })}>{t('Cancel')}</button>
     </div>
   );
 }

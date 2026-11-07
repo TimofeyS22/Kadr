@@ -1,7 +1,7 @@
 // buildFrame: project + time → a flat list of layers with resolved parameters.
 // Shared by preview and export, so what you see is what you export.
 import { evalAnim } from './anim';
-import { PAGE_IN_S, WORD_IN_S, captionAt, motionAt, stepTime } from './captions';
+import { PAGE_IN_S, WORD_IN_S, captionAt, lineWords, motionAt, stepTime } from './captions';
 import { effectCode, punchScale, seedOf, shake } from './effects';
 import { resolveAdjust } from './filters';
 import { clamp, clipEnd, mainTrack, sourceTime } from './timeline';
@@ -127,7 +127,7 @@ export function visualLayer(p: Project, c: VisualClip, t: number): Layer {
   if (c.kind === 'caption') {
     const at = captionAt(c, local);
     layer.fit = 'native';
-    const words = at?.words ?? [];
+    const words = lineWords(c, at?.words ?? []);
     const emphasis = c.highlight ? c.emphasis : undefined;
     const motion = c.motion ?? 'none';
     // Karaoke fill and a word coming in change the picture within a word: stepped (stepTime) so each word is drawn a

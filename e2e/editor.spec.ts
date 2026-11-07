@@ -224,6 +224,131 @@ test('imports subtitles from an .srt file', async ({ page }) => {
   await expect(page.locator('.caption-row input').first()).toHaveValue('Hello from Kadr');
 });
 
+// ---------- v1.6: the owner's notes on captions, colours, layers and the playhead ----------
+
+async function srtCaptions(page: Page) {
+  await tool(page, 'Captions').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Import .srt or .vtt' }).click();
+  await (await chooser).setFiles(fx('test.srt'));
+  await expect(page.locator('.clip-caption')).toHaveCount(1);
+}
+const hexRgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+
+test('captions (v1.6): fonts and weight, lines with a small first letter, no keyboard capital, 30 colours and the eyedropper', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await srtCaptions(page);
+  const first = page.locator('.caption-row input').first();
+  await expect(first).toHaveValue('Hello from Kadr'); // an imported file keeps its own letters
+  await expect(first).toHaveAttribute('autocapitalize', 'none');
+  await page.getByRole('switch', { name: 'Lines start with a small letter' }).check();
+  await expect(page.locator('.caption-row input').first()).toHaveValue('hello from Kadr');
+  // A corrected line keeps the small letter (a phone keyboard would have started it with a capital).
+  await page.locator('.caption-row input').nth(1).fill('Вторая строка');
+  await page.locator('.caption-row input').nth(1).press('Enter');
+  await expect(page.locator('.caption-row input').nth(1)).toHaveValue('вторая строка');
+  // Fonts, as in text.
+  const fonts = page.getByRole('radiogroup', { name: 'Font' });
+  await fonts.getByRole('radio', { name: 'Montserrat' }).click();
+  await expect(fonts.getByRole('radio', { name: 'Montserrat' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('radiogroup', { name: 'Weight' }).getByRole('radio', { name: 'Black' }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Weight' }).getByRole('radio', { name: 'Black' })).toHaveAttribute('aria-checked', 'true');
+  // 30 colours, then the eyedropper takes one from the picture: the photo's pink corner, (247, 129, 233) at 20%, 20%.
+  const colors = page.getByRole('group', { name: 'Text color' });
+  await expect(colors.locator('.swatch[aria-label^="#"]')).toHaveCount(30);
+  await colors.getByRole('button', { name: 'Eyedropper: Text color' }).click();
+  await expect(page.getByText('Touch the video and lift your finger on the color you want')).toBeVisible();
+  const c = (await page.locator('.preview-canvas').boundingBox())!;
+  const at = { x: c.x + 0.2 * c.width, y: c.y + (c.height - c.width) / 2 + 0.2 * c.width }; // the square photo fills the width
+  await page.mouse.move(at.x + 30, at.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(at.x, at.y, { steps: 4 });
+  await expect(page.locator('.eyedrop-loupe')).toBeVisible();
+  await page.mouse.up();
+  await expect(page.locator('.eyedrop')).toHaveCount(0);
+  const picked = (await colors.locator('.swatch.on').first().getAttribute('aria-label'))!;
+  hexRgb(picked).forEach((v, i) => expect(Math.abs(v - [247, 129, 233][i]), `picked ${picked}`).toBeLessThan(20));
+  await expect(colors.locator('.swatch.on')).toHaveCount(1); // the new colour leads the row, chosen
+  // The text sheet has the same font picker, now under a heading.
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Text').click();
+  await expect(page.getByRole('radiogroup', { name: 'Font' })).toBeVisible();
+});
+
+test('chroma key (v1.6): the eyedropper picks the key colour from the picture, even once that colour is keyed out', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await tool(page, 'Chroma key').click();
+  await page.getByRole('switch', { name: 'Remove color (green screen)' }).check();
+  const colors = page.getByRole('group', { name: 'Key color' });
+  // The photo's green disc, (1, 125, 0) at 56%, 56% of the square photo.
+  const pick = async () => {
+    await colors.getByRole('button', { name: 'Eyedropper: Key color' }).click();
+    await expect(page.locator('.eyedrop')).toBeVisible();
+    await page.waitForTimeout(300); // the frame to read from is drawn
+    const c = (await page.locator('.preview-canvas').boundingBox())!;
+    const x = c.x + 0.56 * c.width, y = c.y + (c.height - c.width) / 2 + 0.56 * c.width;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect(page.locator('.eyedrop')).toHaveCount(0);
+    return hexRgb((await colors.locator('.swatch.on').first().getAttribute('aria-label'))!);
+  };
+  const near = (rgb: number[]) => rgb.forEach((v, i) => expect(Math.abs(v - [1, 125, 0][i]), rgb.join()).toBeLessThan(25));
+  near(await pick());
+  // Now that green is see-through on screen; the eyedropper still reads the picture, not the black under it.
+  near(await pick());
+});
+
+test('layers (v1.6): an overlay added after the captions lies under them, and Layers moves it over and back', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']); // no sound: the Captions tool does not start recognizing
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await srtCaptions(page);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Overlay', ['person.jpg']);
+  const rows = page.locator('.tl-row.overlay');
+  await expect(rows).toHaveCount(2);
+  // The timeline lists the top layer first: the captions, then the photo under them.
+  await expect(rows.nth(0).locator('.clip-caption')).toHaveCount(1);
+  await expect(rows.nth(1).locator('.clip')).toHaveCount(1);
+  await selectClip(page, rows.nth(1).locator('.clip'));
+  await tool(page, 'Layers').click();
+  await expect(page.getByRole('status').filter({ hasText: 'Over it: 1. Under it: 0.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'To the back' })).toBeDisabled();
+  await page.getByRole('button', { name: 'To the front' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Over it: 0. Under it: 1.' })).toBeVisible();
+  await expect(rows.nth(1).locator('.clip-caption')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Down one layer' }).click();
+  await expect(rows.nth(0).locator('.clip-caption')).toHaveCount(1);
+});
+
+test('deleting a piece of the main track puts the playhead on the join, not as far past it as the piece was long', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png', 'landscape.mp4', 'person.jpg']);
+  const main = page.locator('.tl-row.main .clip');
+  await expect(main).toHaveCount(3);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  const playhead = async () => { const p = (await page.locator('.playhead').boundingBox())!; return p.x + p.width / 2; };
+  // The playhead near the end of the second clip, then the second clip goes.
+  const second = (await main.nth(1).boundingBox())!;
+  const by = second.x + second.width - 10 - (await playhead());
+  await page.locator('.tl-scroll').evaluate((el, dx) => { el.scrollLeft += dx; }, by);
+  await expect.poll(async () => Math.abs((await main.nth(1).boundingBox())!.x + (await main.nth(1).boundingBox())!.width - 10 - (await playhead()))).toBeLessThan(3);
+  const last = await main.nth(2).getAttribute('data-clip');
+  await selectClip(page, main.nth(1));
+  await tool(page, 'Delete').click();
+  await expect(main).toHaveCount(2);
+  await expect.poll(async () => Math.abs((await page.locator(`.clip[data-clip="${last}"]`).boundingBox())!.x - (await playhead()))).toBeLessThan(3);
+});
+
 test('imports a MediaRecorder voice recording (what voice-over produces)', async ({ page }, info) => {
   await newProject(page);
   // Record 1.5 s of a tone with the browser's own MediaRecorder: WebM/Opus in Chromium, MP4/AAC in WebKit.
@@ -723,11 +848,13 @@ test('camera with teleprompter scrolls the script, records a mirrored clip onto 
   const pr = await probe(file);
   expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
   expect(Number(pr.format.duration)).toBeGreaterThan(1.5);
-  // The teleprompter text stays with the recording: Auto captions offer it as the words (docs/09 S1).
+  // The teleprompter text stays with the recording, but captions come from the speech (v1.6, the owner): the text
+  // waits under "From my text" (docs/09 D1, revised).
   if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
   await page.getByRole('button', { name: 'Settings' }).click();
-  await expect(page.getByRole('radio', { name: 'From my text' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('radio', { name: 'Recognize speech' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('radio', { name: 'From my text' }).click();
   await expect(page.getByRole('textbox', { name: 'Your text' })).toHaveValue('Hello! This is a teleprompter test.\nSecond line.');
   await page.getByRole('button', { name: 'Done' }).click();
   // The front camera is recorded as the mirrored preview shows it: the white half ends up on the right.
@@ -1257,7 +1384,7 @@ test('a new text follows the finger from anywhere; a tap on empty space finishes
   await expect(selBox(page)).toBeVisible();
 });
 
-test('trimming the start of a main clip: the left edge follows the finger and stays there on release, the gap closed', async ({ page }) => {
+test('trimming the start of a main clip: the left edge follows the finger; on release the gap closes and the playhead stands on the cut', async ({ page }) => {
   await newProject(page);
   await importFiles(page, 'Media', ['landscape.mp4', 'portrait.mp4']);
   const clip = page.locator('.tl-row.main .clip').nth(1);
@@ -1273,27 +1400,22 @@ test('trimming the start of a main clip: the left edge follows the finger and st
   expect(Math.abs(mid.x - (b0.x + 60))).toBeLessThan(4); // left edge under the finger
   expect(Math.abs(mid.x + mid.width - (b0.x + b0.width))).toBeLessThan(4); // right edge stays
   await page.mouse.up();
-  // Release: nothing jumps (v1.3). The view scrolled back by the trimmed width, so the clip stays under the finger…
-  await page.waitForTimeout(300);
-  const end = (await clip.boundingBox())!;
-  expect(Math.abs(end.x - (b0.x + 60))).toBeLessThan(4);
-  expect(Math.abs(end.x + end.width - (b0.x + b0.width))).toBeLessThan(4);
-  // …and the gap is closed: the clip starts where the one before it ends.
+  // Release (v1.6, the owner): the playhead goes to the cut, not seconds past it by the trimmed length…
+  const playhead = async () => { const p = (await page.locator('.playhead').boundingBox())!; return p.x + p.width / 2; };
+  await expect.poll(async () => Math.abs((await clip.boundingBox())!.x - (await playhead()))).toBeLessThan(3);
+  // …the gap is closed: the clip starts where the one before it ends…
   const prev = (await page.locator('.tl-row.main .clip').nth(0).boundingBox())!;
-  expect(Math.abs(prev.x + prev.width - end.x)).toBeLessThan(3);
-  // At 0:00 there is no room to scroll: the first clip glides back to the start instead of jumping.
-  const first = page.locator('.tl-row.main .clip').nth(0);
-  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
-  await selectClip(page, first);
-  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
-  const f0 = (await first.boundingBox())!;
-  const fh = (await first.getByLabel('Trim start').boundingBox())!;
-  await page.mouse.move(fh.x + fh.width / 2, fh.y + fh.height / 2);
+  expect(Math.abs(prev.x + prev.width - (await clip.boundingBox())!.x)).toBeLessThan(3);
+  expect((await clip.boundingBox())!.width).toBeLessThan(b0.width - 40); // ~1 s shorter
+  // The end edge: the playhead stands on the clip's new end.
+  await selectClip(page, page.locator('.tl-row.main .clip').nth(0));
+  const e0 = page.locator('.tl-row.main .clip').nth(0);
+  const eh = (await e0.getByLabel('Trim end').boundingBox())!;
+  await page.mouse.move(eh.x + eh.width / 2, eh.y + eh.height / 2);
   await page.mouse.down();
-  await page.mouse.move(fh.x + fh.width / 2 + 40, fh.y + fh.height / 2, { steps: 4 });
+  await page.mouse.move(eh.x + eh.width / 2 - 60, eh.y + eh.height / 2, { steps: 6 });
   await page.mouse.up();
-  await expect.poll(async () => Math.abs((await first.boundingBox())!.x - f0.x)).toBeLessThan(3);
-  expect((await first.boundingBox())!.width).toBeLessThan(f0.width - 30);
+  await expect.poll(async () => { const e = (await e0.boundingBox())!; return Math.abs(e.x + e.width - (await playhead())); }).toBeLessThan(3);
 });
 
 test('dragging a clip to the edge of the timeline scrolls it', async ({ page }) => {
@@ -1495,15 +1617,18 @@ test('captions from my text: every word is the text\'s own, timed by the speech,
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 300_000 });
   expectHonestProgress(await progress); // it used to fill on download and drop back to 0 (v1.2 Q4)
   if (!(await page.locator('.caption-row').first().isVisible())) await tool(page, 'Edit captions').click();
-  const lines = await page.locator('.caption-row input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
-  expect(lines.join(' ')).toBe(script); // punctuation, capitals, "15" and "слова-паразиты" exactly as written
+  const read = () => page.locator('.caption-row input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+  // Lines start with a small letter by default (v1.6); without it, the text is exactly as written.
+  for (const l of await read()) expect(l[0], l).toBe(l[0].toLocaleLowerCase());
+  await page.getByRole('switch', { name: 'Lines start with a small letter' }).uncheck();
+  expect((await read()).join(' ')).toBe(script); // punctuation, capitals, "15" and "слова-паразиты" exactly as written
   // Timed by the speech: the captions end with the voice, not stretched over the clip.
   const right = async (l: ReturnType<Page['locator']>) => { const b = (await l.boundingBox())!; return b.x + b.width; };
   expect(await right(page.locator('.clip-caption'))).toBeLessThanOrEqual(await right(page.locator('.tl-row.main .clip').last()) + 1);
 });
 
 
-test('teleprompter → reel in one tap: the reel\'s captions are the script, word for word', async ({ page }) => {
+test('teleprompter → reel in one tap: the reel\'s captions are what was said; the script waits under "From my text"', async ({ page }) => {
   test.setTimeout(400_000);
   const script = (JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'eval', 'texts.json'), 'utf8')) as Record<string, string>).script_ru;
   // A camera whose microphone reads the script (the TTS recording), starting when the recording starts.
@@ -1538,13 +1663,18 @@ test('teleprompter → reel in one tap: the reel\'s captions are the script, wor
   await page.getByRole('button', { name: 'Make the reel' }).click();
   const done = page.locator('.reel-done');
   await expect(done).toBeVisible({ timeout: 300_000 });
-  await expect(done).toContainText('Captions from your text');
+  await expect(done).toContainText(/Captions: \d+ words/); // from the recording, not the script (v1.6, the owner)
   await page.getByRole('button', { name: 'Watch the reel' }).click();
   await page.getByRole('button', { name: 'Pause' }).click().catch(() => undefined);
   await selectClip(page, page.locator('.clip-caption'));
   await tool(page, 'Edit captions').click();
   const lines = await page.locator('.caption-row input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
-  expect(lines.join(' ')).toBe(script);
+  expect(lines.join(' ').split(' ').length).toBeGreaterThan(script.split(/\s+/).length * 0.7);
+  // Making them again starts from the speech too; the teleprompter text waits under "From my text".
+  await page.getByRole('button', { name: 'Create again…' }).click();
+  await expect(page.getByRole('radio', { name: 'Recognize speech' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('radio', { name: 'From my text' }).click();
+  await expect(page.getByRole('textbox', { name: 'Your text' })).toHaveValue(script);
 });
 
 test('a sheet closes with a swipe down on its header; a small drag or a tap on the header keeps it', async ({ page }) => {
@@ -3310,6 +3440,8 @@ test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a 
   for (const [what, file, leftOut] of files) {
     console.log(`hostile backup: ${what}`); // which one, if it hangs
     await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 20_000 }); // the last answer is gone
+    // So is the last restore's note: after a fast export it is still up and would be read as this one's (WebKit, v1.6).
+    await expect(page.locator('.toast').filter({ hasText: 'could not be restored' })).toHaveCount(0, { timeout: 20_000 });
     await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Restore backup' }).click();

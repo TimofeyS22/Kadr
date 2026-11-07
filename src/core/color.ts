@@ -18,3 +18,8 @@ export function readableOn(box: string, preferred: string): string {
   if (contrast(preferred, box) >= 4.5) return preferred;
   return contrast('#111111', box) >= contrast('#ffffff', box) ? '#111111' : '#ffffff';
 }
+
+/** "#rrggbb" from channels 0..1 (clamped, rounded). */
+export function toHex(r: number, g: number, b: number): string {
+  return `#${[r, g, b].map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('')}`;
+}

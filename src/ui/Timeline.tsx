@@ -212,38 +212,24 @@ export function Timeline() {
         cancelAnimationFrame(raf);
         raf = 0;
         if (d.mode === 'move' && e.type === 'pointerup') finishMove(d, e);
-        if (d.mode === 'trim') {
-          if (d.edge === 'start') settleStartTrim(d);
-          player.seek(useEditor.getState().time); // back to the playhead
-        }
+        if (d.mode === 'trim') settleTrim(d);
         return;
       }
       if (p && e.type === 'pointerup' && p.pointerId === e.pointerId) tapClip(p.id);
     };
     /**
-     * Trimming the start of a main-track clip closed the gap in the model, and the drag drew the clip shifted so its
-     * left edge stayed under the finger. On release the view scrolls back by the trimmed width, so nothing moves:
-     * the clip stays where the finger left it and the playhead keeps pointing at the same picture (before v1.3
-     * everything jumped left by the trimmed width — the owner's "trimming by the left edge is very crooked").
-     * Near 0:00 there is no room to scroll; there the clips glide the rest of the way instead of jumping.
+     * After a trim the playhead stands on the cut (v1.6, the owner: "the playhead does not come back to the cut; it moves
+     * by as much as was trimmed, 5 s, 10 s"): on the clip's new start or end, where the preview was while trimming. Before,
+     * it kept its place in time (or, trimming the start of a main clip, its picture), and the cut ended up seconds away.
+     * A touch on a handle that trimmed nothing leaves the playhead alone.
      */
-    const settleStartTrim = (d: Extract<Drag, { mode: 'trim' }>) => {
-      const before = findClip(d.base, d.id), now = findClip(useEditor.getState().project!, d.id);
-      if (!before || !now || now.track.kind !== 'main') return;
-      const el = scroller.current!, { zoom } = live.current;
-      const cut = (before.clip.duration - now.clip.duration) * zoom;
-      if (cut <= 0) return;
-      const x = Math.max(0, el.scrollLeft - cut);
-      const rest = cut - (el.scrollLeft - x);
-      ignoreScroll.current = x;
-      el.scrollLeft = x;
-      useEditor.setState({ time: Math.min(projectDuration(useEditor.getState().project!), x / zoom) });
-      if (rest > 0.5 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        const ids = new Set(mainTrack(useEditor.getState().project!).clips.slice(now.index).map((c) => c.id));
-        for (const node of el.querySelectorAll<HTMLElement>('.tl-row.main .clip')) {
-          if (ids.has(node.dataset.clip!)) node.animate([{ transform: `translateX(${rest}px)` }, { transform: 'none' }], { duration: 180, easing: 'ease-out' });
-        }
-      }
+    const settleTrim = (d: Extract<Drag, { mode: 'trim' }>) => {
+      const s = useEditor.getState();
+      const before = findClip(d.base, d.id)?.clip, now = s.project && findClip(s.project, d.id)?.clip;
+      if (!before || !now || (now.start === before.start && now.duration === before.duration)) { player.seek(s.time); return; }
+      const at = Math.min(projectDuration(s.project!), Math.max(0, d.edge === 'start' ? now.start : clipEnd(now)));
+      player.seek(at);
+      useEditor.setState({ time: at });
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);

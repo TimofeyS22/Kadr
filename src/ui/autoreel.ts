@@ -1,6 +1,5 @@
 // "Reel in one tap" (docs/08 A): runs the plan from core/autoreel on the open project. Every change is its own
 // history step, so "Undo all" (and plain undo) walks it back; a cancel mid-way restores the project as it was.
-import { projectScript } from '../core/script';
 import { fillerCuts, fitWordsToPauses, hookClip, hookText, jumpZoom, pauseCuts, soundMainClips, withoutIndices } from '../core/autoreel';
 import { captionLayout, setCaptionLayout } from '../core/captions';
 import { createAudioClip, createCaptionClip } from '../core/defaults';
@@ -30,8 +29,6 @@ export interface ReelReport {
   hook: string | null; music: string | null; musicError: string | null; noSpeech: boolean; seconds: number;
   /** Speech language used (id from CAPTION_LANGUAGES) and whether Kadr detected it. */
   language: string | null; detected: boolean;
-  /** Captions and title took their words from the teleprompter text (docs/09 S1). */
-  script: boolean;
 }
 
 /** Whether the reel will listen to speech (and so needs the speech stages on its bar). */
@@ -52,7 +49,7 @@ export async function makeReel(o: ReelOptions, onProgress: (stage: string, label
   if (!p0 || !mainTrack(p0).clips.length) throw new MediaError('Add a video with speech first');
   player.pause();
   const started = performance.now();
-  const r: ReelReport = { steps: 0, before: projectDuration(p0), after: 0, pauses: 0, fillers: 0, words: 0, zoomed: 0, hook: null, music: null, musicError: null, noSpeech: false, seconds: 0, language: null, detected: false, script: false };
+  const r: ReelReport = { steps: 0, before: projectDuration(p0), after: 0, pauses: 0, fillers: 0, words: 0, zoomed: 0, hook: null, music: null, musicError: null, noSpeech: false, seconds: 0, language: null, detected: false };
   /** One history step; counted only when it changed the project. */
   const step = (fn: (d: Project) => void) => {
     const before = editor().project;
@@ -65,20 +62,12 @@ export async function makeReel(o: ReelOptions, onProgress: (stage: string, label
   try {
     const clips = soundMainClips(p0);
     let words: CaptionWord[] = [];
-    let own: CaptionWord[] | null = null; // the recording's own text, timed by the speech
     if ((o.captions || o.fillers || o.hook) && clips.length) {
       const { transcribeProject } = await import('../engine/captions');
       const tr = await transcribeProject(p0, o.model, o.language || null, (pr) => onProgress(...speechLabel(pr)), signal);
       words = tr.words;
       r.language = tr.language;
       r.detected = tr.detected;
-      const script = projectScript(p0);
-      if (script && (o.captions || o.hook)) {
-        const { alignToScript } = await import('../engine/captions');
-        onProgress('align', t('Matching your text…'), null);
-        own = (await alignToScript(script, tr))?.words ?? null;
-        r.script = !!own;
-      }
     }
     r.noSpeech = !words.length;
     check();
@@ -91,13 +80,15 @@ export async function makeReel(o: ReelOptions, onProgress: (stage: string, label
       : { ranges: [] as [number, number][], indices: [] as number[] };
     // All cut ranges are planned on the untouched timeline, before anything moves.
     const pauseRanges = o.pauses ? clips.flatMap((c) => pauseCuts(c, peaks.get(c.id)!, PEAKS_PER_SEC)) : [];
-    // Fillers are cut by the recognized words; what the captions say comes from the text when there is one.
-    const spoken = fitWordsToPauses(own ?? withoutIndices(words, filler.indices), pauseRanges);
+    // Fillers are cut by the recognized words, and the captions say what the recording says (v1.6, the owner: "captions
+    // must come from the video", not from the teleprompter text, which people do not read word for word).
+    const spoken = fitWordsToPauses(withoutIndices(words, filler.indices), pauseRanges);
 
     if (o.captions && spoken.length) {
       const preset = CAPTION_PRESETS.find((x) => x.id === o.preset) ?? CAPTION_PRESETS[0];
       step((d) => {
         const c = createCaptionClip(spoken, preset);
+        c.lowerStart = true; // v1.6: lines start with a small letter, as in the Captions tool
         // A reel follows the speech word by word: a template of plain phrases gets the spoken word lit; the others keep
         // their own layout (one word, words appearing).
         if (captionLayout(c) === 'phrase') setCaptionLayout(c, 'highlight', preset.highlight ?? CAPTION_ACCENT);
@@ -147,7 +138,7 @@ export async function makeReel(o: ReelOptions, onProgress: (stage: string, label
     track('reel_done', {
       steps: r.steps, seconds: Math.round(r.seconds), before: Math.round(r.before), after: Math.round(r.after),
       pauses: r.pauses, fillers: r.fillers, words: r.words, zoomed: r.zoomed, music: !!r.music, noSpeech: r.noSpeech,
-      language: r.language ?? 'none', detected: r.detected, script: r.script,
+      language: r.language ?? 'none', detected: r.detected,
     });
     editor().select(null);
     player.seek(0);

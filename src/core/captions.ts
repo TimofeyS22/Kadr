@@ -44,6 +44,25 @@ export function captionAt(c: Pick<CaptionClip, 'words' | 'wordsPerPage'>, t: num
   return null;
 }
 
+/**
+ * A caption line's first word with a small first letter (v1.6, the owner: "a line should start with a small letter,
+ * not a capital"). Recognizers start sentences with capitals, and a line is rarely a sentence. Abbreviations ("МГУ",
+ * "NASA") and the English "I" keep theirs; quotes and brackets before the letter stay.
+ */
+export function lowerStart(word: string): string {
+  const m = /^(\P{L}*)(\p{Lu})(.*)$/su.exec(word);
+  if (!m) return word;
+  const [, lead, first, rest] = m;
+  if (/^\p{Lu}/u.test(rest)) return word; // an abbreviation
+  if (first === 'I' && !/^\p{L}/u.test(rest)) return word; // I, I'm, I'll
+  return lead + first.toLocaleLowerCase() + rest;
+}
+
+/** The words of a line as drawn: `lowerStart` applies to its first word. */
+export function lineWords(c: Pick<CaptionClip, 'lowerStart'>, words: string[]): string[] {
+  return c.lowerStart && words.length ? [lowerStart(words[0]), ...words.slice(1)] : words;
+}
+
 /** How long a line (`PAGE_IN_S`) or a word (`WORD_IN_S`) takes to come in, in seconds (v1.5). */
 export const PAGE_IN_S = 0.25, WORD_IN_S = 0.2;
 /**

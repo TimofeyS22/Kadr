@@ -22,6 +22,10 @@ export interface Probe {
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** Restarts of a failed video decoder before the error is shown (`VideoStream.readSafe`). */
+const DECODE_RETRIES = 2;
+/** The browser's own words go to the error's details (`vars.error`), not into the sentence. */
+export const DECODER_FAILED = 'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.';
 
 const openInput = (blob: Blob) => new Input({ formats: ALL_FORMATS, source: new BlobSource(blob) });
 
@@ -113,7 +117,11 @@ class VideoStream {
   /** The decoder frame handed out last: a copy of the sample's, so it stays valid if Mediabunny closes the sample. */
   private out: { sample: VideoSample; frame: VideoFrame } | null = null;
 
-  constructor(private sink: VideoSampleSink, private packets: EncodedPacketSink, private width: number, private height: number) {}
+  constructor(
+    private sink: VideoSampleSink, private packets: EncodedPacketSink, private width: number, private height: number,
+    /** Asks the pool to close the other streams nobody is drawing: a phone has few hardware decoders. */
+    private starved?: () => void,
+  ) {}
 
   /** `frameMax`: an exact frame at most this big on its long side comes as the decoder's frame (0: always a canvas). */
   frameAt(t: number, fast = false, frameMax = 0): Promise<Picture | null> {
@@ -141,17 +149,32 @@ class VideoStream {
   }
 
   /**
-   * A sample can be closed under us: the browser reclaims a phone's hardware decoder, or Mediabunny's iterator closes
-   * the last frame of a clip on cleanup. That used to surface as "VideoSample is closed"; now decoding restarts once.
+   * A decoder can stop under us. A sample is closed when the browser reclaims a phone's hardware decoder or Mediabunny's
+   * iterator closes a clip's last frame ("VideoSample is closed"); the decoder itself fails when the system takes it
+   * back — WebKit's "Decoder failure" (EncodingError) after the app was in the background, under memory pressure or
+   * with too many videos decoding at once, Chromium's "Codec reclaimed". Either way the stream was dead until a reload:
+   * the preview showed the error on every frame (v1.6, the owner). Now decoding restarts from the keyframe: at once,
+   * then after the pool frees the decoders nobody is drawing (`starved`) and a pause. A decoder that fails a third
+   * time is a file this device cannot decode, said in words a person can act on.
    */
   private async readSafe(t: number, fast: boolean, frameMax: number): Promise<Picture | null> {
-    try {
-      return await this.read(t, fast, frameMax);
-    } catch (e) {
-      if (this.closed) return null;
-      if (!/closed/i.test(errorText(e))) throw e;
-      await this.reset();
-      return await this.read(t, fast, frameMax);
+    let first: unknown;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.read(t, fast, frameMax);
+      } catch (e) {
+        if (this.closed) return null;
+        if ((e as Error)?.name === 'AbortError') throw e;
+        first ??= e;
+        console.warn(`Video decoding failed (attempt ${attempt + 1}), restarting the decoder`, e);
+        await this.reset();
+        if (attempt >= DECODE_RETRIES) throw new MediaError(DECODER_FAILED, { error: errorText(first) });
+        if (attempt > 0) {
+          this.starved?.();
+          await new Promise((r) => setTimeout(r, 250 * attempt));
+          if (this.closed) return null;
+        }
+      }
     }
   }
 
@@ -282,7 +305,7 @@ export class MediaPool {
       s = this.streams.get(clipId); // another caller may have created it meanwhile
       if (!s) {
         const [width, height] = fitSize(await h.video.getDisplayWidth(), await h.video.getDisplayHeight(), this.maxDim);
-        s = new VideoStream(new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height);
+        s = new VideoStream(new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height, () => this.sweep(new Set([clipId]), 300));
         this.streams.set(clipId, s);
       }
     }

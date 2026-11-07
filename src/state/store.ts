@@ -7,7 +7,7 @@ import { reloadPending, updatingMessage } from '../lib/update';
 
 export type SheetId =
   | 'speed' | 'volume' | 'adjust' | 'filters' | 'transform' | 'text' | 'transition' | 'canvas' | 'export'
-  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera' | 'music' | 'reel' | 'chroma' | 'voice';
+  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera' | 'music' | 'reel' | 'chroma' | 'voice' | 'layers';
 
 /** `detail`: what an error toast offers under "Details" (lib/errorLog.ts); `kept`: opened, so it stays until closed. */
 export interface Toast { id: number; text: string; kind: 'info' | 'error'; detail?: ErrorEntry; kept?: boolean }
@@ -41,6 +41,11 @@ export interface EditorState {
   safeZones: boolean;
   busy: Busy | null;
   toasts: Toast[];
+  /**
+   * The eyedropper (v1.6): while set, a touch on the preview picks the colour under the finger and hands it to `pick`.
+   * `owner` is the colour row that asked, so it can show itself on and switch the eyedropper off when it closes.
+   */
+  eyedropper: { pick: (color: string) => void; owner: object; /** the project to read colours from, if not the one on screen */ from?: () => Project | null } | null;
 
   open(p: Project): void;
   close(): void;
@@ -88,9 +93,10 @@ export const useEditor = create<EditorState>()((set, get) => ({
   safeZones: false,
   busy: null,
   toasts: [],
+  eyedropper: null,
 
-  open: (p) => set({ project: p, past: [], future: [], histKey: null, selection: null, multi: null, sheet: null, time: 0, playing: false }),
-  close: () => set({ project: null, past: [], future: [], selection: null, multi: null, sheet: null, playing: false }),
+  open: (p) => set({ project: p, past: [], future: [], histKey: null, selection: null, multi: null, sheet: null, time: 0, playing: false, eyedropper: null }),
+  close: () => set({ project: null, past: [], future: [], selection: null, multi: null, sheet: null, playing: false, eyedropper: null }),
 
   commit(fn, key, base) {
     const s = get();
@@ -137,6 +143,8 @@ export const useEditor = create<EditorState>()((set, get) => ({
   toast(text, kind = 'info', ms) {
     // The page is reloading into a new version (lib/update.ts): what failed on the way is that, not a fault to report.
     if (kind === 'error' && reloadPending()) { text = updatingMessage(); kind = 'info'; }
+    // The same message twice is one toast: a failing preview frame used to stack the same error on every render.
+    if (get().toasts.some((x) => x.text === text && x.kind === kind)) { if (kind === 'error') takeNoted(); return; }
     const id = ++toastId;
     // The error behind the text (noted by errorMessage) is kept on this device and offered under "Details".
     const cause = kind === 'error' ? takeNoted() : null;

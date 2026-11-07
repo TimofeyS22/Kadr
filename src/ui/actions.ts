@@ -5,7 +5,7 @@ import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
 import { fitTrack, type LibraryTrack, type MusicManifest } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
-  clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip,
+  clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip, projectDuration,
   sourceTime, splitClip, SOUND_SYNC,
 } from '../core/timeline';
 import type { Asset, CaptionClip, CaptionWord, Clip, Project, SoundClip } from '../core/types';
@@ -136,10 +136,18 @@ export function splitAtPlayhead(): void {
 }
 
 export function deleteSelected(): void {
-  const { selection, commit, select } = editor();
+  const { selection, commit, select, project, time } = editor();
   if (!selection) return;
+  const f = project ? findClip(project, selection) : null;
   commit((d) => deleteClip(d, selection));
   select(null);
+  // The main track closes the gap: a playhead on the removed piece goes to the join, one after it keeps its picture
+  // (v1.6, the owner: it used to stay put, so it ended up as far into the next clip as the piece was long).
+  if (f?.track.kind === 'main') {
+    const end = clipEnd(f.clip);
+    const at = time > end + 1e-6 ? time - f.clip.duration : time >= f.clip.start - 1e-6 ? f.clip.start : time;
+    if (at !== time) showFrom(Math.max(0, Math.min(at, projectDuration(editor().project!))));
+  }
 }
 
 /** Multi-select: ids that still exist (undo may have removed some). */
@@ -270,7 +278,8 @@ export function startCaptions(): void {
 }
 
 /** Adds captions as one clip; they replace earlier captions in the same undo step (one set of captions per project). */
-export function addCaptions(words: CaptionWord[], presetId = 'pop', layout?: CaptionLayout | { wordsPerPage: number }): void {
+/** `lowerStart` (v1.6): lines start with a small letter; off for imported subtitles, which keep their own text. */
+export function addCaptions(words: CaptionWord[], presetId = 'pop', layout?: CaptionLayout | { wordsPerPage: number }, lowerStart = true): void {
   if (!words.length) { editor().toast(t('No speech was found in this video')); return; }
   const preset = CAPTION_PRESETS.find((x) => x.id === presetId) ?? CAPTION_PRESETS[0];
   let id = '';
@@ -279,6 +288,7 @@ export function addCaptions(words: CaptionWord[], presetId = 'pop', layout?: Cap
     const c = createCaptionClip(words, typeof layout === 'object' ? { ...preset, ...layout } : preset);
     // The template brings its layout (v1.5); another one chosen in the sheet wins.
     if (typeof layout === 'string' && layout !== preset.layout) setCaptionLayout(c, layout, preset.highlight ?? CAPTION_ACCENT);
+    if (lowerStart) c.lowerStart = true;
     endWithContent(d, c);
     placeClip(d, c);
     id = c.id;
@@ -292,7 +302,7 @@ export async function importSubtitles(): Promise<void> {
   if (!file) return;
   const words = parseSubtitles(await file.text());
   if (!words.length) { editor().toast(t('No subtitles found in this file'), 'error'); return; }
-  addCaptions(words, 'clean', { wordsPerPage: 16 }); // imported cues keep their own lines
+  addCaptions(words, 'clean', { wordsPerPage: 16 }, false); // imported cues keep their own lines and letters
   track('subtitles_imported', { words: words.length });
 }
 
@@ -448,7 +458,7 @@ export async function addCustomFont(clipId: string): Promise<void> {
     editor().commit((d) => {
       d.fonts = { ...d.fonts, [id]: { name, blobId: id } };
       const f = findClip(d, clipId);
-      if (f && f.clip.kind === 'text') f.clip.style.font = `custom:${id}`;
+      if (f && (f.clip.kind === 'text' || f.clip.kind === 'caption')) f.clip.style.font = `custom:${id}`;
     });
     editor().toast(t('Font added: {name}. Check that it has the letters you need.', { name }));
     track('font_added');

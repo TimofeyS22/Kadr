@@ -9,7 +9,6 @@ import { t } from '../lib/i18n';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
-import { projectScript } from '../core/script';
 import { projectDuration } from '../core/timeline';
 import { DEFAULT_REEL, makeReel, reelUsesSpeech, undoSteps, type ReelOptions, type ReelReport } from './autoreel';
 import { PaceBar, learnPace, speechStages } from './pace';
@@ -54,7 +53,7 @@ export function ReelBody() {
     setPhase({ kind: 'running', label: t('Getting ready…') });
     const p = editor().project;
     const seconds = p ? projectDuration(p) : 0;
-    const stages = speechStages(opts.model, seconds, { script: !!p && !!projectScript(p), pauses: true, music: !!opts.music });
+    const stages = speechStages(opts.model, seconds, { pauses: true, music: !!opts.music });
     pace.current = startPace(reelUsesSpeech(opts) ? stages : stages.filter((s) => s.id === 'pauses' || s.id === 'music'), performance.now());
     let label = '';
     try {
@@ -89,7 +88,7 @@ export function ReelBody() {
           {r.noSpeech && <li>{t('No speech found: captions, fillers and the title were skipped')}</li>}
           {r.pauses > 0 && <li>{t('Pauses removed: {n}', { n: r.pauses })}</li>}
           {r.fillers > 0 && <li>{t('Fillers and repeats removed: {n}', { n: r.fillers })}</li>}
-          {r.words > 0 && <li>{r.script ? t('Captions from your text: {n} words, timed by your voice', { n: r.words }) : t('Captions: {n} words, the spoken word lights up', { n: r.words })}</li>}
+          {r.words > 0 && <li>{t('Captions: {n} words, the spoken word lights up', { n: r.words })}</li>}
           {r.zoomed > 0 && <li>{t('Zoom-ins on cuts: {n}', { n: r.zoomed })}</li>}
           {r.hook && <li>{t('Title: “{text}”', { text: r.hook })}</li>}
           {r.music && <li>{t('Music: “{title}”, quieter under the voice', { title: r.music })}</li>}
