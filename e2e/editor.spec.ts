@@ -4754,3 +4754,27 @@ test('media no project refers to is cleared once nothing is working (audit V-176
   await b.getByRole('button', { name: 'Open Kept', exact: true }).click();
   await expect(b.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
 });
+
+test('the file is ready for the web: the index first, tagged as BT.709 video (audit V-237, V-255)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const file = await exportAs(page, info, 'Video', 'Export video');
+  const b = fs.readFileSync(file);
+  const boxes: string[] = [];
+  for (let at = 0; at + 8 <= b.length;) {
+    let size = b.readUInt32BE(at);
+    const name = b.toString('latin1', at + 4, at + 8);
+    boxes.push(name);
+    if (size === 1) size = Number(b.readBigUInt64BE(at + 8));
+    if (size === 0) break;
+    at += size;
+  }
+  expect(boxes.indexOf('moov'), `boxes ${boxes.join(' ')}`).toBeLessThan(boxes.indexOf('mdat'));
+  const tags = execSync(`ffprobe -v error -select_streams v -show_entries stream=color_transfer,color_primaries,color_space -of csv=p=0 "${file}"`).toString().trim();
+  expect(tags).toContain('bt709');
+  expect(tags).not.toContain('iec61966');
+  const p = await probe(file);
+  expect(Number(p.format.duration)).toBeGreaterThan(5);
+});

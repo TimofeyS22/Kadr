@@ -38,6 +38,8 @@ export interface ExportResult {
 
 const SAMPLE_RATE = 48000;
 const AUDIO_WINDOW_S = 2;
+/** More than either encoder makes: AAC 47 packets a second, Opus 50. */
+const AUDIO_PACKETS_PER_S = 60;
 
 const even = (x: number) => Math.max(2, Math.round(x / 2) * 2);
 export const PLATFORM_LUFS = -14;
@@ -310,7 +312,9 @@ async function exportOnce(
   const { target, result } = await openTarget(mp4 ? 'mp4' : 'webm', type);
   const streaming = !(target instanceof MemoryTarget); // to the file system: the index goes at the end
   const output = new Output({
-    format: mp4 ? new Mp4OutputFormat({ fastStart: streaming ? false : 'in-memory' }) : new WebMOutputFormat(),
+    // The index goes first in every file: at the end, a file cannot start playing until it has all arrived, and upload
+    // sites ask for it at the start (audit V-237). On disk its room is kept ahead, from the number of packets to come.
+    format: mp4 ? new Mp4OutputFormat({ fastStart: streaming ? 'reserve' : 'in-memory' }) : new WebMOutputFormat(),
     target,
   });
   const frames = new FrameRenderer(p, width, height);
@@ -318,9 +322,9 @@ async function exportOnce(
     codec: videoCodec, bitrate: opts.quality === 'high' ? QUALITY_VERY_HIGH : QUALITY_HIGH, keyFrameInterval: 2,
     onEncodedPacket: matchStreamRange,
   });
-  output.addVideoTrack(video, { frameRate: opts.fps });
+  output.addVideoTrack(video, { frameRate: opts.fps, maximumPacketCount: Math.ceil(duration * opts.fps) + 8 });
   const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, bitrate: QUALITY_HIGH }) : null;
-  if (audio) output.addAudioTrack(audio);
+  if (audio) output.addAudioTrack(audio, { maximumPacketCount: Math.ceil(duration * AUDIO_PACKETS_PER_S) + 64 });
   // The encoder's priming is taken off the start so the sound meets the picture.
   const mix = new MixStream(p, frames.pool, duration, audioCodec ? await encoderDelay(audioCodec, 2, SAMPLE_RATE) : 0);
   // Loudness pre-pass takes the first 5% of the progress bar (audio renders far faster than video).

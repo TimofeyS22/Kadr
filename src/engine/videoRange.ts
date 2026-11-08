@@ -11,5 +11,7 @@ export function matchStreamRange(_packet: EncodedPacket, meta?: EncodedVideoChun
   const desc = d.description;
   const bytes = ArrayBuffer.isView(desc) ? new Uint8Array(desc.buffer, desc.byteOffset, desc.byteLength) : new Uint8Array(desc);
   const full = avcFullRange(bytes);
-  if (full !== null && d.colorSpace.fullRange !== full) d.colorSpace = { ...d.colorSpace, fullRange: full };
+  // The curve is tagged as video, not as a web image: players and upload pipelines read sRGB tags in different ways
+  // (audit V-255). The samples stay what they are.
+  d.colorSpace = { ...d.colorSpace, transfer: 'bt709', ...(full === null ? {} : { fullRange: full }) };
 }
