@@ -7,7 +7,7 @@ import type { Project } from '../core/types';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
-import { clearJournal, journalProject, loadProject, saveProject } from '../storage/db';
+import { ProjectConflict, clearJournal, forgetProject, journalProject, loadProject, onSavedElsewhere, saveProject } from '../storage/db';
 import { startExport } from './ExportSheet';
 import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
 import { formatTime } from './format';
@@ -27,11 +27,16 @@ export async function leaveEditor(): Promise<void> {
   const p = useEditor.getState().project;
   if (p) {
     // Never close over unsaved work (v1.4.3: this error used to be swallowed): without the thumbnail, then give up loudly.
-    const saved = await saveProject(p, (await snapshot()) ?? undefined).then(() => true, () => saveProject(p).then(() => true, (e) => {
-      useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error');
+    // Changed in another tab: the person chooses first (ConflictNotice), nothing is written over.
+    if (useEditor.getState().elsewhere) return;
+    const failed = (e: unknown) => {
+      if (e instanceof ProjectConflict) useEditor.setState({ elsewhere: true });
+      else useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error');
       return false;
-    }));
+    };
+    const saved = await saveProject(p, (await snapshot()) ?? undefined).then(() => true, (e) => (e instanceof ProjectConflict ? failed(e) : saveProject(p).then(() => true, failed)));
     if (!saved) return;
+    forgetProject(p.id);
   }
   useEditor.getState().close();
   location.hash = '';
@@ -79,28 +84,39 @@ export function Editor({ id }: { id: string }) {
     let timer = 0;
     let pending: Project | null = null;
     // Hiding: the page may be gone before IndexedDB finishes, so the edits are also journaled synchronously (v1.4.3).
+    // A save that failed while the page was hidden (WebKit drops IndexedDB in the background) is made again when the
+    // page is back, and said only if that fails too; before, the edit waited for the next one (audit V-120).
+    let retried = false;
     const flush = (hiding = false) => {
       clearTimeout(timer);
-      if (!pending) return;
+      if (!pending || useEditor.getState().elsewhere) return; // changed in another tab: the person chooses first
       const p = pending;
       pending = null;
       const seq = hiding ? journalProject(p) : 0;
       saveProject(p).then(
-        () => { if (seq) clearJournal(p.id, seq); },
-        (e) => useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error'),
+        () => { retried = false; if (seq) clearJournal(p.id, seq); },
+        (e) => {
+          pending ??= p; // a newer edit holds this one too
+          if (e instanceof ProjectConflict) { useEditor.setState({ elsewhere: true }); return; }
+          if (document.visibilityState === 'hidden' && !retried) { retried = true; return; }
+          retried = false;
+          useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error');
+        },
       );
     };
     const onPageHide = () => flush(true);
     const unsub = useEditor.subscribe((s, prev) => {
+      if (s.session !== prev.session) { pending = null; clearTimeout(timer); return; } // opened, not edited
       if (!s.project || !prev.project || s.project === prev.project) return;
       pending = s.project;
       clearTimeout(timer);
       timer = window.setTimeout(flush, 600);
     });
-    const onHide = () => { if (document.visibilityState === 'hidden') flush(true); };
+    const unsubTabs = onSavedElsewhere((pid) => { if (pid === useEditor.getState().project?.id) useEditor.setState({ elsewhere: true }); });
+    const onHide = () => { if (document.visibilityState === 'hidden') flush(true); else if (pending) flush(); };
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', onPageHide);
-    return () => { unsub(); flush(); document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', onPageHide); };
+    return () => { unsub(); unsubTabs(); flush(); document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', onPageHide); };
   }, []);
 
   useEffect(() => {
@@ -161,6 +177,7 @@ export function Editor({ id }: { id: string }) {
       <Toolbar />
       <Sheets />
       <BusyOverlay />
+      <ElsewhereNotice />
       <Coach />
       {dragging && <div className="drop-hint">{t('Drop videos, photos or music to add them')}</div>}
     </div>
@@ -213,6 +230,44 @@ function BusyOverlay() {
         <p>{busy.label}</p>
         <div className="progress"><div style={{ width: busy.progress === null ? '15%' : `${Math.round(busy.progress * 100)}%` }} className={busy.progress === null ? 'indeterminate' : ''} /></div>
         {busy.cancel && <button className="btn" onClick={busy.cancel}>{t('Cancel')}</button>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The project was saved in another tab after this one opened it (audit V-258). Before, the last tab to save won and
+ * the other tab's edits were gone with no word. Saving here waits until the person picks a version.
+ */
+function ElsewhereNotice() {
+  const on = useEditor((s) => s.elsewhere);
+  const [working, setWorking] = useState(false);
+  if (!on) return null;
+  const run = (fn: () => Promise<void>) => {
+    setWorking(true);
+    void fn().catch((e) => useEditor.getState().toast(errorMessage(e), 'error')).finally(() => setWorking(false));
+  };
+  const fresh = () => run(async () => {
+    const s = useEditor.getState();
+    const p = s.project && await loadProject(s.project.id);
+    if (!p) return;
+    s.open(produce(p, (d) => { normalizeProject(d); }));
+    track('tab_conflict', { choice: 'theirs' });
+  });
+  const mine = () => run(async () => {
+    const p = useEditor.getState().project;
+    if (!p) return;
+    await saveProject(p, undefined, true);
+    useEditor.setState({ elsewhere: false });
+    track('tab_conflict', { choice: 'mine' });
+  });
+  return (
+    <div className="busy" role="alertdialog" aria-modal="true" aria-labelledby="elsewhere-title">
+      <div className="busy-card">
+        <h2 id="elsewhere-title" className="notice-title">{t('This project was changed in another tab')}</h2>
+        <p>{t('Saving here is paused, so one tab does not erase the edits of the other. Pick the version to keep working on.')}</p>
+        <button className="btn primary" disabled={working} onClick={fresh}>{t('Open the newer version')}</button>
+        <button className="btn" disabled={working} onClick={mine}>{t('Keep this version')}</button>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 // Project backup: a stored (uncompressed) zip with project.json and media/<assetId>, streamed with fflate.
-import { Unzip, UnzipInflate, UnzipPassThrough, Zip, ZipPassThrough, strFromU8, strToU8 } from 'fflate';
+import { Zip, ZipPassThrough, strFromU8, strToU8 } from 'fflate';
 import { uid } from '../core/defaults';
 import { repairBackup } from '../core/restore';
 import { normalizeProject, remapAssets } from '../core/timeline';
@@ -9,6 +9,7 @@ import { ensureRoom } from './importer';
 import { MediaError } from './media';
 import { diskFile } from './opfs';
 import { within } from '../lib/limits';
+import { zipEntries, zipEntryBlob, type ZipEntry } from './zipread';
 
 /** The file system gets this long to open the backup file; then the backup is made in memory. */
 const DISK_MS = 5000;
@@ -82,42 +83,28 @@ function validate(x: unknown): Project {
  * and clips whose media is missing, left out.
  */
 export async function importBackup(file: Blob): Promise<{ project: Project; dropped: number }> {
+  // Read by the zip's central directory (zipread.ts): stored media are slices of the file, nothing is copied, and a
+  // video that contains a zip signature comes back whole (audit V-188). Media compress poorly, so far more out than
+  // in is a zip bomb, which would take the tab down on a phone.
+  const budget = { left: file.size * 4 + 64 * 1024 ** 2 };
   const files = new Map<string, Blob>();
-  const pending: Promise<void>[] = [];
-  // Media is compressed already, so a re-zipped backup barely shrinks. Far more out than in is a zip bomb, which
-  // would take the tab down on a phone before it ended.
-  const budget = file.size * 4 + 64 * 1024 ** 2;
-  let unpacked = 0;
-  const unzip = new Unzip((entry) => {
-    const chunks: Uint8Array<ArrayBuffer>[] = [];
-    const read = new Promise<void>((resolve, reject) => {
-      entry.ondata = (err, data, final) => {
-        if (err) { reject(err); return; }
-        unpacked += data.length;
-        if (unpacked > budget) return; // the reader stops after this chunk
-        chunks.push(data as Uint8Array<ArrayBuffer>);
-        if (final) { files.set(entry.name, new Blob(chunks)); resolve(); }
-      };
-      // An entry it cannot read throws here, inside the zip reader, where nothing would catch it: the restore hung.
-      try { entry.start(); } catch (e) { reject(e as Error); }
-    });
-    read.catch(() => undefined); // awaited below; not an unhandled rejection meanwhile
-    pending.push(read);
-  });
-  unzip.register(UnzipPassThrough);
-  unzip.register(UnzipInflate); // a backup re-zipped by Finder, Files or Windows is deflated
+  let entries: ZipEntry[];
   try {
-    const reader = file.stream().getReader();
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) { unzip.push(new Uint8Array(0), true); break; }
-      unzip.push(value);
-      if (unpacked > budget) { await reader.cancel(); throw new Error(`unpacks to over ${budget} bytes`); }
-    }
-    await Promise.all(pending);
+    entries = await zipEntries(file);
   } catch (e) {
     console.warn('backup: the zip cannot be read', e);
     throw new MediaError(NOT_A_BACKUP);
+  }
+  for (const e of entries) {
+    const wanted = e.name === 'project.json' || (e.name.startsWith('media/') && !e.name.endsWith('/'));
+    if (!wanted || files.has(e.name)) continue; // Finder's __MACOSX and the like
+    try {
+      files.set(e.name, await zipEntryBlob(file, e, budget));
+    } catch (err) {
+      console.warn('backup: an entry cannot be read', e.name, err);
+      // A damaged media file is left out and counted (its clips go); a project that cannot be read is no backup.
+      if (e.name === 'project.json') throw new MediaError(NOT_A_BACKUP);
+    }
   }
   const json = files.get('project.json');
   if (!json) throw new MediaError(NOT_A_BACKUP);

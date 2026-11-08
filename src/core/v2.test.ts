@@ -4,7 +4,7 @@ import { CAPTION_LAYOUTS, DEFAULT_VAD, captionAt, dropArtifacts, captionLayout, 
 import { createCaptionClip, createProject, createVideoClip } from './defaults';
 import { buildFrame } from './frame';
 import { CAPTION_PRESETS } from './presets';
-import { findClip, insertFreezeFrame, insertMain, mainTrack, placeClip, remapAssets, splitClip, trimClip } from './timeline';
+import { findClip, insertFreezeFrame, insertMain, mainTrack, normalizeProject, placeClip, remapAssets, splitClip, trimClip } from './timeline';
 import type { Asset, CaptionClip, CaptionWord, Project } from './types';
 
 const w = (t0: number, t1: number, text: string): CaptionWord => ({ t0, t1, text });
@@ -120,6 +120,26 @@ describe('freeze frame, crop and backups', () => {
     expect(Object.keys(q.assets).sort()).toEqual(['n-a', 'n-clean']);
     expect(c.kind === 'video' && [c.assetId, c.audioAssetId]).toEqual(['n-a', 'n-clean']);
     expect(q.assets['n-a'].derived).toEqual({ denoise: 'n-clean' });
+  });
+
+  it('remapAssets rewrites the forward video of a reversed clip and every processed sound (audit V-242)', () => {
+    const p = produce(oneClip(), (d) => {
+      d.assets.fwd = asset('fwd');
+      d.assets.a.derived = { enhance: 'e', pitch: { '3': 'p3' }, voice: { robot: 'v1' }, sync: 0.04 };
+      const c = mainTrack(d).clips[0];
+      if (c.kind === 'video') c.reversedFrom = { assetId: 'fwd', in: 1.5 };
+    });
+    const q = produce(p, (d) => { remapAssets(d, (id) => `n-${id}`); });
+    const c = mainTrack(q).clips[0];
+    expect(c.kind === 'video' && c.reversedFrom).toEqual({ assetId: 'n-fwd', in: 1.5 });
+    expect(q.assets['n-a'].derived).toEqual({ enhance: 'n-e', pitch: { '3': 'n-p3' }, voice: { robot: 'n-v1' }, sync: 0.04 });
+  });
+
+  it('a reversed clip whose forward video is missing keeps playing reversed (audit V-242)', () => {
+    const p = produce(oneClip(), (d) => { const c = mainTrack(d).clips[0]; if (c.kind === 'video') c.reversedFrom = { assetId: 'gone', in: 0 }; });
+    const q = produce(p, (d) => { normalizeProject(d); });
+    const c = mainTrack(q).clips[0];
+    expect(c.kind === 'video' && [c.assetId, c.reversedFrom]).toEqual(['a', undefined]);
   });
 });
 

@@ -1,10 +1,63 @@
 // Local persistence. Projects are small JSON documents; media are Blobs stored as-is
 // (IndexedDB keeps them on disk and Mediabunny reads them in slices).
-import { createStore, del, get, set } from 'idb-keyval';
+import { del, get, set, update, type UseStore } from 'idb-keyval';
 import { projectDuration } from '../core/timeline';
 import type { AspectId, Project } from '../core/types';
 
-const store = createStore('kadr', 'kv');
+/**
+ * The 'kadr'/'kv' store, opened again when the browser drops the connection. WebKit drops it while the page is in the
+ * background ("Connection to Indexed Database server lost") without always saying so in `onclose`; every save then
+ * failed until a reload, and the save made when the page was hidden was lost (audit V-120).
+ */
+let dbp: Promise<IDBDatabase> | null = null;
+function openDb(): Promise<IDBDatabase> {
+  const p = new Promise<IDBDatabase>((ok, ko) => {
+    const r = indexedDB.open('kadr');
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => ko(r.error);
+  });
+  p.then((db) => { db.onclose = () => { if (dbp === p) dbp = null; }; }, () => { if (dbp === p) dbp = null; });
+  return p;
+}
+const lost = (e: unknown) => e instanceof DOMException && (e.name === 'InvalidStateError' || e.name === 'UnknownError' || /connection|closing|lost/i.test(e.message));
+const store: UseStore = async (mode, callback) => {
+  for (let attempt = 0; ; attempt++) {
+    const db = dbp ??= openDb();
+    try {
+      return await callback((await db).transaction('kv', mode).objectStore('kv'));
+    } catch (e) {
+      if (attempt > 0 || !lost(e)) throw e;
+      console.warn('IndexedDB connection lost, opening it again', e);
+      if (dbp === db) dbp = null;
+      (await db.catch(() => null))?.close();
+    }
+  }
+};
+
+/** This tab. A project saved by another tab since this one loaded it is not written over (audit V-258). */
+const TAB = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+/** The revision of each project this tab's copy is based on: loaded, or saved by this tab. */
+const seen = new Map<string, number>();
+type Stored = Project & { rev?: number; writer?: string };
+const bare = (s: Stored): Project => { const { rev: _r, writer: _w, ...p } = s; return p; };
+
+/** Another tab saved this project after this tab loaded it: saving here would wipe that tab's edits. */
+export class ProjectConflict extends Error {
+  constructor(readonly id: string) { super('The project was changed in another tab'); this.name = 'ProjectConflict'; }
+}
+
+// Tabs tell each other what they saved, so a tab showing an older version knows before it saves over it.
+const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('kadr-projects') : null;
+const elsewhere = new Set<(id: string) => void>();
+channel?.addEventListener('message', (e: MessageEvent<{ id: string; rev: number; writer: string }>) => {
+  if (e.data?.writer !== TAB && seen.has(e.data.id) && seen.get(e.data.id) !== e.data.rev) for (const fn of elsewhere) fn(e.data.id);
+});
+/** Calls `fn(id)` when another tab saves a project this tab has open; returns the unsubscribe. */
+export function onSavedElsewhere(fn: (id: string) => void): () => void {
+  elsewhere.add(fn);
+  return () => elsewhere.delete(fn);
+}
 
 export interface ProjectMeta { id: string; name: string; updatedAt: number; duration: number; aspect: AspectId; thumb?: string }
 
@@ -29,7 +82,8 @@ export async function listProjects(): Promise<ProjectMeta[]> {
 // survives; the journal is dropped once the IndexedDB save of that very version lands, and replayed on the next open.
 const JOURNAL = 'kadr.journal';
 let journalSeq = 0;
-type Journal = { seq: number; project: Project };
+/** `base`: the stored revision the edits were made on (journals before v1.6.2 have none: their time is compared). */
+type Journal = { seq: number; project: Project; base?: number };
 
 function readJournal(id: string): Journal | null {
   try {
@@ -41,7 +95,7 @@ function readJournal(id: string): Journal | null {
 /** Synchronously keeps this version of the project until `clearJournal(seq)`; returns the version number (0 if not kept). */
 export function journalProject(project: Project): number {
   const seq = Date.now() * 1000 + (journalSeq++ % 1000);
-  try { localStorage.setItem(JOURNAL, JSON.stringify({ seq, project } satisfies Journal)); return seq; }
+  try { localStorage.setItem(JOURNAL, JSON.stringify({ seq, project, base: seen.get(project.id) ?? 0 } satisfies Journal)); return seq; }
   catch (e) { console.warn('Unsaved edits could not be journaled', e); return 0; }
 }
 
@@ -51,18 +105,42 @@ export function clearJournal(id: string, seq: number): void {
 }
 
 export async function loadProject(id: string): Promise<Project | undefined> {
+  const stored = await get<Stored>(`p:${id}`, store);
   const j = readJournal(id);
-  if (j) { // the page went away before these edits reached IndexedDB
-    await saveProject(j.project);
+  if (j) {
+    // The page went away before these edits reached IndexedDB. Only if nothing was saved after them: a journal left by
+    // a save that failed was replayed over later edits, which were lost (audit V-120).
+    const fresh = j.base !== undefined ? (stored?.rev ?? 0) === j.base : (stored?.updatedAt ?? 0) < Math.floor(j.seq / 1000);
+    if (fresh) {
+      seen.set(id, stored?.rev ?? 0);
+      await saveProject(j.project);
+      clearJournal(id, j.seq);
+      return j.project;
+    }
     clearJournal(id, j.seq);
-    return j.project;
   }
-  return get<Project>(`p:${id}`, store);
+  if (!stored) return undefined;
+  seen.set(id, stored.rev ?? 0);
+  return bare(stored);
 }
 
-export async function saveProject(p: Project, thumb?: string): Promise<void> {
+/**
+ * Saves the project. Throws ProjectConflict when another tab saved it after this tab loaded it (`force`: this
+ * version wins anyway, the person chose it).
+ */
+export async function saveProject(p: Project, thumb?: string, force = false): Promise<void> {
   const updatedAt = Date.now();
-  await set(`p:${p.id}`, { ...p, updatedAt }, store);
+  let conflict = false, rev = 0;
+  await update<Stored>(`p:${p.id}`, (old) => {
+    const base = seen.get(p.id);
+    conflict = !force && !!old && old.writer !== TAB && base !== undefined && (old.rev ?? 0) !== base;
+    if (conflict) return old!;
+    rev = (old?.rev ?? 0) + 1;
+    return { ...p, updatedAt, rev, writer: TAB };
+  }, store);
+  if (conflict) throw new ProjectConflict(p.id);
+  seen.set(p.id, rev);
+  channel?.postMessage({ id: p.id, rev, writer: TAB });
   await withIndex((index) => {
     const prev = index.find((m) => m.id === p.id);
     const meta: ProjectMeta = {
@@ -71,6 +149,9 @@ export async function saveProject(p: Project, thumb?: string): Promise<void> {
     return [meta, ...index.filter((m) => m.id !== p.id)];
   });
 }
+
+/** This tab no longer shows the project (it left the editor): another tab saving it is no conflict. */
+export function forgetProject(id: string): void { seen.delete(id); }
 
 export async function deleteProject(id: string): Promise<void> {
   const p = await loadProject(id);

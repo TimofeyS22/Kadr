@@ -11,7 +11,7 @@ import { encoderDelay } from './encoderDelay';
 import { Limiter, LoudnessMeter, normalizeGain } from '../core/dsp';
 import { buildFrame } from '../core/frame';
 import { withoutGuides } from '../core/music';
-import { projectDuration } from '../core/timeline';
+import { clipEnd, projectDuration } from '../core/timeline';
 import type { Project, ProjectSettings } from '../core/types';
 import { renderAudioWindow } from './audio';
 import { Compositor } from './compositor';
@@ -55,11 +55,21 @@ class FrameRenderer {
     this.pool = new MediaPool(Math.max(width, height));
   }
   async draw(t: number): Promise<void> {
-    const desc = buildFrame(this.p, Math.min(t, Math.max(0, projectDuration(this.p) - 1e-3)));
+    const at = Math.min(t, Math.max(0, projectDuration(this.p) - 1e-3));
+    const desc = buildFrame(this.p, at);
     const sources = await resolveDrawables(desc, this.pool, this.text, this.width, this.height, false, this.compositor.frameMax);
     this.check();
     this.compositor.draw(desc, sources);
     this.check();
+    // The export only goes forward: a clip it has passed is never drawn again. Its decoder and frames lived to the end,
+    // one decoder per clip (31 clips, 31 decoders and ~5 GB on a Mac), more than a phone has (audit V-171).
+    this.pool.sweep(this.liveAt(at), 0);
+  }
+  /** Video clips on screen at `t` or starting within half a second (opened ahead, as the preview does). */
+  private liveAt(t: number): Set<string> {
+    const keep = new Set<string>();
+    for (const tr of this.p.tracks) for (const c of tr.clips) if (c.kind === 'video' && c.start <= t + 0.5 && clipEnd(c) > t - 0.05) keep.add(c.id);
+    return keep;
   }
   /**
    * A lost WebGL context draws nothing, and a restored one has lost its textures: frames would be empty or wrong

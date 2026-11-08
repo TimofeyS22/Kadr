@@ -384,7 +384,8 @@ export async function reverseSelected(): Promise<void> {
   const f = s.project && s.selection ? findClip(s.project, s.selection) : null;
   if (!f || f.clip.kind !== 'video') return;
   const clip = f.clip;
-  if (clip.reversedFrom) {
+  // Back to the forward video only if it is still here; otherwise the reversed clip is reversed again (audit V-242).
+  if (clip.reversedFrom && s.project!.assets[clip.reversedFrom.assetId]) {
     const back = clip.reversedFrom;
     s.commit((d) => { const g = findClip(d, clip.id); if (g && g.clip.kind === 'video') { g.clip.assetId = back.assetId; g.clip.in = back.in; delete g.clip.reversedFrom; delete g.clip.audioAssetId; delete g.clip.audioKey; } });
     s.toast(t('Playing forward again'));

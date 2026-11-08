@@ -46,6 +46,10 @@ export interface EditorState {
    * `owner` is the colour row that asked, so it can show itself on and switch the eyedropper off when it closes.
    */
   eyedropper: { pick: (color: string) => void; owner: object; /** the project to read colours from, if not the one on screen */ from?: () => Project | null } | null;
+  /** Another tab saved this project after this one loaded it (audit V-258): saving here waits for the person's choice. */
+  elsewhere: boolean;
+  /** Counts `open` calls: a project put on screen by `open` is not an edit to save. */
+  session: number;
 
   open(p: Project): void;
   close(): void;
@@ -69,6 +73,8 @@ export interface EditorState {
   dismiss(id: number): void;
   /** Keeps a toast on screen (its details are open). */
   keep(id: number): void;
+  /** The history steps made since `before` was the project become one (a drag across the colour spectrum). */
+  squash(before: Project): void;
 }
 
 let toastId = 0;
@@ -94,9 +100,11 @@ export const useEditor = create<EditorState>()((set, get) => ({
   busy: null,
   toasts: [],
   eyedropper: null,
+  elsewhere: false,
+  session: 0,
 
-  open: (p) => set({ project: p, past: [], future: [], histKey: null, selection: null, multi: null, sheet: null, time: 0, playing: false, eyedropper: null }),
-  close: () => set({ project: null, past: [], future: [], selection: null, multi: null, sheet: null, playing: false, eyedropper: null }),
+  open: (p) => set((s) => ({ project: p, past: [], future: [], histKey: null, selection: null, multi: null, sheet: null, time: 0, playing: false, eyedropper: null, elsewhere: false, session: s.session + 1 })),
+  close: () => set({ project: null, past: [], future: [], selection: null, multi: null, sheet: null, playing: false, eyedropper: null, elsewhere: false }),
 
   commit(fn, key, base) {
     const s = get();
@@ -155,6 +163,11 @@ export const useEditor = create<EditorState>()((set, get) => ({
   },
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   keep: (id) => set((s) => ({ toasts: s.toasts.map((x) => (x.id === id ? { ...x, kept: true } : x)) })),
+  squash(before) {
+    const s = get();
+    const i = s.past.lastIndexOf(before);
+    if (i >= 0 && i < s.past.length - 1) set({ past: s.past.slice(0, i + 1), histKey: null });
+  },
 }));
 
 export const editor = () => useEditor.getState();

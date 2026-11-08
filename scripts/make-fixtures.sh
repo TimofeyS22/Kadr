@@ -24,11 +24,15 @@ ff -f lavfi -i testsrc2=size=640x360:rate=30:duration=4 -f lavfi -i sine=frequen
 ff -f lavfi -i testsrc2=size=640x360:rate=30:duration=4 -c:v libx264 -pix_fmt yuv420p silent.mp4
 ff -f lavfi -i "smptebars=size=720x1280:rate=30:duration=5" -f lavfi -i sine=frequency=660:duration=5 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest portrait.mp4
 ff -f lavfi -i "sine=frequency=220:duration=10" -c:a aac music.m4a
+# A steady 1 kHz tone: the export's sound windows must meet with no click or dip (audit V-153).
+ff -f lavfi -i "color=c=0x223344:s=360x640:r=30:d=12" -f lavfi -i "sine=frequency=1000:duration=12:sample_rate=48000" -c:v libx264 -pix_fmt yuv420p -c:a aac -ar 48000 -shortest tone1k.mp4
 ff -f lavfi -i "mandelbrot=size=1080x1080" -frames:v 1 photo.png
 # 120 BPM kick track with the first beat at 0.25 s (beat detection)
 ff -f lavfi -i "aevalsrc='0.8*exp(-40*mod(t-0.25,0.5))*sin(2*PI*60*t)+0.3*exp(-60*mod(t-0.5,1))*(random(0)-0.5)':s=48000:d=12" -c:a aac beat120.m4a
 # A person for background removal and a 16:9 shot where they walk left → right (auto reframe)
 [ -f person.jpg ] || curl -sL -o person.jpg https://storage.googleapis.com/mediapipe-assets/business-person.png
+# Six people with faces ~80 px tall in a 720x1280 frame: "Hide faces" must find faces this small (audit V-221).
+ff -f lavfi -i "color=c=0x8a8f96:s=720x1280" -i person.jpg -filter_complex "[1:v]scale=254:360,split=6[a][b][c][d][e][f];[0:v][a]overlay=60:80[o1];[o1][b]overlay=400:80[o2];[o2][c]overlay=60:500[o3];[o3][d]overlay=400:500[o4];[o4][e]overlay=60:900[o5];[o5][f]overlay=400:900" -frames:v 1 crowd.png
 ff -loop 1 -i person.jpg -f lavfi -i color=c=0x556677:s=1280x720:d=5:r=30 -filter_complex "[0:v]scale=-2:640,format=yuv420p[p];[1:v][p]overlay=x='50+t*150':y=80:shortest=1" -t 5 -r 30 -pix_fmt yuv420p -c:v libx264 walk.mp4
 if command -v say >/dev/null; then
   say -v Samantha -o en.aiff "Hello and welcome to Kadr. This editor runs entirely on your phone. Your videos never leave the device."

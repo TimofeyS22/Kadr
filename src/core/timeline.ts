@@ -478,6 +478,8 @@ export function normalizeProject(p: Project): void {
   if (!p.tracks.some((t) => t.kind === 'main')) p.tracks.unshift({ id: uid(), kind: 'main', clips: [] });
   for (const t of p.tracks) t.clips = t.clips.filter((c) => !('assetId' in c) || !!p.assets[c.assetId]);
   for (const t of p.tracks) for (const c of t.clips) if (isSound(c) && c.audioAssetId && !p.assets[c.audioAssetId]) { delete c.audioAssetId; delete c.denoise; }
+  // A reversed clip whose forward video is gone stays reversed: switching to a missing file lost the clip (audit V-242).
+  for (const t of p.tracks) for (const c of t.clips) if (c.kind === 'video' && c.reversedFrom && !p.assets[c.reversedFrom.assetId]) delete c.reversedFrom;
   for (const t of p.tracks) if (t.kind === 'main') packMain(t); else sortTrack(t);
   removeEmptyTracks(p);
 }
@@ -515,10 +517,19 @@ export function insertFreezeFrame(p: Project, clipId: string, t: number, still: 
 
 /** Gives every asset a new id (used when importing a backup next to existing projects). */
 export function remapAssets(p: Project, idFor: (old: string) => string): void {
+  const ids = (r?: Record<string, string>) => r && Object.fromEntries(Object.entries(r).map(([k, v]) => [k, idFor(v)]));
   const assets: Record<string, Asset> = {};
   for (const a of Object.values(p.assets)) {
     const id = idFor(a.id);
-    const derived = a.derived?.denoise ? { denoise: idFor(a.derived.denoise) } : undefined;
+    // Every processed version (denoise, enhance, pitch, voice): one missed was a sound lost after a restore (audit V-242).
+    const d = a.derived;
+    const derived = d && {
+      ...d,
+      ...(d.denoise ? { denoise: idFor(d.denoise) } : {}),
+      ...(d.enhance ? { enhance: idFor(d.enhance) } : {}),
+      ...(d.pitch ? { pitch: ids(d.pitch) } : {}),
+      ...(d.voice ? { voice: ids(d.voice) } : {}),
+    };
     assets[id] = { ...a, id, ...(derived ? { derived } : {}) };
   }
   p.assets = assets;
@@ -526,6 +537,8 @@ export function remapAssets(p: Project, idFor: (old: string) => string): void {
     for (const c of t.clips) {
       if ('assetId' in c) c.assetId = idFor(c.assetId);
       if (isSound(c) && c.audioAssetId) c.audioAssetId = idFor(c.audioAssetId);
+      // The forward video a reversed clip came from: kept as an old id, "play forward again" lost the clip (audit V-242).
+      if (c.kind === 'video' && c.reversedFrom) c.reversedFrom = { ...c.reversedFrom, assetId: idFor(c.reversedFrom.assetId) };
     }
   }
 }

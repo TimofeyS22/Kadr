@@ -2458,7 +2458,7 @@ test('captions offline before the first model download say what to do, not "Fail
 
 // ---------- QA docs/11 §3.3–3.4: history and persistence across tools ----------
 
-/** The project as saved in IndexedDB ('kadr'/'kv', key p:<id>), without its save time. */
+/** The project as saved in IndexedDB ('kadr'/'kv', key p:<id>), without its save time and save bookkeeping (v1.6.2: revision, tab). */
 async function savedProject(page: Page): Promise<string> {
   const id = /#\/p\/([^/?]+)/.exec(page.url())![1];
   return page.evaluate(async (key) => {
@@ -2470,6 +2470,8 @@ async function savedProject(page: Page): Promise<string> {
     db.close();
     if (!p) return '';
     delete p.updatedAt;
+    delete p.rev;
+    delete p.writer;
     return JSON.stringify(p);
   }, `p:${id}`);
 }
@@ -3988,4 +3990,276 @@ test('a sound decoder that fails once (as WebKit\'s both did under load) does no
   const said = (await note.textContent()) ?? '';
   console.log(`decoder that never works (${info.project.name}): "${said}"`);
   expect(said).toContain('portrait.mp4');
+});
+
+// ---------- Audit 2026-11 (docs/13): confirmed findings, fixed in v1.6.2 ----------
+
+test('export sound: no click or dip where the 2 s mixing windows meet (audit V-153)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['tone1k.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const x = await samples(await exportAs(page, info, 'Video', 'Export video'));
+  const rms = (a: number, b: number) => { let s = 0; for (let i = a; i < b; i++) s += x[i] * x[i]; return Math.sqrt(s / Math.max(1, b - a)); };
+  const W = 480; // 10 ms
+  const levels: number[] = [];
+  for (let i = 48000; i + W < 11 * 48000; i += W) levels.push(rms(i, i + W));
+  const median = [...levels].sort((a, b) => a - b)[levels.length >> 1];
+  const db = (v: number) => 20 * Math.log10(v / median);
+  // The largest sample-to-sample step: a steady sine never jumps more than this; a click does.
+  const step = (a: number, b: number) => { let m = 0; for (let i = a + 1; i < b; i++) m = Math.max(m, Math.abs(x[i] - x[i - 1])); return m; };
+  const calm = step(48000, 1.5 * 48000);
+  const rows: string[] = [];
+  for (const b of [2, 4, 6, 8, 10]) {
+    const at = b * 48000;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = at - 3 * W; i < at + 3 * W; i += W / 4) { const d = db(rms(i, i + W)); lo = Math.min(lo, d); hi = Math.max(hi, d); }
+    const jump = step(at - 2 * W, at + 2 * W) / calm;
+    rows.push(`${b} s: level ${lo.toFixed(2)}..${hi.toFixed(2)} dB, step ×${jump.toFixed(2)}`);
+    expect.soft(lo, `dip at ${b} s`).toBeGreaterThan(-1);
+    expect.soft(hi, `bump at ${b} s`).toBeLessThan(1);
+    expect.soft(jump, `click at ${b} s`).toBeLessThan(1.3);
+  }
+  console.log(`window joins (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('a backup whose video holds zip signatures restores it byte for byte (audit V-188)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  const { unzipSync, Zip, ZipPassThrough } = await import('fflate');
+  const { createHash } = await import('node:crypto');
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: /^Save a backup of/ }).first().click();
+  const realPath = info.outputPath((await dl).suggestedFilename());
+  await (await dl).saveAs(realPath);
+  const real = unzipSync(new Uint8Array(fs.readFileSync(realPath)));
+  const mediaName = Object.keys(real).find((k) => k.startsWith('media/'))!;
+  // A valid MP4 "free" box at the end whose bytes hold the signatures a streamed reader stops at.
+  const payload = Buffer.concat([Buffer.from('a PK'), Buffer.from([0x50, 0x4b, 0x07, 0x08]), Buffer.alloc(64, 7), Buffer.from([0x50, 0x4b, 0x01, 0x02]), Buffer.alloc(64, 9)]);
+  const box = Buffer.alloc(8); box.writeUInt32BE(8 + payload.length, 0); box.write('free', 4);
+  const media = new Uint8Array(Buffer.concat([Buffer.from(real[mediaName]), box, payload]));
+  const want = createHash('sha256').update(media).digest('hex');
+  // Zipped as Kadr zips: streamed, each entry with a data descriptor after it.
+  const parts: Uint8Array[] = [];
+  const zip = new Zip((err, data) => { if (err) throw err; parts.push(data); });
+  for (const [name, bytes] of Object.entries({ ...real, [mediaName]: media })) { const e = new ZipPassThrough(name); zip.add(e); e.push(bytes, true); }
+  zip.end();
+  const planted = info.outputPath('signatures.kadr');
+  fs.writeFileSync(planted, Buffer.concat(parts));
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Restore backup' }).click();
+  await (await chooser).setFiles(planted);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
+  await expect(page.locator('.toast').filter({ hasText: 'could not be restored' })).toHaveCount(0);
+  const id = decodeURIComponent(new URL(page.url()).hash.replace(/^#\/p\//, ''));
+  const got = await page.evaluate(async (pid) => {
+    const db = await new Promise<IDBDatabase>((ok, ko) => { const r = indexedDB.open('kadr'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+    const get = (k: string) => new Promise<unknown>((ok) => { const r = db.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => ok(r.result); });
+    const p = await get(`p:${pid}`) as { assets: Record<string, unknown> };
+    const [asset] = Object.keys(p.assets);
+    let blob = await get(`b:${asset}`) as Blob | undefined;
+    if (!blob) { // WebKit's test context keeps files in chunks (storage/db.ts)
+      const meta = await get(`c:${asset}`) as { chunks: number };
+      const chunks: ArrayBuffer[] = [];
+      for (let i = 0; i < meta.chunks; i++) chunks.push(await get(`c:${asset}:${i}`) as ArrayBuffer);
+      blob = new Blob(chunks);
+    }
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()));
+    return { size: blob.size, sha: [...hash].map((b) => b.toString(16).padStart(2, '0')).join('') };
+  }, id);
+  expect(got.size, 'restored size').toBe(media.length);
+  expect(got.sha, 'restored bytes').toBe(want);
+});
+
+/** Fakes the page going to the background and back; while "hidden", IndexedDB writes of projects fail as WebKit's do. */
+async function fakeBackground(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __hidden: boolean };
+    w.__hidden = false;
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (w.__hidden ? 'hidden' : 'visible') });
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...a: Parameters<IDBObjectStore['put']>) {
+      if (w.__hidden && String(a[1]).startsWith('p:')) throw new DOMException('Connection to Indexed Database server lost. Refresh the page to try again', 'UnknownError');
+      return put.apply(this, a);
+    };
+  });
+  return async (hidden: boolean) => page.evaluate((h) => {
+    (window as unknown as { __hidden: boolean }).__hidden = h;
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, hidden);
+}
+
+test('a save that failed in the background does not roll the project back on the next open (audit V-120)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const background = await fakeBackground(page);
+  const title = page.getByRole('textbox', { name: 'Project name' });
+  await title.fill('E1');
+  await background(true); // within the 600 ms debounce: journaled, and the IndexedDB save fails
+  await background(false); // back: the failed save is made again
+  await page.waitForTimeout(800);
+  await title.fill('E2'); // a later edit, saved normally
+  await page.waitForTimeout(1500);
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  await page.getByRole('button', { name: 'Open E2', exact: true }).click();
+  await expect(title).toHaveValue('E2'); // before: the journal of E1 was replayed over it
+  await expect(page.locator('.toast.error')).toHaveCount(0);
+});
+
+test('two tabs of one project: the older one does not erase the newer one\'s edits (audit V-258)', async ({ page, context }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const saved = async () => page.evaluate(async () => {
+    const id = decodeURIComponent(location.hash.replace(/^#\/p\//, ''));
+    const db = await new Promise<IDBDatabase>((ok, ko) => { const r = indexedDB.open('kadr'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+    return new Promise<{ name: string; tracks: { clips: unknown[] }[] } | undefined>((ok) => { const r = db.transaction('kv').objectStore('kv').get(`p:${id}`); r.onsuccess = () => ok(r.result); });
+  });
+  const stored = async () => (await saved())?.name;
+  await expect.poll(async () => (await saved())?.tracks[0].clips.length).toBe(1); // the import is saved (600 ms debounce)
+  const b = await context.newPage();
+  await b.goto(page.url());
+  await expect(b.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
+  const notice = (p: Page) => p.getByRole('alertdialog', { name: 'This project was changed in another tab' });
+  // A saves; B, still showing the older version, is told and does not save over it.
+  await page.getByRole('textbox', { name: 'Project name' }).fill('NAME-A');
+  await expect(notice(b)).toBeVisible({ timeout: 10_000 });
+  await expect(notice(page)).toHaveCount(0);
+  await b.getByRole('button', { name: 'Open the newer version' }).click();
+  await expect(b.getByRole('textbox', { name: 'Project name' })).toHaveValue('NAME-A');
+  await expect(notice(b)).toHaveCount(0);
+  await expect(notice(page)).toHaveCount(0); // opening the newer version is not an edit: A is not disturbed
+  // B edits; A is told. A keeps its own version by choice, and B is told in turn.
+  await b.getByRole('textbox', { name: 'Project name' }).fill('NAME-B');
+  await expect(notice(page)).toBeVisible({ timeout: 10_000 });
+  await expect.poll(stored).toBe('NAME-B');
+  await page.getByRole('textbox', { name: 'Project name' }).evaluate((el) => (el as HTMLElement).blur());
+  await page.getByRole('button', { name: 'Keep this version' }).click();
+  await expect.poll(stored).toBe('NAME-A');
+  await expect(notice(b)).toBeVisible({ timeout: 10_000 });
+  await b.close();
+});
+
+test('an export of many clips keeps few decoders open: each closes once the export has passed its clip (audit V-171)', async ({ page }, info) => {
+  test.setTimeout(360_000);
+  // Every video decoder the page makes is watched (before any script, which may keep its own reference to the class).
+  await page.addInitScript(() => {
+    const w = window as unknown as { __decoders: VideoDecoder[]; __most: number };
+    w.__decoders = [];
+    w.__most = 0;
+    if (typeof VideoDecoder !== 'function') return;
+    const Real = VideoDecoder;
+    window.VideoDecoder = class extends Real { constructor(init: VideoDecoderInit) { super(init); w.__decoders.push(this); } } as typeof VideoDecoder;
+    setInterval(() => {
+      w.__decoders = w.__decoders.filter((d) => d.state !== 'closed');
+      w.__most = Math.max(w.__most, w.__decoders.length);
+    }, 50);
+  });
+  await newProject(page);
+  // Eight 3 s pieces of one 1080p file, as people cut a long recording: a piece ends mid-file, so nothing closes its
+  // decoder at the end of the file (whole short files did not show it).
+  await importFiles(page, 'Media', ['long_1.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const clips = page.locator('.tl-row.main .clip');
+  for (let k = 1; k <= 8; k++) {
+    await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, 3 * k * 60);
+    await page.waitForTimeout(150);
+    await page.keyboard.press('s');
+    await expect(clips).toHaveCount(k + 1);
+  }
+  await clips.last().click();
+  await page.keyboard.press('Delete');
+  await expect(clips).toHaveCount(8);
+  // Still: the preview closes the decoders of the pieces the playhead passed (before, all 8 stayed open).
+  await page.waitForTimeout(2500);
+  expect(await page.evaluate(() => (window as unknown as { __decoders: VideoDecoder[] }).__decoders.filter((d) => d.state !== 'closed').length), 'decoders open while still').toBeLessThanOrEqual(2);
+  await page.evaluate(() => { (window as unknown as { __most: number }).__most = 0; });
+  const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  const most = await page.evaluate(() => (window as unknown as { __most: number }).__most);
+  console.log(`decoders open at most during an export of 8 clips (${info.project.name}): ${most}`);
+  expect(Number(pr.format.duration)).toBeCloseTo(24, 0);
+  expect(most, "decoders open at once (the preview's, this clip's, the next one's)").toBeLessThanOrEqual(3);
+});
+
+test('hide faces finds small faces too: six people with faces ~80 px tall in a 720x1280 frame (audit V-221)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['crowd.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const base = await photo(page, info);
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Hide faces').click();
+  await page.getByRole('switch', { name: 'Hide faces automatically' }).click();
+  await expect(page.getByRole('switch', { name: 'Hide faces automatically' })).toBeChecked({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Done' }).click();
+  const hidden = await photo(page, info);
+  // photo() is 270x480 gray: the 720x1280 frame at 0.375. Mean change over each face's eyes, nose and mouth.
+  const W = 270, k = 0.375;
+  const centers = [[188, 150], [528, 150], [188, 570], [528, 570], [188, 990], [528, 990]];
+  const change = centers.map(([cx, cy]) => {
+    let s = 0, n = 0;
+    for (let y = Math.round(cy * k) - 7; y < Math.round(cy * k) + 7; y++) for (let x = Math.round(cx * k) - 7; x < Math.round(cx * k) + 7; x++) { s += Math.abs(base[y * W + x] - hidden[y * W + x]); n++; }
+    return s / n;
+  });
+  console.log(`small faces, mean change per face (${info.project.name}): ${change.map((c) => c.toFixed(1)).join(', ')}`);
+  change.forEach((c, i) => expect.soft(c, `face ${i + 1} hidden`).toBeGreaterThan(8));
+  expect(changed(base, hidden, 20), 'and the rest stays').toBeLessThan(0.25);
+});
+
+// ---------- v1.6.2: the colour spectrum with a loupe (the owner's request) ----------
+
+test('colour spectrum: a square and a hue strip, a loupe above the finger, one undo step per drag, a typed code', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Text').click();
+  const colors = page.getByRole('group', { name: 'Text color', exact: true });
+  await colors.locator('.swatch[aria-label="#ffffff"]').click();
+  await colors.getByRole('button', { name: 'Spectrum: Text color' }).click();
+  const spectrum = page.getByRole('group', { name: 'Spectrum: Text color' });
+  await expect(spectrum).toBeVisible();
+  const code = spectrum.getByRole('textbox', { name: 'Color code' });
+  await expect(code).toHaveValue('#ffffff');
+  const square = spectrum.getByRole('slider', { name: 'Saturation and brightness' });
+  await square.scrollIntoViewIfNeeded();
+  const r = (await square.boundingBox())!;
+  // White has no hue: the square shows red (hue 0). Drag from one shade to another.
+  await page.mouse.move(r.x + 0.2 * r.width, r.y + 0.2 * r.height);
+  await page.mouse.down();
+  await page.mouse.move(r.x + 0.8 * r.width, r.y + 0.3 * r.height, { steps: 8 });
+  const loupe = page.locator('.color-loupe');
+  await expect(loupe).toBeVisible();
+  const lb = (await loupe.boundingBox())!;
+  expect(lb.y + lb.height, 'the loupe floats above the finger').toBeLessThan(r.y + 0.3 * r.height - 20);
+  expect(Math.abs(lb.x + lb.width / 2 - (r.x + 0.8 * r.width)), 'centred over it').toBeLessThan(2);
+  // Its middle shows the colour picked, enlarged.
+  const middle = await loupe.locator('canvas').evaluate((c: HTMLCanvasElement) => [...c.getContext('2d')!.getImageData(c.width >> 1, c.height >> 1, 1, 1).data].slice(0, 3));
+  await page.mouse.up();
+  await expect(loupe).toHaveCount(0);
+  const picked = await code.inputValue();
+  hexRgb(picked).forEach((v, i) => expect(Math.abs(v - [179, 36, 36][i]), `picked ${picked}`).toBeLessThan(6)); // hsv(0, 0.8, 0.7)
+  hexRgb(picked).forEach((v, i) => expect(Math.abs(v - middle[i]), `loupe middle ${middle}`).toBeLessThan(6));
+  await expect(colors.locator('.swatch.on[aria-label^="#"]').first()).toHaveAttribute('aria-label', picked); // remembered and chosen
+  // The whole drag is one step back.
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(code).toHaveValue('#ffffff');
+  await page.getByRole('button', { name: 'Redo' }).click();
+  await expect(code).toHaveValue(picked);
+  // The hue strip: a third of the way is green; the square keeps its saturation and brightness.
+  const strip = spectrum.getByRole('slider', { name: 'Hue' });
+  await strip.scrollIntoViewIfNeeded();
+  const hb = (await strip.boundingBox())!;
+  await page.mouse.click(hb.x + hb.width / 3, hb.y + hb.height / 2);
+  const green = await code.inputValue();
+  hexRgb(green).forEach((v, i) => expect(Math.abs(v - [36, 179, 36][i]), `green ${green}`).toBeLessThan(8));
+  // A typed code.
+  await code.fill('#2F9BFF');
+  await code.press('Enter');
+  await expect(code).toHaveValue('#2f9bff');
+  await expect(colors.locator('.swatch.on[aria-label^="#"]').first()).toHaveAttribute('aria-label', '#2f9bff');
 });

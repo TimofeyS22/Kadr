@@ -4,6 +4,7 @@ import { player } from '../engine/player';
 import { track } from '../lib/telemetry';
 import type { Project } from '../core/types';
 import { useEditor } from '../state/store';
+import { Spectrum } from './Spectrum';
 import { t } from '../lib/i18n';
 
 /** Px of downward drag before the sheet follows the finger (taps on the header stay taps). */
@@ -148,7 +149,7 @@ export function Swatches({ value, onChange, label, from }: {
   const latest = useRef(onChange);
   latest.current = onChange;
   const picking = useEditor((s) => s.eyedropper?.owner === owner);
-  const custom = useRef<HTMLInputElement>(null);
+  const [spectrum, setSpectrum] = useState(false);
   const remember = (c: string) => {
     const col = c.toLowerCase();
     if (SWATCHES.includes(col)) return;
@@ -158,13 +159,6 @@ export function Swatches({ value, onChange, label, from }: {
       return next;
     });
   };
-  // The native picker reports every move as "input"; "change" is the colour it closed on.
-  useEffect(() => {
-    const el = custom.current;
-    const done = () => { if (el) remember(el.value); };
-    el?.addEventListener('change', done);
-    return () => el?.removeEventListener('change', done);
-  }, []);
   // A closed sheet takes its eyedropper with it.
   useEffect(() => () => { if (useEditor.getState().eyedropper?.owner === owner) useEditor.setState({ eyedropper: null }); }, [owner]);
   const toggleDropper = () => {
@@ -179,17 +173,21 @@ export function Swatches({ value, onChange, label, from }: {
     </button>
   );
   return (
-    <div className="swatches" role="group" aria-label={label}>
-      <button className={`swatch tool-dropper ${picking ? 'on' : ''}`} onClick={toggleDropper} aria-pressed={picking} aria-label={t('Eyedropper: {label}', { label })}>
-        <i><Pipette size={18} /></i>
-      </button>
-      <label className="swatch custom" title={t('Any color')}>
-        <i style={{ background: SWATCHES.includes(lower) || recent.includes(lower) ? undefined : value }} />
-        <input ref={custom} type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'} onChange={(e) => onChange(e.target.value)} aria-label={`Custom ${label}`} />
-      </label>
-      {recent.length > 0 && <>{recent.map(swatch)}<span className="swatch-sep" aria-hidden /></>}
-      {SWATCHES.map(swatch)}
-    </div>
+    <>
+      <div className="swatches" role="group" aria-label={label}>
+        <button className={`swatch tool-dropper ${picking ? 'on' : ''}`} onClick={toggleDropper} aria-pressed={picking} aria-label={t('Eyedropper: {label}', { label })}>
+          <i><Pipette size={18} /></i>
+        </button>
+        {/* Any colour (v1.6.2): our own spectrum with a loupe, the same on every phone, instead of the system picker. */}
+        <button className={`swatch custom ${spectrum ? 'on' : ''}`} onClick={() => setSpectrum((o) => !o)} aria-expanded={spectrum}
+          aria-label={t('Spectrum: {label}', { label })}>
+          <i />
+        </button>
+        {recent.length > 0 && <>{recent.map(swatch)}<span className="swatch-sep" aria-hidden /></>}
+        {SWATCHES.map(swatch)}
+      </div>
+      {spectrum && <Spectrum value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'} label={label} onChange={onChange} onDone={remember} />}
+    </>
   );
 }
 

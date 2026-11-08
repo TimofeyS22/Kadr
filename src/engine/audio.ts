@@ -84,6 +84,13 @@ interface ScheduleOpts {
 }
 
 /** Schedules the part of a clip inside timeline window [from, to). */
+/**
+ * Sound decoded before the part that is wanted, then dropped. An AAC or Opus decoder that starts cold gets its first
+ * frame wrong: the frame is half of an overlap with the one before. Every 2 s export window started cold, so exports of
+ * compressed sound clicked and dipped up to -30 dB every 2 s while the preview was clean (audit V-153).
+ */
+export const PREROLL_S = 0.2;
+
 async function scheduleClip(o: ScheduleOpts): Promise<void> {
   const { ctx, entry: e, at } = o;
   const c = e.clip;
@@ -100,7 +107,7 @@ async function scheduleClip(o: ScheduleOpts): Promise<void> {
   for (const x of points.slice(1)) gain.gain.linearRampToValueAtTime(envelope(e, x, ducks), Math.max(floor, at(x)));
 
   const s0 = sourceTime(c, t0), s1 = sourceTime(c, t1);
-  for await (const { buffer, timestamp } of o.stream ?? o.sink.buffers(s0, s1)) {
+  for await (const { buffer, timestamp } of o.stream ?? o.sink.buffers(Math.max(0, s0 - PREROLL_S), s1)) {
     if (o.signal?.aborted) return;
     const b0 = Math.max(timestamp, s0), b1 = Math.min(timestamp + buffer.duration, s1);
     if (b1 <= b0) continue;
@@ -217,7 +224,7 @@ export class AudioEngine {
         const sink = await pool.audioSink(soundAssetId(c));
         const ducks = entry.duck > 0 ? await duckRanges(p) : undefined;
         if (!sink || ac.signal.aborted) return null;
-        const head = soon ? await primed(sink.buffers(sourceTime(c, Math.max(t, c.start)), sourceTime(c, clipEnd(c))), PRIME_S) : null;
+        const head = soon ? await primed(sink.buffers(Math.max(0, sourceTime(c, Math.max(t, c.start)) - PREROLL_S), sourceTime(c, clipEnd(c))), PRIME_S + PREROLL_S) : null;
         return { sink, ducks, head };
       })();
       if (soon) ready.push(opened.catch(() => undefined));

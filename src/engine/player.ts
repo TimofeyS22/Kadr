@@ -27,6 +27,7 @@ export class Player {
   private thumbWaiters: ((url: string | null) => void)[] = [];
   private captureWaiters: ((canvas: HTMLCanvasElement | null) => void)[] = [];
   private captureFrom: Project | null = null;
+  private idleSweep = 0;
   playing = false;
   time = 0;
   bounds: LayerBounds[] = [];
@@ -200,6 +201,11 @@ export class Player {
       }
     }
     this.pool.sweep(keep);
+    // The preview renders nothing while it is still, so nothing closed the decoders of clips the playhead passed on its
+    // way (a scrub across 8 clips kept 8 hardware decoders, which a phone does not have to spare: audit V-171). They
+    // close once the screen has been still for a moment.
+    clearTimeout(this.idleSweep);
+    this.idleSweep = window.setTimeout(() => { if (!this.playing && !this.rendering) this.pool.sweep(keep); }, 1600);
     return shot;
   }
 
