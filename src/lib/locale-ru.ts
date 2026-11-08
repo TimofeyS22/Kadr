@@ -247,6 +247,7 @@ export const RU: Record<string, string> = {
   'The text did not match the speech: captions are from recognition.': 'Текст не совпал с речью: субтитры по распознаванию.',
   'Speech language (found by Kadr)': 'Язык речи (Kadr определил сам)',
   'Speech language': 'Язык речи',
+  'Position in the clip': 'Позиция в клипе',
   'Speech language: {language}. Wrong? Pick it and create again.': 'Язык речи: {language}. Неверно? Выберите его и создайте заново.',
   'Turns a recording of you talking into a ready reel. Each step is on the timeline and can be undone.': 'Превращает запись, где вы говорите, в готовый рилс. Каждый шаг виден на таймлайне и отменяется.',
   'Remove “um”, “uh” and repeats': 'Убрать «эээ», «ммм» и повторы',

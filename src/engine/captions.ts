@@ -93,6 +93,13 @@ export const CAPTION_LANGUAGES: { id: string | null; code: string; label: string
   { id: 'spanish', code: 'es', label: 'Español' }, { id: 'portuguese', code: 'pt', label: 'Português' }, { id: 'german', code: 'de', label: 'Deutsch' },
   { id: 'french', code: 'fr', label: 'Français' }, { id: 'italian', code: 'it', label: 'Italiano' }, { id: 'ukrainian', code: 'uk', label: 'Українська' },
   { id: 'turkish', code: 'tr', label: 'Türkçe' }, { id: 'hindi', code: 'hi', label: 'हिन्दी' }, { id: 'japanese', code: 'ja', label: '日本語' },
+  // The rest Whisper reads: speech outside this list was given the nearest language in it and came out as nonsense (audit V-162).
+  { id: 'polish', code: 'pl', label: 'Polski' }, { id: 'bulgarian', code: 'bg', label: 'Български' }, { id: 'kazakh', code: 'kk', label: 'Қазақша' },
+  { id: 'uzbek', code: 'uz', label: 'Oʻzbekcha' }, { id: 'czech', code: 'cs', label: 'Čeština' }, { id: 'dutch', code: 'nl', label: 'Nederlands' },
+  { id: 'romanian', code: 'ro', label: 'Română' }, { id: 'greek', code: 'el', label: 'Ελληνικά' }, { id: 'swedish', code: 'sv', label: 'Svenska' },
+  { id: 'hebrew', code: 'he', label: 'עברית' }, { id: 'arabic', code: 'ar', label: 'العربية' }, { id: 'persian', code: 'fa', label: 'فارسی' },
+  { id: 'chinese', code: 'zh', label: '中文' }, { id: 'korean', code: 'ko', label: '한국어' }, { id: 'vietnamese', code: 'vi', label: 'Tiếng Việt' },
+  { id: 'indonesian', code: 'id', label: 'Bahasa Indonesia' }, { id: 'thai', code: 'th', label: 'ไทย' },
 ];
 /** The label of a speech language id ('russian' → 'Русский'). */
 export const languageLabel = (id: string): string => CAPTION_LANGUAGES.find((l) => l.id === id)?.label ?? id;

@@ -64,42 +64,58 @@ export function Toolbar() {
     { icon: AudioLines, label: t('Voice'), run: sheet('voice'), on: !!(clip && 'voice' in clip && clip.voice) },
   ];
 
-  let tools: Tool[];
+  const autoReframeTool: Tool = { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() };
+  const freeze: Tool = { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() };
+  const reverse: Tool = { icon: Rewind, label: t('Reverse'), run: () => void reverseSelected(), on: !!(clip?.kind === 'video' && clip.reversedFrom) };
+  const extract: Tool = { icon: AudioLines, label: t('Extract audio'), run: detachSelectedAudio };
+  const beat: Tool = { icon: Activity, label: t('Beat'), run: sheet('beats'), on: !!clip && clip.kind === 'audio' && !!useEditor.getState().project?.assets[clip.assetId]?.beats };
+  const [adjust, filters, transform] = look;
+
+  // In groups, what is used most first: the first screen of a phone holds five tools (audit V-165).
+  let groups: Tool[][];
   switch (kind) {
-    case 'video': tools = [split, ...layers, captions, ...sound, pauses, crop, mirror, { icon: ScanFace, label: t('Auto reframe'), run: () => void autoReframe() }, ...look, fx, mask, hide, cutout, chroma, { icon: Snowflake, label: t('Freeze'), run: () => void freezeFrame() },
-      { icon: Rewind, label: t('Reverse'), run: () => void reverseSelected(), on: !!(clip?.kind === 'video' && clip.reversedFrom) },
-      { icon: AudioLines, label: t('Extract audio'), run: detachSelectedAudio }, pick, dup, del]; break;
-    case 'image': tools = [split, ...layers, crop, mirror, ...look, fx, mask, hide, cutout, chroma, pick, dup, del]; break;
-    case 'audio': tools = [split, captions, ...sound, { icon: Activity, label: t('Beat'), run: sheet('beats'), on: !!clip && clip.kind === 'audio' && !!useEditor.getState().project?.assets[clip.assetId]?.beats }, pauses, pick, dup, del]; break;
-    case 'text': tools = [{ icon: Type, label: t('Edit text'), run: sheet('text') }, look[2], ...layers, split, pick, dup, del]; break;
-    case 'caption': tools = [{ icon: Captions, label: t('Edit captions'), run: sheet('captionEdit') }, look[2], ...layers, split, pick, del]; break;
-    default: tools = [
-      { icon: Clapperboard, label: t('Reel in 1 tap'), run: sheet('reel') },
-      { icon: Film, label: t('Media'), run: () => void addMedia('main') },
-      captions,
-      { icon: Layers, label: t('Overlay'), run: () => void addMedia('overlay') },
-      { icon: Disc3, label: t('Music'), run: sheet('music') },
-      { icon: Music, label: t('Audio'), run: () => void addMedia('audio') },
-      { icon: Video, label: t('Camera'), run: sheet('camera') },
-      { icon: Mic, label: t('Record'), run: sheet('voiceover') },
-      { icon: Type, label: t('Text'), run: addText },
-      { icon: Smile, label: t('Stickers'), run: sheet('stickers') },
-      { icon: Bell, label: t('Sounds'), run: sheet('sfx') },
-      { icon: Frame, label: t('Canvas'), run: sheet('canvas') },
+    case 'video': groups = [[split, dup, del], [...sound, captions, pauses], [crop, mirror, transform, ...layers, adjust, filters, fx], [mask, hide, cutout, chroma, autoReframeTool], [freeze, reverse, extract, pick]]; break;
+    case 'image': groups = [[split, dup, del], [crop, mirror, transform, ...layers, adjust, filters, fx], [mask, hide, cutout, chroma, pick]]; break;
+    case 'audio': groups = [[split, dup, del], [...sound, beat, captions, pauses, pick]]; break;
+    case 'text': groups = [[{ icon: Type, label: t('Edit text'), run: sheet('text') }, transform, ...layers], [split, dup, del, pick]]; break;
+    case 'caption': groups = [[{ icon: Captions, label: t('Edit captions'), run: sheet('captionEdit') }, transform, ...layers], [split, del, pick]]; break;
+    default: groups = [
+      [
+        { icon: Clapperboard, label: t('Reel in 1 tap'), run: sheet('reel') },
+        { icon: Film, label: t('Media'), run: () => void addMedia('main') },
+        captions,
+        { icon: Type, label: t('Text'), run: addText },
+        { icon: Disc3, label: t('Music'), run: sheet('music') },
+      ],
+      [
+        { icon: Layers, label: t('Overlay'), run: () => void addMedia('overlay') },
+        { icon: Smile, label: t('Stickers'), run: sheet('stickers') },
+        { icon: Bell, label: t('Sounds'), run: sheet('sfx') },
+        { icon: Music, label: t('Audio'), run: () => void addMedia('audio') },
+      ],
+      [
+        { icon: Video, label: t('Camera'), run: sheet('camera') },
+        { icon: Mic, label: t('Record'), run: sheet('voiceover') },
+        { icon: Frame, label: t('Canvas'), run: sheet('canvas') },
+      ],
     ];
   }
 
   return (
     <nav className="toolbar" aria-label={t('Tools')}>
       {kind && (
-        <button className="tool" onClick={() => useEditor.getState().select(null)} aria-label={t('Close tools')}>
+        <button className="tool tool-back" onClick={() => useEditor.getState().select(null)} aria-label={t('Close tools')}>
           <X size={22} /><span>{t('Back')}</span>
         </button>
       )}
-      {tools.map((t) => (
-        <button key={t.label} className={`tool ${t.danger ? 'danger' : ''} ${t.on ? 'on' : ''}`} aria-pressed={t.on} onClick={t.run}>
-          <t.icon size={22} /><span>{t.label}</span>
-        </button>
+      {groups.map((group, i) => (
+        <div className="tool-group" key={i}>
+          {group.map((x) => (
+            <button key={x.label} className={`tool ${x.danger ? 'danger' : ''} ${x.on ? 'on' : ''}`} aria-pressed={x.on} onClick={x.run}>
+              <x.icon size={22} /><span>{x.label}</span>
+            </button>
+          ))}
+        </div>
       ))}
     </nav>
   );

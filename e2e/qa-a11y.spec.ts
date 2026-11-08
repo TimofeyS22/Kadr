@@ -122,6 +122,9 @@ test('text contrast meets WCAG AA on every screen of the 375 px walk', async ({ 
   await page.getByRole('button', { name: 'Export' }).first().click();
   await page.waitForTimeout(300);
   await audit('export sheet');
+  // Quick export has started: closing the sheet while it runs only warns (audit V-225).
+  const cancel = page.getByRole('button', { name: 'Cancel' });
+  if (await cancel.isVisible()) await cancel.click();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Back to projects' }).click();
   await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();

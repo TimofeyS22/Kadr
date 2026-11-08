@@ -131,6 +131,11 @@ fi
 if [ ! -f photo_48mp.jpg ]; then
   ff -f lavfi -i "testsrc2=s=8064x6048" -frames:v 1 -q:v 3 photo_48mp.jpg
 fi
+# Polish speech (audit V-162): a language outside the first list. macOS voices only.
+if [ ! -f speech_pl.mp4 ] && say -v Zosia "" 2>/dev/null; then
+  say -v Zosia -o speech_pl.aiff "Dzień dobry wszystkim. Dzisiaj opowiem wam o moim ulubionym mieście i o tym, dlaczego warto je odwiedzić wiosną. Jest tam piękny stary rynek i bardzo dobre jedzenie."
+  ff -f lavfi -i "color=c=0x334455:s=640x360:r=30" -i speech_pl.aiff -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac speech_pl.mp4 && rm speech_pl.aiff
+fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
 
 # Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.

@@ -64,9 +64,15 @@ env.customCache = {
   put: async (req: string, res: Response) => { if (!largeKey(String(req))) await (await small)?.put(String(req), res); },
 };
 const plainFetch = env.fetch;
+/**
+ * transformers.js counts a pipeline's files by asking for them under "main", whatever revision it was given. Those addresses
+ * are not on Kadr's site, so they went to Hugging Face, and where it is blocked English captions failed (audit V-135).
+ */
+const pinned = (url: string) => url.replace(/whisper-(tiny|base|small)_timestamped\/resolve\/main\//, (_, m: keyof typeof WHISPER_REV) => `whisper-${m}_timestamped/resolve/${WHISPER_REV[m]}/`);
 env.fetch = async (input: string | URL, init?: RequestInit) => {
-  const key = modelKey(String(input));
-  if (!key) return unlisted(String(input), init);
+  const url = pinned(String(input));
+  const key = modelKey(url);
+  if (!key) return unlisted(url, init);
   // transformers.js asks for one byte (Range: bytes=0-0) to learn that a file exists and its size: known already.
   if (new Headers(init?.headers).get('range') === 'bytes=0-0') return probeAnswer(key)!;
   if (!isLarge(key)) return smallFile(key);

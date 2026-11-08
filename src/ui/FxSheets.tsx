@@ -6,7 +6,7 @@ import { EFFECT_IDS, type ImageClip, type Privacy, type VideoClip } from '../cor
 import { t } from '../lib/i18n';
 import { useEditor } from '../state/store';
 import { editClip, importLut, setHideFaces } from './actions';
-import { Chips, Slider, Toggle, pct } from './controls';
+import { Chips, ClipScrub, Slider, Toggle, pct } from './controls';
 
 type MediaVisual = VideoClip | ImageClip;
 const MAX_AREAS = 6;
@@ -43,6 +43,7 @@ export function PrivacyBody({ clip }: { clip: MediaVisual }) {
   }, key);
   return (
     <>
+      {pv.areas.length > 0 && <ClipScrub clip={clip} keys={pv.areas.flatMap((a) => [...(a.x.k ?? []), ...(a.y.k ?? [])].map((x) => x.t))} />}
       <Toggle label={t('Hide faces automatically')} value={pv.faces} onChange={(v) => void setHideFaces(clip.id, v)} />
       <Chips options={['blur', 'pixelate'] as const} value={pv.style} render={(s) => (s === 'blur' ? t('Blur') : t('Pixelate'))}
         onChange={(s) => set((p) => { p.style = s; })} />

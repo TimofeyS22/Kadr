@@ -451,7 +451,7 @@ async function selectClip(page: Page, clip: ReturnType<Page['locator']>) {
 async function useSheet(page: Page, name: string) {
   await tool(page, name).click();
   await expect(sheet(page)).toBeVisible();
-  const slider = sheet(page).locator('input[type=range]').first();
+  const slider = sheet(page).locator('input[type=range]:not([aria-label="Position in the clip"])').first();
   if (await slider.count()) { await slider.focus(); await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); }
   const radios = sheet(page).getByRole('radio');
   if ((await radios.count()) > 1) await radios.nth(1).click();
@@ -1195,7 +1195,7 @@ test('keyframes, chroma key and a mask change the picture', async ({ page }, inf
   await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 2.5 * 60; });
   await selectClip(page, clip);
   await tool(page, 'Transform').click();
-  const x = sheet(page).locator('input[type=range]').first();
+  const x = sheet(page).getByRole('slider', { name: 'Position X' });
   await x.focus();
   for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowRight');
   await page.getByRole('button', { name: 'Done' }).click();
@@ -2918,7 +2918,7 @@ test('WYSIWYG in motion: auto reframe and a LUT, mid-transition, a keyframe betw
   await at(start2 + 3.5);
   await selectClip(page, clips.nth(1));
   await tool(page, 'Transform').click();
-  await sheet(page).locator('input[type=range]').first().focus();
+  await sheet(page).locator('input[type=range]:not([aria-label="Position in the clip"])').first().focus();
   for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowRight');
   await page.getByRole('button', { name: 'Done' }).click();
   await closeAll();
@@ -5030,4 +5030,63 @@ test('the editor opens without the code that writes files; the export fetches it
   await page.waitForTimeout(1500); // the sheets arrive after the editor is up
   expect(scripts.some((u) => /\/sheets-/.test(u)), 'the sheets came').toBe(true);
   expect(scripts.filter((u) => /\/(memTarget|exporter)-/.test(u)), 'nothing that writes files yet').toEqual([]);
+});
+
+test('what is used most is on the first screen of the tools; Back stays in reach (audit V-165)', async ({ page }) => {
+  await newProject(page);
+  const onScreen = async (name: string) => {
+    const box = (await page.locator('.toolbar').getByRole('button', { name, exact: true }).boundingBox())!;
+    return box.x >= 0 && box.x + box.width <= page.viewportSize()!.width;
+  };
+  await expect.poll(() => onScreen('Text'), 'Text without a swipe').toBe(true);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await page.locator('.tl-row.main .clip').first().click();
+  for (const name of ['Split', 'Duplicate', 'Delete']) expect(await onScreen(name), name).toBe(true);
+  await page.locator('.toolbar').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+  const back = (await page.getByRole('button', { name: 'Close tools' }).boundingBox())!;
+  expect(back.x, 'Back after scrolling to the end').toBeGreaterThanOrEqual(0);
+  expect(back.x).toBeLessThan(40);
+});
+
+test('a second keyframe without closing the sheet: the playhead is inside it (audit V-218)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await page.locator('.tl-row.main .clip').first().click();
+  await page.locator('.toolbar').getByRole('button', { name: 'Transform', exact: true }).click();
+  const scrub = page.getByRole('slider', { name: 'Position in the clip' });
+  await expect(scrub).toBeVisible();
+  const keyframe = page.getByRole('button', { name: /Scale keyframe/ });
+  await scrub.fill('0.5');
+  await keyframe.click();
+  await expect(page.locator('.clip-scrub-key')).toHaveCount(1);
+  await scrub.fill('1.5');
+  await expect(page.getByRole('button', { name: 'Add Scale keyframe' }), 'a moment without a keyframe').toBeVisible();
+  await keyframe.click();
+  await expect(page.locator('.clip-scrub-key')).toHaveCount(2);
+  await expect(page.getByRole('slider', { name: 'Position in the clip' }), 'the sheet stayed open').toBeVisible();
+});
+
+test('speech in a language beyond the first eleven is read in that language (audit V-162)', async ({ page }) => {
+  test.setTimeout(400_000);
+  test.skip(!fs.existsSync(fx('speech_pl.mp4')), 'needs npm run fixtures on a Mac');
+  await newProject(page);
+  await importFiles(page, 'Media', ['speech_pl.mp4']);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await page.locator('.toolbar').getByRole('button', { name: 'Captions', exact: true }).click();
+  await expect(page.locator('.tl-row .clip-caption')).toHaveCount(1, { timeout: 360_000 });
+  await expect(page.locator('.toast').filter({ hasText: 'Polski' })).toBeVisible({ timeout: 20_000 });
+  expect(await page.locator('.clip-caption').textContent()).not.toMatch(/[а-яё]/i);
+});
+
+test('Hugging Face blocked: English captions come whole from Kadr\'s own site (audit V-135)', async ({ page, context }) => {
+  test.setTimeout(400_000);
+  const asked: string[] = [];
+  await context.route(/huggingface\.co|hf\.co/, (route) => { asked.push(route.request().url()); return route.abort('connectionrefused'); });
+  await newProject(page);
+  await importFiles(page, 'Media', ['speech_en.mp4']);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await page.locator('.toolbar').getByRole('button', { name: 'Captions', exact: true }).click();
+  await expect(page.locator('.tl-row .clip-caption')).toHaveCount(1, { timeout: 360_000 });
+  expect(await toastErrors(page)).toEqual([]);
+  expect(asked, 'WebKit does not show a worker\'s requests to routes: this list proves it in Chromium').toEqual([]);
 });

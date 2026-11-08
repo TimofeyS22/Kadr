@@ -2,8 +2,10 @@ import { Check, Diamond, Pipette } from 'lucide-react';
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { player } from '../engine/player';
 import { track } from '../lib/telemetry';
-import type { Project } from '../core/types';
+import { clipEnd } from '../core/timeline';
+import type { Clip, Project } from '../core/types';
 import { useEditor } from '../state/store';
+import { formatTime } from './format';
 import { Spectrum } from './Spectrum';
 import { t } from '../lib/i18n';
 
@@ -79,6 +81,29 @@ interface SliderProps {
   /** Double-tap on the label resets to this value. */
   reset?: number;
   keyframe?: { active: boolean; animated: boolean; disabled: boolean; toggle: () => void };
+}
+
+/**
+ * The playhead inside a sheet that covers the timeline (audit V-218): the second keyframe no longer means closing the sheet.
+ * Marks show the moments that have keyframes.
+ */
+export function ClipScrub({ clip, keys }: { clip: Clip; keys: number[] }) {
+  const time = useEditor((s) => s.time);
+  const fps = useEditor((s) => s.project?.settings.fps ?? 30);
+  const end = clipEnd(clip);
+  return (
+    <div className="clip-scrub">
+      <span className="clip-scrub-time">{formatTime(Math.max(0, time - clip.start), false)}</span>
+      <div className="clip-scrub-track">
+        <input
+          type="range" aria-label={t('Position in the clip')} min={clip.start} max={end} step={1 / fps} value={Math.min(end, Math.max(clip.start, time))}
+          aria-valuetext={formatTime(Math.max(0, time - clip.start), false)}
+          onChange={(e) => { player.pause(); player.seek(Number(e.target.value)); useEditor.setState({ time: player.time }); }}
+        />
+        {[...new Set(keys)].map((k) => <i key={k} className="clip-scrub-key" style={{ left: `${(k / Math.max(clip.duration, 1e-3)) * 100}%` }} aria-hidden />)}
+      </div>
+    </div>
+  );
 }
 
 export function Slider({ label, value, min, max, step = 0.01, format, onChange, reset, keyframe }: SliderProps) {

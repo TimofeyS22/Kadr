@@ -174,6 +174,10 @@ h1, h2, h3 { margin: 0; }
   background: var(--bg); border-top: 1px solid var(--line);
 }
 .toolbar::-webkit-scrollbar { display: none; }
+/* The groups of a clip's tools (audit V-165): a thin line between them, and Back always in reach. */
+.tool-group { display: flex; gap: 2px; flex: 0 0 auto; }
+.tool-group + .tool-group { margin-left: 5px; padding-left: 5px; border-left: 1px solid var(--line); }
+.tool-back { position: sticky; left: -6px; z-index: 1; background: var(--bg); }
 .tool {
   flex: 0 0 auto; min-width: 66px; height: 58px; display: grid; justify-items: center; align-content: center; gap: 4px;
   border: 0; border-radius: 10px; background: transparent; color: var(--text); font-size: 11px;
@@ -196,7 +200,7 @@ h1, h2, h3 { margin: 0; }
 .sheet-head h2 { font-size: 16px; }
 .sheet-body { overflow-y: auto; padding: 4px 16px 18px; overscroll-behavior: contain; }
 .sheet-body h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 8px; }
-.slider { display: grid; grid-template-columns: 92px 1fr 48px 32px; align-items: center; gap: 8px; min-height: 44px; }
+.slider { display: grid; grid-template-columns: 108px 1fr 48px 32px; align-items: center; gap: 8px; min-height: 44px; }
 .slider-label { font-size: 13px; user-select: none; }
 .slider-value { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .slider input[type='range'] { width: 100%; height: 28px; accent-color: var(--accent); }
@@ -490,3 +494,10 @@ h1, h2, h3 { margin: 0; }
 /* Layers (v1.6) */
 .layer-moves { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .layer-moves .btn { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; margin-top: 0; }
+
+/* The playhead inside a sheet (audit V-218): stays in view while the sliders scroll. */
+.clip-scrub { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; min-height: 44px; background: var(--panel); }
+.clip-scrub-time { flex: 0 0 auto; min-width: 44px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.clip-scrub-track { position: relative; flex: 1 1 auto; display: flex; align-items: center; height: 44px; }
+.clip-scrub-track input { width: 100%; margin: 0; accent-color: var(--accent); }
+.clip-scrub-key { position: absolute; bottom: 6px; width: 6px; height: 6px; margin-left: -3px; background: var(--accent); transform: rotate(45deg); pointer-events: none; }

@@ -75,12 +75,12 @@ export const PAGES: TaskPage[] = [
       ru: [
         ['Нужен ли интернет?', 'Один раз — чтобы скачать модель распознавания речи (до 225 МБ для русской речи) и трек музыки. Сама речь распознаётся на телефоне и никуда не отправляется.'],
         ['Можно отменить, если что-то вырезалось не так?', 'Да. Кнопка «Отменить всё» возвращает исходное видео, а любой шаг можно поправить на таймлайне.'],
-        ['На каких языках работает?', 'Русский, английский, испанский, португальский, немецкий, французский, итальянский, украинский, турецкий, хинди и японский.'],
+        ['На каких языках работает?', 'Русский, английский и ещё 26 языков: от испанского и польского до японского и арабского.'],
       ],
       en: [
         ['Do I need the internet?', 'Once — to download the speech model (about 77 MB) and a music track. The speech itself is recognized on your phone and never sent anywhere.'],
         ['Can I undo it if something was cut wrong?', 'Yes. “Undo all” brings back the original video, and every step can be adjusted on the timeline.'],
-        ['Which languages work?', 'English, Russian, Spanish, Portuguese, German, French, Italian, Ukrainian, Turkish, Hindi and Japanese.'],
+        ['Which languages work?', 'English, Russian and 26 more, from Spanish and Polish to Japanese and Arabic.'],
       ],
     },
   },
@@ -99,20 +99,20 @@ export const PAGES: TaskPage[] = [
     },
     steps: {
       ru: ['Откройте Kadr и добавьте видео.', 'Нажмите «Субтитры»: распознавание начнётся сразу, а язык и стиль можно поменять в «Настройках».', 'Нажмите «Создать субтитры» и дождитесь распознавания.', 'Исправьте слова, если нужно, и сохраните видео.'],
-      en: ['Open Kadr and add your video.', 'Tap “Captions”, choose the language, layout and style.', 'Tap “Create captions” and wait for the recognition.', 'Fix any words if needed and save the video.'],
+      en: ['Open Kadr and add your video.', 'Tap “Captions”: recognition starts at once, and the language and style are under “Settings”.', 'Wait for the recognition to finish.', 'Fix any words if needed and save the video.'],
     },
     faq: {
       ru: [
         ['Это правда бесплатно?', 'Да, без лимитов по длине и без водяного знака.'],
-        ['Куда уходит звук моего видео?', 'Никуда: речь распознаётся моделью Whisper прямо на телефоне. Из сети скачивается только сама модель, один раз.'],
+        ['Куда уходит звук моего видео?', 'Никуда: речь распознаётся прямо на телефоне. Из сети скачивается только сама модель, один раз.'],
         ['Можно загрузить свои субтитры?', 'Да, Kadr импортирует .srt и .vtt и сохраняет субтитры в .srt.'],
-        ['Насколько точно?', 'Есть три модели: быстрая, точная (по умолчанию) и максимально точная. Чем больше модель, тем меньше ошибок, особенно когда в видео играет музыка.'],
+        ['Насколько точно?', 'Для русской речи есть своя модель: 225 МБ, на слабом телефоне компактная, 132 МБ. Для других языков — три модели от 41 до 249 МБ. Чем больше модель, тем меньше ошибок, особенно когда в видео играет музыка.'],
       ],
       en: [
         ['Is it really free?', 'Yes — no length limits and no watermark.'],
-        ['Where does my video’s audio go?', 'Nowhere: the Whisper model recognizes speech right on your phone. Only the model itself is downloaded, once.'],
+        ['Where does my video’s audio go?', 'Nowhere: speech is recognized right on your phone. Only the model itself is downloaded, once.'],
         ['Can I upload my own subtitles?', 'Yes, Kadr imports .srt and .vtt and saves captions as .srt.'],
-        ['How accurate is it?', 'There are three models: fast, accurate (the default) and most accurate. Bigger models make fewer mistakes, especially with music in the background.'],
+        ['How accurate is it?', 'There are three models, from 41 to 249 MB, with 77 MB by default, and a separate model for Russian speech. Bigger models make fewer mistakes, especially with music in the background.'],
       ],
     },
   },
@@ -136,7 +136,7 @@ export const PAGES: TaskPage[] = [
     faq: {
       ru: [
         ['А слова-паразиты тоже можно убрать?', 'Да: создайте субтитры и откройте «Монтаж по тексту» — отметьте «эээ» и повторы, и они вырежутся из видео.'],
-        ['Не обрежет ли он слова?', 'Вокруг речи оставляется запас тишины, его можно увеличить ползунком «Запас вокруг слов».'],
+        ['Не обрежет ли он слова?', 'Вокруг речи оставляется запас тишины, его можно увеличить ползунком «Запас у слов».'],
         ['Это работает с музыкой на фоне?', 'Хуже: музыку сложно отличить от речи по громкости. Лучше убирать паузы до того, как добавить музыку.'],
       ],
       en: [
@@ -190,8 +190,8 @@ export const PAGES: TaskPage[] = [
       en: 'Kadr has a library of tracks licensed CC0 (public domain): use them anywhere, including monetized videos and ads, with no credit needed. The track is fitted to your video’s length with a fade, and the beat is already marked so you can cut clips on the beat. For a Content ID dispute there is a “Copy license” button.',
     },
     steps: {
-      ru: ['Добавьте видео в Kadr.', 'Нажмите «Музыка» и выберите настроение.', 'Прослушайте треки и нажмите «Добавить».', 'Включите «Тише, когда говорят», если в видео есть речь.'],
-      en: ['Add your video to Kadr.', 'Tap “Music” and pick a mood.', 'Listen to the tracks and tap “Add”.', 'Turn on “Lower when others speak” if your video has speech.'],
+      ru: ['Добавьте видео в Kadr.', 'Нажмите «Музыка» и выберите настроение.', 'Прослушайте треки и нажмите «Добавить».', 'Включите «Приглушать, когда говорят», если в видео есть речь.'],
+      en: ['Add your video to Kadr.', 'Tap “Music” and pick a mood.', 'Listen to the tracks and tap “Add track”.', 'Turn on “Lower when others speak” if your video has speech.'],
     },
     faq: {
       ru: [
@@ -341,13 +341,13 @@ export const PAGES: TaskPage[] = [
     },
     steps: {
       ru: ['Откройте Kadr и добавьте видео.', 'Обрежьте нужный кусок, добавьте текст или стикер.', 'Нажмите «Экспорт», затем «Настройки» и выберите «GIF».', 'Сохраните файл.'],
-      en: ['Open Kadr and add your video.', 'Trim the part you want, add text or a sticker.', 'Tap “Export” and choose “GIF”.', 'Save the file.'],
+      en: ['Open Kadr and add your video.', 'Trim the part you want, add text or a sticker.', 'Tap “Export”, then “Settings”, and choose “GIF”.', 'Save the file.'],
     },
     faq: {
       ru: [
         ['Какой длины может быть GIF?', 'До 30 секунд — GIF тяжёлый формат, длиннее лучше сохранять в MP4.'],
         ['Можно сохранить кадр как фото?', 'Да, в «Экспорт» есть «Фото» — текущий кадр в JPEG.'],
-        ['А только звук?', 'Да, «Аудио» сохраняет звук ролика отдельным файлом.'],
+        ['А только звук?', 'Да, «Звук» сохраняет звук ролика отдельным файлом.'],
       ],
       en: [
         ['How long can the GIF be?', 'Up to 30 seconds — GIF is a heavy format; save longer clips as MP4.'],

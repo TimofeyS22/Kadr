@@ -16,7 +16,7 @@ import {
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
-import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed, useSheetGuard } from './controls';
+import { Chips, ClipScrub, Sheet, Slider, Swatches, Toggle, pct, secs, signed, useSheetGuard } from './controls';
 import { StylePicker } from './picker';
 import { FontPicker } from './FontPicker';
 import { TextLook } from './TextLook';
@@ -201,6 +201,7 @@ function TransformBody({ clip }: { clip: Clip }) {
   const outside = local < 0 || local > clip.duration;
   return (
     <>
+      <ClipScrub clip={clip} keys={TF.flatMap(({ key }) => clip.transform[key].k?.map((x) => x.t) ?? [])} />
       {TF.map(({ key, label, min, max, format, reset }) => {
         const a = clip.transform[key];
         return (
