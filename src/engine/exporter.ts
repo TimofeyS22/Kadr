@@ -11,10 +11,11 @@ import { encoderDelay } from './encoderDelay';
 import { Limiter, LoudnessMeter, normalizeGain } from '../core/dsp';
 import { buildFrame } from '../core/frame';
 import { withoutGuides } from '../core/music';
+import { soundEntries } from './audio';
 import { clipEnd, projectDuration } from '../core/timeline';
 import type { Project, ProjectSettings } from '../core/types';
 import { renderAudioWindow } from './audio';
-import { Compositor } from './compositor';
+import { Compositor, slotOf } from './compositor';
 import { MediaError, MediaPool } from './media';
 import { resolveDrawables } from './render';
 import { warmFaces } from './faces';
@@ -29,7 +30,11 @@ export interface ExportOptions {
   /** Normalize the mix to -14 LUFS with a -1 dBFS limiter (default on). */
   loudness?: boolean;
 }
-export interface ExportResult { blob: Blob; fileName: string; seconds: number }
+export interface ExportResult {
+  blob: Blob; fileName: string; seconds: number;
+  /** The project has sound, but this browser encodes none: the file is silent, and the person is told. */
+  noSound?: boolean;
+}
 
 const SAMPLE_RATE = 48000;
 const AUDIO_WINDOW_S = 2;
@@ -46,6 +51,8 @@ const fileBase = (p: Project) => p.name.replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim(
 class FrameRenderer {
   readonly canvas = document.createElement('canvas');
   readonly pool: MediaPool;
+  /** Frames where a video on screen gave no picture: black in the file, however "Ready" the screen says it is. */
+  unread = 0;
   private readonly compositor: Compositor;
   private readonly text = new TextRasterizer();
   constructor(private readonly p: Project, readonly width: number, readonly height: number) {
@@ -59,11 +66,13 @@ class FrameRenderer {
     const desc = buildFrame(this.p, at);
     const sources = await resolveDrawables(desc, this.pool, this.text, this.width, this.height, false, this.compositor.frameMax);
     this.check();
+    for (const l of desc.layers) if (l.source.kind === 'video' && !sources.has(slotOf(l) ?? '')) this.unread++;
     this.compositor.draw(desc, sources);
     this.check();
     // The export only goes forward: a clip it has passed is never drawn again. Its decoder and frames lived to the end,
     // one decoder per clip (31 clips, 31 decoders and ~5 GB on a Mac), more than a phone has (audit V-171).
     this.pool.sweep(this.liveAt(at), 0);
+    this.pool.trimImages(new Set(desc.layers.flatMap((l) => (l.source.kind === 'image' ? [l.source.assetId] : []))));
   }
   /** Video clips on screen at `t` or starting within half a second (opened ahead, as the preview does). */
   private liveAt(t: number): Set<string> {
@@ -256,6 +265,7 @@ async function openTarget(ext: string, type: string): Promise<Target> {
 
 /** A GPU reset during the export gets this many fresh starts; a device that keeps losing it is told so. */
 const GPU_RETRIES = 1;
+const UNREADABLE = 'Most of this video could not be read: the file may be damaged or cut short. Try exporting it again from the app that made it.';
 const gpuLost = (e: unknown) => e instanceof MediaError && e.message === GPU_LOST;
 
 /**
@@ -278,7 +288,9 @@ async function withGpuRetry<T>(run: () => Promise<T>, onRestart: () => void, sig
 }
 
 /** Renders and encodes the project through the preview's render path (WYSIWYG), sound mixed in sample-aligned windows. */
-export function exportProject(p: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
+export function exportProject(whole: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
+  // Guide tracks are for editing only: one longer than the video wrote black and silence to the file (audit V-102).
+  const p = withoutGuides(whole);
   return withGpuRetry(() => exportOnce(p, opts, onProgress, signal), () => onProgress(0), signal);
 }
 
@@ -309,8 +321,8 @@ async function exportOnce(
   output.addVideoTrack(video, { frameRate: opts.fps });
   const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, bitrate: QUALITY_HIGH }) : null;
   if (audio) output.addAudioTrack(audio);
-  // Guide tracks are for editing only; the encoder's priming is taken off the start so the sound meets the picture.
-  const mix = new MixStream(withoutGuides(p), frames.pool, duration, audioCodec ? await encoderDelay(audioCodec, 2, SAMPLE_RATE) : 0);
+  // The encoder's priming is taken off the start so the sound meets the picture.
+  const mix = new MixStream(p, frames.pool, duration, audioCodec ? await encoderDelay(audioCodec, 2, SAMPLE_RATE) : 0);
   // Loudness pre-pass takes the first 5% of the progress bar (audio renders far faster than video).
   const pre = audio && opts.loudness !== false ? 0.05 : 0;
 
@@ -335,11 +347,12 @@ async function exportOnce(
     }
     await guard.race(pumpAudio(Infinity));
     frames.check(); // the last frame went to the encoder with the context it was drawn with
+    if (frames.unread > count / 2) throw new MediaError(UNREADABLE); // audit V-161, V-168
     video.close();
     audio?.close();
     await guard.race(output.finalize());
     const blob = await result();
-    return { blob, fileName: `${fileBase(p)}.${mp4 ? 'mp4' : 'webm'}`, seconds: (performance.now() - started) / 1000 };
+    return { blob, fileName: `${fileBase(p)}.${mp4 ? 'mp4' : 'webm'}`, seconds: (performance.now() - started) / 1000, noSound: !audio && soundEntries(p).length > 0 };
   } catch (e) {
     // A stuck encoder holds a graceful end forever: after a stall, or a Cancel that cannot end within ABANDON_MS,
     // the encoders are closed outright.
@@ -359,7 +372,8 @@ async function exportOnce(
 }
 
 /** The whole mix as an audio file: M4A (AAC) where available, else WebM (Opus). */
-export async function exportAudio(p: Project, loudness: boolean, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
+export async function exportAudio(whole: Project, loudness: boolean, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
+  const p = withoutGuides(whole);
   const started = performance.now();
   const duration = projectDuration(p);
   if (duration <= 0) throw new MediaError('The timeline is empty');
@@ -370,7 +384,7 @@ export async function exportAudio(p: Project, loudness: boolean, onProgress: (f:
   const audio = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
   output.addAudioTrack(audio);
   const pool = new MediaPool(16);
-  const mix = new MixStream(withoutGuides(p), pool, duration, await encoderDelay(codec, 2, SAMPLE_RATE));
+  const mix = new MixStream(p, pool, duration, await encoderDelay(codec, 2, SAMPLE_RATE));
   const pre = loudness ? 0.4 : 0;
   try {
     await output.start();
@@ -396,7 +410,7 @@ export async function exportAudio(p: Project, loudness: boolean, onProgress: (f:
 
 /** One frame at time `t` as a JPEG in the export resolution. */
 export function exportFrame(p: Project, t: number, resolution: Resolution): Promise<ExportResult> {
-  return withGpuRetry(() => frameOnce(p, t, resolution), () => undefined);
+  return withGpuRetry(() => frameOnce(withoutGuides(p), t, resolution), () => undefined);
 }
 
 async function frameOnce(p: Project, t: number, resolution: Resolution): Promise<ExportResult> {
@@ -420,7 +434,7 @@ export const gifSize = (s: ProjectSettings): [number, number] => {
 
 /** Animated GIF (looping, 12 fps, 480 px long side) with one palette sampled across the video: no flicker. */
 export function exportGif(p: Project, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
-  return withGpuRetry(() => gifOnce(p, onProgress, signal), () => onProgress(0), signal);
+  return withGpuRetry(() => gifOnce(withoutGuides(p), onProgress, signal), () => onProgress(0), signal);
 }
 
 async function gifOnce(p: Project, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
@@ -457,17 +471,19 @@ async function gifOnce(p: Project, onProgress: (f: number) => void, signal: Abor
 }
 
 /** Opens the share sheet on phones (save to Photos/Files) or downloads on desktop. Call from a user gesture. */
-export async function saveFile(blob: Blob, fileName: string): Promise<void> {
+/** Offers the file to the person; false when they turned the share sheet down. */
+export async function saveFile(blob: Blob, fileName: string): Promise<boolean> {
   const file = new File([blob], fileName, { type: blob.type });
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
-      return;
+      return true;
     } catch (e) {
-      if ((e as Error).name === 'AbortError') return;
+      if ((e as Error).name === 'AbortError') return false;
     }
   }
   downloadFile(blob, fileName);
+  return true;
 }
 
 /** Saves through the browser's downloads, with no share sheet (needs no fresh tap, so it works when an export finishes). */

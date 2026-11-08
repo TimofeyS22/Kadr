@@ -1,6 +1,7 @@
 // Audio mixing with Web Audio. The same scheduling code drives realtime preview (AudioContext)
 // and export (OfflineAudioContext rendered in windows), so the exported mix matches the preview.
 import { duckBreakpoints, duckGain, mergeRanges } from '../core/duck';
+import { withoutGuides } from '../core/music';
 import { speechRanges } from '../core/silence';
 import { clipEnd, fitFades, soundAssetId, sourceSpan, sourceTime, timelineTimeOf } from '../core/timeline';
 import type { Project, SoundClip } from '../core/types';
@@ -37,13 +38,15 @@ const duckCache = new WeakMap<Project, Promise<[number, number][]>>();
  * Timeline ranges with sound in clips that are not themselves ducked (voices, talking video) — the music
  * clips marked for ducking are lowered during these. Cached per project version.
  */
+/** The sounds music ducks under. A guide is not in the file, so it ducks nothing in the preview either (audit V-130). */
+export const duckSpeakers = (p: Project): SoundEntry[] => soundEntries(withoutGuides(p)).filter((e) => e.duck <= 0);
+
 export function duckRanges(p: Project): Promise<[number, number][]> {
   let r = duckCache.get(p);
   if (!r) {
     r = (async () => {
       const ranges: [number, number][] = [];
-      for (const e of soundEntries(p)) {
-        if (e.duck > 0) continue;
+      for (const e of duckSpeakers(p)) {
         const c = e.clip;
         const peaks = await waveform(soundAssetId(c));
         for (const [a, b] of speechRanges(peaks, PEAKS_PER_SEC, c.in, c.in + sourceSpan(c), { threshold: 0.02, minPause: 0.5, pad: 0.05 })) {

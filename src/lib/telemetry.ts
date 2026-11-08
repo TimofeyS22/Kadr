@@ -24,6 +24,8 @@ export function errorMessage(e: unknown): string {
   noteError(e); // the error toast showing this text keeps the details (lib/errorLog.ts)
   if (isStaleCode(e)) return updatingMessage(); // the page is reloading into a new version (lib/update.ts)
   // The browser's own words ("Load failed", "The quota has been exceeded.") say nothing a person can act on.
+  // Browsers report a codec taken back under the same name ("Codec reclaimed…"): that is no reason to delete projects (audit V-170).
+  if (e instanceof DOMException && e.name === 'QuotaExceededError' && /codec|decod|encod/i.test(e.message)) return t('The video decoder of this device stopped. Close other apps, or restart the browser, and try again.');
   if (e instanceof DOMException && e.name === 'QuotaExceededError') return t('Not enough storage for Kadr on this device. Delete old projects or free up space, then try again.');
   if (e instanceof TypeError && /^(Load failed|Failed to fetch|NetworkError)/i.test(e.message)) {
     return navigator.onLine ? t('Could not reach the network. Check the connection and try again.') : t('No internet connection.');

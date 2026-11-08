@@ -28,3 +28,11 @@ export async function diskFile(prefix: string, ext: string): Promise<DiskFile | 
     return null;
   }
 }
+
+/** Removes the export and backup files kept on disk; one still being written keeps its lock and stays. */
+export async function clearDiskFiles(): Promise<void> {
+  try {
+    const root = await navigator.storage.getDirectory();
+    for await (const name of root.keys()) if (name.startsWith('export-') || name.startsWith('backup-')) await root.removeEntry(name).catch(() => undefined);
+  } catch { /* no file system here: nothing was kept on it */ }
+}

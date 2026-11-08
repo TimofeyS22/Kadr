@@ -66,6 +66,10 @@ export interface EditorState {
   setMulti(ids: string[] | null): void;
   toggleMulti(id: string): void;
   openSheet(s: SheetId | null, transitionFor?: string): void;
+  /** What closing the open sheet would lose, in words; the first attempt says it, a second one closes. */
+  sheetGuard: string | null;
+  /** The person closes the sheet (Done, a swipe, Esc): false when it stayed open to say what would be lost. */
+  closeSheet(): boolean;
   setTime(t: number): void;
   setPlaying(b: boolean): void;
   setZoom(z: number): void;
@@ -78,6 +82,9 @@ export interface EditorState {
 }
 
 let toastId = 0;
+/** A second close within this long of the warning means it (see closeSheet). */
+const GUARD_MS = 4000;
+let warnedAt = -Infinity;
 
 const validSelection = (p: Project | null, id: string | null) => (p && id && findClip(p, id) ? id : null);
 
@@ -145,6 +152,20 @@ export const useEditor = create<EditorState>()((set, get) => ({
   setMulti: (ids) => set({ multi: ids, sheet: null }),
   toggleMulti: (id) => set((s) => ({ multi: s.multi?.includes(id) ? s.multi.filter((x) => x !== id) : [...(s.multi ?? []), id] })),
   openSheet: (sheet, transitionFor) => set({ sheet, transitionFor: transitionFor ?? null }),
+  sheetGuard: null,
+  closeSheet: () => {
+    const guard = get().sheetGuard;
+    if (guard && performance.now() - warnedAt > GUARD_MS) {
+      warnedAt = performance.now();
+      get().toast(guard);
+      return false;
+    }
+    warnedAt = -Infinity;
+    // A field still in focus saves on blur, and an element taken away never blurs: a corrected line was lost (audit V-217).
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    set({ sheet: null, transitionFor: null });
+    return true;
+  },
   setTime: (time) => set({ time }),
   setPlaying: (playing) => set({ playing }),
   setZoom: (zoom) => set({ zoom: Math.min(600, Math.max(8, zoom)) }),

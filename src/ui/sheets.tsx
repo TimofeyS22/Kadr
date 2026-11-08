@@ -17,7 +17,7 @@ import { TEXT_BG_PADDING, TEXT_LINE_HEIGHT } from '../engine/text';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
-import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed } from './controls';
+import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed, useSheetGuard } from './controls';
 import { StylePicker } from './picker';
 import { FontPicker } from './FontPicker';
 import { drawTextTile } from './tiles';
@@ -44,9 +44,15 @@ const TITLES: Record<SheetId, string> = {
   pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap', chroma: 'Chroma key', voice: 'Voice', layers: 'Layers',
 };
 
+/** The sheets that are about the project, not about a selected clip. */
+const NO_CLIP = new Set<SheetId>(['export', 'camera', 'music', 'reel', 'canvas', 'transition', 'captions', 'voiceover', 'stickers', 'sfx']);
+
 export function Sheets() {
   const sheet = useEditor((s) => s.sheet);
   const clip = useSelected();
+  // A sheet about a clip outlives its clip after an Undo: nothing to show, and the editor stays folded for it (audit V-158).
+  const orphan = !!sheet && !clip && !NO_CLIP.has(sheet);
+  useEffect(() => { if (orphan) useEditor.getState().openSheet(null); }, [orphan]);
   if (!sheet) return null;
   if (sheet === 'export') return <ExportSheet />;
   if (sheet === 'camera') return <CameraSheet />;
@@ -355,6 +361,7 @@ function CanvasBody() {
 function useSoundJob(clipId: string) {
   const [busy, setBusy] = useState<number | null>(null);
   useHoldUpdates(busy !== null);
+  useSheetGuard(busy !== null ? t('This is still running. Tap again to stop it.') : null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
   const run = async (change: (c: SoundClip) => void) => {

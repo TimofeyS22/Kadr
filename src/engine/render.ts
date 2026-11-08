@@ -24,7 +24,7 @@ export async function resolveDrawables(
       if (s.kind === 'video') {
         // The person cutout and face detection read the pixels on this thread, upright: those layers keep a canvas.
         const f = await pool.picture(s.clipId, s.assetId, s.time, fast, cutout.has(slot) || faces.has(slot) ? 0 : frameMax);
-        if (f) out.set(slot, { image: f.image, w: f.width, h: f.height, turn: f.turn, key: `${s.clipId}:${f.timestamp}:${f.exact ? 1 : 0}`, approx: !f.exact });
+        if (f) out.set(slot, { image: f.image, w: f.width, h: f.height, turn: f.turn, key: `${s.clipId}:${s.assetId}:${f.timestamp}:${f.exact ? 1 : 0}`, approx: !f.exact });
       } else if (s.kind === 'image') {
         const b = await pool.image(s.assetId);
         out.set(slot, { image: b, w: b.width, h: b.height, key: s.assetId });

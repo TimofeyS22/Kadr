@@ -2,7 +2,7 @@
 // The orchestration (transcription, waveforms, music download, commits) lives in ui/autoreel.ts.
 import { anim, defaultTransform, uid } from './defaults';
 import { coverScale, fillerIndices } from './reframe';
-import { DEFAULT_PAUSES, speechRanges, wordCutRange, type PauseOptions } from './silence';
+import { DEFAULT_PAUSES, silenceLevel, speechRanges, wordCutRange, type PauseOptions } from './silence';
 import { clipEnd, isMedia, mainTrack, sourceTime, timelineTimeOf } from './timeline';
 import type { CaptionWord, MediaClip, Project, TextClip } from './types';
 
@@ -18,7 +18,7 @@ const HOOK_MAX_WORDS = 7;
 export function pauseCuts(c: MediaClip, peaks: Float32Array, pps: number, o: PauseOptions = DEFAULT_PAUSES): [number, number][] {
   if (c.curve) return [];
   const from = c.in, to = sourceTime(c, clipEnd(c));
-  const keep = speechRanges(peaks, pps, from, to, o);
+  const keep = speechRanges(peaks, pps, from, to, { ...o, threshold: silenceLevel(peaks, pps, from, to, o.threshold) });
   if (!keep.length) return [];
   const cuts: [number, number][] = [];
   let cursor = from;

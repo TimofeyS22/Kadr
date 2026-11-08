@@ -43,7 +43,7 @@ export const RU: Record<string, string> = {
 
   // Templates
   'Slideshow': 'Слайдшоу',
-  'Photos with gentle zoom and cross-fades, music fades out at the end.': 'Фото с плавным наездом и растворениями, музыка затихает в конце.',
+  'Photos with gentle zoom and cross-fades. Pick a music file with them and it fades out at the end.': 'Фото с плавным наездом и растворениями. Выберите вместе с ними музыку, и она затихнет в конце.',
   'Beat edit': 'Монтаж под бит',
   'Cuts land on the beat of your music, with a punch-in on every cut.': 'Склейки попадают в бит музыки, с акцентом на каждой.',
   'Vlog': 'Влог',
@@ -795,4 +795,18 @@ export const RU: Record<string, string> = {
   'Over it: {above}. Under it: {below}.': 'Над ним: {above}. Под ним: {below}.',
   'Layers count only what is on screen at the same time. A new overlay goes under captions and text.': 'Слои считаются среди того, что на экране одновременно. Новое наложение ложится под субтитры и текст.',
   'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.': 'Видеодекодер устройства остановился. Закройте другие приложения или перезапустите браузер и попробуйте снова.',
+  // Audit 2026-11 (docs/13)
+  'Your changes are saved.': 'Изменения сохранены.',
+  'Most of this video could not be read: the file may be damaged or cut short. Try exporting it again from the app that made it.': 'Большую часть видео не удалось прочитать: файл, возможно, повреждён или обрезан. Попробуйте заново сохранить его в приложении, которым он сделан.',
+  '{n} media files of this project are missing from this device, so they are not in the backup.': 'Файлов проекта нет на устройстве: {n}. В копию они не вошли.',
+  'Could not read the sound of this clip: {error}': 'Не удалось прочитать звук клипа: {error}',
+  'No person found in this clip, so the background stays.': 'В клипе не нашлось человека, поэтому фон остался.',
+  'Our story': 'Наша история', 'Today': 'Сегодня', 'Before': 'До', 'After': 'После', '“Write your quote here.”': '«Напишите здесь свою цитату.»', 'YOUR TITLE': 'ВАШ ЗАГОЛОВОК',
+  'Could not delete the project: {error}': 'Не удалось удалить проект: {error}',
+  'The export is still running. Tap again to stop it.': 'Экспорт ещё идёт. Нажмите ещё раз, чтобы остановить его.',
+  'The video is not saved yet. Tap again to discard it.': 'Видео ещё не сохранено. Нажмите ещё раз, чтобы выбросить его.',
+  'Captions are still being made. Tap again to stop.': 'Субтитры ещё создаются. Нажмите ещё раз, чтобы остановить.',
+  'The reel is still being made. Tap again to stop.': 'Рилс ещё собирается. Нажмите ещё раз, чтобы остановить.',
+  'This is still running. Tap again to stop it.': 'Работа ещё идёт. Нажмите ещё раз, чтобы остановить её.',
+  'This browser cannot encode sound, so the file has no sound. Try Chrome or Safari.': 'Этот браузер не умеет кодировать звук, поэтому файл без звука. Попробуйте Chrome или Safari.',
 };

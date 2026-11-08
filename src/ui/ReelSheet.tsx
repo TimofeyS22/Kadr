@@ -12,7 +12,7 @@ import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
 import { projectDuration } from '../core/timeline';
 import { DEFAULT_REEL, makeReel, reelUsesSpeech, undoSteps, type ReelOptions, type ReelReport } from './autoreel';
 import { PaceBar, learnPace, speechStages } from './pace';
-import { Chips, Toggle } from './controls';
+import { Chips, Toggle, useSheetGuard } from './controls';
 import { MOOD_LABEL } from './MusicSheet';
 import { StylePicker } from './picker';
 import { drawCaptionTile } from './tiles';
@@ -34,6 +34,7 @@ export function ReelBody() {
   const [o, setO] = useState(loadOptions);
   const [phase, setPhase] = useState<Phase>({ kind: 'setup' });
   useHoldUpdates(phase.kind === 'running');
+  useSheetGuard(phase.kind === 'running' ? t('The reel is still being made. Tap again to stop.') : null);
   const abort = useRef<AbortController | null>(null);
   const pace = useRef<Pace | null>(null);
   const set = (patch: Partial<ReelOptions>) => setO((x) => { const n = { ...x, ...patch }; saveOptions(n); return n; });

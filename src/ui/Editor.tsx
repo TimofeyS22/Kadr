@@ -2,12 +2,12 @@ import { produce } from 'immer';
 import { ChevronLeft, Pause, Play, Redo2, Smartphone, Undo2, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { runStartTask } from './tasks';
-import { normalizeProject, projectDuration } from '../core/timeline';
+import { normalizeProject, projectDuration, withUsedAssets } from '../core/timeline';
 import type { Project } from '../core/types';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
-import { ProjectConflict, clearJournal, forgetProject, journalProject, loadProject, onSavedElsewhere, saveProject } from '../storage/db';
+import { ProjectConflict, clearJournal, deleteBlob, forgetProject, journalProject, loadProject, onSavedElsewhere, saveProject } from '../storage/db';
 import { startExport } from './ExportSheet';
 import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
 import { formatTime } from './format';
@@ -22,7 +22,13 @@ import { t } from '../lib/i18n';
 
 const snapshot = () => Promise.race([player.snapshot(), new Promise<null>((r) => setTimeout(() => r(null), 800))]);
 
+/** After a failed autosave, the next try comes this soon. */
+const SAVE_RETRY_MS = 4000;
+/** However many edits follow one another, the first of them is on disk within this long. */
+const SAVE_MAX_WAIT_MS = 2500;
+
 export async function leaveEditor(): Promise<void> {
+  if (useEditor.getState().sheetGuard && !useEditor.getState().closeSheet()) return; // an export or a file not saved yet
   player.pause();
   const p = useEditor.getState().project;
   if (p) {
@@ -53,7 +59,10 @@ export function Editor({ id }: { id: string }) {
     loadProject(id).then((p) => {
       if (!alive) return;
       if (!p) { setMissing(true); return; }
-      useEditor.getState().open(produce(p, (d) => { normalizeProject(d); }));
+      const q = withUsedAssets(p);
+      // Media no clip reaches any more (deleted from the project; undo does not outlive the session) leaves the device.
+      for (const old of Object.keys(p.assets)) if (!q.assets[old]) void deleteBlob(old).catch(() => undefined);
+      useEditor.getState().open(produce(q, (d) => { normalizeProject(d); }));
       const task = useEditor.getState().startTask;
       if (task) { useEditor.setState({ startTask: null }); runStartTask(task); }
       // Sound processed before v1.2.1 was ~44 ms behind the picture: rebuild it once, so nothing drifts or goes missing.
@@ -65,7 +74,7 @@ export function Editor({ id }: { id: string }) {
       // The user's own fonts: register, then redraw text that may have used a fallback meanwhile.
       if (p.fonts) void import('../engine/customFonts').then((m) => m.registerProjectFonts(p)).then(() => { player.text.clear(); player.requestRender(); });
       track('project_opened', { clips: p.tracks.reduce((n, t) => n + t.clips.length, 0) });
-    }).catch((e) => useEditor.getState().toast(errorMessage(e), 'error'));
+    }).catch((e) => { useEditor.getState().toast(errorMessage(e), 'error'); setMissing(true); }); // not "Opening…" for ever
     return () => { alive = false; };
   }, [id]);
 
@@ -83,24 +92,44 @@ export function Editor({ id }: { id: string }) {
   useEffect(() => {
     let timer = 0;
     let pending: Project | null = null;
+    let firstEdit = 0;
     // Hiding: the page may be gone before IndexedDB finishes, so the edits are also journaled synchronously (v1.4.3).
     // A save that failed while the page was hidden (WebKit drops IndexedDB in the background) is made again when the
     // page is back, and said only if that fails too; before, the edit waited for the next one (audit V-120).
     let retried = false;
+    // A save that failed with the page in view is tried again on its own: the edits stayed on screen while nothing wrote
+    // them, and the reload lost them (audit V-185). Said once, and again only when it does get through.
+    let failing = false;
+    /** The version being written right now: if the page hides meanwhile, it may never get there. */
+    let writing: { p: Project; seq: number } | null = null;
     const flush = (hiding = false) => {
       clearTimeout(timer);
-      if (!pending || useEditor.getState().elsewhere) return; // changed in another tab: the person chooses first
+      if (useEditor.getState().elsewhere) return; // changed in another tab: the person chooses first
+      if (!pending) {
+        if (hiding && writing) writing.seq = journalProject(writing.p);
+        return;
+      }
       const p = pending;
       pending = null;
-      const seq = hiding ? journalProject(p) : 0;
+      const job = { p, seq: hiding ? journalProject(p) : 0 };
+      writing = job;
       saveProject(p).then(
-        () => { retried = false; if (seq) clearJournal(p.id, seq); },
+        () => {
+          if (writing === job) writing = null;
+          retried = false;
+          if (job.seq) clearJournal(p.id, job.seq);
+          if (failing) { failing = false; useEditor.getState().toast(t('Your changes are saved.')); }
+        },
         (e) => {
+          if (writing === job) writing = null;
           pending ??= p; // a newer edit holds this one too
           if (e instanceof ProjectConflict) { useEditor.setState({ elsewhere: true }); return; }
           if (document.visibilityState === 'hidden' && !retried) { retried = true; return; }
           retried = false;
-          useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error');
+          if (!failing) useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error');
+          failing = true;
+          clearTimeout(timer);
+          timer = window.setTimeout(flush, SAVE_RETRY_MS);
         },
       );
     };
@@ -108,9 +137,11 @@ export function Editor({ id }: { id: string }) {
     const unsub = useEditor.subscribe((s, prev) => {
       if (s.session !== prev.session) { pending = null; clearTimeout(timer); return; } // opened, not edited
       if (!s.project || !prev.project || s.project === prev.project) return;
+      // Edits in a row put the save off, and a crash took all of them: 78 edits over 30 s were never written (audit V-109).
+      if (!pending) firstEdit = performance.now();
       pending = s.project;
       clearTimeout(timer);
-      timer = window.setTimeout(flush, 600);
+      timer = window.setTimeout(flush, Math.min(600, Math.max(0, firstEdit + SAVE_MAX_WAIT_MS - performance.now())));
     });
     const unsubTabs = onSavedElsewhere((pid) => { if (pid === useEditor.getState().project?.id) useEditor.setState({ elsewhere: true }); });
     const onHide = () => { if (document.visibilityState === 'hidden') flush(true); else if (pending) flush(); };
@@ -133,7 +164,7 @@ export function Editor({ id }: { id: string }) {
       if (key === ' ') { e.preventDefault(); player.toggle(); }
       else if (key === 's') splitAtPlayhead();
       else if (key === 'delete' || key === 'backspace') { if (s.multi) deleteMulti(); else deleteSelected(); }
-      else if (key === 'escape') { s.openSheet(null); s.select(null); }
+      else if (key === 'escape') { if (s.closeSheet()) s.select(null); }
       else if (key === 'arrowleft' || key === 'arrowright') {
         e.preventDefault();
         const step = e.shiftKey ? 1 : 1 / (s.project?.settings.fps ?? 30);

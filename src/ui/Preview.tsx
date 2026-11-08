@@ -67,10 +67,12 @@ export function Preview() {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const g = useRef<Gesture | null>(null);
 
+  const [surface, setSurface] = useState(0); // a new one when the GPU does not give the old one back
   useEffect(() => {
+    player.onContextGone = () => setSurface((n) => n + 1);
     player.attach(canvas.current!);
-    return () => player.detach();
-  }, []);
+    return () => { player.onContextGone = null; player.detach(); };
+  }, [surface]);
 
   // iOS pans the page under a finger (most visibly while the keyboard is up) despite touch-action: none, so moves
   // on the preview are cancelled natively; pointer events still arrive. Taps and double taps are unaffected.
@@ -101,7 +103,7 @@ export function Preview() {
     const ro = new ResizeObserver(fit);
     ro.observe(w);
     return () => ro.disconnect();
-  }, [aspect, safeZones]);
+  }, [aspect, safeZones, surface]);
 
   // Selection outline follows the rendered layer.
   useEffect(() => {
@@ -291,7 +293,7 @@ export function Preview() {
 
   return (
     <div className="preview" ref={wrap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDoubleClick}>
-      <canvas ref={canvas} className="preview-canvas" />
+      <canvas key={surface} ref={canvas} className="preview-canvas" />
       <div ref={guideV} className="guide v" aria-hidden />
       <div ref={guideH} className="guide h" aria-hidden />
       <div ref={angleTag} className="angle-tag" aria-live="polite" />

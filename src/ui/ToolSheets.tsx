@@ -20,7 +20,7 @@ import { VoiceRecorder } from '../engine/recorder';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles } from './actions';
-import { Chips, Slider, Swatches, Toggle, pct } from './controls';
+import { Chips, Slider, Swatches, Toggle, pct, useSheetGuard } from './controls';
 import { PaceBar, learnPace, speechStage, speechStages } from './pace';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
@@ -107,7 +107,9 @@ export function VoiceoverBody() {
   const startAt = useRef(0);
   const raf = useRef(0);
 
+  const gone = useRef(false);
   useEffect(() => () => {
+    gone.current = true;
     rec.current?.cancel();
     cancelAnimationFrame(raf.current);
     player.setMuted(false);
@@ -119,6 +121,8 @@ export function VoiceoverBody() {
     try {
       const r = new VoiceRecorder();
       await r.start();
+      // The sheet closed while the microphone was opening: nobody would ever stop this recording (audit V-224).
+      if (gone.current) { r.cancel(); return; }
       rec.current = r;
       startAt.current = player.time;
       const t0 = performance.now();
@@ -257,6 +261,7 @@ export function CaptionsBody() {
   // What the job is doing, as words; the bar itself is drawn from the pace (docs/09 Q4).
   const [progress, setProgress] = useState<string | null>(null);
   useHoldUpdates(progress !== null);
+  useSheetGuard(progress !== null ? t('Captions are still being made. Tap again to stop.') : null);
   const pace = useRef<Pace | null>(null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);

@@ -11,6 +11,8 @@ import { TextRasterizer } from './text';
 
 const PREVIEW_MAX_DIM = 1280;
 const PRELOAD_S = 0.7;
+/** How long a lost GPU context may take to come back before the preview gets a new canvas. */
+const CONTEXT_MS = 2500;
 
 export class Player {
   readonly pool = new MediaPool(PREVIEW_MAX_DIM);
@@ -28,18 +30,27 @@ export class Player {
   private captureWaiters: ((canvas: HTMLCanvasElement | null) => void)[] = [];
   private captureFrom: Project | null = null;
   private idleSweep = 0;
+  private contextTimer = 0;
   playing = false;
   time = 0;
   bounds: LayerBounds[] = [];
   onTick: ((t: number) => void) | null = null;
   onPlayingChange: ((playing: boolean) => void) | null = null;
   onError: ((e: unknown) => void) | null = null;
+  /** The GPU took the preview's context and did not give it back: the canvas has to be replaced. */
+  onContextGone: (() => void) | null = null;
 
   get canvas(): HTMLCanvasElement | null { return this.compositor?.canvas ?? null; }
   get duration(): number { return this.project ? projectDuration(this.project) : 0; }
 
   attach(canvas: HTMLCanvasElement): void {
-    this.compositor = new Compositor(canvas);
+    const comp = this.compositor = new Compositor(canvas);
+    // Not all the GPU's losses come back (audit V-228): what is restored redraws itself; what is not gets a new canvas.
+    comp.onRestored = () => { clearTimeout(this.contextTimer); this.requestRender(); };
+    comp.onLost = () => {
+      clearTimeout(this.contextTimer);
+      this.contextTimer = window.setTimeout(() => { if (this.compositor === comp && comp.isLost()) this.onContextGone?.(); }, CONTEXT_MS);
+    };
     const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 300));
     idle(() => this.audio.warm());
     this.audio.onError = (e) => this.onError?.(e);
@@ -48,9 +59,11 @@ export class Player {
 
   detach(): void {
     this.pause();
+    clearTimeout(this.contextTimer);
     this.compositor?.dispose();
     this.compositor = null;
     this.pool.sweep(new Set(), 0);
+    this.pool.trimImages(new Set(), 0);
   }
 
   onFrame(fn: () => void): () => void {
@@ -201,6 +214,7 @@ export class Player {
       }
     }
     this.pool.sweep(keep);
+    this.pool.trimImages(new Set(desc.layers.flatMap((l) => (l.source.kind === 'image' ? [l.source.assetId] : []))));
     // The preview renders nothing while it is still, so nothing closed the decoders of clips the playhead passed on its
     // way (a scrub across 8 clips kept 8 hardware decoders, which a phone does not have to spare: audit V-171). They
     // close once the screen has been still for a moment.

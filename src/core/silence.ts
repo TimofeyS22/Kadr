@@ -10,6 +10,20 @@ export interface PauseOptions {
 }
 
 export const DEFAULT_PAUSES: PauseOptions = { threshold: 0.03, minPause: 0.45, pad: 0.12 };
+/** Silence starts this far below the recording's loudest moments (about −14 dB). */
+const QUIET_SHARE = 0.19;
+
+/**
+ * The silence level for this recording: the default, but lower for a quiet one. A fixed level read a quiet recording's
+ * speech as silence: 81 s of it came out as 21 s, the words gone (audit V-260). Measured from its loudest moments, so a
+ * recording of normal level keeps the default.
+ */
+export function silenceLevel(peaks: Float32Array, pps: number, from: number, to: number, base = DEFAULT_PAUSES.threshold): number {
+  const part = Array.from(peaks.subarray(Math.max(0, Math.floor(from * pps)), Math.min(peaks.length, Math.ceil(to * pps)))).sort((a, b) => a - b);
+  if (!part.length) return base;
+  const loud = part[Math.floor((part.length - 1) * 0.99)];
+  return Math.min(base, loud * QUIET_SHARE);
+}
 
 /** Source-time ranges to keep inside [from, to), given peak amplitudes sampled at `pps` bins per second. */
 export function speechRanges(peaks: Float32Array, pps: number, from: number, to: number, o: PauseOptions): [number, number][] {

@@ -10,8 +10,20 @@ import { t } from '../lib/i18n';
 /** Px of downward drag before the sheet follows the finger (taps on the header stay taps). */
 const DRAG_SLOP = 8;
 
+/**
+ * While this sheet holds work closing it would lose (an export, captions being made, a file not saved yet), `message`
+ * says what: the first close warns, a second one closes (audit V-225: Done, a swipe or Esc silently threw it away).
+ */
+export function useSheetGuard(message: string | null): void {
+  useEffect(() => {
+    if (!message) return;
+    useEditor.setState({ sheetGuard: message });
+    return () => useEditor.setState({ sheetGuard: null });
+  }, [message]);
+}
+
 export function Sheet({ title, children }: { title: string; children: ReactNode }) {
-  const close = () => useEditor.getState().openSheet(null);
+  const close = () => { useEditor.getState().closeSheet(); };
   // Swipe the header down to close, like the system sheets (docs/09 Q2). The sheet moves through its style, not React
   // state: the bodies are heavy and the finger needs 60 FPS.
   const ref = useRef<HTMLElement>(null);
@@ -40,6 +52,7 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
     el.classList.remove('dragging');
     // Past 30% of its height, or a flick (> 0.5 px/ms), closes it; otherwise it springs back.
     if (d.y - d.y0 > 0.3 * el.offsetHeight || d.v > 0.5) {
+      if (useEditor.getState().sheetGuard) { slide(0); close(); return; } // it may stay open: no slide-away
       slide(el.offsetHeight);
       if (matchMedia('(prefers-reduced-motion: reduce)').matches) close(); else setTimeout(close, 160);
     } else slide(0);

@@ -2,7 +2,7 @@
 import { Zip, ZipPassThrough, strFromU8, strToU8 } from 'fflate';
 import { uid } from '../core/defaults';
 import { repairBackup } from '../core/restore';
-import { normalizeProject, remapAssets } from '../core/timeline';
+import { normalizeProject, remapAssets, withUsedAssets } from '../core/timeline';
 import { SCHEMA_VERSION, type Project } from '../core/types';
 import { deleteBlob, getBlob, putBlob, saveProject } from '../storage/db';
 import { ensureRoom } from './importer';
@@ -18,7 +18,7 @@ const DISK_MS = 5000;
  * The backup streams to a file in the origin-private file system where there is one (docs/12 P2): a project with
  * a gigabyte of media does not fit in a phone's memory twice over. Elsewhere it is made in memory as before.
  */
-export async function exportBackup(p: Project, onProgress?: (f: number) => void): Promise<Blob> {
+export async function exportBackup(p: Project, onProgress?: (f: number) => void): Promise<{ blob: Blob; missing: number }> {
   const opening = diskFile('backup', 'zip');
   const disk = await within(opening, DISK_MS, () => { void opening.then((late) => late?.drop()); return null; });
   const parts: Uint8Array<ArrayBuffer>[] = [];
@@ -32,12 +32,12 @@ export async function exportBackup(p: Project, onProgress?: (f: number) => void)
     if (final) finished();
   });
   try {
-    await addEntries(zip, p, () => writing, onProgress);
+    const missing = await addEntries(zip, p, () => writing, onProgress);
     await done;
-    if (!disk) return new Blob(parts, { type: 'application/zip' });
+    if (!disk) return { blob: new Blob(parts, { type: 'application/zip' }), missing };
     await writing;
     await disk.writable.close();
-    return new Blob([await disk.file()], { type: 'application/zip' });
+    return { blob: new Blob([await disk.file()], { type: 'application/zip' }), missing };
   } catch (e) {
     disk?.drop();
     throw e;
@@ -45,14 +45,16 @@ export async function exportBackup(p: Project, onProgress?: (f: number) => void)
 }
 
 /** project.json and every media file and font, read and zipped piece by piece; `written` waits for the disk. */
-async function addEntries(zip: Zip, p: Project, written: () => Promise<void>, onProgress?: (f: number) => void): Promise<void> {
+async function addEntries(zip: Zip, whole: Project, written: () => Promise<void>, onProgress?: (f: number) => void): Promise<number> {
+  const p = withUsedAssets(whole); // what the user deleted from the project stays out of its copies (audit V-126)
   const meta = new ZipPassThrough('project.json');
   zip.add(meta);
   meta.push(strToU8(JSON.stringify(p)), true);
   const ids = [...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)]; // media and the user's fonts
+  let missing = 0;
   for (let i = 0; i < ids.length; i++) {
     const blob = await getBlob(ids[i]);
-    if (!blob) continue;
+    if (!blob) { missing++; continue; } // told to the person now, not on the day the copy is needed (audit V-236)
     const entry = new ZipPassThrough(`media/${ids[i]}`);
     zip.add(entry);
     const reader = blob.stream().getReader();
@@ -66,6 +68,7 @@ async function addEntries(zip: Zip, p: Project, written: () => Promise<void>, on
     onProgress?.((i + 1) / ids.length);
   }
   zip.end();
+  return missing;
 }
 
 const NOT_A_BACKUP = 'This file is not a Kadr project backup (or it was made by a newer version).';

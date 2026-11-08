@@ -1,6 +1,7 @@
 // Local persistence. Projects are small JSON documents; media are Blobs stored as-is
 // (IndexedDB keeps them on disk and Mediabunny reads them in slices).
-import { del, get, set, update, type UseStore } from 'idb-keyval';
+import { del, get, keys, set, update, type UseStore } from 'idb-keyval';
+import { clearDiskFiles } from '../engine/opfs';
 import { projectDuration } from '../core/timeline';
 import type { AspectId, Project } from '../core/types';
 
@@ -73,7 +74,14 @@ function withIndex(fn: (index: ProjectMeta[]) => ProjectMeta[]): Promise<void> {
 }
 
 export async function listProjects(): Promise<ProjectMeta[]> {
-  const index = (await get<ProjectMeta[]>('index', store)) ?? [];
+  const [index, all] = await Promise.all([get<ProjectMeta[]>('index', store).then((x) => x ?? []), keys(store)]);
+  // The list is a cache of the projects, written apart from them: one it lost is still a project (audit V-256).
+  const known = new Set(index.map((m) => m.id));
+  for (const k of all) {
+    if (typeof k !== 'string' || !k.startsWith('p:') || known.has(k.slice(2))) continue;
+    const p = await get<Stored>(k, store);
+    if (p) index.push({ id: p.id, name: p.name, updatedAt: p.updatedAt, duration: projectDuration(p), aspect: p.settings.aspect });
+  }
   return index.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
@@ -113,8 +121,8 @@ export async function loadProject(id: string): Promise<Project | undefined> {
     const fresh = j.base !== undefined ? (stored?.rev ?? 0) === j.base : (stored?.updatedAt ?? 0) < Math.floor(j.seq / 1000);
     if (fresh) {
       seen.set(id, stored?.rev ?? 0);
-      await saveProject(j.project);
-      clearJournal(id, j.seq);
+      // A full disk must not stand between the person and their project (audit V-107): it opens, the journal stays.
+      await saveProject(j.project).then(() => clearJournal(id, j.seq), (e) => console.warn('the journal could not be written back', e));
       return j.project;
     }
     clearJournal(id, j.seq);
@@ -154,10 +162,15 @@ export async function saveProject(p: Project, thumb?: string, force = false): Pr
 export function forgetProject(id: string): void { seen.delete(id); }
 
 export async function deleteProject(id: string): Promise<void> {
-  const p = await loadProject(id);
-  if (p) await Promise.all([...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)].map(deleteBlob));
+  // Read as it is: going through the journal wrote to storage first, and a full disk then refused the delete (audit V-107).
+  const stored = await get<Stored>(`p:${id}`, store);
+  const j = readJournal(id);
+  const media = new Set([stored, j?.project].flatMap((p) => (p ? [...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)] : [])));
+  await Promise.all([...media].map(deleteBlob));
+  if (j) clearJournal(id, j.seq);
   await del(`p:${id}`, store);
   await withIndex((index) => index.filter((m) => m.id !== id));
+  await clearDiskFiles(); // the last export and backup: "its media will be removed" means those too (audit V-189)
 }
 
 // Media storage. Blobs are stored as-is when the browser allows it (disk-backed, cheapest). Safari refuses

@@ -19,7 +19,7 @@ export interface TemplateSpec {
 }
 
 export const TEMPLATES: TemplateSpec[] = [
-  { id: 'slideshow', name: 'Slideshow', description: 'Photos with gentle zoom and cross-fades, music fades out at the end.', aspect: '9:16', visuals: [2, 30], music: 'optional' },
+  { id: 'slideshow', name: 'Slideshow', description: 'Photos with gentle zoom and cross-fades. Pick a music file with them and it fades out at the end.', aspect: '9:16', visuals: [2, 30], music: 'optional' },
   { id: 'beat', name: 'Beat edit', description: 'Cuts land on the beat of your music, with a punch-in on every cut.', aspect: '9:16', visuals: [2, 40], music: 'required' },
   { id: 'vlog', name: 'Vlog', description: 'Your clips joined with quick slides and a title up front.', aspect: '9:16', visuals: [1, 20], music: 'optional' },
   { id: 'beforeAfter', name: 'Before / After', description: 'Two shots stacked with labels.', aspect: '9:16', visuals: [2, 2], music: 'optional' },
@@ -58,7 +58,7 @@ function addMusic(p: Project, music: Asset | undefined, fadeOut = 1.5): void {
 }
 
 /** Builds template `id` into draft `p` from the given assets (already in p.assets). `beats` = music beat grid. */
-export function buildTemplate(p: Project, id: TemplateId, visuals: Asset[], music?: Asset, beats?: number[]): void {
+export function buildTemplate(p: Project, id: TemplateId, visuals: Asset[], music?: Asset, beats?: number[], tr: (s: string) => string = (x) => x): void {
   const main = mainTrack(p);
   switch (id) {
     case 'slideshow': {
@@ -69,7 +69,7 @@ export function buildTemplate(p: Project, id: TemplateId, visuals: Asset[], musi
         if (i > 0) setTransition(p, c.id, { type: 'fade', duration: 0.5 });
       });
       p.settings.background.mode = 'blur';
-      placeClip(p, title('Our story', 0.2, 2.4, 'serif', 0.3));
+      placeClip(p, title(tr('Our story'), 0.2, 2.4, 'serif', 0.3));
       addMusic(p, music);
       break;
     }
@@ -90,7 +90,7 @@ export function buildTemplate(p: Project, id: TemplateId, visuals: Asset[], musi
         if (i > 0) setTransition(p, main.clips[main.clips.length - 1].id, { type: 'slideLeft', duration: 0.35 });
       });
       p.settings.background.mode = 'blur';
-      const t = title('Today', 0.3, 2.5, 'yellow', -0.3);
+      const t = title(tr('Today'), 0.3, 2.5, 'yellow', -0.3);
       t.animIn = { type: 'rise', duration: 0.5 };
       placeClip(p, t);
       addMusic(p, music);
@@ -111,8 +111,8 @@ export function buildTemplate(p: Project, id: TemplateId, visuals: Asset[], musi
         t.animIn = { type: 'fade', duration: 0.3 };
         placeClip(p, t);
       };
-      half(a, -0.25, 'Before');
-      half(b, 0.25, 'After');
+      half(a, -0.25, tr('Before'));
+      half(b, 0.25, tr('After'));
       addMusic(p, music);
       break;
     }
@@ -121,7 +121,7 @@ export function buildTemplate(p: Project, id: TemplateId, visuals: Asset[], musi
       c.adjust.exposure = -0.45;
       insertMain(p, c, 0);
       p.settings.background.mode = 'blur';
-      const q = title('“Write your quote here.”', 0.4, c.duration - 0.4, 'serif', 0);
+      const q = title(tr('“Write your quote here.”'), 0.4, c.duration - 0.4, 'serif', 0);
       q.style = { ...q.style, size: 0.065 };
       q.animIn = { type: 'fade', duration: 0.9 };
       placeClip(p, q);
@@ -135,7 +135,7 @@ export function buildTemplate(p: Project, id: TemplateId, visuals: Asset[], musi
         if (i === 1) setTransition(p, c.id, { type: 'zoom', duration: 0.5 });
       });
       const first = main.clips[0];
-      placeClip(p, title('YOUR TITLE', 0.3, Math.max(1, clipEnd(first) - 0.8), 'outline', 0));
+      placeClip(p, title(tr('YOUR TITLE'), 0.3, Math.max(1, clipEnd(first) - 0.8), 'outline', 0));
       addMusic(p, music);
       break;
     }

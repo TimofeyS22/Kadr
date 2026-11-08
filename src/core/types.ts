@@ -104,7 +104,7 @@ interface MediaRef {
   /** Speed ramp: multipliers of `speed` along the source range (see core/speed.ts). */
   curve?: number[];
 }
-interface Sound {
+export interface Sound {
   volume: number; muted: boolean; fadeIn: number; fadeOut: number;
   /** Processed sound (e.g. noise-reduced) to play instead of the source's own audio. */
   audioAssetId?: string;
@@ -142,7 +142,7 @@ export interface Privacy { faces: boolean; areas: PrivacyArea[]; style: 'blur' |
 export interface LutData { name: string; size: number; data: string }
 export interface LutRef { id: string; intensity: number }
 
-interface Look {
+export interface Look {
   adjust: Adjustments; filter: FilterRef | null; chroma: ChromaKey; crop?: Rect; mask?: Mask;
   effect?: Effect; lut?: LutRef; privacy?: Privacy;
   /** Remove the background behind people (on-device segmentation). */

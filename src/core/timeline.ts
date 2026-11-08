@@ -5,7 +5,7 @@ import { splitWords } from './captions';
 import { RESAMPLE_POINTS, clampRate, curveAt, curveIntegral, subCurve, timeFractionToU, uToTimeFraction } from './speed';
 import { anim, createImageClip, uid } from './defaults';
 import type {
-  Asset, AudioClip, Clip, MediaClip, Project, SoundClip, Track, TrackKind, Transform, Transition, VisualClip,
+  Anim, Asset, AudioClip, Clip, Look, MediaClip, Project, Sound, SoundClip, Track, TrackKind, Transform, Transition, VisualClip,
 } from './types';
 
 export const MIN_CLIP = 0.1;
@@ -112,13 +112,43 @@ export function maxDuration(c: Clip, asset: Asset | undefined): number {
   return MAX_STILL;
 }
 
-function transform(c: Clip): Transform | null {
-  return isVisual(c) ? c.transform : null;
+/**
+ * Copies the listed fields that are set. The lists name every field of the type: a new sound setting or look does not
+ * compile until it is here, so a detached sound or a freeze frame cannot quietly lose it (audit V-108, V-174).
+ */
+function copyFields<T extends object>(fields: Record<keyof T, 1>, from: T, to: T): void {
+  for (const k of Object.keys(fields) as (keyof T)[]) if (from[k] !== undefined) to[k] = clone(from[k]);
+}
+const SOUND_FIELDS: Record<keyof Sound, 1> = { volume: 1, muted: 1, fadeIn: 1, fadeOut: 1, audioAssetId: 1, audioKey: 1, denoise: 1, enhance: 1, keepPitch: 1, voice: 1, duck: 1, guide: 1 };
+const LOOK_FIELDS: Record<keyof Look, 1> = { adjust: 1, filter: 1, chroma: 1, crop: 1, mask: 1, effect: 1, lut: 1, privacy: 1, removeBg: 1, flipX: 1, flipY: 1 };
+
+/** A hidden area moves with the picture: every edit of a clip's time moves its keyframes too (audit V-213). */
+function privacyAnims(c: Clip): Anim[] {
+  return (c.kind === 'video' || c.kind === 'image') && c.privacy ? c.privacy.areas.flatMap((a) => [a.x, a.y]) : [];
 }
 
 function mapClipAnims(c: Clip, fn: (t: number) => number): void {
-  const tf = transform(c);
-  if (tf) for (const a of Object.values(tf)) mapAnimTime(a, fn);
+  if (isVisual(c)) for (const a of Object.values(c.transform)) mapAnimTime(a, fn);
+  for (const a of privacyAnims(c)) mapAnimTime(a, fn);
+}
+
+/**
+ * Where a reversed clip starts in its forward video. The stored point is that of the whole clip when it was reversed; a
+ * piece cut from it, or a trimmed one, shows another part of it, and a reversed file runs backwards (audit V-209).
+ */
+export function forwardIn(p: Project, c: MediaClip): number | null {
+  if (!c.reversedFrom || !p.assets[c.reversedFrom.assetId]) return null;
+  const rev = p.assets[c.assetId];
+  return r6(c.reversedFrom.in + Math.max(0, (rev?.duration ?? 0) - c.in - sourceSpan(c)));
+}
+
+/** After the picture of a clip turned backwards: a hidden area follows what it hides, so its keyframes turn too. */
+export function mirrorPrivacyKeys(c: Clip): void {
+  for (const a of privacyAnims(c)) {
+    if (!a.k) continue;
+    for (const k of a.k) k.t = r6(c.duration - k.t);
+    a.k.reverse();
+  }
 }
 
 /** Lays main-track clips end to end; a clip's transitionIn overlaps it with the previous clip. */
@@ -294,6 +324,13 @@ export function splitClip(p: Project, id: string, t: number, minPiece = MIN_CLIP
     }
     delete right.transitionIn;
   }
+  if ((c.kind === 'video' || c.kind === 'image') && (right.kind === 'video' || right.kind === 'image')) {
+    c.privacy?.areas.forEach((area, i) => {
+      const other = right.privacy!.areas[i];
+      [area.x, other.x] = splitAnim(area.x, local);
+      [area.y, other.y] = splitAnim(area.y, local);
+    });
+  }
   if (isSound(c) && isSound(right)) { c.fadeOut = 0; right.fadeIn = 0; }
   if (c.kind === 'caption' && right.kind === 'caption') [c.words, right.words] = splitWords(c.words, local);
   if (c.kind === 'text' && right.kind === 'text') {
@@ -464,10 +501,9 @@ export function detachAudio(p: Project, id: string): string | null {
   const f = findClip(p, id);
   if (!f || f.clip.kind !== 'video' || !p.assets[f.clip.assetId]?.hasAudio) return null;
   const c = f.clip;
-  const a: AudioClip = {
-    kind: 'audio', id: uid(), assetId: c.assetId, start: c.start, duration: c.duration, in: c.in, speed: c.speed,
-    volume: c.volume, muted: false, fadeIn: c.fadeIn, fadeOut: c.fadeOut, audioAssetId: c.audioAssetId, denoise: c.denoise, curve: c.curve,
-  };
+  const a: AudioClip = { kind: 'audio', id: uid(), assetId: c.assetId, start: c.start, duration: c.duration, in: c.in, speed: c.speed, curve: c.curve, volume: c.volume, muted: false, fadeIn: c.fadeIn, fadeOut: c.fadeOut };
+  copyFields<Sound>(SOUND_FIELDS, c, a);
+  a.muted = false;
   c.muted = true;
   placeClip(p, a);
   return a.id;
@@ -493,12 +529,11 @@ export function insertFreezeFrame(p: Project, clipId: string, t: number, still: 
   if (!f || (f.clip.kind !== 'video' && f.clip.kind !== 'image')) return null;
   const src = f.clip;
   const img = createImageClip(still, t, duration);
-  img.adjust = clone(src.adjust);
-  img.filter = src.filter ? { ...src.filter } : null;
-  img.chroma = { ...src.chroma };
-  if (src.crop) img.crop = { ...src.crop };
+  copyFields<Look>(LOOK_FIELDS, src, img);
   img.blend = src.blend;
   const local = t - src.start;
+  // What the clip hid at this moment stays hidden, where it was: the still does not move.
+  img.privacy?.areas.forEach((a) => { a.x = anim(evalAnimAt(a.x, local)); a.y = anim(evalAnimAt(a.y, local)); });
   for (const k of Object.keys(img.transform) as (keyof Transform)[]) img.transform[k] = anim(evalAnimAt(src.transform[k], local));
   p.assets[still.id] = still;
   if (f.track.kind === 'main') {
@@ -514,6 +549,32 @@ export function insertFreezeFrame(p: Project, clipId: string, t: number, still: 
 }
 
 
+
+/** Every media file the project's clips can reach: their own, the forward copy of a reversed one, the processed sounds. */
+export function usedAssetIds(p: Project): Set<string> {
+  const used = new Set<string>();
+  for (const t of p.tracks) {
+    for (const c of t.clips) {
+      if (!('assetId' in c)) continue;
+      used.add(c.assetId);
+      if (isSound(c) && c.audioAssetId) used.add(c.audioAssetId);
+      if (isMedia(c) && c.reversedFrom) used.add(c.reversedFrom.assetId);
+    }
+  }
+  for (const id of [...used]) {
+    const d = p.assets[id]?.derived;
+    if (!d) continue;
+    for (const x of [d.denoise, d.enhance, ...Object.values(d.pitch ?? {}), ...Object.values(d.voice ?? {})]) if (x) used.add(x);
+  }
+  return used;
+}
+
+/** The project without media no clip reaches (the same object when there is none): what a copy of it must carry. */
+export function withUsedAssets(p: Project): Project {
+  const used = usedAssetIds(p);
+  const kept = Object.entries(p.assets).filter(([id]) => used.has(id));
+  return kept.length === Object.keys(p.assets).length ? p : { ...p, assets: Object.fromEntries(kept) };
+}
 
 /** Gives every asset a new id (used when importing a backup next to existing projects). */
 export function remapAssets(p: Project, idFor: (old: string) => string): void {
@@ -541,6 +602,27 @@ export function remapAssets(p: Project, idFor: (old: string) => string): void {
       if (c.kind === 'video' && c.reversedFrom) c.reversedFrom = { ...c.reversedFrom, assetId: idFor(c.reversedFrom.assetId) };
     }
   }
+}
+
+/**
+ * "Remove pauses": takes out of a clip everything between the given source ranges. A clip on the main track is cut out
+ * of the timeline, so the captions and the end of the video move with it (audit V-178); any other clip is cut in place.
+ */
+export function removeSourceGaps(p: Project, id: string, keep: [number, number][]): void {
+  const f = findClip(p, id);
+  if (!f || !isMedia(f.clip) || f.clip.curve || !keep.length) return;
+  if (f.track.kind !== 'main') { keepSourceRanges(p, id, keep); return; }
+  const c = f.clip;
+  const at = (s: number) => c.start + (s - c.in) / c.speed;
+  const gaps: [number, number][] = [];
+  let cursor = c.in;
+  for (const [a, b] of keep) {
+    if (a > cursor) gaps.push([at(cursor), at(a)]);
+    cursor = b;
+  }
+  const end = c.in + c.duration * c.speed;
+  if (cursor < end) gaps.push([at(cursor), at(end)]);
+  cutTimelineRanges(p, gaps);
 }
 
 /**

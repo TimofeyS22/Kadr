@@ -13,6 +13,8 @@ import { IOS, prepareStaleSounds, staleSoundClips } from './actions';
 import { Chips, Sheet, Toggle } from './controls';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
+import { useSheetGuard } from './controls';
+import { clearDiskFiles } from '../engine/opfs';
 import { keepError, type ErrorEntry } from '../lib/errorLog';
 import { ErrorDetails } from './ErrorDetails';
 
@@ -27,10 +29,14 @@ type Phase = { kind: 'setup' } | { kind: 'running'; progress: number; label?: st
  * themselves; iPhone saves to Photos only through the share sheet, which needs a fresh tap, so it gets one Save button.
  */
 /** The frame rate is not kept: it follows each project's own. */
-interface ExportPrefs { quick: boolean; resolution: Resolution; quality: 'standard' | 'high'; loudness: boolean }
+interface ExportPrefs {
+  quick: boolean; resolution: Resolution; quality: 'standard' | 'high';
+  /** Saved under a new name: every earlier export stored the old default, on, and a file then sounded unlike the preview (audit V-247). */
+  evenLoudness: boolean;
+}
 const PREFS_KEY = 'kadr.exportPrefs';
 function exportPrefs(): ExportPrefs {
-  const base: ExportPrefs = { quick: true, resolution: 1080, quality: 'high', loudness: true };
+  const base: ExportPrefs = { quick: true, resolution: 1080, quality: 'high', evenLoudness: false };
   try { return { ...base, ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<ExportPrefs>) }; } catch { return base; }
 }
 function savePrefs(p: ExportPrefs): void {
@@ -64,34 +70,45 @@ export function ExportSheet() {
   // Consumed once: the Export button asked for a quick export (see startExport). It opens straight on the progress.
   const [auto] = useState(() => { const a = useEditor.getState().startAuto; if (a) useEditor.setState({ startAuto: false }); return a; });
   const [phase, setPhase] = useState<Phase>(() => (auto ? { kind: 'running', progress: 0 } : { kind: 'setup' }));
+  const [saved, setSaved] = useState(false);
+  const save = (r: ExportResult) => void saveFile(r.blob, r.fileName).then((ok) => { if (ok) setSaved(true); });
   useHoldUpdates(phase.kind === 'running' || phase.kind === 'done'); // a reload would lose the export or the file
+  useSheetGuard(phase.kind === 'running' ? t('The export is still running. Tap again to stop it.')
+    : phase.kind === 'done' && !saved && !(phase.quick && !IOS) ? t('The video is not saved yet. Tap again to discard it.') : null);
   const [format, setFormat] = useState<Format>('video');
-  const [loudness, setLoudness] = useState(prefs.loudness);
+  const [loudness, setLoudness] = useState(prefs.evenLoudness);
   const [quick, setQuick] = useState(prefs.quick);
   const abort = useRef<AbortController | null>(null);
+  const done = useRef(false);
+  done.current = phase.kind === 'done';
 
   useEffect(() => {
     // The encoder is asked about each size; a browser that never answers gets the sizes every phone encodes.
+    let alive = true;
     void within(supportedResolutions(project.settings), RESOLUTIONS_MS, () => FALLBACK_RESOLUTIONS).catch(() => FALLBACK_RESOLUTIONS).then((r) => {
+      if (!alive) return; // closed before the answer: starting now would be an export nobody can see or stop (audit V-131)
       setSupported(r);
       // The saved resolution, or the best this device can encode below it.
       const fit = r.includes(prefs.resolution) ? prefs.resolution : r.filter((x) => x <= prefs.resolution).at(-1) ?? r.at(-1);
       if (fit && fit !== prefs.resolution) setResolution(fit);
       if (auto) { if (fit) void run(fit, true); else setPhase({ kind: 'setup' }); }
     });
-    return () => abort.current?.abort();
+    return () => { alive = false; abort.current?.abort(); };
   }, [project.settings]);
+  // The finished file is on the device only while this sheet offers it (audit V-189).
+  useEffect(() => () => { if (done.current) void clearDiskFiles(); }, []);
 
   const duration = projectDuration(project);
   const [w, h] = outputSize(project.settings, resolution);
   const estMb = (QUALITY_MBPS[resolution] * (quality === 'high' ? 1.5 : 1) * (fps > 30 ? 1.4 : 1) * duration) / 8;
 
   async function run(res: Resolution = resolution, isQuick = false) {
-    if (format === 'video') savePrefs({ quick, resolution: res, quality, loudness });
+    if (format === 'video') savePrefs({ quick, resolution: res, quality, evenLoudness: loudness });
     player.pause();
     const ac = new AbortController();
     abort.current = ac;
     setPhase({ kind: 'running', progress: 0 });
+    setSaved(false);
     // Keep the screen on: a phone going to sleep is the most common way long exports die. Not awaited: a lock that
     // never answers must not hold the export.
     const awake = keepAwake();
@@ -186,11 +203,12 @@ export function ExportSheet() {
       {phase.kind === 'done' && (
         <div className="export-progress">
           <p>{t('Ready: {mb} MB in {s} s', { mb: (phase.result.blob.size / 1e6).toFixed(1), s: phase.result.seconds.toFixed(1) })}</p>
+          {phase.result.noSound && <p className="error-text">{t('This browser cannot encode sound, so the file has no sound. Try Chrome or Safari.')}</p>}
           {phase.quick && !IOS && <p className="hint">{t('Saved to Downloads.')}</p>}
           {phase.quick && IOS && <p className="hint">{t('iPhone saves to Photos through the share sheet: tap Save, then “Save Video”.')}</p>}
           {phase.quick && !IOS
-            ? <button className="btn" onClick={() => void saveFile(phase.result.blob, phase.result.fileName)}>{t('Share')}</button>
-            : <button className="btn primary big" onClick={() => void saveFile(phase.result.blob, phase.result.fileName)}>{phase.quick ? t('Save') : t('Save / Share')}</button>}
+            ? <button className="btn" onClick={() => save(phase.result)}>{t('Share')}</button>
+            : <button className="btn primary big" onClick={() => save(phase.result)}>{phase.quick ? t('Save') : t('Save / Share')}</button>}
           <button className="btn" onClick={() => setPhase({ kind: 'setup' })}>{t('Export again')}</button>
         </div>
       )}

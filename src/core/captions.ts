@@ -215,7 +215,7 @@ export function toSrt(clips: CaptionClip[]): string {
 }
 
 // Hours are optional in WebVTT (mm:ss.ttt).
-const TIME = /(?:(\d+):)?(\d{2}):(\d{2})[,.](\d{1,3})/;
+const TIME = /(?:(\d{1,4}):)?(\d{2}):(\d{2})[,.](\d{1,3})/; // hours bounded: a line of digits took minutes to scan (audit V-119)
 const toSec = (m: RegExpExecArray) => +(m[1] ?? 0) * 3600 + +m[2] * 60 + +m[3] + +m[4].padEnd(3, '0') / 1000;
 
 /** Parses SRT or WebVTT cues into words in absolute time. Tolerates BOM, CRLF and styling tags. */
@@ -232,7 +232,7 @@ export function parseSubtitles(text: string): CaptionWord[] {
     const body = lines.slice(i + 1).join(' ').replace(/<[^<>]*>/g, '').trim();
     const cue = words.length ? (words[words.length - 1].cue ?? 0) + 1 : 0;
     const t0 = toSec(m0), t1 = Math.max(toSec(m1), t0 + 0.5); // a cue ending before it starts still shows its text
-    if (body) words.push(...wordsFromSegment(t0, t1, body).map((x) => ({ ...x, cue })));
+    if (body) for (const x of wordsFromSegment(t0, t1, body)) words.push({ ...x, cue }); // not a spread: one huge cue overflowed the stack
   }
   return words.sort((x, y) => x.t0 - y.t0);
 }

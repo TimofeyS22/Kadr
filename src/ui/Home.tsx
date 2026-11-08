@@ -179,8 +179,9 @@ export function Home() {
     setBusy(t('Packing “{name}”…', { name: m.name }));
     try {
       const [{ exportBackup }, { saveFile }] = await Promise.all([import('../engine/backup'), import('../engine/exporter')]);
-      const blob = await exportBackup(p);
+      const { blob, missing } = await exportBackup(p);
       setBusy(null);
+      if (missing) toast(t('{n} media files of this project are missing from this device, so they are not in the backup.', { n: missing }), 'error', 10_000);
       await saveFile(blob, `${m.name.replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim() || 'project'}.kadr`);
       track('backup_saved', { mb: Math.round(blob.size / 1e6) });
     } catch (e) {
@@ -205,7 +206,7 @@ export function Home() {
       const [music] = tpl.music === 'none' ? [] : (await importFiles(musicFiles.slice(0, 1), onError)).filter((a) => a.hasAudio);
       if (visuals.length < tpl.visuals[0] || (tpl.music === 'required' && !music)) return;
       const assets = music ? [...visuals, music] : visuals;
-      let p = createProject(tpl.name, tpl.aspect);
+      let p = createProject(t(tpl.name), tpl.aspect);
       p.assets = Object.fromEntries(assets.map((a) => [a.id, a]));
       let beats: number[] | undefined;
       if (tpl.id === 'beat' && music) {
@@ -214,7 +215,7 @@ export function Home() {
         if (grid) { beats = grid.times; p.assets[music.id] = { ...music, beats: grid }; }
         else toast(t('No steady beat found, clips are cut evenly instead'));
       }
-      p = produce(p, (d) => buildTemplate(d, tpl.id, visuals, music, beats));
+      p = produce(p, (d) => buildTemplate(d, tpl.id, visuals, music, beats, t));
       await saveProject(p);
       track('template_used', { id: tpl.id, visuals: visuals.length, music: !!music });
       open(p.id);
@@ -234,7 +235,7 @@ export function Home() {
 
   async function remove(m: ProjectMeta) {
     if (!confirm(t('Delete “{name}”? Its media will be removed from this device.', { name: m.name }))) return;
-    await deleteProject(m.id);
+    try { await deleteProject(m.id); } catch (e) { toast(t('Could not delete the project: {error}', { error: errorMessage(e) }), 'error'); }
     void refresh();
   }
 

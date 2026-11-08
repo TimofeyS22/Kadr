@@ -5,10 +5,11 @@ import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
 import { fitTrack, type LibraryTrack, type MusicManifest } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
-  clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, insertMain, isSound, mainTrack, placeClip, projectDuration,
+  clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, forwardIn, insertMain, isSound, mainTrack, mirrorPrivacyKeys, placeClip, projectDuration,
   sourceTime, splitClip, SOUND_SYNC,
 } from '../core/timeline';
-import type { Asset, CaptionClip, CaptionWord, Clip, Project, SoundClip } from '../core/types';
+import type { Asset, CaptionClip, CaptionWord, Clip, ImageClip, Project, SoundClip, VideoClip } from '../core/types';
+import { getBlob } from '../storage/db';
 import { prepareClipSound } from '../engine/audiofx';
 import { coverScale, reframeKeys } from '../core/reframe';
 import { saveFile } from '../engine/exporter';
@@ -385,9 +386,10 @@ export async function reverseSelected(): Promise<void> {
   if (!f || f.clip.kind !== 'video') return;
   const clip = f.clip;
   // Back to the forward video only if it is still here; otherwise the reversed clip is reversed again (audit V-242).
-  if (clip.reversedFrom && s.project!.assets[clip.reversedFrom.assetId]) {
-    const back = clip.reversedFrom;
-    s.commit((d) => { const g = findClip(d, clip.id); if (g && g.clip.kind === 'video') { g.clip.assetId = back.assetId; g.clip.in = back.in; delete g.clip.reversedFrom; delete g.clip.audioAssetId; delete g.clip.audioKey; } });
+  const forward = forwardIn(s.project!, clip);
+  if (clip.reversedFrom && forward !== null) {
+    const back = { assetId: clip.reversedFrom.assetId, in: forward };
+    s.commit((d) => { const g = findClip(d, clip.id); if (g && g.clip.kind === 'video') { g.clip.assetId = back.assetId; g.clip.in = back.in; delete g.clip.reversedFrom; delete g.clip.audioAssetId; delete g.clip.audioKey; mirrorPrivacyKeys(g.clip); g.clip.curve?.reverse(); } });
     s.toast(t('Playing forward again'));
     return;
   }
@@ -406,6 +408,8 @@ export async function reverseSelected(): Promise<void> {
     g.clip.in = 0;
     delete g.clip.audioAssetId;
     delete g.clip.audioKey;
+    mirrorPrivacyKeys(g.clip);
+    g.clip.curve?.reverse(); // the fast part stays with the same moments of the picture
   });
   track('clip_reversed', { seconds: Math.round(rev.duration) });
 }
@@ -556,14 +560,34 @@ export function toggleFlip(axis: 'x' | 'y'): void {
   track('flip', { axis });
 }
 
+/** Is there a person at the start, the middle or the end of the clip (a video may be empty at any one of them)? */
+async function clipHasPerson(c: VideoClip | ImageClip): Promise<boolean> {
+  const { hasPerson, warmSegmenter } = await import('../engine/segment');
+  await warmSegmenter();
+  if (c.kind === 'image') {
+    const blob = await getBlob(c.assetId);
+    return !!blob && hasPerson(await createImageBitmap(blob));
+  }
+  const span = c.duration * c.speed;
+  for (const at of [0.1, 0.5, 0.9]) {
+    const bmp = await createImageBitmap(await captureFrame(c.assetId, c.in + span * at));
+    const yes = await hasPerson(bmp);
+    bmp.close();
+    if (yes) return true;
+  }
+  return false;
+}
+
 export async function toggleCutout(): Promise<void> {
   const s = editor();
   const f = s.project && s.selection ? findClip(s.project, s.selection) : null;
   if (!f || (f.clip.kind !== 'video' && f.clip.kind !== 'image')) return;
   const on = !f.clip.removeBg;
   if (on) {
-    const ok = await withBusy(t('Preparing person detection…'), async () => { await (await import('../engine/segment')).warmSegmenter(); return true; });
-    if (!ok) return;
+    const found = await withBusy(t('Preparing person detection…'), async () => clipHasPerson(f.clip as VideoClip | ImageClip));
+    if (found === undefined || found === null) return;
+    // On a picture with nobody in it the cutout is a black frame, and "Background removed" said all was well (audit V-103).
+    if (!found) { s.toast(t('No person found in this clip, so the background stays.')); return; }
   }
   editClip(f.clip.id, (c) => { if (c.kind === 'video' || c.kind === 'image') c.removeBg = on; });
   s.toast(on ? t('Background removed. Works best with people in the frame.') : t('Background restored'));

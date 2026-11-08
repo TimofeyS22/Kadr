@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, BringToFront, Play, SendToBack } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_PAUSES, removedSeconds, speechRanges } from '../core/silence';
-import { clipEnd, cutMainToBeats, keepSourceRanges, layerPlace, moveLayer, soundAssetId, sourceSpan, timelineTimeOf, type LayerMove } from '../core/timeline';
+import { DEFAULT_PAUSES, removedSeconds, silenceLevel, speechRanges } from '../core/silence';
+import { clipEnd, cutMainToBeats, layerPlace, moveLayer, removeSourceGaps, soundAssetId, sourceSpan, timelineTimeOf, type LayerMove } from '../core/timeline';
 import type { AudioClip, Clip, ImageClip, Mask, Project, SoundClip, VideoClip } from '../core/types';
 import { detectBeats } from '../engine/analysis';
 import { PEAKS_PER_SEC, waveform } from '../engine/media';
@@ -9,7 +9,7 @@ import { SFX, renderSfx } from '../engine/sfx';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { addSfx, editClip } from './actions';
-import { Chips, Slider, Toggle, pct, secs } from './controls';
+import { Chips, Slider, Toggle, pct, secs, useSheetGuard } from './controls';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
 
@@ -21,13 +21,18 @@ const fromDb = (db: number) => 10 ** (db / 20);
 export function PausesBody({ clip }: { clip: SoundClip }) {
   const [peaks, setPeaks] = useState<Float32Array | null>(null);
   const [o, setO] = useState(DEFAULT_PAUSES);
-  useEffect(() => { void waveform(soundAssetId(clip)).then(setPeaks); }, [clip.assetId, clip.audioAssetId]);
   const from = clip.in, to = clip.in + clip.duration * clip.speed;
+  useEffect(() => {
+    void waveform(soundAssetId(clip)).then(
+      (x) => { setPeaks(x); setO((v) => ({ ...v, threshold: silenceLevel(x, PEAKS_PER_SEC, from, to) })); },
+      (e) => { editor().toast(t('Could not read the sound of this clip: {error}', { error: errorMessage(e) }), 'error'); editor().openSheet(null); }, // not "Listening…" for ever
+    );
+  }, [clip.assetId, clip.audioAssetId]);
   const keep = useMemo(() => (peaks ? speechRanges(peaks, PEAKS_PER_SEC, from, to, o) : []), [peaks, from, to, o]);
   const removed = removedSeconds(keep, from, to) / clip.speed;
 
   function apply() {
-    editor().commit((d) => { keepSourceRanges(d, clip.id, keep); });
+    editor().commit((d) => { removeSourceGaps(d, clip.id, keep); });
     editor().openSheet(null);
     editor().toast(t('Removed {n} pauses, {s} s shorter', { n: keep.length ? keep.length - 1 : 0, s: removed.toFixed(1) }));
     track('pauses_removed', { pauses: Math.max(0, keep.length - 1), seconds: Math.round(removed) });
@@ -135,6 +140,7 @@ export function BeatsBody({ clip }: { clip: AudioClip }) {
   const grid = useEditor((s) => s.project?.assets[clip.assetId]?.beats);
   const [busy, setBusy] = useState<number | null>(null);
   useHoldUpdates(busy !== null);
+  useSheetGuard(busy !== null ? t('This is still running. Tap again to stop it.') : null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
 

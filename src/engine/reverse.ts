@@ -6,12 +6,14 @@ import {
   type WrappedCanvas,
 } from 'mediabunny';
 import { MemoryTarget } from './memTarget';
+import { sourceSpan } from '../core/timeline';
 import type { Asset, Project, VideoClip } from '../core/types';
 import { getBlob } from '../storage/db';
 import { importFile } from './importer';
 import { MediaError } from './media';
 import { ResilientSink, playableAudioTrack } from './sound';
 import { matchStreamRange } from './videoRange';
+import { abandon } from './abandon';
 
 export const MAX_REVERSE_S = 60;
 const WINDOW_S = 0.5;
@@ -22,9 +24,10 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
   const blob = await getBlob(clip.assetId);
   if (!asset || !blob) throw new MediaError('Media file is missing from this device');
   const s0 = clip.in;
-  const s1 = Math.min(asset.duration, clip.in + clip.duration * clip.speed);
+  const s1 = Math.min(asset.duration, clip.in + sourceSpan(clip)); // a speed curve shows more or less than duration × speed (audit V-144)
   if (s1 - s0 > MAX_REVERSE_S) throw new MediaError('Reverse works on clips up to {n} s. Split the clip first.', { n: MAX_REVERSE_S });
   const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(blob) });
+  let started: { output: Output; sources: { close(): void }[] } | null = null;
   try {
     const video = await input.getPrimaryVideoTrack();
     if (!video) throw new MediaError('No video in this clip');
@@ -46,6 +49,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     output.addVideoTrack(vSource, { frameRate: fps });
     const aSource = aCodec ? new AudioBufferSource({ codec: aCodec, bitrate: QUALITY_HIGH }) : null;
     if (aSource) output.addAudioTrack(aSource);
+    started = { output, sources: [vSource, ...(aSource ? [aSource] : [])] };
     await output.start();
 
     if (audio && aSource) {
@@ -93,6 +97,10 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     await output.finalize();
     const type = mp4 ? 'video/mp4' : 'video/webm';
     return await importFile(output.target.blob(type), `${asset.name.replace(/\.[^.]+$/, '')} (reversed).${mp4 ? 'mp4' : 'webm'}`);
+  } catch (e) {
+    // A cancelled or failed reverse held its encoders open: the next export could find none (audit V-116).
+    if (started) await abandon(started.output, signal, started.sources);
+    throw e;
   } finally {
     input.dispose();
   }

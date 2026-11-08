@@ -1,5 +1,6 @@
 // WebGL2 compositor: draws a FrameDesc with transforms, color grading, chroma key, wipes and blend modes.
 import type { FrameDesc, Layer } from '../core/frame';
+import { fitRects } from '../core/faceTiles';
 import { fromBase64 } from '../core/lut';
 import { ADJUST_KEYS, type BlendMode, type LutData } from '../core/types';
 import type { Drawable } from './text';
@@ -304,10 +305,17 @@ export class Compositor {
   lost = false;
   /** The context was lost at some point: a restore brings a new context, but not the textures and LUTs of the old one. */
   everLost = false;
+  onLost: (() => void) | null = null;
+  onRestored: (() => void) | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement, private preserve = false) {
-    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; this.everLost = true; });
-    canvas.addEventListener('webglcontextrestored', () => { this.init(); });
+    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; this.everLost = true; this.onLost?.(); });
+    canvas.addEventListener('webglcontextrestored', () => {
+      // Nothing of the old context survives: textures made in it are invalid objects in the new one.
+      this.slots.clear(); this.luts.clear(); this.raws.clear(); this.u.clear();
+      this.init();
+      this.onRestored?.();
+    });
     this.init();
   }
 
@@ -605,10 +613,10 @@ export class Compositor {
       }
       // Hidden areas: user areas are in layer space; detected faces (source UV) are mapped through the crop.
       const pv = d ? l.privacy : null;
-      const rects = pv ? [
+      const rects = pv ? fitRects([
         ...pv.areas,
         ...(d?.faces ?? []).map((f) => [(f.x + f.w / 2 - cr.x) / cr.w, (f.y + f.h / 2 - cr.y) / cr.h, f.w / cr.w, f.h / cr.h] as const),
-      ].slice(0, 8) : [];
+      ], 8) : [];
       gl.uniform1i(this.loc('uPrivN'), rects.length);
       if (rects.length && d) {
         gl.uniform4fv(this.loc('uPriv'), rects.flat());

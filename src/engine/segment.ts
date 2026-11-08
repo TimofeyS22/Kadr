@@ -53,6 +53,23 @@ function smoothInTime(key: string, data: Uint8Array, w: number, h: number): void
 }
 
 /** Person mask for an image; `key` identifies the exact frame so paused previews don't recompute. */
+/** Does the segmenter see a person covering at least 1% of this picture? */
+export async function hasPerson(image: TexImageSource): Promise<boolean> {
+  const seg = await getSegmenter();
+  const result = seg.segment(image as ImageSource);
+  try {
+    const masks = result.confidenceMasks ?? [];
+    const m = masks.length > 1 ? masks[1] : masks[0];
+    if (!m) return false;
+    const f = m.getAsFloat32Array();
+    let n = 0;
+    for (let i = 0; i < f.length; i++) if (f[i] > 0.5) n++;
+    return n > f.length * 0.01;
+  } finally {
+    result.close();
+  }
+}
+
 export async function personMask(key: string, image: TexImageSource): Promise<SegMask | null> {
   const hit = cache.get(key);
   if (hit) return hit;

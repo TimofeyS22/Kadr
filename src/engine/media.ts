@@ -24,6 +24,11 @@ export interface Probe {
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Restarts of a failed video decoder before the error is shown (`VideoStream.readSafe`). */
 const DECODE_RETRIES = 2;
+/**
+ * How long one step of the decoder may stay silent. A far seek decodes a whole group of pictures before its first
+ * frame, so this is generous; a decoder that says nothing for this long never will (audit V-257).
+ */
+const DECODER_MS = 15_000;
 /** The browser's own words go to the error's details (`vars.error`), not into the sentence. */
 export const DECODER_FAILED = 'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.';
 
@@ -116,12 +121,29 @@ class VideoStream {
   private shown: StreamFrame | null = null;
   /** The decoder frame handed out last: a copy of the sample's, so it stays valid if Mediabunny closes the sample. */
   private out: { sample: VideoSample; frame: VideoFrame } | null = null;
+  private abandon!: (e: Error) => void;
+  /** Rejects when the stream is closed: whoever waits for a silent decoder is let go at once. */
+  private readonly closing = new Promise<never>((_, reject) => { this.abandon = reject; });
 
   constructor(
+    readonly assetId: string,
     private sink: VideoSampleSink, private packets: EncodedPacketSink, private width: number, private height: number,
     /** Asks the pool to close the other streams nobody is drawing: a phone has few hardware decoders. */
     private starved?: () => void,
-  ) {}
+  ) { this.closing.catch(() => undefined); }
+
+  /** A decoder's answer, or an error if it stays silent; `drop` closes what arrives after nobody is waiting. */
+  private answer<T>(work: Promise<T>, drop: (late: T) => void): Promise<T> {
+    let gone = false;
+    void work.then((v) => { if (gone || this.closed) drop(v); }, () => undefined);
+    const wait = (): Promise<T> => within(Promise.race([work, this.closing]), DECODER_MS, () => {
+      // A page in the background may simply be paused: that is not a decoder gone silent.
+      if (typeof document !== 'undefined' && document.hidden) return wait();
+      gone = true;
+      throw new Error('The decoder stopped answering');
+    });
+    return wait();
+  }
 
   /** `frameMax`: an exact frame at most this big on its long side comes as the decoder's frame (0: always a canvas). */
   frameAt(t: number, fast = false, frameMax = 0): Promise<Picture | null> {
@@ -134,7 +156,7 @@ class VideoStream {
   private async pull(): Promise<VideoSample | null> {
     const it = this.it;
     if (!it || this.closed) return null;
-    const r = await it.next();
+    const r = await this.answer(it.next(), (late) => { if (!late.done) late.value.close(); });
     if (r.done) return null;
     if (this.closed || it !== this.it) { r.value.close(); return null; }
     return r.value;
@@ -145,7 +167,8 @@ class VideoStream {
     const it = this.it;
     this.it = null;
     this.drop();
-    await it?.return().catch(() => undefined);
+    // A generator waiting on a silent decoder would not return until it answers.
+    if (it) await within(it.return().catch(() => undefined), 1000, () => undefined);
   }
 
   /**
@@ -216,8 +239,8 @@ class VideoStream {
     const far = !this.it || !cur || t < cur.timestamp - 1e-4 || t > cur.timestamp + 2.5;
     if (far && fast) {
       // Scrubbing: show the nearest keyframe right away (one decode); the exact frame follows when asked.
-      const key = await this.packets.getKeyPacket(t);
-      const s = await this.sink.getSample(key?.timestamp ?? t);
+      const key = await this.answer(this.packets.getKeyPacket(t), () => undefined);
+      const s = await this.answer(this.sink.getSample(key?.timestamp ?? t), (late) => late?.close());
       if (!s || this.closed) { s?.close(); return this.shown && this.canvasPicture(this.shown); }
       const f = this.show(s, false, 0);
       s.close();
@@ -243,17 +266,23 @@ class VideoStream {
 
   close(): void {
     this.closed = true;
+    this.abandon(new Error('The stream was closed'));
     void this.reset();
   }
 }
 
 interface Handle { input: Input; video: InputVideoTrack | null; audio: InputAudioTrack | null }
+/** A photo the pool holds; `bitmap` once it is decoded. */
+interface Photo { loading: Promise<ImageBitmap>; bitmap: ImageBitmap | null; used: number }
+/** Decoded photos a pool keeps: dozens at preview size, a handful at 4K. */
+const IMAGE_BUDGET = 192 * 1024 * 1024;
 
 /** Owns decoders for one consumer (preview or export). Dispose when done. */
 export class MediaPool {
   private handles = new Map<string, Promise<Handle>>();
-  private images = new Map<string, Promise<ImageBitmap>>();
+  private images = new Map<string, Photo>();
   private streams = new Map<string, VideoStream>();
+  private opening = new Map<string, Promise<VideoStream | null>>();
   private disposed = false;
 
   constructor(private maxDim: number) {}
@@ -278,16 +307,36 @@ export class MediaPool {
    * photo is 48.8 MB decoded: ten of them took ~0.5 GB in the preview alone, as much again while exporting.
    */
   image(assetId: string): Promise<ImageBitmap> {
-    let p = this.images.get(assetId);
-    if (!p) {
-      p = getBlob(assetId).then(async (b) => {
+    let photo = this.images.get(assetId);
+    if (!photo) {
+      const made: Photo = { bitmap: null, used: 0, loading: getBlob(assetId).then(async (b) => {
         if (!b) throw new MediaError('Image is missing from this device');
-        return fitBitmap(await createImageBitmap(b), this.maxDim);
-      });
-      p.catch(() => this.images.delete(assetId));
-      this.images.set(assetId, p);
+        return (made.bitmap = await fitBitmap(await createImageBitmap(b), this.maxDim));
+      }) };
+      photo = made;
+      made.loading.catch(() => this.images.delete(assetId));
+      this.images.set(assetId, made);
     }
-    return p;
+    photo.used = performance.now();
+    return photo.loading;
+  }
+
+  /**
+   * Lets go of photos, oldest first, until the rest fit in `budget` bytes; the ones in `keep` (on screen) stay. A photo
+   * is one decode away from coming back, and a slideshow in 4K held every picture to the end (audit V-190).
+   */
+  trimImages(keep: Set<string>, budget = IMAGE_BUDGET): void {
+    const size = (b: ImageBitmap) => b.width * b.height * 4;
+    let total = 0;
+    for (const x of this.images.values()) if (x.bitmap) total += size(x.bitmap);
+    if (total <= budget) return;
+    for (const [id, x] of [...this.images].sort((a, b) => a[1].used - b[1].used)) {
+      if (total <= budget) return;
+      if (!x.bitmap || keep.has(id)) continue;
+      total -= size(x.bitmap);
+      x.bitmap.close();
+      this.images.delete(id);
+    }
   }
 
   /** The clip at `t` as an upright canvas: pixels to read (a still, finding a person). */
@@ -298,19 +347,37 @@ export class MediaPool {
 
   /** The clip at `t` to draw on the GPU; `frameMax` as in `VideoStream.frameAt` (the compositor's `frameMax`). */
   async picture(clipId: string, assetId: string, t: number, fast = false, frameMax = 0): Promise<Picture | null> {
-    let s = this.streams.get(clipId);
-    if (!s) {
-      const h = await this.handle(assetId);
-      if (!h.video || this.disposed) return null;
-      s = this.streams.get(clipId); // another caller may have created it meanwhile
-      if (!s) {
-        const [width, height] = fitSize(await h.video.getDisplayWidth(), await h.video.getDisplayHeight(), this.maxDim);
-        s = new VideoStream(new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height, () => this.sweep(new Set([clipId]), 300));
-        this.streams.set(clipId, s);
-      }
+    let s: VideoStream | null | undefined = this.streams.get(clipId);
+    if (s && s.assetId !== assetId) { // the clip now shows another file ("Reverse"): audit V-198
+      s.close();
+      this.streams.delete(clipId);
+      s = null;
     }
+    s ??= await this.open(clipId, assetId);
+    if (!s) return null;
     s.lastUsed = performance.now();
     return s.frameAt(t, fast, frameMax);
+  }
+
+  /** One stream per clip, however many callers ask at once: each extra one held a decoder nobody closed (audit V-160). */
+  private open(clipId: string, assetId: string): Promise<VideoStream | null> {
+    const key = `${clipId}|${assetId}`;
+    let o = this.opening.get(key);
+    if (!o) {
+      o = (async () => {
+        const h = await this.handle(assetId);
+        if (!h.video) return null;
+        const [width, height] = fitSize(await h.video.getDisplayWidth(), await h.video.getDisplayHeight(), this.maxDim);
+        if (this.disposed) return null;
+        const s = new VideoStream(assetId, new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height, () => this.sweep(new Set([clipId]), 300));
+        s.lastUsed = performance.now();
+        this.streams.get(clipId)?.close();
+        this.streams.set(clipId, s);
+        return s;
+      })().finally(() => this.opening.delete(key));
+      this.opening.set(key, o);
+    }
+    return o;
   }
 
   async audioSink(assetId: string): Promise<SoundSink | null> {
@@ -332,7 +399,7 @@ export class MediaPool {
     this.streams.clear();
     for (const h of this.handles.values()) h.then((x) => x.input.dispose(), () => undefined);
     this.handles.clear();
-    for (const i of this.images.values()) i.then((b) => b.close(), () => undefined);
+    for (const i of this.images.values()) i.loading.then((b) => b.close(), () => undefined);
     this.images.clear();
   }
 }

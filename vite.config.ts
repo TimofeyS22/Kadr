@@ -103,7 +103,7 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
-            urlPattern: ({ url }) => /\/assets\/(rnnoise|asr\.worker|vision_bundle|vision_wasm_internal|ort-wasm|selfie_segmenter|blaze_face)[-.]/.test(url.pathname),
+            urlPattern: ({ url }) => /\/assets\/(rnnoise|asr\.worker|vision_bundle|vision_wasm_internal|ort-wasm|selfie_segmenter|blaze_face_short_range)[-.]/.test(url.pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'kadr-ai', expiration: { maxEntries: 32 } }, // two generations of the speech runtime fit
           },

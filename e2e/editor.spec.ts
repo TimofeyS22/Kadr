@@ -1,6 +1,7 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
@@ -597,6 +598,7 @@ async function exportAs(page: Page, info: { outputPath: (n: string) => string },
   await page.getByRole('radio', { name: format, exact: true }).click();
   if (format === 'Video') await page.getByRole('radio', { name: 'Small file' }).click();
   if (opts.loudness === false) await page.getByRole('switch', { name: /Even loudness/ }).uncheck();
+  if (opts.loudness === true) await page.getByRole('switch', { name: /Even loudness/ }).check();
   await page.getByRole('button', { name: button }).click();
   await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
   const dl = page.waitForEvent('download');
@@ -642,7 +644,10 @@ test('enhance voice: processed to -16 LUFS; exports normalize to -14 LUFS', asyn
   expect(raw.lufs).toBeGreaterThan(-17.5);
   expect(raw.lufs).toBeLessThan(-14.5);
   expect(raw.peak).toBeLessThanOrEqual(-0.9);
-  const video = await loudnessOf(await exportAs(page, info, 'Video', 'Export video'));
+  // By default the file sounds as the preview did (audit V-247: +6 dB or -11 dB, and the Export button did not say).
+  const plain = await loudnessOf(await exportAs(page, info, 'Video', 'Export video'));
+  expect(Math.abs(plain.lufs - raw.lufs), 'the file at the level of the preview').toBeLessThan(1);
+  const video = await loudnessOf(await exportAs(page, info, 'Video', 'Export video', { loudness: true }));
   expect(Math.abs(video.lufs + 14)).toBeLessThan(1);
   expect(video.peak).toBeLessThanOrEqual(-0.9);
   // Undo returns to the plain sound in one step.
@@ -4262,4 +4267,383 @@ test('colour spectrum: a square and a hue strip, a loupe above the finger, one u
   await code.press('Enter');
   await expect(code).toHaveValue('#2f9bff');
   await expect(colors.locator('.swatch.on[aria-label^="#"]').first()).toHaveAttribute('aria-label', '#2f9bff');
+});
+
+// ---------- Audit 2026-11 (docs/13), second pass: confirmed findings, fixed in v1.6.3 ----------
+
+const toastErrors = (page: Page) => page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+/** The average brightness of what the preview shows, 0..255. */
+async function previewBrightness(page: Page, info: TestInfo, name: string): Promise<number> {
+  const file = info.outputPath(`${name}.png`);
+  await page.locator('.preview-canvas').screenshot({ path: file, style: '.toast { visibility: hidden !important; }' });
+  const { execFileSync } = await import('node:child_process');
+  return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', 'scale=1:1,format=gray', '-f', 'rawvideo', '-'])[0];
+}
+/** Writing a project document fails with the error of a full disk while localStorage says so (also after a reload). */
+const denyProjectWrites = (page: Page) => page.addInitScript(() => {
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...a: Parameters<IDBObjectStore['put']>) {
+    if (localStorage.getItem('test.deny') && String(a[1]).startsWith('p:')) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+    return put.apply(this, a);
+  };
+});
+const storedName = (page: Page) => page.evaluate(async () => {
+  const id = decodeURIComponent(location.hash.replace(/^#\/p\//, ''));
+  const db = await new Promise<IDBDatabase>((ok, ko) => { const r = indexedDB.open('kadr'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+  return new Promise<string | undefined>((ok) => { const r = db.transaction('kv').objectStore('kv').get(`p:${id}`); r.onsuccess = () => ok((r.result as { name?: string } | undefined)?.name); });
+});
+const diskFiles = (page: Page) => page.evaluate(async () => {
+  const out: string[] = [];
+  const root = await navigator.storage.getDirectory();
+  for await (const n of (root as unknown as { keys(): AsyncIterable<string> }).keys()) out.push(n);
+  return out;
+});
+
+test('a guide track longer than the video adds nothing to the file (audit V-102)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['silent.mp4']); // shorter than the music
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const seconds = Number(execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${fx('silent.mp4')}"`));
+  expect(seconds, 'the fixture is shorter than the music').toBeLessThan(9);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Audio', ['music.m4a']);
+  await page.locator('.tl-row.audio .clip').first().click();
+  await tool(page, 'Volume').click();
+  await page.getByRole('switch', { name: /Guide track/ }).check();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const got = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  expect(Number(got.format.duration), 'as long as the video, not as the guide').toBeLessThan(seconds + 0.2);
+});
+
+test('without a sound encoder the file is silent and the screen says so (audit V-149)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await page.addInitScript(() => { delete (window as unknown as { AudioEncoder?: unknown }).AudioEncoder; });
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText('so the file has no sound')).toBeVisible();
+  void info;
+});
+
+test('closing a sheet does not silently throw away an export or an unsaved file (audit V-225)', async ({ page }) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['long_1.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  const running = page.getByText(/keep this screen open/);
+  await expect(running).toBeVisible();
+  const done = page.getByRole('button', { name: 'Done' });
+  await done.click();
+  await expect(running, 'the first close only warns').toBeVisible();
+  await expect(page.locator('.toast').filter({ hasText: 'still running' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Export' }), 'a second close, within seconds, means it').toHaveCount(0);
+  // Finished but not saved: the same, and once it is saved Done just closes.
+  await page.waitForTimeout(4200);
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('radio', { name: 'Small file' }).click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 180_000 });
+  await done.click();
+  await expect(page.locator('.toast').filter({ hasText: 'not saved yet' })).toBeVisible();
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  await dl;
+  await page.waitForTimeout(100);
+  await page.waitForTimeout(4200);
+  await done.click();
+  await expect(page.getByRole('dialog', { name: 'Export' })).toHaveCount(0);
+});
+
+test('a beat edit with no music says what it needs (audit V-146)', async ({ page }) => {
+  await page.goto('./');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /Beat edit/ }).click();
+  await (await chooser).setFiles([fx('landscape.mp4'), fx('portrait.mp4')]);
+  await expect(page.locator('.toast.error').filter({ hasText: 'needs a music file' })).toBeVisible({ timeout: 20_000 });
+  await toastErrors(page);
+});
+
+test('after Reverse the preview shows the reversed picture without a seek (audit V-198)', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  test.skip(!fs.existsSync(fx('counter.mp4')), 'needs npm run fixtures');
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4']);
+  const main = page.locator('.tl-row.main .clip');
+  await expect(main).toHaveCount(1);
+  expect(await counterAt(await previewAt(page, info, 0))).toBeLessThan(3);
+  await selectClip(page, main.first());
+  await tool(page, 'Reverse').click();
+  await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
+  await expect.poll(async () => counterAt(await previewAt(page, info, 0)), { timeout: 20_000 }).toBeGreaterThan(170);
+});
+
+test('the preview comes back after the GPU took its context, returned or not (audit V-228)', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.waitForTimeout(1000);
+  const before = await previewBrightness(page, info, 'before');
+  expect(before, 'something to lose').toBeGreaterThan(20);
+  const lose = (restore: boolean) => page.evaluate((r) => {
+    const c = document.querySelector('.preview-canvas') as HTMLCanvasElement;
+    const e = c.getContext('webgl2')!.getExtension('WEBGL_lose_context');
+    if (e) { e.loseContext(); if (r) setTimeout(() => e.restoreContext(), 500); return; }
+    // WebKit here has no way to lose a context on purpose: the events the browser sends are what the page sees.
+    c.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    if (r) setTimeout(() => c.dispatchEvent(new Event('webglcontextrestored')), 500);
+  }, restore);
+  await lose(true); // given back
+  await expect.poll(() => previewBrightness(page, info, 'restored'), { timeout: 10_000 }).toBeGreaterThan(before / 2);
+  await lose(false); // never given back
+  await expect.poll(() => previewBrightness(page, info, 'replaced'), { timeout: 15_000 }).toBeGreaterThan(before / 2);
+  const size = await page.locator('.preview-canvas').evaluate((c: HTMLCanvasElement) => [c.width, c.height, c.getBoundingClientRect().width]);
+  expect(size[0], 'the new canvas has the size of the old one, not the default 300').toBeGreaterThan(300);
+  expect(size[2], 'and is laid out, not 300 by 150 in a corner').toBeGreaterThan(150);
+});
+
+test('a save that failed with the page in view is made again on its own (audit V-185)', async ({ page }) => {
+  await denyProjectWrites(page);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => localStorage.setItem('test.deny', '1'));
+  await page.getByRole('textbox', { name: 'Project name' }).fill('E1');
+  await expect(page.locator('.toast.error').filter({ hasText: 'Could not save' })).toBeVisible({ timeout: 5000 });
+  await page.evaluate(() => localStorage.removeItem('test.deny'));
+  await expect.poll(() => storedName(page), { timeout: 12_000 }).toBe('E1');
+  await toastErrors(page);
+});
+
+test('on a full disk a project with a journal still opens and can be deleted (audit V-107)', async ({ page }) => {
+  await denyProjectWrites(page);
+  page.on('dialog', (d) => void d.accept());
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const title = page.getByRole('textbox', { name: 'Project name' });
+  await title.fill('Kept');
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => localStorage.setItem('test.deny', '1'));
+  await title.fill('Journal');
+  await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.waitForTimeout(200);
+  await page.goto('./'); // the page went away; the disk is still full
+  await page.reload();
+  await page.getByRole('button', { name: /^Open / }).first().click();
+  await expect(page.getByRole('textbox', { name: 'Project name' })).toHaveValue('Journal', { timeout: 20_000 });
+  await page.goto('./');
+  await page.reload();
+  await page.getByRole('button', { name: /^Delete / }).first().click();
+  await expect(page.getByRole('button', { name: /^Open / })).toHaveCount(0, { timeout: 10_000 });
+  await page.evaluate(() => localStorage.removeItem('test.deny'));
+  await page.reload();
+  await expect(page.getByRole('button', { name: /^Open / })).toHaveCount(0);
+  await toastErrors(page);
+});
+
+test('deleting a project removes its last export from the device (audit V-189)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  page.on('dialog', (d) => void d.accept());
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('textbox', { name: 'Project name' }).fill('Secret');
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('radio', { name: 'Small file' }).click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
+  const hasDisk = (await diskFiles(page).catch(() => [])).some((n) => n.startsWith('export-'));
+  test.skip(!hasDisk, 'this engine exports to memory here');
+  await page.getByRole('button', { name: 'Export again' }).click(); // the file stays until the sheet closes
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  await page.getByRole('button', { name: 'Delete Secret' }).click();
+  await expect(page.getByRole('button', { name: 'Open Secret', exact: true })).toHaveCount(0, { timeout: 10_000 });
+  expect((await diskFiles(page)).filter((n) => n.startsWith('export-'))).toEqual([]);
+  void info;
+});
+
+test('when the code does not load, the page says so and offers a way out (audit V-111)', async ({ page }) => {
+  test.skip(!!process.env.E2E_URL?.includes('localhost:51'), 'dev server has no built chunks');
+  await page.route(/assets\/index-[^/]*\.js/, (r) => r.fulfill({ status: 404, body: 'gone' }));
+  await page.goto('./');
+  const alert = page.getByRole('alert').filter({ hasText: 'did not start' });
+  await expect(alert).toBeVisible({ timeout: 15_000 });
+  await expect(alert.getByRole('button', { name: 'Load again' })).toBeVisible();
+});
+
+test('Undo with a sheet open does not leave the editor folded (audit V-158)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Text' })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByRole('dialog', { name: 'Text' })).toHaveCount(0);
+  await expect(page.locator('.tl-scroll')).toBeVisible();
+  await expect(page.locator('.editor.sheet-open, .sheet-open')).toHaveCount(0);
+});
+
+test('Cancel before a quick export has started means no export at all (audit V-131)', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: true, resolution: 720, quality: 'standard' }));
+    const real = VideoEncoder.isConfigSupported.bind(VideoEncoder);
+    VideoEncoder.isConfigSupported = async (c) => { await new Promise((r) => setTimeout(r, 1500)); return real(c); };
+  });
+  let downloads = 0;
+  page.on('download', () => { downloads++; });
+  await newProject(page);
+  await importFiles(page, 'Media', ['silent.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await expect(page.getByText(/keep this screen open/)).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.waitForTimeout(12_000);
+  expect(downloads, 'nothing was exported behind the closed sheet').toBe(0);
+});
+
+test('Cutout on a picture with nobody in it says so and keeps the picture (audit V-103)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  const empty = info.outputPath('sky.png');
+  execSync(`ffmpeg -v error -y -f lavfi -i "gradients=s=640x640:c0=skyblue:c1=steelblue" -frames:v 1 "${empty}"`);
+  await newProject(page);
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Media', exact: true }).click();
+  await (await chooser).setFiles(empty);
+  const main = page.locator('.tl-row.main .clip');
+  await expect(main).toHaveCount(1);
+  await selectClip(page, main.first());
+  await tool(page, 'Cutout').click();
+  await expect(page.locator('.toast').filter({ hasText: 'No person found' })).toBeVisible({ timeout: 120_000 });
+  await expect(tool(page, 'Cutout')).not.toHaveAttribute('aria-pressed', 'true');
+  // And with a person the cutout is applied.
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Media', ['person.jpg']);
+  await expect(main).toHaveCount(2);
+  await tool(page, 'Cutout').click(); // the photo just added is the selected clip
+  await expect.poll(async () => { const pressed = await tool(page, 'Cutout').getAttribute('aria-pressed'); const say = await page.locator('.toast').allTextContents(); return `${pressed} ${say.join('|')}`; }, { timeout: 60_000 }).toContain('true');
+});
+
+test('template text comes in the language of the interface (audit V-129)', async ({ browser }) => {
+  const context = await browser.newContext({ locale: 'ru-RU' });
+  const page = await context.newPage();
+  await page.goto(new URL('./', process.env.E2E_URL ?? 'http://localhost:4191/').href);
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /Слайдшоу/ }).click();
+  await (await chooser).setFiles([fx('photo.png'), fx('person.jpg')]);
+  await expect(page.locator('.tl-row .clip').filter({ hasText: 'Наша история' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('textbox').first()).toHaveValue('Слайдшоу');
+  await context.close();
+});
+
+test('a project the list lost is listed again (audit V-256)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('textbox', { name: 'Project name' }).fill('Lost');
+  await page.waitForTimeout(1200);
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  await expect(page.getByRole('button', { name: 'Open Lost', exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((ok, ko) => { const r = indexedDB.open('kadr'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+    await new Promise((ok) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put([], 'index'); tx.oncomplete = ok; });
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Open Lost', exact: true })).toBeVisible({ timeout: 15_000 });
+});
+
+test('a caption line being typed survives closing the sheet by a swipe (audit V-217)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await srtCaptions(page);
+  const line = page.getByRole('textbox', { name: 'Caption line 1' });
+  await expect(line).toBeVisible();
+  await line.fill('corrected line');
+  const head = page.locator('.sheet-head');
+  const b = (await head.boundingBox())!;
+  await page.mouse.move(b.x + 30, b.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 30, b.y + 120, { steps: 3 });
+  await page.mouse.move(b.x + 30, b.y + 700, { steps: 2 });
+  await page.mouse.up();
+  await expect(head).toHaveCount(0);
+  await expect.poll(() => savedProject(page), { timeout: 5000 }).toContain('corrected');
+});
+
+test('closing the voice-over sheet while the microphone opens leaves no recording behind (audit V-224)', async ({ page }, info) => {
+  test.skip(info.project.name === 'iphone-webkit', 'headless WebKit has no audio session to record in');
+  await page.addInitScript(() => {
+    const w = window as unknown as { __mic: { stops: number; opened: number } };
+    w.__mic = { stops: 0, opened: 0 };
+    navigator.mediaDevices.getUserMedia = async () => {
+      await new Promise((r) => setTimeout(r, 1500));
+      const ctx = new AudioContext();
+      const out = ctx.createMediaStreamDestination();
+      ctx.createOscillator().connect(out);
+      w.__mic.opened++;
+      const track = out.stream.getAudioTracks()[0];
+      const stop = track.stop.bind(track);
+      track.stop = () => { w.__mic.stops++; stop(); };
+      return out.stream;
+    };
+  });
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await page.getByRole('button', { name: 'Record', exact: true }).click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __mic: { stops: number; opened: number } }).__mic), { timeout: 8000 }).toEqual({ stops: 1, opened: 1 });
+});
+
+test('edits in a row reach the disk while they go on (audit V-109)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.waitForTimeout(1200);
+  const title = page.getByRole('textbox', { name: 'Project name' });
+  let seen = '';
+  for (let i = 0; i < 18; i++) {
+    await title.fill(`E${i}`);
+    await page.waitForTimeout(250);
+    seen = (await storedName(page)) ?? '';
+    if (/^E\d+$/.test(seen)) break;
+  }
+  expect(seen, 'something of the series is saved before it ends').toMatch(/^E\d+$/);
+});
+
+test('a video that does not decode from its start does not end in a black file and "Ready" (audit V-161)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  const open = info.outputPath('open.mp4'), cut = info.outputPath('open_noel.mp4');
+  execSync(`ffmpeg -v error -y -f lavfi -i "testsrc2=s=640x360:r=30:d=20" -c:v libx264 -g 300 -keyint_min 300 -x264-params "open-gop=1:scenecut=0" -bf 3 -pix_fmt yuv420p "${open}"`);
+  execSync(`ffmpeg -v error -y -ss 7.5 -i "${open}" -c:v copy -an -t 10 -use_editlist 0 -avoid_negative_ts make_zero "${cut}"`);
+  await newProject(page);
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Media', exact: true }).click();
+  await (await chooser).setFiles(cut);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('radio', { name: 'Small file' }).click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  const ready = page.getByText(/Ready: .* MB/), failed = page.getByText(/Export failed/);
+  await expect(ready.or(failed)).toBeVisible({ timeout: 120_000 });
+  if (await failed.isVisible()) { await toastErrors(page); return; } // said, not hidden
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  const file = info.outputPath('out.mp4');
+  await (await dl).saveAs(file);
+  const { execFileSync } = await import('node:child_process');
+  const y = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', 'select=eq(n\\,30),scale=1:1,format=gray', '-frames:v', '1', '-f', 'rawvideo', '-'])[0];
+  expect(y, 'a picture, not black').toBeGreaterThan(20);
 });
