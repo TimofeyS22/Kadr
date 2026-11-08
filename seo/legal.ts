@@ -2,6 +2,7 @@
 // Every statement here must be true of Kadr today: what runs on the device, what is downloaded and from where, what
 // is kept. The licenses cover what ships in the browser bundle and what the app downloads, with the attributions
 // their licenses ask for. When a dependency, model, font or sample changes, change this file (CLAUDE.md §4).
+import music from '../public/music/music.json';
 import type { Lang } from './tasks.ts';
 
 export type LegalId = 'privacy' | 'licenses';
@@ -127,6 +128,15 @@ const LIBRARIES: [string, string, string][] = [
   ['Workbox (service worker)', 'MIT', 'https://github.com/GoogleChrome/workbox'],
 ];
 
+// Read from the catalog itself, so the page cannot name the wrong people (audit V-195).
+const counts = new Map<string, number>();
+for (const track of (music as { tracks: { artist: string }[] }).tracks) counts.set(track.artist, (counts.get(track.artist) ?? 0) + 1);
+const byCount = [...counts].sort((a, b) => b[1] - a[1]);
+const ARTISTS = {
+  ru: byCount.map(([a, n]) => `${a} (${n})`).join(', '),
+  en: byCount.map(([a, n]) => `${a} (${n})`).join(', '),
+};
+
 const FONTS = [
   'Amatic SC', 'Anton', 'Bad Script', 'Bebas Neue', 'Caveat', 'Comfortaa', 'Cormorant Garamond', 'Days One', 'Dela Gothic One', 'Exo 2',
   'Fira Sans', 'Golos Text', 'Inter', 'Jost', 'Lobster', 'Lora', 'Manrope', 'Marck Script', 'Montserrat', 'Neucha', 'Nunito', 'Onest',
@@ -153,7 +163,8 @@ export const LICENSES: Record<Lang, LegalPage> = {
         'Mediabunny и SoundTouchJS распространяются по [Mozilla Public License 2.0](https://www.mozilla.org/MPL/2.0/); их исходный код — по ссылкам выше. Kadr при сборке меняет одну строку в файле src/target.js библиотеки Mediabunny: буфер в памяти растёт обычными ArrayBuffer вместо резервирования 4 ГиБ адресного пространства. Изменение — [scripts/no-reserve.ts](https://github.com/TimofeyS22/Kadr/blob/main/scripts/no-reserve.ts) в открытом репозитории Kadr.',
       ] },
       { h: 'Шрифты', p: [`${FONTS.join(', ')} — [SIL Open Font License 1.1](https://openfontlicense.org), пакеты [Fontsource](https://fontsource.org).`] },
-      { h: 'Музыка', p: ['Все треки библиотеки — HoliznaCC0, [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (общественное достояние), источник — [Free Music Archive](https://freemusicarchive.org/music/holiznacc0). Название и ссылка на каждый трек есть в Kadr рядом с треком.'] },
+      { h: 'Музыка', p: [`Авторы треков библиотеки: ${ARTISTS.ru}. Все треки — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (общественное достояние), источник — [Free Music Archive](https://freemusicarchive.org/). Название, автор и ссылка на источник каждого трека есть в Kadr, в кнопке «Скопировать лицензию».`] },
+      { h: 'Тексты лицензий', p: ['Полные тексты и уведомления об авторских правах всех библиотек и шрифтов: [third-party-licenses.txt](../../third-party-licenses.txt).'] },
       { h: 'Записи', p: [SOVA.ru] },
     ],
   },
@@ -169,7 +180,8 @@ export const LICENSES: Record<Lang, LegalPage> = {
         'Mediabunny and SoundTouchJS are distributed under the [Mozilla Public License 2.0](https://www.mozilla.org/MPL/2.0/); their source code is at the links above. When Kadr is built, it changes one line of Mediabunny’s src/target.js: an in-memory buffer grows with plain ArrayBuffers instead of reserving 4 GiB of address space. The change is [scripts/no-reserve.ts](https://github.com/TimofeyS22/Kadr/blob/main/scripts/no-reserve.ts) in Kadr’s open repository.',
       ] },
       { h: 'Fonts', p: [`${FONTS.join(', ')}: [SIL Open Font License 1.1](https://openfontlicense.org), [Fontsource](https://fontsource.org) packages.`] },
-      { h: 'Music', p: ['Every library track is by HoliznaCC0, [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (public domain), from the [Free Music Archive](https://freemusicarchive.org/music/holiznacc0). Kadr shows each track’s title and link next to it.'] },
+      { h: 'Music', p: [`Library tracks are by ${ARTISTS.en}. All of them are [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (public domain), from the [Free Music Archive](https://freemusicarchive.org/). The title, artist and source link of each track are in Kadr, under “Copy license”.`] },
+      { h: 'License texts', p: ['The full texts and copyright notices of every library and font: [third-party-licenses.txt](../../third-party-licenses.txt).'] },
       { h: 'Recordings', p: [SOVA.en] },
     ],
   },

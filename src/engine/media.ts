@@ -45,7 +45,11 @@ export async function probe(file: Blob): Promise<Probe> {
   try {
     if (!(await input.canRead())) throw new MediaError('Unsupported file format');
     const video = await input.getPrimaryVideoTrack();
-    if (video && !(await video.canDecode())) throw new MediaError('This browser cannot decode {codec} video. On iPhone, set Camera → Formats → Most Compatible.', { codec: (await video.getCodec()) ?? '?' });
+    if (video && !(await video.canDecode())) {
+      const codec = (await video.getCodec()) ?? '?';
+      // The advice is about HEVC: for a file that is already H.264 it sent people to a setting that changes nothing (audit V-199).
+      throw new MediaError(codec === 'hevc' ? 'This browser cannot decode {codec} video. On iPhone, set Camera → Formats → Most Compatible.' : 'This browser cannot decode {codec} video. Try Chrome or Safari.', { codec });
+    }
     let why = '';
     const hasAudio = !!(await playableAudioTrack(input, (reason) => { why = reason; }));
     // A sound track that is there but does not decode says why (QA: "no playable audio" hid a decoder refusal).

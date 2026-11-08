@@ -8,9 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: read # the build reads the code and nothing else; only the deploy job may touch the site (audit V-230)
 
 # A deploy of main is never cancelled halfway (GitHub's Pages template); pull requests only cancel their own runs.
 concurrency:
@@ -27,7 +25,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts # third-party install scripts do not run where the site is built (audit V-230)
       - name: Typecheck and unit tests
         run: npm run check
       - name: Production build
@@ -73,6 +71,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -87,7 +89,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts # third-party install scripts do not run where the site is built (audit V-230)
       - run: npx playwright install --with-deps chromium
       - name: The live site runs (open, edit, export)
         run: E2E_URL=https://timofeys22.github.io/Kadr/ npx playwright test e2e/qa-smoke.spec.ts --project=android-chromium

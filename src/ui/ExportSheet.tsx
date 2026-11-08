@@ -184,7 +184,7 @@ export function ExportSheet() {
               setResolution(res); setFps(pr.fps); setQuality(pr.quality);
             }} />
           <h3>{t('Resolution')}</h3>
-          {supported === null ? <p className="hint">{t('Checking what this device can encode…')}</p> : (
+          {supported?.length === 0 ? <p className="error-text">{t('This browser cannot encode video. Try Chrome or Safari.')}</p> : supported === null ? <p className="hint">{t('Checking what this device can encode…')}</p> : (
             <Chips options={supported} value={resolution} onChange={setResolution} render={(r) => LABEL[r]} />
           )}
           <h3>{t('Frame rate')}</h3>

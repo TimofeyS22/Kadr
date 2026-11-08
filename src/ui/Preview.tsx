@@ -165,7 +165,7 @@ export function Preview() {
       let id: string | null, sticky = false;
       if (selected && hits.some((b) => b.id === selected)) id = selected;
       else if (pick(hits.filter((b) => !isMain(b.id)))) id = pick(hits.filter((b) => !isMain(b.id)))!.id;
-      else if (selected) { id = selected; sticky = true; }
+      else if (selected && px >= 0 && py >= 0 && px <= c.width && py <= c.height) { id = selected; sticky = true; } // on the frame, not beside it (audit V-261)
       else id = pick(hits)?.id ?? null;
       const clip = id && project ? findClip(project, id)?.clip : undefined;
       g.current = { id, sticky, base: null, local: clip ? player.time - clip.start : 0, moved: false, anchor: { x: 0, y: 0, dist: 0, angle: 0 }, start: { x: 0, y: 0, scale: 1, rotation: 0 } };
@@ -198,8 +198,10 @@ export function Preview() {
     const rr = (rotation * Math.PI) / 180;
     const halfX = lb ? ((Math.abs(lb.w * Math.cos(rr)) + Math.abs(lb.h * Math.sin(rr))) * k) / (2 * c.width) : 0;
     const halfY = lb ? ((Math.abs(lb.w * Math.sin(rr)) + Math.abs(lb.h * Math.cos(rr))) * k) / (2 * c.height) : 0;
-    const sx = snapAxis(gs.start.x + (cx - gs.anchor.x) / r.width, halfX, SNAP_PX / r.width);
-    const sy = snapAxis(gs.start.y + (cy - gs.anchor.y) / r.height, halfY, SNAP_PX / r.height);
+    // Its centre stays on the frame: a stray swipe carried a clip or all the captions off it and out of the file (audit V-261).
+    const onFrame = (v: number) => Math.min(0.5, Math.max(-0.5, v));
+    const sx = snapAxis(onFrame(gs.start.x + (cx - gs.anchor.x) / r.width), halfX, SNAP_PX / r.width);
+    const sy = snapAxis(onFrame(gs.start.y + (cy - gs.anchor.y) / r.height), halfY, SNAP_PX / r.height);
     const nx = sx.v, ny = sy.v;
     showGuides(sx.guide, sy.guide);
     const { id, local } = gs;

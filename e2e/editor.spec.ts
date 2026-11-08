@@ -4837,3 +4837,48 @@ test('a reversed clip keeps its sound on its picture (audit V-159)', async ({ pa
   console.log(`reversed A/V offsets, ms (${info.project.name}): ${offsets.map((v) => Math.round(v)).join(' ')}`);
   expect(Math.max(...offsets.map(Math.abs)), 'within 45 ms').toBeLessThan(45);
 });
+
+test('a phone on its side keeps a picture to work on (audit V-208)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.setViewportSize({ width: 812, height: 375 });
+  await page.waitForTimeout(500);
+  const open = await page.locator('.preview-canvas').boundingBox();
+  expect(open!.height, 'not a strip').toBeGreaterThan(120);
+  await expect(tool(page, 'Speed')).toBeVisible();
+  await tool(page, 'Speed').click();
+  await page.waitForTimeout(400);
+  const sheet = (await page.getByRole('dialog', { name: 'Speed' }).boundingBox())!;
+  const pic = (await page.locator('.preview-canvas').boundingBox())!;
+  expect(pic.height, 'with a sheet open too').toBeGreaterThan(120);
+  expect(sheet.x, 'beside the picture, not over it').toBeGreaterThanOrEqual(pic.x + pic.width - 1);
+});
+
+test('the notices of everything in the bundle are published and linked (audit V-115, V-195)', async ({ page }) => {
+  test.skip(!!process.env.E2E_URL?.includes('localhost:51'), 'dev server has no build output');
+  await page.goto('./');
+  const text = await (await page.request.get('third-party-licenses.txt')).text();
+  expect(text).toContain('Permission is hereby granted'); // MIT
+  expect(text).toContain('SIL OPEN FONT LICENSE'); // the fonts
+  expect(text).toContain('mediabunny');
+  const licenses = await (await page.request.get('en/licenses/')).text();
+  expect(licenses).toContain('third-party-licenses.txt');
+  expect(licenses).toContain('Loyalty Freak Music'); // from the catalog, not one name for all
+});
+
+test('a stray swipe does not carry a clip off the frame (audit V-261)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  const main = page.locator('.tl-row.main .clip');
+  await expect(main).toHaveCount(1);
+  await selectClip(page, main.first());
+  const c = (await page.locator('.preview-canvas').boundingBox())!;
+  await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(c.x + c.width * 3, c.y + c.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(800);
+  const box = await page.locator('.sel-box').boundingBox();
+  expect(box!.x, 'the clip is still on the frame').toBeLessThan(c.x + c.width);
+});

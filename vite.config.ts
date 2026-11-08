@@ -55,6 +55,32 @@ const taskPages: Plugin = {
 /** The app version shown in the home footer: package.json is the one place it is set. */
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
+/**
+ * The notices the licenses of what ships ask to be kept with it (MIT, BSD, ISC, Apache, OFL; audit V-115): every package
+ * in the bundle, from the bundle itself, so the list cannot fall behind. The Licenses page links to it.
+ */
+const thirdPartyLicenses: Plugin = {
+  name: 'kadr-third-party-licenses',
+  apply: 'build',
+  generateBundle(_options, bundle) {
+    const pkgName = /node_modules\/((?:@[^/]+\/)?[^/]+)\//g;
+    const names = new Set<string>(Object.keys((JSON.parse(readFileSync('package.json', 'utf8')) as { dependencies: Record<string, string> }).dependencies).filter((n) => n.startsWith('@fontsource/')));
+    for (const item of Object.values(bundle)) {
+      if (item.type !== 'chunk') continue;
+      for (const id of item.moduleIds) for (const m of id.matchAll(pkgName)) names.add(m[1]);
+    }
+    const out: string[] = ['Open-source software in Kadr, and the notices its licenses ask to be kept with it.', ''];
+    for (const name of [...names].sort()) {
+      const dir = join('node_modules', name);
+      if (!existsSync(join(dir, 'package.json'))) continue;
+      const meta = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version?: string; license?: string };
+      const file = readdirSync(dir).find((f) => /^(licen[cs]e|copying|notice)(\.|$)/i.test(f));
+      out.push('='.repeat(72), `${name} ${meta.version ?? ''} (${meta.license ?? 'see the package'})`, '='.repeat(72), file ? readFileSync(join(dir, file), 'utf8').trim() : '(the package carries no license file)', '');
+    }
+    this.emitFile({ type: 'asset', fileName: 'third-party-licenses.txt', source: out.join('\n') });
+  },
+};
+
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
   // GitHub Pages serves the app from /<repo>/; CI sets KADR_BASE=/Kadr/.
@@ -64,6 +90,7 @@ export default defineConfig({
   build: { rollupOptions: { output: { chunkFileNames: (c) => `assets/${c.name.replace(/^\.+/, '') || 'chunk'}-[hash].js` } } },
   plugins: [
     react(),
+    thirdPartyLicenses,
     noReservePlugin, // mediabunny reserves no 4 GiB of address space per output (docs/12 §1.3 item 14)
     e2eUpload,
     dropUnusedOrt,

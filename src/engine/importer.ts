@@ -1,3 +1,4 @@
+import { imageSize } from '../core/imageSize';
 import { uid } from '../core/defaults';
 import { SNIFF_BYTES, sniffMime } from '../core/sniff';
 import type { Asset } from '../core/types';
@@ -17,7 +18,11 @@ export async function importFile(file: File | Blob, name = (file as File).name ?
   const image = sniffed ? sniffed.startsWith('image/') : isImage(file, name);
   // The stored type is what later decoding goes by (thumbnails, frames), so it must agree.
   if (sniffed && image !== file.type.startsWith('image/')) file = new Blob([file], { type: sniffed });
-  if (image) file = await toDecodableImage(file);
+  if (image) {
+    const size = imageSize(new Uint8Array(await file.slice(0, 512 * 1024).arrayBuffer()));
+    if (size && size.width * size.height > MAX_IMAGE_PIXELS) throw new MediaError('This image is too large for this device ({mp} megapixels).', { mp: Math.round((size.width * size.height) / 1e6) });
+    file = await toDecodableImage(file);
+  }
   const { soundError, ...info } = await probe(file);
   if (soundError) onSoundLost?.(soundError);
   const asset: Asset = { id: uid(), name, mime: file.type, size: file.size, ...info };
@@ -26,6 +31,9 @@ export async function importFile(file: File | Blob, name = (file as File).name ?
   persistOnce();
   return asset;
 }
+
+/** Past this a picture is refused before decoding: 48 MP phone photos are fine, a 200 MP file takes the tab down. */
+const MAX_IMAGE_PIXELS = 120e6;
 
 /** Room kept free beyond the file itself: the project, thumbnails and the browser's own bookkeeping. */
 const ROOM_MARGIN = 64 * 2 ** 20;

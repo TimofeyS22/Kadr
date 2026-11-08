@@ -244,6 +244,12 @@ export function Timeline() {
 
   const onClipDown = (e: RPointerEvent, c: Clip, track: Track) => {
     if (e.button !== 0) return;
+    // A second finger is a pinch, not a press: the first must not turn into a drag under it (audit V-106).
+    if (press.current && press.current.pointerId !== e.pointerId) {
+      clearTimeout(press.current.timer);
+      press.current = null;
+      return;
+    }
     if (player.playing) player.pause();
     const p: Press = { id: c.id, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType !== 'mouse', main: track.kind === 'main', timer: 0 };
     if (p.touch) {

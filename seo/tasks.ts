@@ -98,7 +98,7 @@ export const PAGES: TaskPage[] = [
       en: 'Kadr recognizes the speech in your video and turns it into captions. Pick the layout — whole phrases, one word at a time, the spoken word highlighted, or words appearing as they are said — and a style. The text is editable line by line, and you can save the captions as .srt.',
     },
     steps: {
-      ru: ['Откройте Kadr и добавьте видео.', 'Нажмите «Субтитры», выберите язык, вид и стиль.', 'Нажмите «Создать субтитры» и дождитесь распознавания.', 'Исправьте слова, если нужно, и сохраните видео.'],
+      ru: ['Откройте Kadr и добавьте видео.', 'Нажмите «Субтитры»: распознавание начнётся сразу, а язык и стиль можно поменять в «Настройках».', 'Нажмите «Создать субтитры» и дождитесь распознавания.', 'Исправьте слова, если нужно, и сохраните видео.'],
       en: ['Open Kadr and add your video.', 'Tap “Captions”, choose the language, layout and style.', 'Tap “Create captions” and wait for the recognition.', 'Fix any words if needed and save the video.'],
     },
     faq: {
@@ -340,7 +340,7 @@ export const PAGES: TaskPage[] = [
       en: 'Trim the moment you want, add a caption or a sticker — and save it as a GIF: Kadr makes a looping animation of up to 30 seconds. Everything runs on your phone, and the file is ready to send in a messenger.',
     },
     steps: {
-      ru: ['Откройте Kadr и добавьте видео.', 'Обрежьте нужный кусок, добавьте текст или стикер.', 'Нажмите «Экспорт» и выберите «GIF».', 'Сохраните файл.'],
+      ru: ['Откройте Kadr и добавьте видео.', 'Обрежьте нужный кусок, добавьте текст или стикер.', 'Нажмите «Экспорт», затем «Настройки» и выберите «GIF».', 'Сохраните файл.'],
       en: ['Open Kadr and add your video.', 'Trim the part you want, add text or a sticker.', 'Tap “Export” and choose “GIF”.', 'Save the file.'],
     },
     faq: {
