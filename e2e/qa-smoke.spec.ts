@@ -34,6 +34,31 @@ test('smoke: Home shows this version, the sample opens, a split undoes, the vide
   await page.getByRole('radio', { name: 'Small file' }).click();
   await page.getByRole('button', { name: 'Export video' }).click();
   await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
+  // The file itself, in the browser that made it (audit V-140: a black video or one cut in half passed this test).
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  const made = await (await download).path();
+  const base64 = fs.readFileSync(made).toString('base64');
+  const seen = await page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const v = Object.assign(document.createElement('video'), { muted: true, playsInline: true, src: URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' })) });
+    await new Promise((ok, ko) => { v.onloadedmetadata = ok; v.onerror = () => ko(new Error('the file does not load')); });
+    const c = Object.assign(document.createElement('canvas'), { width: 32, height: 56 });
+    const g = c.getContext('2d', { willReadFrequently: true })!;
+    const luma = async (t: number) => {
+      await new Promise((ok) => { v.onseeked = ok; v.currentTime = t; });
+      await new Promise((ok) => setTimeout(ok, 150));
+      g.drawImage(v, 0, 0, 32, 56);
+      const d = g.getImageData(0, 0, 32, 56).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) n += (d[i] + d[i + 1] + d[i + 2]) / 3;
+      return n / (d.length / 4);
+    };
+    return { duration: v.duration, start: await luma(0.5), end: await luma(v.duration - 0.5) };
+  }, base64);
+  expect(Math.abs(seen.duration - 7.5), `the whole video: ${seen.duration} s`).toBeLessThan(0.3);
+  expect(seen.start, 'a picture at the start').toBeGreaterThan(12);
+  expect(seen.end, 'a picture at the end').toBeGreaterThan(12);
   for (const p of ['en/privacy/', 'ru/licenses/']) expect((await page.request.get(p)).status(), p).toBe(200);
   expect(errors).toEqual([]);
 });

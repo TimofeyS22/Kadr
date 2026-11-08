@@ -4882,3 +4882,79 @@ test('a stray swipe does not carry a clip off the frame (audit V-261)', async ({
   const box = await page.locator('.sel-box').boundingBox();
   expect(box!.x, 'the clip is still on the frame').toBeLessThan(c.x + c.width);
 });
+
+// ---------- Audit 2026-11: what the audit found the tests would not have noticed ----------
+
+test('deleting a project removes its video from the device (audit V-196)', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('textbox', { name: 'Project name' }).fill('Gone');
+  await page.waitForTimeout(1200);
+  const media = () => page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((ok, ko) => { const r = indexedDB.open('kadr'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+    return new Promise<string[]>((ok) => { const r = db.transaction('kv').objectStore('kv').getAllKeys(); r.onsuccess = () => ok((r.result as string[]).filter((k) => /^[bc]:/.test(k))); });
+  });
+  expect((await media()).length, 'the video is stored').toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  await page.getByRole('button', { name: 'Delete Gone' }).click();
+  await expect(page.getByRole('button', { name: 'Open Gone', exact: true })).toHaveCount(0);
+  await expect.poll(media).toEqual([]);
+});
+
+test('deleting a clip can be undone, and the file is whole again (audit V-122)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4', 'photo.png']);
+  const main = page.locator('.tl-row.main .clip');
+  await expect(main).toHaveCount(2);
+  await selectClip(page, main.first());
+  await tool(page, 'Delete').click();
+  await expect(main).toHaveCount(1);
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(main).toHaveCount(2);
+  const p = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  expect(Number(p.format.duration), 'both clips').toBeGreaterThan(8.5);
+});
+
+test('a filter changes the picture, and the file matches the preview (audit V-155)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const before = await rgbAt(await previewAt(page, info, 0));
+  await tool(page, 'Filters').click();
+  await page.getByRole('radio', { name: 'Noir' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.waitForTimeout(600);
+  const noir = await rgbAt(await previewAt(page, info, 0));
+  expect(meanAbsDiff(before, noir), 'the filter shows').toBeGreaterThan(15);
+  const file = await rgbAt(await exportAs(page, info, 'Photo', 'Save photo'));
+  expect(meanAbsDiff(noir, file), 'the file is what the preview showed').toBeLessThan(6);
+});
+
+test('a backup brings back the frame size of a portrait video (audit V-210)', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  page.on('dialog', (d) => void d.accept());
+  await newProject(page);
+  await importFiles(page, 'Media', ['portrait.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const saved = JSON.parse(await settledProject(page)) as { assets: Record<string, { width: number; height: number }> };
+  const size = Object.values(saved.assets)[0];
+  await page.getByRole('textbox', { name: 'Project name' }).fill('Tall');
+  await page.waitForTimeout(1200);
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save a backup of Tall' }).click();
+  const file = info.outputPath('tall.kadr');
+  await (await dl).saveAs(file);
+  await page.getByRole('button', { name: 'Delete Tall' }).click();
+  await expect(page.getByRole('button', { name: 'Open Tall', exact: true })).toHaveCount(0);
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Restore backup' }).click();
+  await (await chooser).setFiles(file);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
+  const back = JSON.parse(await settledProject(page)) as { assets: Record<string, { width: number; height: number }> };
+  expect(Object.values(back.assets)[0]).toMatchObject({ width: size.width, height: size.height });
+});
