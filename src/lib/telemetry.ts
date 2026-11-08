@@ -27,6 +27,9 @@ export function errorMessage(e: unknown): string {
   // Browsers report a codec taken back under the same name ("Codec reclaimed…"): that is no reason to delete projects (audit V-170).
   if (e instanceof DOMException && e.name === 'QuotaExceededError' && /codec|decod|encod/i.test(e.message)) return t('The video decoder of this device stopped. Close other apps, or restart the browser, and try again.');
   if (e instanceof DOMException && e.name === 'QuotaExceededError') return t('Not enough storage for Kadr on this device. Delete old projects or free up space, then try again.');
+  // The browser's own words are in Details; these say what happened in the person's language (audit V-139, V-113).
+  if (e instanceof DOMException && e.name === 'NotReadableError') return t('This file can no longer be read. It may have been moved or deleted. Add it again.');
+  if (e instanceof DOMException && ['EncodingError', 'OperationError', 'NotSupportedError', 'DataError'].includes(e.name)) return t('This device could not process the video. Close other apps and try again.');
   if (e instanceof TypeError && /^(Load failed|Failed to fetch|NetworkError)/i.test(e.message)) {
     return navigator.onLine ? t('Could not reach the network. Check the connection and try again.') : t('No internet connection.');
   }

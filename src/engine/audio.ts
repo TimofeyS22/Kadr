@@ -178,6 +178,7 @@ export class AudioEngine {
   warm(): void {
     if (this.ctx) return;
     this.ctx = new AudioContext({ latencyHint: 'interactive' });
+    this.ctx.addEventListener('statechange', () => { if (this.ctx?.state !== 'running') this.onInterrupted?.(); });
     this.master = this.ctx.createGain();
     this.master.connect(this.ctx.destination);
   }
@@ -188,8 +189,12 @@ export class AudioEngine {
     // Play through the iOS silent switch, like video apps do.
     const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
     if (session) session.type = 'playback';
-    if (this.ctx!.state !== 'running') void this.ctx!.resume();
+    // iOS refuses while a call or Siri holds the audio ("interrupted"): the promise rejects, and that is no error of ours.
+    if (this.ctx!.state !== 'running') void this.ctx!.resume().catch((e) => console.warn('audio did not resume', e));
   }
+
+  /** Called when the sound stops on its own: a call, Siri, the screen locked. */
+  onInterrupted: (() => void) | null = null;
 
   now(): number {
     return this.ctx ? Math.max(this.startTl, this.startTl + this.ctx.currentTime - this.startCtx) : this.startTl;

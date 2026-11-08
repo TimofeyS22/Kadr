@@ -1,6 +1,7 @@
 // WebGL2 compositor: draws a FrameDesc with transforms, color grading, chroma key, wipes and blend modes.
 import type { FrameDesc, Layer } from '../core/frame';
 import { fitRects } from '../core/faceTiles';
+import { fxLod, fxScale } from '../core/fxScale';
 import { fromBase64 } from '../core/lut';
 import { ADJUST_KEYS, type BlendMode, type LutData } from '../core/types';
 import type { Drawable } from './text';
@@ -59,7 +60,7 @@ uniform int uHasWipe;
 uniform float uSeed;
 uniform int uFx;
 uniform vec2 uRes;
-uniform float uFxAmt, uFxTime, uFxSeed, uFxLod;
+uniform float uFxAmt, uFxTime, uFxSeed, uFxLod, uFxScale;
 uniform highp sampler3D uLut;
 uniform int uHasLut;
 uniform float uLutAmt, uLutSize;
@@ -139,7 +140,7 @@ void main() {
     for (int i = -4; i <= 4; i++) src += texture(uTex, uv + vec2(float(i) * 0.014 * uFxAmt, 0.0));
     src = unpremul(src / 9.0);
   } else if (uFx == 6) { // mosaic that grows with the amount
-    vec2 blk = uTexel * max(1.0, uFxAmt * 56.0);
+    vec2 blk = uTexel * max(1.0, uFxAmt * 56.0 * uFxScale);
     src = unpremul(texture(uTex, (floor(uv / blk) + 0.5) * blk));
   }
   else src = unpremul(texture(uTex, uv));
@@ -154,8 +155,9 @@ void main() {
   float a = src.a;
   if (uHasAdj == 1) {
     if (uAdj[10] > 0.0) {
-      vec3 n = texture(uTex, vUv + vec2(uTexel.x, 0.0)).rgb + texture(uTex, vUv - vec2(uTexel.x, 0.0)).rgb
-        + texture(uTex, vUv + vec2(0.0, uTexel.y)).rgb + texture(uTex, vUv - vec2(0.0, uTexel.y)).rgb;
+      vec2 near = uTexel * uFxScale;
+      vec3 n = texture(uTex, vUv + vec2(near.x, 0.0)).rgb + texture(uTex, vUv - vec2(near.x, 0.0)).rgb
+        + texture(uTex, vUv + vec2(0.0, near.y)).rgb + texture(uTex, vUv - vec2(0.0, near.y)).rgb;
       c += (c - n * 0.25) * uAdj[10] * 2.0;
     }
     c *= exp2(uAdj[0] * 1.5);
@@ -176,7 +178,7 @@ void main() {
     c = mix(c, texture(uLut, lc).rgb, uLutAmt);
   }
   if (uFx == 2) {
-    c *= 1.0 - 0.12 * uFxAmt * (0.5 + 0.5 * sin(gl_FragCoord.y * 1.5));
+    c *= 1.0 - 0.12 * uFxAmt * (0.5 + 0.5 * sin(vUv.y * 1920.0));
     c = mix(c, vec3(luma(c)), 0.15 * uFxAmt) + vec3(0.02, 0.0, -0.02) * uFxAmt;
     c += (hash(vUv * 512.0 + t) - 0.5) * 0.06 * uFxAmt;
   } else if (uFx == 1) c += gOn * uFxAmt * vec3(0.04, -0.02, 0.05);
@@ -595,11 +597,12 @@ export class Compositor {
       }
       const fx = d ? l.fx : null;
       gl.uniform1i(this.loc('uFx'), fx?.code ?? 0);
+      gl.uniform1f(this.loc('uFxScale'), fxScale(Math.max(sw, sh)));
       if (fx) {
         gl.uniform1f(this.loc('uFxAmt'), fx.amount);
         gl.uniform1f(this.loc('uFxTime'), fx.time);
         gl.uniform1f(this.loc('uFxSeed'), fx.seed);
-        gl.uniform1f(this.loc('uFxLod'), fx.amount * Math.max(0, Math.log2(Math.max(sw, sh) / 24)));
+        gl.uniform1f(this.loc('uFxLod'), fxLod(fx.amount, Math.max(sw, sh)));
       }
       gl.uniform1i(this.loc('uHasLut'), d && l.lut ? 1 : 0);
       if (d && l.lut) {

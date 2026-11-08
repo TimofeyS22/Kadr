@@ -255,6 +255,35 @@ export function Home() {
     void refresh();
   }
 
+  // Someone coming back sees their work first; the first visit starts with what can be made (audit V-187).
+  const yours = (
+    <>
+      <h2 className="section-title">{t('Your projects')}</h2>
+      {projects === null ? <p className="hint">{t('Loading…')}</p> : projects.length === 0 ? (
+        <p className="hint">{t('No projects yet. Start a new one or try the sample.')}</p>
+      ) : (
+        <ul className="project-grid">
+          {projects.map((m) => (
+            <li key={m.id} className="project-card">
+              <button className="project-open" onClick={() => open(m.id)} aria-label={t('Open {name}', { name: m.name })}>
+                <span className="project-thumb" style={{ aspectRatio: ASPECTS[m.aspect].join(' / ') }}>
+                  {m.thumb && <img src={m.thumb} alt="" />}
+                </span>
+                <span className="project-name">{m.name}</span>
+                <span className="project-meta">{formatTime(m.duration, false)}, {new Date(m.updatedAt).toLocaleDateString()}</span>
+              </button>
+              <div className="project-actions">
+                <button className="icon-btn" onClick={() => void backup(m)} aria-label={t('Save a backup of {name}', { name: m.name })}><Download size={16} /></button>
+                <button className="icon-btn" onClick={() => void rename(m)} aria-label={t('Rename {name}', { name: m.name })}><Pencil size={16} /></button>
+                <button className="icon-btn" onClick={() => void remove(m)} aria-label={t('Delete {name}', { name: m.name })}><Trash2 size={16} /></button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+
   return (
     <main className="home">
       <header className="home-head">
@@ -316,6 +345,8 @@ export function Home() {
         </div>
       )}
 
+      {!!projects?.length && yours}
+
       <h2 className="section-title">{t('Start from a template')}</h2>
       <div className="template-grid">
         {TEMPLATES.map((tpl) => (
@@ -334,29 +365,8 @@ export function Home() {
         </div>
       )}
 
-      <h2 className="section-title">{t('Your projects')}</h2>
-      {projects === null ? <p className="hint">{t('Loading…')}</p> : projects.length === 0 ? (
-        <p className="hint">{t('No projects yet. Start a new one or try the sample.')}</p>
-      ) : (
-        <ul className="project-grid">
-          {projects.map((m) => (
-            <li key={m.id} className="project-card">
-              <button className="project-open" onClick={() => open(m.id)} aria-label={t('Open {name}', { name: m.name })}>
-                <span className="project-thumb" style={{ aspectRatio: ASPECTS[m.aspect].join(' / ') }}>
-                  {m.thumb && <img src={m.thumb} alt="" />}
-                </span>
-                <span className="project-name">{m.name}</span>
-                <span className="project-meta">{formatTime(m.duration, false)}, {new Date(m.updatedAt).toLocaleDateString()}</span>
-              </button>
-              <div className="project-actions">
-                <button className="icon-btn" onClick={() => void backup(m)} aria-label={t('Save a backup of {name}', { name: m.name })}><Download size={16} /></button>
-                <button className="icon-btn" onClick={() => void rename(m)} aria-label={t('Rename {name}', { name: m.name })}><Pencil size={16} /></button>
-                <button className="icon-btn" onClick={() => void remove(m)} aria-label={t('Delete {name}', { name: m.name })}><Trash2 size={16} /></button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      {!projects?.length && yours}
+
       <footer className="home-foot">
         {t('Projects and media are stored in this browser.')} Kadr v{__APP_VERSION__}
         {' · '}<a href={`${locale}/privacy/`}>{t('Privacy')}</a>{' · '}<a href={`${locale}/licenses/`}>{t('Licenses')}</a>

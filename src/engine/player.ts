@@ -55,11 +55,18 @@ export class Player {
     };
     const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 300));
     idle(() => this.audio.warm());
+    document.addEventListener('visibilitychange', this.onHidden);
     this.audio.onError = (e) => this.onError?.(e);
+    // The clock is the sound: without it the picture stands still under a Pause button (audit V-133).
+    this.audio.onInterrupted = () => this.pause();
     this.requestRender();
   }
 
+  /** The page went to the background: the sound and the frames stop until the person comes back and presses Play. */
+  private readonly onHidden = () => { if (document.visibilityState === 'hidden') this.pause(); };
+
   detach(): void {
+    document.removeEventListener('visibilitychange', this.onHidden);
     this.pause();
     clearTimeout(this.contextTimer);
     this.compositor?.dispose();

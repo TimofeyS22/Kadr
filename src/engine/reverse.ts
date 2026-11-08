@@ -14,6 +14,7 @@ import { MediaError } from './media';
 import { ResilientSink, playableAudioTrack } from './sound';
 import { matchStreamRange } from './videoRange';
 import { abandon } from './abandon';
+import { encoderDelay } from './encoderDelay';
 
 export const MAX_REVERSE_S = 60;
 const WINDOW_S = 0.5;
@@ -69,7 +70,8 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
           }
         }
         for (const d of data) d.reverse();
-        for (let i = 0; i < len; i += sr) {
+        // The encoder puts its priming in front: off the start, so the reversed sound meets the reversed picture (audit V-159).
+        for (let i = Math.min(len, aCodec ? await encoderDelay(aCodec, ch, sr) : 0); i < len; i += sr) {
           const n = Math.min(sr, len - i);
           const chunk = new AudioBuffer({ length: n, numberOfChannels: ch, sampleRate: sr });
           data.forEach((d, c) => chunk.copyToChannel(d.subarray(i, i + n), c));

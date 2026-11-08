@@ -251,7 +251,8 @@ export function CaptionsBody() {
   // Auto by default: the language is detected from the speech (eval in docs/02, v1.1.1).
   const [lang, setLang] = useState('');
   // The Russian models read Russian only: offered while the language is Russian or Auto.
-  const models: readonly AsrModel[] = lang === '' || lang === 'russian' ? ['ru', 'ru-fast', 'tiny', 'base', 'small'] : ['tiny', 'base', 'small'];
+  // "Fast" got four words in five wrong on Russian (audit V-251): not offered once the language is known to be Russian.
+  const models: readonly AsrModel[] = lang === 'russian' ? ['ru', 'ru-fast', 'base', 'small'] : lang === '' ? ['ru', 'ru-fast', 'tiny', 'base', 'small'] : ['tiny', 'base', 'small'];
   const model = models.includes(picked) ? picked : 'base';
   const [preset, setPreset] = useState(() => savedLook().preset);
   const [layout, setLayout] = useState<CaptionLayout>(() => savedLook().layout);
@@ -306,6 +307,8 @@ export function CaptionsBody() {
       if (pace.current) learnPace(model, seconds, finishPace(pace.current, performance.now()));
       addCaptions(words, preset, layout);
       if (detected && language) editor().toast(t('Speech language: {language}. Wrong? Pick it and create again.', { language: languageLabel(language) }), 'info', 6000);
+      // Whisper on Russian speech gets a third of the words wrong; the Russian model, one in ten (audit V-191).
+      if (detected && language === 'russian' && model !== 'ru' && model !== 'ru-fast') editor().toast(t('This is Russian speech: choose the Russian model for far fewer mistakes.'), 'info', 8000);
       if (tr.unreadable.length) editor().toast(t('Captions are made without “{name}”: its sound cannot be decoded in this browser.', { name: tr.unreadable.join(', ') }), 'info', 8000);
     } catch (e) {
       // A decoder interrupted by Cancel or by leaving the project fails with its own error: that is a cancel, not a failure.

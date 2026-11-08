@@ -796,6 +796,10 @@ export const RU: Record<string, string> = {
   'Layers count only what is on screen at the same time. A new overlay goes under captions and text.': 'Слои считаются среди того, что на экране одновременно. Новое наложение ложится под субтитры и текст.',
   'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.': 'Видеодекодер устройства остановился. Закройте другие приложения или перезапустите браузер и попробуйте снова.',
   // Audit 2026-11 (docs/13)
+  'This is Russian speech: choose the Russian model for far fewer mistakes.': 'Это русская речь: выберите русскую модель, ошибок будет намного меньше.',
+  'A GIF comes in as a still picture: its first frame.': 'GIF добавляется как неподвижная картинка: его первый кадр.',
+  'This file can no longer be read. It may have been moved or deleted. Add it again.': 'Этот файл больше не читается: возможно, его переместили или удалили. Добавьте его снова.',
+  'This device could not process the video. Close other apps and try again.': 'Устройство не смогло обработать видео. Закройте другие приложения и попробуйте снова.',
   'restored': 'восстановлено',
   'A camera recording that was cut short is back in the project.': 'Запись с камеры, которая оборвалась, вернулась в проект.',
   'Soft shadow': 'Мягкая',

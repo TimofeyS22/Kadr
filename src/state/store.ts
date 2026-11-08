@@ -14,7 +14,7 @@ export interface Toast { id: number; text: string; kind: 'info' | 'error'; detai
 /** A long on-device job (reverse, cutout model load…) shown as a progress bar with Cancel. */
 export interface Busy { label: string; progress: number | null; cancel?: () => void }
 
-const HISTORY_LIMIT = 100;
+const HISTORY_LIMIT = 500; // audit V-134: steps share everything they did not change, so a long session costs little
 const COALESCE_MS = 1200;
 
 export interface EditorState {

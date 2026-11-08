@@ -7,6 +7,12 @@ const s = () => useEditor.getState();
 describe('editor history', () => {
   beforeEach(() => s().open(createProject('h', '9:16')));
 
+  it('a long session can be undone to its start (audit V-134)', () => {
+    for (let i = 0; i < 300; i++) s().commit((d) => { d.name = `n${i}`; });
+    for (let i = 0; i < 300; i++) s().undo();
+    expect(s().project!.name).toBe('h');
+  });
+
   it('undo/redo walk through commits', () => {
     s().commit((d) => { d.name = 'a'; });
     s().commit((d) => { d.name = 'b'; });

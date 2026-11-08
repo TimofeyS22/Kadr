@@ -74,6 +74,7 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
     }
   });
   if (first) editor().select(first);
+  if (assets.some((a) => a.mime === 'image/gif')) editor().toast(t('A GIF comes in as a still picture: its first frame.'), 'info', 6000); // audit V-227
   track('media_imported', { count: assets.length, target });
   if (assets.some((a) => a.kind === 'video')) iosVideoTip();
   return assets.length;

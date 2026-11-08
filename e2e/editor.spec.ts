@@ -4794,3 +4794,46 @@ test('a camera recording cut short by a crash comes back (audit V-250)', async (
   await page.reload();
   await expect(page.locator('.tl-row.main .clip-video'), 'once, not on every open').toHaveCount(1, { timeout: 30_000 });
 });
+
+test('the page going to the background stops playback; a refused resume is no error (audit V-133)', async ({ page }) => {
+  await page.addInitScript(() => {
+    const real = AudioContext.prototype.resume;
+    let once = true;
+    AudioContext.prototype.resume = function (this: AudioContext) {
+      if (once) { once = false; return Promise.reject(new DOMException('interrupted', 'InvalidStateError')); }
+      return real.call(this);
+    };
+  });
+  await newProject(page);
+  await importFiles(page, 'Media', ['long_1.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.locator('.play-btn').click();
+  await expect(page.locator('.play-btn')).toHaveAttribute('aria-label', 'Pause');
+  await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
+  await expect(page.locator('.play-btn')).toHaveAttribute('aria-label', 'Play');
+});
+
+test('someone coming back sees their projects before the templates (audit V-187)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Back to projects' }).click();
+  const yours = (await page.getByRole('heading', { name: 'Your projects' }).boundingBox())!;
+  const templates = (await page.getByRole('heading', { name: 'Start from a template' }).boundingBox())!;
+  expect(yours.y).toBeLessThan(templates.y);
+});
+
+test('a reversed clip keeps its sound on its picture (audit V-159)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  test.skip(!fs.existsSync(fx('avsync.mp4')), 'needs npm run fixtures');
+  await newProject(page);
+  await importFiles(page, 'Media', ['avsync.mp4']);
+  const main = page.locator('.tl-row.main .clip');
+  await expect(main).toHaveCount(1);
+  await selectClip(page, main.first());
+  await tool(page, 'Reverse').click();
+  await expect(page.locator('.busy')).toHaveCount(0, { timeout: 120_000 });
+  const offsets = await avOffsets(await exportAs(page, info, 'Video', 'Export video'));
+  console.log(`reversed A/V offsets, ms (${info.project.name}): ${offsets.map((v) => Math.round(v)).join(' ')}`);
+  expect(Math.max(...offsets.map(Math.abs)), 'within 45 ms').toBeLessThan(45);
+});
