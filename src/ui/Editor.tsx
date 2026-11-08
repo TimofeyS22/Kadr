@@ -54,6 +54,9 @@ export function Editor({ id }: { id: string }) {
   const [missing, setMissing] = useState(false);
   const [dragging, setDragging] = useState(false);
 
+  // However the editor is left (the system Back too), nothing of this project stays for the next one to write into.
+  useEffect(() => () => { useEditor.getState().close(); }, []);
+
   useEffect(() => {
     let alive = true;
     loadProject(id).then((p) => {
@@ -216,8 +219,8 @@ export function Editor({ id }: { id: string }) {
 }
 
 function TopBar({ project }: { project: Project }) {
-  const canUndo = useEditor((s) => s.past.length > 0);
-  const canRedo = useEditor((s) => s.future.length > 0);
+  const canUndo = useEditor((s) => s.past.length > 0 && !s.locked);
+  const canRedo = useEditor((s) => s.future.length > 0 && !s.locked);
   const s = useEditor.getState();
   return (
     <header className="topbar">
@@ -236,12 +239,13 @@ function TopBar({ project }: { project: Project }) {
 function Transport() {
   const time = useEditor((s) => s.time);
   const playing = useEditor((s) => s.playing);
+  const locked = useEditor((s) => s.locked);
   const duration = useEditor((s) => (s.project ? projectDuration(s.project) : 0));
   const safeZones = useEditor((s) => s.safeZones);
   return (
     <div className="transport">
       <span className="time"><b>{formatTime(time)}</b> / {formatTime(duration)}</span>
-      <button className="play-btn" onClick={() => player.toggle()} aria-label={playing ? t('Pause') : t('Play')} disabled={duration <= 0}>
+      <button className="play-btn" onClick={() => player.toggle()} aria-label={playing ? t('Pause') : t('Play')} disabled={locked || duration <= 0}>
         {playing ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" />}
       </button>
       <button className={`icon-btn zones-btn ${safeZones ? 'on' : ''}`} aria-pressed={safeZones} aria-label={t('Show TikTok, Reels and Shorts safe zones')}

@@ -7,9 +7,9 @@ import type { AspectId } from '../core/types';
 import { IOS, standalone } from '../lib/device';
 import { errorMessage, track } from '../lib/telemetry';
 import { pickFiles } from '../lib/pickFiles';
-import { holdUpdates, useHoldUpdates } from '../lib/update';
+import { holdUpdates, othersWorking, updatesHeld, useHoldUpdates } from '../lib/update';
 import { useEditor } from '../state/store';
-import { deleteProject, listProjects, loadProject, requestPersistence, saveProject, type ProjectMeta } from '../storage/db';
+import { collectOrphans, deleteProject, listProjects, loadProject, requestPersistence, saveProject, type ProjectMeta } from '../storage/db';
 import { formatTime } from './format';
 import { t, useLocale } from '../lib/i18n';
 import { useInstall } from './install';
@@ -53,6 +53,8 @@ async function takeSharedFiles(): Promise<{ files: File[]; clear(): Promise<void
 }
 
 /** A tap's whole job (the picker, the import, opening the project) holds updates: a reload in the picker loses the files. */
+let swept = false;
+
 async function held<T>(job: () => Promise<T>): Promise<T> {
   const release = holdUpdates(); // before the job's first await, so the picker still opens inside the tap
   try { return await job(); } finally { release(); }
@@ -86,6 +88,20 @@ export function Home() {
     setKeepTipSeen(true);
     track('keep_tip_dismissed');
   };
+
+  // Once a page load, when nothing here or in another tab is working: media left behind by what never finished.
+  useEffect(() => {
+    if (swept) return;
+    swept = true;
+    const timer = setTimeout(() => {
+      void othersWorking().then(async (busyElsewhere) => {
+        if (busyElsewhere || updatesHeld()) return;
+        const n = await collectOrphans();
+        if (n) track('orphans_collected', { n });
+      }).catch((e) => console.warn('could not tidy the stored media', e));
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const route = useStartRoute();
   const install = useInstall();

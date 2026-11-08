@@ -4,6 +4,7 @@ import { evalAnim as evalAnimAt, mapAnimTime, splitAnim } from './anim';
 import { splitWords } from './captions';
 import { RESAMPLE_POINTS, clampRate, curveAt, curveIntegral, subCurve, timeFractionToU, uToTimeFraction } from './speed';
 import { anim, createImageClip, uid } from './defaults';
+import { migrateProject } from './migrate';
 import type {
   Anim, Asset, AudioClip, Clip, Look, MediaClip, Project, Sound, SoundClip, Track, TrackKind, Transform, Transition, VisualClip,
 } from './types';
@@ -511,6 +512,7 @@ export function detachAudio(p: Project, id: string): string | null {
 
 /** Repairs invariants after load (older schema, interrupted writes). */
 export function normalizeProject(p: Project): void {
+  migrateProject(p);
   if (!p.tracks.some((t) => t.kind === 'main')) p.tracks.unshift({ id: uid(), kind: 'main', clips: [] });
   for (const t of p.tracks) t.clips = t.clips.filter((c) => !('assetId' in c) || !!p.assets[c.assetId]);
   for (const t of p.tracks) for (const c of t.clips) if (isSound(c) && c.audioAssetId && !p.assets[c.audioAssetId]) { delete c.audioAssetId; delete c.denoise; }

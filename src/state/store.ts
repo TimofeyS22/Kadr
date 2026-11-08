@@ -68,6 +68,8 @@ export interface EditorState {
   openSheet(s: SheetId | null, transitionFor?: string): void;
   /** What closing the open sheet would lose, in words; the first attempt says it, a second one closes. */
   sheetGuard: string | null;
+  /** An export is running: it renders the project as it was when it began, so nothing may look as if it changed it. */
+  locked: boolean;
   /** The person closes the sheet (Done, a swipe, Esc): false when it stayed open to say what would be lost. */
   closeSheet(): boolean;
   setTime(t: number): void;
@@ -139,13 +141,13 @@ export const useEditor = create<EditorState>()((set, get) => ({
   undo() {
     const s = get();
     const prev = s.past.at(-1);
-    if (!prev || !s.project) return;
+    if (!prev || !s.project || s.locked) return;
     set({ project: prev, past: s.past.slice(0, -1), future: [s.project, ...s.future], histKey: null, selection: validSelection(prev, s.selection) });
   },
   redo() {
     const s = get();
     const next = s.future[0];
-    if (!next || !s.project) return;
+    if (!next || !s.project || s.locked) return;
     set({ project: next, past: [...s.past, s.project], future: s.future.slice(1), histKey: null, selection: validSelection(next, s.selection) });
   },
   select: (id) => set((s) => ({ selection: id, sheet: id === s.selection ? s.sheet : null })),
@@ -153,6 +155,7 @@ export const useEditor = create<EditorState>()((set, get) => ({
   toggleMulti: (id) => set((s) => ({ multi: s.multi?.includes(id) ? s.multi.filter((x) => x !== id) : [...(s.multi ?? []), id] })),
   openSheet: (sheet, transitionFor) => set({ sheet, transitionFor: transitionFor ?? null }),
   sheetGuard: null,
+  locked: false,
   closeSheet: () => {
     const guard = get().sheetGuard;
     if (guard && performance.now() - warnedAt > GUARD_MS) {

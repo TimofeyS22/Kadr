@@ -240,6 +240,31 @@ export async function deleteBlob(assetId: string): Promise<void> {
   assembled.delete(assetId);
   await Promise.all(keys.map((k) => del(k, store)));
 }
+/**
+ * Deletes stored media no project refers to: an import cut short, a crash before the save, a result nobody took (audit
+ * V-176). Call only while no tab has an editor or a job open: their media may not be in any saved project yet.
+ */
+export async function collectOrphans(): Promise<number> {
+  const all = await keys(store);
+  const used = new Set<string>();
+  const hold = (p: Pick<Project, 'assets' | 'fonts'>) => {
+    for (const id of Object.keys(p.assets ?? {})) used.add(id);
+    for (const f of Object.values(p.fonts ?? {})) used.add(f.blobId);
+  };
+  for (const k of all) {
+    if (typeof k !== 'string' || !k.startsWith('p:')) continue;
+    const p = await get<Stored>(k, store);
+    if (p) hold(p);
+  }
+  try {
+    const j = JSON.parse(localStorage.getItem(JOURNAL) ?? 'null') as Journal | null;
+    if (j?.project) hold(j.project);
+  } catch { /* no journal to honour */ }
+  const orphans = new Set(all.flatMap((k) => (typeof k === 'string' && /^[bwc]:/.test(k) ? [k.split(':')[1]] : [])).filter((id) => !used.has(id)));
+  await Promise.all([...orphans].map(deleteBlob));
+  return orphans.size;
+}
+
 export const putPeaks = (assetId: string, peaks: Float32Array): Promise<void> => set(`w:${assetId}`, peaks, store);
 export const getPeaks = (assetId: string): Promise<Float32Array | undefined> => get<Float32Array>(`w:${assetId}`, store);
 

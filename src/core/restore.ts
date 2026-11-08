@@ -3,6 +3,7 @@
 // instead of failing later with an error nobody can act on ("length cannot be 0", "atob … not correctly encoded").
 import { ASPECTS } from './defaults';
 import { MAX_LUT_SIZE, fromBase64 } from './lut';
+import { migrateProject } from './migrate';
 import { ADJUST_KEYS, type AspectId, type Project } from './types';
 
 const CLIP_KINDS = ['video', 'image', 'audio', 'text', 'caption'];
@@ -75,6 +76,7 @@ function goodLut(l: unknown): boolean {
  * clips of media left out go later, when `normalizeProject` drops clips without their media.
  */
 export function repairBackup(p: Project): number {
+  migrateProject(p); // what an older version did not write is not damage
   const s = p.settings as unknown as Loose;
   const aspect = (typeof s.aspect === 'string' && Object.keys(ASPECTS).includes(s.aspect) ? s.aspect : '9:16') as AspectId;
   const bg = isObj(s.background) ? s.background : {};

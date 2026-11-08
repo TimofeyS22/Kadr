@@ -18,7 +18,19 @@ const styles = new URLSearchParams(location.search).has('styles');
 function useProjectRoute(): string | null {
   const [hash, setHash] = useState(location.hash);
   useEffect(() => {
-    const onHash = () => setHash(location.hash);
+    let shown = location.hash;
+    const onHash = () => {
+      // The system Back closes the open sheet first, as the Done button would, warning about work it would lose. Before,
+      // it left the editor under the sheet: long jobs went on with nowhere to report (audit V-226).
+      const s = useEditor.getState();
+      if (s.project && s.sheet && !/^#\/p\//.test(location.hash)) {
+        history.pushState(null, '', shown);
+        s.closeSheet();
+        return;
+      }
+      shown = location.hash;
+      setHash(shown);
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);

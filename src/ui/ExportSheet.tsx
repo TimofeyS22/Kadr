@@ -70,6 +70,12 @@ export function ExportSheet() {
   // Consumed once: the Export button asked for a quick export (see startExport). It opens straight on the progress.
   const [auto] = useState(() => { const a = useEditor.getState().startAuto; if (a) useEditor.setState({ startAuto: false }); return a; });
   const [phase, setPhase] = useState<Phase>(() => (auto ? { kind: 'running', progress: 0 } : { kind: 'setup' }));
+  useEffect(() => {
+    if (phase.kind !== 'running') return;
+    useEditor.setState({ locked: true });
+    player.locked = true;
+    return () => { useEditor.setState({ locked: false }); player.locked = false; };
+  }, [phase.kind]);
   const [saved, setSaved] = useState(false);
   const save = (r: ExportResult) => void saveFile(r.blob, r.fileName).then((ok) => { if (ok) setSaved(true); });
   useHoldUpdates(phase.kind === 'running' || phase.kind === 'done'); // a reload would lose the export or the file

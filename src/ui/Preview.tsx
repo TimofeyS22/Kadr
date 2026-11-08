@@ -141,6 +141,7 @@ export function Preview() {
   };
 
   const onDown = (e: RPointerEvent) => {
+    if (useEditor.getState().locked) return; // the export renders what was there when it began
     // Typing in a sheet leaves the keyboard up; touching the preview puts it away, so the layer can be moved.
     const active = document.activeElement;
     if (active instanceof HTMLElement && active.matches('input, textarea')) active.blur();

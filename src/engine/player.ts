@@ -32,6 +32,8 @@ export class Player {
   private idleSweep = 0;
   private contextTimer = 0;
   playing = false;
+  /** An export is running: its decoders are the ones a phone has to spare (audit V-192). */
+  locked = false;
   time = 0;
   bounds: LayerBounds[] = [];
   onTick: ((t: number) => void) | null = null;
@@ -84,7 +86,7 @@ export class Player {
   }
 
   play(): void {
-    if (!this.project || this.playing) return;
+    if (!this.project || this.playing || this.locked) return;
     this.audio.unlock();
     if (this.time >= this.duration - 0.02) this.time = 0;
     this.playing = true;

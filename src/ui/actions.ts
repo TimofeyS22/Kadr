@@ -9,7 +9,7 @@ import {
   sourceTime, splitClip, SOUND_SYNC,
 } from '../core/timeline';
 import type { Asset, CaptionClip, CaptionWord, Clip, ImageClip, Project, SoundClip, VideoClip } from '../core/types';
-import { getBlob } from '../storage/db';
+import { deleteBlob, getBlob } from '../storage/db';
 import { prepareClipSound } from '../engine/audiofx';
 import { coverScale, reframeKeys } from '../core/reframe';
 import { saveFile } from '../engine/exporter';
@@ -36,6 +36,7 @@ export async function addMedia(target: AddTarget): Promise<void> {
 export async function addFiles(files: File[], target: AddTarget, meta: { script?: string } = {}): Promise<void> {
   if (!files.length) return;
   const s = editor();
+  const owner = s.project?.id;
   const busy = (i: number) => useEditor.setState({ busy: { label: t('Adding {i} of {n}…', { i: i + 1, n: files.length }), progress: i / files.length } });
   busy(0);
   mark('import:start');
@@ -47,6 +48,10 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
     useEditor.setState({ busy: null });
   }
   if (!assets.length) return;
+  if (editor().project?.id !== owner) { // the person left for another project: this one must not receive them
+    await Promise.all(assets.map((a) => deleteBlob(a.id)));
+    return;
+  }
   if (meta.script) for (const a of assets) a.script = meta.script;
   let first: string | null = null;
   const now = player.time;

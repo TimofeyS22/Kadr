@@ -4697,3 +4697,60 @@ test('captions have the same look settings as text: outline, second outline, sha
   const styled = await shot('styled');
   expect(changed(plain, styled, 12), 'the picture shows it').toBeGreaterThan(0.002);
 });
+
+test('the system Back closes the sheet first, then leaves with nothing left behind (audit V-226)', async ({ page }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('textbox', { name: 'Project name' }).fill('First');
+  await page.waitForTimeout(1000);
+  await tool(page, 'Speed').click();
+  await expect(page.getByRole('dialog', { name: 'Speed' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('dialog', { name: 'Speed' })).toHaveCount(0);
+  await expect(page.locator('.preview-canvas'), 'still in the editor').toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('button', { name: 'Open First', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => location.hash)).toBe('');
+});
+
+test('during an export the preview and history are held still (audit V-192)', async ({ page }) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['long_1.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('textbox', { name: 'Project name' }).fill('Hold');
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  await expect(page.getByText(/keep this screen open/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
+  await expect(page.locator('.play-btn')).toBeDisabled();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+});
+
+test('media no project refers to is cleared once nothing is working (audit V-176)', async ({ page, context }) => {
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('textbox', { name: 'Project name' }).fill('Kept');
+  await page.waitForTimeout(1200);
+  const kv = (p: Page, op: 'plant' | 'list') => p.evaluate(async (what) => {
+    const db = await new Promise<IDBDatabase>((ok, ko) => { const r = indexedDB.open('kadr'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+    if (what === 'plant') { await new Promise((ok) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(new ArrayBuffer(8), 'w:orphan'); tx.oncomplete = ok; }); return []; }
+    return new Promise<string[]>((ok) => { const r = db.transaction('kv').objectStore('kv').getAllKeys(); r.onsuccess = () => ok((r.result as string[]).filter((k) => /^[bwc]:/.test(k))); });
+  }, op);
+  await kv(page, 'plant');
+  // Another tab with the editor open: not now.
+  const url = page.url();
+  const b = await context.newPage();
+  await b.goto(new URL('./', url).href);
+  await b.waitForTimeout(6000);
+  expect(await kv(b, 'list'), 'a tab is working').toContain('w:orphan');
+  await page.goto(new URL('./', url).href); // the editor is gone
+  await b.reload();
+  await expect.poll(() => kv(b, 'list'), { timeout: 15_000 }).not.toContain('w:orphan');
+  expect((await kv(b, 'list')).some((k) => k.startsWith('b:') || k.startsWith('c:')), 'the project keeps its media').toBe(true);
+  await b.getByRole('button', { name: 'Open Kept', exact: true }).click();
+  await expect(b.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
+});

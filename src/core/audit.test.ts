@@ -7,6 +7,7 @@ import { buildFrame } from './frame';
 import { CAPTION_PRESETS } from './presets';
 import { DEFAULT_PAUSES, removedSeconds, silenceLevel, speechRanges } from './silence';
 import { parseSubtitles } from './captions';
+import { repairBackup } from './restore';
 import { fitRects } from './faceTiles';
 import { withoutGuides } from './music';
 import { detachAudio, findClip, forwardIn, insertFreezeFrame, insertMain, mainTrack, placeClip, removeSourceGaps, setSpeed, soundAssetId, splitClip, trimClip, usedAssetIds, withUsedAssets } from './timeline';
@@ -250,5 +251,28 @@ describe('a guide is not a voice (audit V-130)', () => {
   it('the mix without guides has one less sound to duck under', () => {
     const { p, id } = oneClip((c) => { c.guide = true; });
     expect(findClip(withoutGuides(p), id)).toBeNull();
+  });
+});
+
+describe('a project from an earlier version (audit V-239)', () => {
+  const older = () => {
+    const { p } = oneClip();
+    const q = JSON.parse(JSON.stringify(p)) as Project;
+    const c = q.tracks[0].clips[0] as unknown as Record<string, Record<string, unknown>>;
+    delete c.adjust.vignette;
+    delete (c as unknown as Record<string, unknown>).chroma;
+    return q;
+  };
+  it('keeps its clips when a backup lacks settings added later', () => {
+    const q = older();
+    expect(repairBackup(q), 'nothing was left out').toBe(0);
+    const c = q.tracks[0].clips[0] as VideoClip;
+    expect(c.adjust.vignette).toBe(0);
+    expect(c.chroma.enabled).toBe(false);
+  });
+  it('still leaves out a clip that is really damaged', () => {
+    const q = older();
+    (q.tracks[0].clips[0] as unknown as Record<string, unknown>).duration = -1;
+    expect(repairBackup(q)).toBe(1);
   });
 });
