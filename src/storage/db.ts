@@ -168,6 +168,7 @@ export async function deleteProject(id: string): Promise<void> {
   const media = new Set([stored, j?.project].flatMap((p) => (p ? [...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)] : [])));
   await Promise.all([...media].map(deleteBlob));
   if (j) clearJournal(id, j.seq);
+  await Promise.all((await keys(store)).filter((k) => typeof k === 'string' && k.startsWith(`t:${id}:`)).map((k) => del(k, store)));
   await del(`p:${id}`, store);
   await withIndex((index) => index.filter((m) => m.id !== id));
   await clearDiskFiles(); // the last export and backup: "its media will be removed" means those too (audit V-189)
@@ -263,6 +264,66 @@ export async function collectOrphans(): Promise<number> {
   const orphans = new Set(all.flatMap((k) => (typeof k === 'string' && /^[bwc]:/.test(k) ? [k.split(':')[1]] : [])).filter((id) => !used.has(id)));
   await Promise.all([...orphans].map(deleteBlob));
   return orphans.size;
+}
+
+/** Lets go of the files assembled in memory for the project just left (the chunked fallback holds them whole). */
+export function forgetLoadedMedia(): void { assembled.clear(); }
+
+// A camera take, written second by second as it is recorded (audit V-250): it used to live in the page's memory until
+// Stop, so memory grew with every second and a crash lost all of it.
+const takeKey = (project: string, take: string, n: number) => `t:${project}:${take}:${String(n).padStart(6, '0')}`;
+
+export class TakeWriter {
+  readonly id = Math.random().toString(36).slice(2, 10);
+  private n = 0;
+  /** Pieces the storage refused (a private tab): they stay here, as every piece did before. */
+  private memory = new Map<number, Blob>();
+  private writing: Promise<unknown> = Promise.resolve();
+  constructor(private readonly project: string) {}
+
+  add(piece: Blob): void {
+    const i = this.n++;
+    this.writing = this.writing.then(() => set(takeKey(this.project, this.id, i), piece, store)).catch(() => { this.memory.set(i, piece); });
+  }
+
+  /** The take so far as one file: its pieces stay on disk, not in memory. */
+  async file(name: string, type: string): Promise<File> {
+    await this.writing;
+    const parts: Blob[] = [];
+    for (let i = 0; i < this.n; i++) {
+      const piece = this.memory.get(i) ?? await get<Blob>(takeKey(this.project, this.id, i), store);
+      if (piece) parts.push(piece);
+    }
+    return new File(parts, name, { type });
+  }
+
+  async discard(): Promise<void> {
+    await this.writing;
+    await deleteTake(this.project, this.id);
+  }
+}
+
+export async function deleteTake(project: string, take: string): Promise<void> {
+  const prefix = `t:${project}:${take}:`;
+  await Promise.all((await keys(store)).filter((k) => typeof k === 'string' && k.startsWith(prefix)).map((k) => del(k, store)));
+}
+
+/** Takes a crash left behind in this project, each as one blob. */
+export async function unfinishedTakes(project: string): Promise<{ id: string; blob: Blob }[]> {
+  const prefix = `t:${project}:`;
+  const found = new Map<string, string[]>();
+  for (const k of await keys(store)) {
+    if (typeof k !== 'string' || !k.startsWith(prefix)) continue;
+    const take = k.slice(prefix.length).split(':')[0];
+    found.set(take, [...(found.get(take) ?? []), k]);
+  }
+  const out: { id: string; blob: Blob }[] = [];
+  for (const [id, list] of found) {
+    const parts = await Promise.all(list.sort().map((k) => get<Blob>(k, store)));
+    const blobs = parts.filter((b): b is Blob => !!b);
+    if (blobs.length) out.push({ id, blob: new Blob(blobs, { type: blobs[0].type }) });
+  }
+  return out;
 }
 
 export const putPeaks = (assetId: string, peaks: Float32Array): Promise<void> => set(`w:${assetId}`, peaks, store);

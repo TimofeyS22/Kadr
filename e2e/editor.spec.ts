@@ -4778,3 +4778,19 @@ test('the file is ready for the web: the index first, tagged as BT.709 video (au
   const p = await probe(file);
   expect(Number(p.format.duration)).toBeGreaterThan(5);
 });
+
+test('a camera recording cut short by a crash comes back (audit V-250)', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  test.skip(info.project.name === 'iphone-webkit', "this test's WebKit context refuses Blobs in storage");
+  await fakeCamera(page);
+  await newProject(page);
+  await tool(page, 'Camera').click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
+  await page.waitForTimeout(9000); // past the recorder's first complete part
+  await page.reload(); // no Stop: what a crash does to the page
+  await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.locator('.toast').filter({ hasText: 'cut short' })).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.tl-row.main .clip-video'), 'once, not on every open').toHaveCount(1, { timeout: 30_000 });
+});

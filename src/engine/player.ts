@@ -64,8 +64,7 @@ export class Player {
     clearTimeout(this.contextTimer);
     this.compositor?.dispose();
     this.compositor = null;
-    this.pool.sweep(new Set(), 0);
-    this.pool.trimImages(new Set(), 0);
+    this.pool.release();
   }
 
   onFrame(fn: () => void): () => void {

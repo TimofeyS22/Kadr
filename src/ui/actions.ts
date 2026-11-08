@@ -33,8 +33,9 @@ export async function addMedia(target: AddTarget): Promise<void> {
 
 /** Imports files and places them at the playhead (also used for drag and drop). */
 /** `meta.script`: the teleprompter text the files were recorded with (kept on their assets for captions). */
-export async function addFiles(files: File[], target: AddTarget, meta: { script?: string } = {}): Promise<void> {
-  if (!files.length) return;
+/** Adds the files to the project; how many went in. */
+export async function addFiles(files: File[], target: AddTarget, meta: { script?: string } = {}): Promise<number> {
+  if (!files.length) return 0;
   const s = editor();
   const owner = s.project?.id;
   const busy = (i: number) => useEditor.setState({ busy: { label: t('Adding {i} of {n}…', { i: i + 1, n: files.length }), progress: i / files.length } });
@@ -47,10 +48,10 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   } finally {
     useEditor.setState({ busy: null });
   }
-  if (!assets.length) return;
+  if (!assets.length) return 0;
   if (editor().project?.id !== owner) { // the person left for another project: this one must not receive them
     await Promise.all(assets.map((a) => deleteBlob(a.id)));
-    return;
+    return 0;
   }
   if (meta.script) for (const a of assets) a.script = meta.script;
   let first: string | null = null;
@@ -75,6 +76,7 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   if (first) editor().select(first);
   track('media_imported', { count: assets.length, target });
   if (assets.some((a) => a.kind === 'video')) iosVideoTip();
+  return assets.length;
 }
 
 export { IOS };

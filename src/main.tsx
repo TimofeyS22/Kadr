@@ -17,7 +17,10 @@ createRoot(document.getElementById('root')!).render(
 );
 
 // Text is rasterized on canvas, so re-render once the bundled fonts are ready.
+// Only with a project open: on the home screen there is nothing to redraw, and this import alone pulled 160 KB of video
+// engine onto every first visit (audit V-229). An editor opened later draws with the fonts ready.
 void loadFonts().then(async () => {
+  if (!useEditor.getState().project) return;
   const { player } = await import('./engine/player');
   player.text.clear();
   player.requestRender();

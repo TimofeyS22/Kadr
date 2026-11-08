@@ -7,8 +7,9 @@ import type { Project } from '../core/types';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
-import { ProjectConflict, clearJournal, deleteBlob, forgetProject, journalProject, loadProject, onSavedElsewhere, saveProject } from '../storage/db';
+import { ProjectConflict, clearJournal, deleteBlob, deleteTake, forgetLoadedMedia, unfinishedTakes, forgetProject, journalProject, loadProject, onSavedElsewhere, saveProject } from '../storage/db';
 import { startExport } from './ExportSheet';
+import { forgetThumbs, probe } from '../engine/media';
 import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
 import { formatTime } from './format';
 import { Preview } from './Preview';
@@ -55,7 +56,11 @@ export function Editor({ id }: { id: string }) {
   const [dragging, setDragging] = useState(false);
 
   // However the editor is left (the system Back too), nothing of this project stays for the next one to write into.
-  useEffect(() => () => { useEditor.getState().close(); }, []);
+  useEffect(() => () => {
+    useEditor.getState().close();
+    forgetLoadedMedia();
+    forgetThumbs();
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -76,6 +81,19 @@ export function Editor({ id }: { id: string }) {
       }
       // The user's own fonts: register, then redraw text that may have used a fallback meanwhile.
       if (p.fonts) void import('../engine/customFonts').then((m) => m.registerProjectFonts(p)).then(() => { player.text.clear(); player.requestRender(); });
+      // A recording a crash interrupted: what reached the disk goes into the project.
+      void unfinishedTakes(p.id).then(async (takes) => {
+        for (const take of takes) {
+          const ext = take.blob.type.includes('mp4') ? 'mp4' : 'webm';
+          const file = new File([take.blob], `${t('Camera')} (${t('restored')}).${ext}`, { type: take.blob.type || 'video/webm' });
+          // Cut off before its first complete part, a take cannot be read at all: nothing to bring back, nothing to say.
+          if (!await probe(file).then(() => true, () => false)) { await deleteTake(p.id, take.id); continue; }
+          if (await addFiles([file], 'main')) {
+            await deleteTake(p.id, take.id);
+            useEditor.getState().toast(t('A camera recording that was cut short is back in the project.'));
+          }
+        }
+      }).catch((e) => console.warn('could not bring back a camera take', e));
       track('project_opened', { clips: p.tracks.reduce((n, t) => n + t.clips.length, 0) });
     }).catch((e) => { useEditor.getState().toast(errorMessage(e), 'error'); setMissing(true); }); // not "Opening…" for ever
     return () => { alive = false; };

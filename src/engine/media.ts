@@ -395,6 +395,11 @@ export class MediaPool {
 
   dispose(): void {
     this.disposed = true;
+    this.release();
+  }
+
+  /** Lets go of every file, decoder and picture: the project was left. The pool opens them again when asked. */
+  release(): void {
     for (const s of this.streams.values()) s.close();
     this.streams.clear();
     for (const h of this.handles.values()) h.then((x) => x.input.dispose(), () => undefined);
@@ -410,6 +415,12 @@ export interface Thumb { t: number; bmp: ImageBitmap }
 const thumbCache = new Map<string, Promise<Thumb[]>>();
 /** One clip's thumbnails get this long (a decoder that hangs in the worker must not hold them forever, docs/12 G2). */
 const THUMBS_MS = 60_000;
+
+/** Thumbnails of the project just left: they held bitmaps for the whole session (audit V-137). */
+export function forgetThumbs(): void {
+  for (const p of thumbCache.values()) void p.then((list) => { for (const x of list) x.bmp.close(); }, () => undefined);
+  thumbCache.clear();
+}
 
 let thumbWorker: Worker | null | undefined;
 let nextJob = 0;

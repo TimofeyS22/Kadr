@@ -57,6 +57,17 @@ describe('video streams', () => {
   });
 });
 
+describe('leaving a project (V-137)', () => {
+  it('lets go of everything, and the pool still works for the next one', async () => {
+    const pool = new MediaPool(1280);
+    await pool.picture('c', 'a', 0);
+    pool.release();
+    await pool.picture('c', 'a', 0);
+    expect(made, 'opened anew').toHaveLength(2);
+    pool.dispose();
+  });
+});
+
 describe('photos (V-190)', () => {
   it('the oldest go when the budget is passed, the ones on screen stay', async () => {
     const closed: number[] = [];

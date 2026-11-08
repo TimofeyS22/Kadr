@@ -7,6 +7,7 @@ import { t } from '../lib/i18n';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor } from '../state/store';
 import { addFiles } from './actions';
+import { TakeWriter } from '../storage/db';
 import { Slider } from './controls';
 import { formatTime } from './format';
 import { useHoldUpdates } from '../lib/update';
@@ -55,7 +56,7 @@ export function CameraSheet() {
   const video = useRef<HTMLVideoElement>(null);
   const prompter = useRef<HTMLDivElement>(null);
   const stream = useRef<MediaStream | null>(null);
-  const rec = useRef<{ recorder: MediaRecorder; chunks: Blob[]; lock: WakeLock | null; mirror: { stop: () => void } | null } | null>(null);
+  const rec = useRef<{ recorder: MediaRecorder; take: TakeWriter; lock: WakeLock | null; mirror: { stop: () => void } | null } | null>(null);
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
   const [state, setState] = useState<State>('starting');
   useHoldUpdates(state === 'countdown' || state === 'recording' || state === 'saving');
@@ -96,7 +97,7 @@ export function CameraSheet() {
   // Leaving the screen mid-recording discards the take and frees everything.
   useEffect(() => () => {
     const r = rec.current;
-    if (r) { r.recorder.ondataavailable = null; if (r.recorder.state !== 'inactive') r.recorder.stop(); r.mirror?.stop(); void r.lock?.release().catch(() => undefined); }
+    if (r) { r.recorder.ondataavailable = null; if (r.recorder.state !== 'inactive') r.recorder.stop(); r.mirror?.stop(); void r.take.discard(); void r.lock?.release().catch(() => undefined); }
   }, []);
 
   // Countdown → recording.
@@ -159,10 +160,10 @@ export function CameraSheet() {
       const mime = pickMime();
       const mirror = facing === 'user' && video.current ? mirrored(s, video.current) : null;
       const recorder = new MediaRecorder(mirror?.stream ?? s, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-      recorder.start(1000); // 1 s chunks: memory stays flat and a crash loses at most a second
-      rec.current = { recorder, chunks, lock: null, mirror };
+      const take = new TakeWriter(editor().project!.id);
+      recorder.ondataavailable = (e) => { if (e.data.size) take.add(e.data); };
+      recorder.start(1000); // 1 s pieces, each to storage: memory stays flat and a crash loses at most a second
+      rec.current = { recorder, take, lock: null, mirror };
       const wl = (navigator as Navigator & { wakeLock?: { request(t: 'screen'): Promise<WakeLock> } }).wakeLock;
       void wl?.request('screen').then((l) => { if (rec.current) rec.current.lock = l; else void l.release(); }, () => undefined);
       setElapsed(0);
@@ -178,7 +179,7 @@ export function CameraSheet() {
     const r = rec.current;
     if (!r) return;
     setState('saving');
-    // A recorder that never reports its stop (seen in WebKit) keeps what it has: the 1 s chunks are already here.
+    // A recorder that never reports its stop (seen in WebKit) keeps what it has: the 1 s pieces are already stored.
     await within(new Promise<void>((res) => {
       r.recorder.onstop = () => res();
       if (r.recorder.state === 'inactive') res(); else r.recorder.stop();
@@ -186,13 +187,14 @@ export function CameraSheet() {
     r.mirror?.stop();
     void r.lock?.release().catch(() => undefined);
     rec.current = null;
-    const type = r.recorder.mimeType || r.chunks[0]?.type || 'video/webm';
+    const type = r.recorder.mimeType || 'video/webm';
     const ext = type.includes('mp4') ? 'mp4' : 'webm';
     const stamp = new Date().toTimeString().slice(0, 5).replace(':', '-');
-    const file = new File(r.chunks, `${t('Camera')} ${stamp}.${ext}`, { type: type.split(';')[0] });
+    const file = await r.take.file(`${t('Camera')} ${stamp}.${ext}`, type.split(';')[0]);
     track('camera_recording_saved', { seconds: Math.round(elapsed), mb: Math.round(file.size / 1e6) });
     editor().openSheet(null); // closes this screen (stops the camera) before the import overlay
-    await addFiles([file], 'main', { script: script.trim() || undefined });
+    // Only once it is in the project does the take leave storage: a full disk at this moment no longer loses the recording.
+    if (await addFiles([file], 'main', { script: script.trim() || undefined })) void r.take.discard();
   }
 
   const close = () => editor().openSheet(null);

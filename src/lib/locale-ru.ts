@@ -796,6 +796,8 @@ export const RU: Record<string, string> = {
   'Layers count only what is on screen at the same time. A new overlay goes under captions and text.': 'Слои считаются среди того, что на экране одновременно. Новое наложение ложится под субтитры и текст.',
   'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.': 'Видеодекодер устройства остановился. Закройте другие приложения или перезапустите браузер и попробуйте снова.',
   // Audit 2026-11 (docs/13)
+  'restored': 'восстановлено',
+  'A camera recording that was cut short is back in the project.': 'Запись с камеры, которая оборвалась, вернулась в проект.',
   'Soft shadow': 'Мягкая',
   'ALL CAPS': 'ВСЕ ЗАГЛАВНЫЕ',
   'Gradient color': 'Цвет градиента',
