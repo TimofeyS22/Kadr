@@ -27,6 +27,7 @@ import { t } from '../lib/i18n';
 import { StylePicker } from './picker';
 import { drawCaptionTile } from './tiles';
 import { FontPicker } from './FontPicker';
+import { TextLook } from './TextLook';
 import { useHoldUpdates } from '../lib/update';
 
 // ---------- Crop ----------
@@ -385,8 +386,6 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
         onChange={(v) => e((c) => { c.wordsPerPage = v; }, 'wpp')} />
       <Slider label={t('Size')} value={clip.style.size} min={0.02} max={0.15} step={0.001} format={(v) => `${Math.round(v * 1000) / 10}`} reset={0.055}
         onChange={(v) => e((c) => { c.style.size = v; }, 'csize')} />
-      <h3>{t('Text color')}</h3>
-      <Swatches label={t('Text color')} value={clip.style.color} onChange={(col) => e((c) => { c.style.color = col; })} />
       <Toggle label={t('Highlight the spoken word')} value={!!clip.highlight} onChange={(v) => e((c) => { c.highlight = v ? '#ffc53d' : null; })} />
       {clip.highlight && (
         <>
@@ -396,6 +395,7 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
             onChange={(m) => e((c) => { c.emphasis = m; })} />
         </>
       )}
+      <TextLook style={clip.style} change={(fn, key) => e((c) => fn(c.style), key)} />
       <h3>{t('Animation')}</h3>
       <Chips options={CAPTION_MOTIONS} value={clip.motion ?? (clip.wordsPerPage === 1 && !clip.reveal ? 'pop' : 'none')} label={t('Animation')} render={(m) => t(MOTION_LABELS[m])}
         onChange={(m) => e((c) => { c.motion = m; })} />

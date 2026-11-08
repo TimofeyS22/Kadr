@@ -49,6 +49,15 @@ export const FONTS: Record<FontId, { label: string; family: string; weights: rea
   pangolin: { label: 'Pangolin', family: '"Pangolin", cursive', weights: [400], group: 'script' },
   marck: { label: 'Marck', family: '"Marck Script", cursive', weights: [400], group: 'script' },
   amatic: { label: 'Amatic', family: '"Amatic SC", cursive', weights: [400, 700], group: 'script' },
+  manrope: { label: 'Manrope', family: '"Manrope", system-ui, sans-serif', weights: [400, 700], group: 'sans' },
+  onest: { label: 'Onest', family: '"Onest", system-ui, sans-serif', weights: [400, 700, 900], group: 'sans' },
+  golos: { label: 'Golos', family: '"Golos Text", system-ui, sans-serif', weights: [400, 700, 900], group: 'sans' },
+  jost: { label: 'Jost', family: '"Jost", system-ui, sans-serif', weights: [400, 700, 900], group: 'sans' },
+  fira: { label: 'Fira Sans', family: '"Fira Sans", system-ui, sans-serif', weights: [400, 700, 900], group: 'sans' },
+  play: { label: 'Play', family: '"Play", Impact, sans-serif', weights: [400, 700], group: 'display' },
+  ruslan: { label: 'Ruslan', family: '"Ruslan Display", Georgia, serif', weights: [400], group: 'display' },
+  neucha: { label: 'Neucha', family: '"Neucha", cursive', weights: [400], group: 'script' },
+  badScript: { label: 'Bad Script', family: '"Bad Script", cursive', weights: [400], group: 'script' },
   mono: { label: 'Mono', family: '"Roboto Mono", ui-monospace, monospace', weights: [400, 700], group: 'mono' },
 };
 

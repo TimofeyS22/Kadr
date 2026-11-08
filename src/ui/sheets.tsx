@@ -13,13 +13,13 @@ import {
   type AdjustKey, type AspectId, type BlendMode, type Clip, type SoundClip, type TextAnimType, type TextClip,
   type Transform, type Transition, type TransitionType,
 } from '../core/types';
-import { TEXT_BG_PADDING, TEXT_LINE_HEIGHT } from '../engine/text';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
 import { Chips, Sheet, Slider, Swatches, Toggle, pct, secs, signed, useSheetGuard } from './controls';
 import { StylePicker } from './picker';
 import { FontPicker } from './FontPicker';
+import { TextLook } from './TextLook';
 import { drawTextTile } from './tiles';
 import { CameraSheet } from './CameraSheet';
 import { licenseText } from '../core/music';
@@ -260,34 +260,7 @@ function TextBody({ clip }: { clip: TextClip }) {
       <FontPicker clipId={clip.id} style={s} onFont={(f) => e((c) => { c.style.font = f; })} onWeight={(w) => e((c) => { c.style.weight = w; })} />
       <Slider label={t('Size')} value={s.size} min={0.02} max={0.2} step={0.001} format={(v) => `${Math.round(v * 1000) / 10}`} reset={0.055}
         onChange={(v) => e((c) => { c.style.size = v; }, 'tsize')} />
-      <Chips options={['left', 'center', 'right'] as const} value={s.align} onChange={(a) => e((c) => { c.style.align = a; })} />
-      <Toggle label={t('Italic')} value={s.italic} onChange={(v) => e((c) => { c.style.italic = v; })} />
-      <h3>{t('Spacing')}</h3>
-      <Slider label={t('Letter spacing')} value={s.letterSpacing ?? 0} min={-0.1} max={0.6} step={0.01} format={(v) => `${Math.round(v * 100)}`} reset={0}
-        onChange={(v) => e((c) => { c.style.letterSpacing = v; }, 'tls')} />
-      <Slider label={t('Line spacing')} value={s.lineHeight ?? TEXT_LINE_HEIGHT} min={0.8} max={2.5} step={0.05} format={(v) => `${v.toFixed(2)}×`} reset={TEXT_LINE_HEIGHT}
-        onChange={(v) => e((c) => { c.style.lineHeight = v; }, 'tlh')} />
-      <h3>{t('Color')}</h3>
-      <Swatches label={t('Text color')} value={s.color} onChange={(col) => e((c) => { c.style.color = col; })} />
-      <Toggle label={t('Outline')} value={!!s.stroke} onChange={(v) => e((c) => { c.style.stroke = v ? { color: '#000000', width: 0.08 } : null; })} />
-      {s.stroke && (
-        <>
-          <Swatches label={t('Outline color')} value={s.stroke.color} onChange={(col) => e((c) => { if (c.style.stroke) c.style.stroke.color = col; })} />
-          <Slider label={t('Outline width')} value={s.stroke.width} min={0.01} max={0.3} format={pct} reset={0.08}
-            onChange={(v) => e((c) => { if (c.style.stroke) c.style.stroke.width = v; }, 'sw')} />
-        </>
-      )}
-      <Toggle label={t('Background')} value={!!s.background} onChange={(v) => e((c) => { c.style.background = v ? { color: '#000000', opacity: 0.6 } : null; })} />
-      {s.background && (
-        <>
-          <Swatches label={t('Background color')} value={s.background.color} onChange={(col) => e((c) => { if (c.style.background) c.style.background.color = col; })} />
-          <Slider label={t('Opacity')} value={s.background.opacity} min={0.05} max={1} format={pct} reset={0.6}
-            onChange={(v) => e((c) => { if (c.style.background) c.style.background.opacity = v; }, 'bgo')} />
-          <Slider label={t('Padding')} value={s.background.padding ?? TEXT_BG_PADDING} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}`} reset={TEXT_BG_PADDING}
-            onChange={(v) => e((c) => { if (c.style.background) c.style.background.padding = v; }, 'bgp')} />
-        </>
-      )}
-      <Toggle label={t('Shadow')} value={s.shadow} onChange={(v) => e((c) => { c.style.shadow = v; })} />
+      <TextLook style={s} change={(fn, key) => e((c) => fn(c.style), key)} />
       <h3>{t('Animation in')}</h3>
       <Chips options={ANIMS} value={clip.animIn.type} onChange={(t) => e((c) => { c.animIn.type = t; })} />
       <Slider label={t('Duration')} value={clip.animIn.duration} min={0.1} max={2} step={0.05} format={secs} reset={0.3} onChange={(v) => e((c) => { c.animIn.duration = v; }, 'ain')} />

@@ -41,7 +41,7 @@ export type TransitionType = (typeof TRANSITION_TYPES)[number];
 export interface Transition { type: TransitionType; duration: number }
 
 export const FONT_IDS = [
-  'inter', 'montserrat', 'rubik', 'nunito', 'raleway', 'exo', 'comfortaa', 'unbounded', 'oswald', 'anton', 'bebas', 'russo', 'dela', 'days', 'tektur', 'rubikMono', 'glitch', 'bubbles', 'spray', 'pixel', 'playfair', 'lora', 'ptSerif', 'cormorant', 'yeseva', 'pacifico', 'lobster', 'caveat', 'pangolin', 'marck', 'amatic', 'mono',
+  'inter', 'montserrat', 'rubik', 'nunito', 'raleway', 'exo', 'comfortaa', 'unbounded', 'oswald', 'anton', 'bebas', 'russo', 'dela', 'days', 'tektur', 'rubikMono', 'glitch', 'bubbles', 'spray', 'pixel', 'playfair', 'lora', 'ptSerif', 'cormorant', 'yeseva', 'pacifico', 'lobster', 'caveat', 'pangolin', 'marck', 'amatic', 'mono', 'manrope', 'onest', 'golos', 'jost', 'fira', 'play', 'ruslan', 'neucha', 'badScript',
 ] as const;
 export type FontId = (typeof FONT_IDS)[number];
 /** A font the user added (v0.8): `custom:<id>` keyed into `Project.fonts`. */

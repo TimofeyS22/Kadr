@@ -41,3 +41,18 @@ export function hexToHsv(hex: string): { h: number; s: number; v: number } | nul
   if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
   return { h: (h * 60 + 360) % 360, s: max ? d / max : 0, v: max };
 }
+
+/** HSL (hue 0..360, saturation and lightness 0..1) as "#rrggbb". */
+export function hslToHex(h: number, s: number, l: number): string {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  return toHex(f(0), f(8), f(4));
+}
+
+/** "#rgb" or "#rrggbb" as HSL; null for anything else. Grey, white and black have no hue: 0. */
+export function hexToHsl(hex: string): { h: number; s: number; l: number } | null {
+  const c = hexToHsv(hex);
+  if (!c) return null;
+  const l = c.v * (1 - c.s / 2);
+  return { h: c.h, s: l === 0 || l === 1 ? 0 : (c.v - l) / Math.min(l, 1 - l), l };
+}

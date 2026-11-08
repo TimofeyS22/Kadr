@@ -132,19 +132,22 @@ export function Toggle({ label, value, onChange }: { label: string; value: boole
 }
 
 /**
- * The colour row (v1.6, the owner: "more colours, and an eyedropper"): the eyedropper, any colour, the colours picked
- * last, then 30 colours by hue. One scrolling row, every target 44 px.
+ * The colour row: the eyedropper, any colour, then the basic colours, so they are what the eye meets first (v1.6.4, the
+ * owner: "only pink and white, odd"; eight colours picked from one picture used to fill the whole first screen). The
+ * colours picked last and the other shades follow. One scrolling row, every target 44 px.
  */
-export const SWATCHES = [
-  '#ffffff', '#d9d9d9', '#9e9e9e', '#5c5c5c', '#000000',
-  '#ff4d4f', '#ff5a36', '#ff8a3d', '#ffc53d', '#ffe66d',
-  '#c8f560', '#3bd16f', '#12b886', '#2ad4c8', '#5ad8ff',
-  '#2f9bff', '#3366ff', '#5b4dff', '#a45bff', '#d36bff',
-  '#ff4fa3', '#ff8fc8', '#ffd6e0', '#fff1c1', '#d4f7dc',
-  '#cfe8ff', '#8b5e3c', '#c49a6c', '#1b2a49', '#7a1f2b',
+export const BASIC_COLORS = ['#ffffff', '#000000', '#ff3b30', '#ff9500', '#ffd60a', '#34c759', '#00c7be', '#007aff', '#af52de', '#ff2d92', '#9e9e9e'];
+const SHADES = [
+  '#d9d9d9', '#5c5c5c', '#ff5a36', '#ff8a3d', '#ffc53d', '#c8f560', '#3bd16f', '#2ad4c8', '#5ad8ff', '#2f9bff',
+  '#3366ff', '#5b4dff', '#d36bff', '#ff8fc8', '#ffd6e0', '#8b5e3c', '#c49a6c', '#1b2a49', '#7a1f2b',
 ];
+export const SWATCHES = [...BASIC_COLORS, ...SHADES];
+/** Two colours this close (sum of channel differences) look the same in a 30 px circle: the row keeps one of them. */
+const SAME_COLOR = 36;
+const channels = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+const looksSame = (a: string, b: string) => { const y = channels(b); return channels(a).reduce((n, v, i) => n + Math.abs(v - y[i]), 0) < SAME_COLOR; };
 const RECENT_KEY = 'kadr.recentColors';
-const RECENT_MAX = 8;
+const RECENT_MAX = 6;
 function loadRecent(): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as unknown;
@@ -167,7 +170,7 @@ export function Swatches({ value, onChange, label, from }: {
     const col = c.toLowerCase();
     if (SWATCHES.includes(col)) return;
     setRecent((r) => {
-      const next = [col, ...r.filter((x) => x !== col)].slice(0, RECENT_MAX);
+      const next = [col, ...r.filter((x) => !looksSame(x, col))].slice(0, RECENT_MAX);
       try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* storage off: this session only */ }
       return next;
     });
@@ -180,6 +183,12 @@ export function Swatches({ value, onChange, label, from }: {
     useEditor.setState({ eyedropper: { owner, from, pick: (c) => { latest.current(c); remember(c); track('eyedropper_used'); } } });
   };
   const lower = value.toLowerCase();
+  // The chosen colour is in view when the sheet opens, wherever it is in the row.
+  const row = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const r = row.current, on = r?.querySelector<HTMLElement>('.swatch.on[aria-label^="#"]');
+    if (r && on) r.scrollLeft = Math.max(0, on.offsetLeft - r.offsetLeft - r.clientWidth / 2);
+  }, []);
   const swatch = (c: string) => (
     <button key={c} className={`swatch ${c === lower ? 'on' : ''}`} onClick={() => onChange(c)} aria-label={c} aria-pressed={c === lower}>
       <i style={{ background: c }} />
@@ -187,7 +196,7 @@ export function Swatches({ value, onChange, label, from }: {
   );
   return (
     <>
-      <div className="swatches" role="group" aria-label={label}>
+      <div ref={row} className="swatches" role="group" aria-label={label}>
         <button className={`swatch tool-dropper ${picking ? 'on' : ''}`} onClick={toggleDropper} aria-pressed={picking} aria-label={t('Eyedropper: {label}', { label })}>
           <i><Pipette size={18} /></i>
         </button>
@@ -196,8 +205,10 @@ export function Swatches({ value, onChange, label, from }: {
           aria-label={t('Spectrum: {label}', { label })}>
           <i />
         </button>
+        {BASIC_COLORS.map(swatch)}
+        <span className="swatch-sep" aria-hidden />
         {recent.length > 0 && <>{recent.map(swatch)}<span className="swatch-sep" aria-hidden /></>}
-        {SWATCHES.map(swatch)}
+        {SHADES.map(swatch)}
       </div>
       {spectrum && <Spectrum value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'} label={label} onChange={onChange} onDone={remember} />}
     </>

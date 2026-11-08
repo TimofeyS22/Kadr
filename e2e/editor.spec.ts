@@ -4217,7 +4217,7 @@ test('hide faces finds small faces too: six people with faces ~80 px tall in a 7
 
 // ---------- v1.6.2: the colour spectrum with a loupe (the owner's request) ----------
 
-test('colour spectrum: a square and a hue strip, a loupe above the finger, one undo step per drag, a typed code', async ({ page }) => {
+test('colour spectrum: every colour at once, a saturation strip, a loupe above the finger, one undo step per drag, a typed code', async ({ page }) => {
   await newProject(page);
   await importFiles(page, 'Media', ['photo.png']);
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
@@ -4230,10 +4230,10 @@ test('colour spectrum: a square and a hue strip, a loupe above the finger, one u
   await expect(spectrum).toBeVisible();
   const code = spectrum.getByRole('textbox', { name: 'Color code' });
   await expect(code).toHaveValue('#ffffff');
-  const square = spectrum.getByRole('slider', { name: 'Saturation and brightness' });
-  await square.scrollIntoViewIfNeeded();
-  const r = (await square.boundingBox())!;
-  // White has no hue: the square shows red (hue 0). Drag from one shade to another.
+  const field = spectrum.getByRole('slider', { name: 'Color and brightness' });
+  await field.scrollIntoViewIfNeeded();
+  const r = (await field.boundingBox())!;
+  // White is at the top of the field, whatever colour is across it. Drag to a colour.
   await page.mouse.move(r.x + 0.2 * r.width, r.y + 0.2 * r.height);
   await page.mouse.down();
   await page.mouse.move(r.x + 0.8 * r.width, r.y + 0.3 * r.height, { steps: 8 });
@@ -4247,7 +4247,7 @@ test('colour spectrum: a square and a hue strip, a loupe above the finger, one u
   await page.mouse.up();
   await expect(loupe).toHaveCount(0);
   const picked = await code.inputValue();
-  hexRgb(picked).forEach((v, i) => expect(Math.abs(v - [179, 36, 36][i]), `picked ${picked}`).toBeLessThan(6)); // hsv(0, 0.8, 0.7)
+  hexRgb(picked).forEach((v, i) => expect(Math.abs(v - [224, 102, 255][i]), `picked ${picked}`).toBeLessThan(8)); // hsl(288, 100%, 70%)
   hexRgb(picked).forEach((v, i) => expect(Math.abs(v - middle[i]), `loupe middle ${middle}`).toBeLessThan(6));
   await expect(colors.locator('.swatch.on[aria-label^="#"]').first()).toHaveAttribute('aria-label', picked); // remembered and chosen
   // The whole drag is one step back.
@@ -4255,13 +4255,19 @@ test('colour spectrum: a square and a hue strip, a loupe above the finger, one u
   await expect(code).toHaveValue('#ffffff');
   await page.getByRole('button', { name: 'Redo' }).click();
   await expect(code).toHaveValue(picked);
-  // The hue strip: a third of the way is green; the square keeps its saturation and brightness.
-  const strip = spectrum.getByRole('slider', { name: 'Hue' });
+  // What the field paints is what it picks: a third of the way across, halfway down, is pure green.
+  const canvasless = await field.screenshot();
+  expect(canvasless.length, 'the field is painted').toBeGreaterThan(1000);
+  await page.mouse.click(r.x + r.width / 3, r.y + r.height / 2);
+  const green = await code.inputValue();
+  hexRgb(green).forEach((v, i) => expect(Math.abs(v - [0, 255, 0][i]), `green ${green}`).toBeLessThan(14));
+  // The strip takes it towards grey.
+  const strip = spectrum.getByRole('slider', { name: 'Saturation' });
   await strip.scrollIntoViewIfNeeded();
   const hb = (await strip.boundingBox())!;
-  await page.mouse.click(hb.x + hb.width / 3, hb.y + hb.height / 2);
-  const green = await code.inputValue();
-  hexRgb(green).forEach((v, i) => expect(Math.abs(v - [36, 179, 36][i]), `green ${green}`).toBeLessThan(8));
+  await page.mouse.click(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  const muted = await code.inputValue();
+  hexRgb(muted).forEach((v, i) => expect(Math.abs(v - [64, 191, 64][i]), `muted ${muted}`).toBeLessThan(14));
   // A typed code.
   await code.fill('#2F9BFF');
   await code.press('Enter');
@@ -4646,4 +4652,48 @@ test('a video that does not decode from its start does not end in a black file a
   const { execFileSync } = await import('node:child_process');
   const y = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', 'select=eq(n\\,30),scale=1:1,format=gray', '-frames:v', '1', '-f', 'rawvideo', '-'])[0];
   expect(y, 'a picture, not black').toBeGreaterThan(20);
+});
+
+test('the basic colours lead the colour row, however many colours were picked before', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.recentColors', JSON.stringify(['#ffd0e0', '#ffc8dc', '#f8e8ec', '#fbeff3', '#ffb6d0', '#fff0f5', '#fce4ec', '#f3d1dc'])));
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await tool(page, 'Text').click();
+  const colors = page.getByRole('group', { name: 'Text color', exact: true });
+  await colors.scrollIntoViewIfNeeded();
+  const labels = await colors.locator('.swatch[aria-label^="#"]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  expect(labels.slice(0, 6), 'white, black, red, orange, yellow, green come first').toEqual(['#ffffff', '#000000', '#ff3b30', '#ff9500', '#ffd60a', '#34c759']);
+  const row = (await colors.boundingBox())!;
+  const green = (await colors.locator('.swatch[aria-label="#34c759"]').boundingBox())!;
+  expect(green.x + green.width, 'on the first screen of the row').toBeLessThanOrEqual(row.x + row.width + 1);
+});
+
+test('captions have the same look settings as text: outline, second outline, shadow, background, capitals, spacing', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await srtCaptions(page);
+  const shot = async (n: string) => { await page.locator('.caption-row input').first().focus(); await page.waitForTimeout(800); const f = info.outputPath(`${n}.png`); await page.locator('.preview-canvas').screenshot({ path: f, style: '.toast, .sel-box { visibility: hidden !important; }' }); return gray(f); };
+  const plain = await shot('plain');
+  const outline = page.getByRole('switch', { name: 'Outline', exact: true });
+  if (!(await outline.isChecked())) await outline.check();
+  await page.getByRole('group', { name: 'Outline color', exact: true }).locator('.swatch[aria-label="#ff3b30"]').click();
+  await page.getByRole('switch', { name: 'Second outline' }).check();
+  await page.getByRole('radiogroup', { name: 'Shadow' }).getByRole('radio', { name: '3D' }).click();
+  await page.getByRole('switch', { name: 'ALL CAPS' }).check();
+  await page.getByRole('switch', { name: 'Background', exact: true }).check();
+  await page.getByRole('switch', { name: 'A box for each line' }).check();
+  await expect.poll(() => savedProject(page), { timeout: 5000 }).toContain('"outline2"');
+  const p = JSON.parse(await savedProject(page)) as { tracks: { clips: { kind: string; style?: Record<string, unknown> }[] }[] };
+  const style = p.tracks.flatMap((t) => t.clips).find((c) => c.kind === 'caption')!.style!;
+  expect((style.stroke as { color: string }).color).toBe('#ff3b30');
+  expect((style.copies as { depth: boolean }[])[0].depth).toBe(true);
+  expect(style.uppercase).toBe(true);
+  expect((style.background as { lines: boolean }).lines).toBe(true);
+  const styled = await shot('styled');
+  expect(changed(plain, styled, 12), 'the picture shows it').toBeGreaterThan(0.002);
 });
