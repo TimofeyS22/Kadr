@@ -1,7 +1,7 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
@@ -1620,7 +1620,9 @@ test('task pages: a static page leads into Kadr with the task banner, and the pi
   await (await chooser).setFiles(fx('speech_en.mp4'));
   await expect(page.locator('.sheet')).toContainText('Auto captions');
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
-  // A clip tool: the clip is selected and its sheet is open.
+  // A clip tool: the clip is selected and its sheet is open. A link opens a new document; a hash change inside this one
+  // with a sheet open is the system Back, which closes the sheet first (audit V-226).
+  await page.goto('./en/add-captions-to-video/');
   await page.goto('./#/start/pauses');
   const chooser2 = page.waitForEvent('filechooser');
   await page.locator('.task-banner').getByRole('button', { name: 'Choose a video' }).click();
@@ -4366,6 +4368,8 @@ test('closing a sheet does not silently throw away an export or an unsaved file 
   await page.waitForTimeout(4200);
   await done.click();
   await expect(page.getByRole('dialog', { name: 'Export' })).toHaveCount(0);
+  // Cancelling disposes the file under the sound decoder: a stop, not the browser refusing the sound.
+  expect(consoleErrors.filter((x) => x.includes('decoding it natively'))).toEqual([]);
 });
 
 test('a beat edit with no music says what it needs (audit V-146)', async ({ page }) => {
@@ -4957,4 +4961,73 @@ test('a backup brings back the frame size of a portrait video (audit V-210)', as
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
   const back = JSON.parse(await settledProject(page)) as { assets: Record<string, { width: number; height: number }> };
   expect(Object.values(back.assets)[0]).toMatchObject({ width: size.width, height: size.height });
+});
+
+test('a video cut short is as long as what is in it, the export has no frozen tail (audit V-168)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['hostile_half.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.locator('.toast').filter({ hasText: 'cut short' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  const file = await exportAs(page, info, 'Video', 'Export video');
+  const seconds = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).toString());
+  console.log(`cut-short video (${info.project.name}): exported ${seconds.toFixed(2)} s of the 6 s the index promises`);
+  expect(seconds).toBeGreaterThan(2);
+  expect(seconds).toBeLessThan(4);
+});
+
+test('a frame whose size changes inside the file is fitted, not stretched (audit V-232)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['resize.webm']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  const file = await exportAs(page, info, 'Video', 'Export video');
+  const [w, h] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', file]).toString().trim().split(',').map(Number);
+  const rgb = execFileSync('ffmpeg', ['-v', 'error', '-ss', '3', '-i', file, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 64 * 1024 * 1024 });
+  const at = (fx: number) => [...rgb.subarray(3 * (Math.floor(h / 2) * w + Math.floor(fx * w)), 3 * (Math.floor(h / 2) * w + Math.floor(fx * w)) + 3)];
+  console.log(`size change (${info.project.name}): ${w}x${h}, edge ${at(0.04)}, centre ${at(0.5)}`);
+  expect(at(0.5)[1], 'the square frame is in the middle').toBeGreaterThan(150);
+  expect(at(0.04)[1], 'and does not reach the edge of a wide slot').toBeLessThan(100);
+});
+
+test('the timeline works from the keyboard: a clip is chosen and trimmed, Space on a button is that button (audit V-186)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4']);
+  const clip = page.locator('.tl-row.main .clip').first();
+  await expect(clip).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await page.keyboard.press('Escape');
+  await expect(clip).not.toHaveClass(/\bsel\b/);
+  await clip.focus();
+  await page.keyboard.press('Enter');
+  await expect(clip).toHaveClass(/\bsel\b/);
+  const end = page.getByRole('slider', { name: 'Trim end' });
+  const at = async () => Number(await end.getAttribute('aria-valuenow'));
+  const before = await at();
+  await end.focus();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect.poll(at).toBeCloseTo(before - 1, 1);
+  const undo = page.getByRole('button', { name: 'Undo' });
+  await undo.focus();
+  await page.keyboard.press(' ');
+  await expect.poll(at).toBeCloseTo(before, 1);
+  await expect(page.getByRole('button', { name: 'Play' })).toBeVisible(); // Space was the button's, not "play"
+  const position = page.getByRole('slider', { name: 'Position in the video' });
+  await position.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => Number(await position.inputValue())).toBeGreaterThan(0);
+});
+
+test('the editor opens without the code that writes files; the export fetches it (audit V-143)', async ({ page }) => {
+  test.setTimeout(120_000);
+  const scripts: string[] = [];
+  page.on('request', (r) => { if (r.url().endsWith('.js')) scripts.push(r.url()); });
+  await newProject(page);
+  await expect(page.getByRole('button', { name: 'Media', exact: true })).toBeVisible();
+  await page.waitForTimeout(1500); // the sheets arrive after the editor is up
+  expect(scripts.some((u) => /\/sheets-/.test(u)), 'the sheets came').toBe(true);
+  expect(scripts.filter((u) => /\/(memTarget|exporter)-/.test(u)), 'nothing that writes files yet').toEqual([]);
 });

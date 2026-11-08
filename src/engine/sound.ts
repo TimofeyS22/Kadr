@@ -4,17 +4,16 @@
 // Every sound is decoded with WebCodecs first; when the browser refuses, the rest of it is decoded by the
 // browser's own media stack (decodeAudioData) in short windows, so memory stays bounded on a phone.
 import {
-  AudioBufferSink, EncodedAudioPacketSource, EncodedPacketSink, Mp3OutputFormat, Mp4OutputFormat,
-  OggOutputFormat, Output, WavOutputFormat, WebMOutputFormat,
-  type EncodedPacket, type InputAudioTrack, type Input, type OutputFormat, type WrappedAudioBuffer,
+  AudioBufferSink, EncodedPacketSink,
+  type EncodedPacket, type InputAudioTrack, type Input, type WrappedAudioBuffer,
 } from 'mediabunny';
-import { MemoryTarget } from './memTarget';
 
 export interface SoundSink {
   buffers(start?: number, end?: number): AsyncGenerator<WrappedAudioBuffer, void, unknown>;
 }
 
-const isAbort = (e: unknown) => (e as Error | undefined)?.name === 'AbortError';
+/** Stopped from outside, not refused by the browser. A disposed input (the person left the project) would fail natively too. */
+const isAbort = (e: unknown) => ['AbortError', 'InputDisposedError'].includes((e as Error | undefined)?.name ?? '');
 
 /** Tracks whose WebCodecs decoder failed: decoded natively from then on (per opened file). */
 const refused = new WeakSet<InputAudioTrack>();
@@ -27,11 +26,6 @@ const PREROLL_S = 0.1;
 const SLICE_S = 2;
 /** Pause before a sound that decoded with neither decoder is tried again. */
 const RETRY_MS = 1000;
-
-const CONTAINERS: (() => OutputFormat)[] = [
-  () => new Mp4OutputFormat({ fastStart: 'in-memory' }), () => new WebMOutputFormat(), () => new OggOutputFormat(),
-  () => new Mp3OutputFormat(), () => new WavOutputFormat(),
-];
 
 /** Decodes a track through decodeAudioData: its packets, window by window, are copied (not re-encoded) into a small file. */
 export class NativeSink implements SoundSink {
@@ -77,20 +71,14 @@ export class NativeSink implements SoundSink {
     const base = list[0].timestamp;
     const expected = list[list.length - 1].timestamp + list[list.length - 1].duration - base;
     const ctx = new OfflineAudioContext(1, 1, decoderConfig.sampleRate);
+    const { CONTAINERS, packetsAsFile } = await import('./soundFile'); // only for a track the browser refused
     const tries = this.container >= 0 ? [this.container] : CONTAINERS.map((_, i) => i);
     let lastError: unknown = null;
     for (const i of tries) {
       const format = CONTAINERS[i]();
       if (!format.getSupportedAudioCodecs().includes(codec)) continue;
       try {
-        const output = new Output({ format, target: new MemoryTarget() });
-        const source = new EncodedAudioPacketSource(codec);
-        output.addAudioTrack(source);
-        await output.start();
-        for (const [k, q] of list.entries()) await source.add(q.clone({ timestamp: q.timestamp - base }), k === 0 ? { decoderConfig } : undefined);
-        source.close();
-        await output.finalize();
-        const buffer = await ctx.decodeAudioData(output.target.buffer());
+        const buffer = await ctx.decodeAudioData(await packetsAsFile(format, codec, decoderConfig, list, base));
         this.container = i;
         // A decoder that trims its priming returns less than the packets hold: the cut is at the start.
         return { buffer, timestamp: base + Math.max(0, expected - buffer.duration) };

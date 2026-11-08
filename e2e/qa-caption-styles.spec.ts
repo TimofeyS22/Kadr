@@ -5,6 +5,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { CAPTION_CATEGORIES, CAPTION_PRESETS, TEXT_PRESETS } from '../src/core/presets';
+import { FONT_IDS } from '../src/core/types';
 import type { StylesReport } from '../src/ui/StylesCheck';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
@@ -205,7 +206,7 @@ test('every template reads on white, black, grey and a busy picture, in Cyrillic
   await page.waitForFunction(() => (window as unknown as { __kadrStyles?: StylesReport }).__kadrStyles?.done, null, { timeout: 540_000, polling: 1000 });
   const r = await page.evaluate(() => (window as unknown as { __kadrStyles: StylesReport }).__kadrStyles);
   // Both alphabets come from Kadr's own faces, never a fallback font, for every face a template can use.
-  expect(r.fonts.length).toBe(32);
+  expect(r.fonts.map((f) => f.id)).toEqual([...FONT_IDS]);
   expect(r.fonts.filter((f) => f.cyrillic || f.latin).map((f) => `${f.id}: ${f.cyrillic}${f.latin}`)).toEqual([]);
   const minEdge = (x: StylesReport['rows'][number]) => Math.min(...Object.values(x.edge));
   const checked = r.rows.filter((x) => x.kind === 'caption' || !LEGACY_TEXT.includes(x.id));
@@ -216,8 +217,8 @@ test('every template reads on white, black, grey and a busy picture, in Cyrillic
   const isNew = (x: StylesReport['rows'][number]) => (x.kind === 'caption' ? CAPTION_PRESETS.findIndex((p) => p.id === x.id) >= 9 : !LEGACY_TEXT.includes(x.id));
   const stat = (xs: typeof r.rows, k: 'ms' | 'msPreview') => { const v = xs.map((x) => x[k]).sort((a, b) => a - b); return `median ${v[v.length >> 1]}, max ${v[v.length - 1]}`; };
   // WebKit cannot be slowed, and on a busy Mac its times float: there a template may take at most 2.5× the slowest style
-  // before v1.5 measured in the same run (and never fails under 12 ms).
-  const budget = slowed ? 16 : Math.max(12, 2.5 * Math.max(...r.rows.filter((x) => !isNew(x)).map((x) => x.msPreview)));
+  // before v1.5 measured in the same run (and never fails under 16 ms, half a 30 fps frame, the budget stated above).
+  const budget = slowed ? 16 : Math.max(16, 2.5 *Math.max(...r.rows.filter((x) => !isNew(x)).map((x) => x.msPreview)));
   console.log(`?styles (${info.project.name}${slowed ? ', CPU 4× slower' : ''}): ${r.rows.length} drawings. Preview size (540×960): before v1.5 ${stat(r.rows.filter((x) => !isNew(x)), 'msPreview')} ms, v1.5 ${stat(r.rows.filter(isNew), 'msPreview')} ms. Export size (1080×1920): before ${stat(r.rows.filter((x) => !isNew(x)), 'ms')}, v1.5 ${stat(r.rows.filter(isNew), 'ms')} ms. Slowest: ${[...r.rows].sort((a, b) => b.msPreview - a.msPreview).slice(0, 5).map((x) => `${x.kind} ${x.id} ${x.msPreview}/${x.ms}`).join(', ')}. Weakest caption edge ${Math.min(...checked.filter((x) => x.kind === 'caption').map(minEdge)).toFixed(2)}`);
   expect(r.rows.filter((x) => x.msPreview > budget).map((x) => `${x.kind} ${x.id} ${x.lang}: ${x.msPreview} ms at preview size (budget ${budget})`)).toEqual([]);
 });

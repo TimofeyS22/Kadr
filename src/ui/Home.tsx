@@ -11,7 +11,8 @@ import { holdUpdates, othersWorking, updatesHeld, useHoldUpdates } from '../lib/
 import { useEditor } from '../state/store';
 import { collectOrphans, deleteProject, listProjects, loadProject, requestPersistence, saveProject, type ProjectMeta } from '../storage/db';
 import { formatTime } from './format';
-import { t, useLocale } from '../lib/i18n';
+import { importNoteText, t, useLocale } from '../lib/i18n';
+import type { ImportNote } from '../engine/importer';
 import { useInstall } from './install';
 import { TASKS, isTask, openWithTask, projectFromAssets, type TaskId } from './tasks';
 
@@ -76,7 +77,7 @@ export function Home() {
   const [busy, setBusy] = useState<string | null>(null);
   useHoldUpdates(!!busy);
   const toast = useEditor((s) => s.toast);
-  const soundLost = (name: string, error: string) => toast(t('{name}: its sound does not decode in this browser ({error}). The video is added without sound.', { name, error }), 'info', 10_000);
+  const noted = (name: string, note: ImportNote) => toast(importNoteText(name, note), 'info', 10_000);
   const { locale, setLocale } = useLocale();
   const supported = browserSupported();
 
@@ -115,7 +116,7 @@ export function Home() {
     const onError = (n: string, e: unknown) => toast(`${n}: ${errorMessage(e)}`, 'error');
     setBusy(t('Adding {i} of {n}…', { i: 1, n: files.length }));
     try {
-      const assets = await importFiles(files, onError, (i, n) => setBusy(t('Adding {i} of {n}…', { i: i + 1, n })), soundLost);
+      const assets = await importFiles(files, onError, (i, n) => setBusy(t('Adding {i} of {n}…', { i: i + 1, n })), noted);
       if (assets.length) await openWithTask(projectFromAssets(name, assets), task);
     } catch (e) {
       toast(errorMessage(e), 'error');
@@ -194,7 +195,7 @@ export function Home() {
     if (!p) return;
     setBusy(t('Packing “{name}”…', { name: m.name }));
     try {
-      const [{ exportBackup }, { saveFile }] = await Promise.all([import('../engine/backup'), import('../engine/exporter')]);
+      const [{ exportBackup }, { saveFile }] = await Promise.all([import('../engine/backup'), import('../engine/save')]);
       const { blob, missing } = await exportBackup(p);
       setBusy(null);
       if (missing) toast(t('{n} media files of this project are missing from this device, so they are not in the backup.', { n: missing }), 'error', 10_000);
@@ -218,7 +219,7 @@ export function Home() {
     setBusy(t('Building “{name}”…', { name: t(tpl.name) }));
     try {
       const onError = (name: string, e: unknown) => toast(`${name}: ${errorMessage(e)}`, 'error');
-      const visuals = await importFiles(visualFiles.slice(0, tpl.visuals[1]), onError, undefined, soundLost);
+      const visuals = await importFiles(visualFiles.slice(0, tpl.visuals[1]), onError, undefined, noted);
       const [music] = tpl.music === 'none' ? [] : (await importFiles(musicFiles.slice(0, 1), onError)).filter((a) => a.hasAudio);
       if (visuals.length < tpl.visuals[0] || (tpl.music === 'required' && !music)) return;
       const assets = music ? [...visuals, music] : visuals;

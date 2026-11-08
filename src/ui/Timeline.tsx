@@ -1,16 +1,15 @@
 // Center-playhead timeline (mobile editor convention): scrolling the timeline scrubs the video.
 // Touch: tap selects, long-press drags, handles trim, pinch zooms. Mouse: drag moves, ctrl+wheel zooms.
 import { Blend, Plus, VolumeX } from 'lucide-react';
-import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent as RPointerEvent } from 'react';
 import {
-  clipEnd, findClip, mainTrack, moveClip, moveClipsBy, projectDuration, reorderMain, soundAssetId, trimClip,
+  clipBeatTimes, clipEnd, findClip, mainTrack, moveClip, moveClipsBy, projectDuration, reorderMain, soundAssetId, trimClip,
 } from '../core/timeline';
 import type { Asset, Clip, Project, Track, TrackKind } from '../core/types';
 import { PEAKS_PER_SEC, thumbnails, waveform, type Thumb } from '../engine/media';
 import { player } from '../engine/player';
 import { useEditor } from '../state/store';
 import { addMedia } from './actions';
-import { clipBeatTimes } from './MoreSheets';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
 
@@ -22,6 +21,41 @@ function tapClip(id: string): void {
   const s = useEditor.getState();
   if (s.multi) s.toggleMulti(id);
   else s.select(id);
+}
+
+/** The playhead for the keyboard and screen readers. Its own component: the time changes every frame, the timeline must not redraw with it. */
+function Position({ duration, fps }: { duration: number; fps: number }) {
+  const time = useEditor((s) => s.time);
+  return (
+    <input
+      className="tl-position" type="range" aria-label={t('Position in the video')} min={0} max={duration} step={1 / fps} value={time}
+      aria-valuetext={formatTime(time, false)}
+      onChange={(e) => { player.pause(); player.seek(Number(e.target.value)); useEditor.setState({ time: player.time }); }}
+    />
+  );
+}
+
+/** What a screen reader says for a clip. */
+function clipLabel(c: Clip, p: Project): string {
+  const name = c.kind === 'text' ? c.text : c.kind === 'caption' ? t('Captions') : p.assets[c.kind === 'audio' ? soundAssetId(c) : c.assetId]?.name ?? '';
+  return t('{name}, {s} s', { name, s: c.duration.toFixed(1) });
+}
+
+/** A trim handle for the keyboard and for screen readers: the arrows move it by a frame, with Shift by a second. */
+function trimHandle(c: Clip, edge: 'start' | 'end', p: Project) {
+  const at = edge === 'start' ? c.start : clipEnd(c);
+  return {
+    role: 'slider', tabIndex: 0, 'aria-orientation': 'horizontal' as const,
+    'aria-valuemin': 0, 'aria-valuemax': Math.round(projectDuration(p) * 100) / 100, 'aria-valuenow': Math.round(at * 100) / 100,
+    'aria-valuetext': formatTime(at, false),
+    onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      e.stopPropagation(); // the editor's arrows move the playhead
+      const step = e.shiftKey ? 1 : 1 / p.settings.fps;
+      useEditor.getState().commit((d) => trimClip(d, c.id, edge, at + (e.key === 'ArrowLeft' ? -step : step)));
+    },
+  };
 }
 const SNAP_PX = 10;
 /** Auto-scroll while dragging: a finger this close to a timeline edge scrolls it, faster towards the edge. */
@@ -296,13 +330,19 @@ export function Timeline() {
             style={{ left: x(c.start) + shift, width: Math.max(2, c.duration * zoom), transform: moving ? `translate(${drag.dx}px, ${drag.dy}px)` : undefined }}
             onPointerDown={(e) => onClipDown(e, c, track)}
             data-clip={c.id}
+            // A chosen clip holds its two trim handles, and a button cannot hold other controls.
+            role={c.id === selection ? 'group' : 'button'}
+            tabIndex={0}
+            aria-label={clipLabel(c, project)}
+            aria-pressed={c.id === selection ? undefined : false}
+            onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); tapClip(c.id); } }}
           >
             <ClipFace clip={c} asset={'assetId' in c ? project.assets[c.kind === 'audio' ? soundAssetId(c) : c.assetId] : undefined} zoom={zoom} height={ROW_H[track.kind] - 6} />
             {c.kind === 'audio' && clipBeatTimes(project, c).map((b, i) => <i key={i} className="beat" style={{ left: (b - c.start) * zoom }} />)}
             {c.id === selection && !moving && (
               <>
-                <div className="handle l" onPointerDown={(e) => onTrimDown(e, c, 'start')} aria-label={t('Trim start')} />
-                <div className="handle r" onPointerDown={(e) => onTrimDown(e, c, 'end')} aria-label={t('Trim end')} />
+                <div className="handle l" onPointerDown={(e) => onTrimDown(e, c, 'start')} {...trimHandle(c, 'start', project)} aria-label={t('Trim start')} />
+                <div className="handle r" onPointerDown={(e) => onTrimDown(e, c, 'end')} {...trimHandle(c, 'end', project)} aria-label={t('Trim end')} />
               </>
             )}
           </div>
@@ -327,6 +367,7 @@ export function Timeline() {
 
   return (
     <div className="timeline">
+      <Position duration={duration} fps={project.settings.fps} />
       <div
         className="tl-scroll" ref={scroller} onScroll={onScroll}
         onClick={(e) => { if (!(e.target as HTMLElement).closest('.clip, button')) useEditor.getState().select(null); }}
@@ -357,6 +398,9 @@ function Ruler({ duration, zoom, pad }: { duration: number; zoom: number; pad: n
   );
 }
 
+/** How long a clip's width must stay put before its strip is drawn anew. */
+const REDRAW_MS = 120;
+
 const ClipFace = memo(function ClipFace({ clip, asset, zoom, height }: { clip: Clip; asset?: Asset; zoom: number; height: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const width = clip.duration * zoom;
@@ -364,18 +408,25 @@ const ClipFace = memo(function ClipFace({ clip, asset, zoom, height }: { clip: C
   const speed = 'speed' in clip ? clip.speed : 1;
   const volume = 'volume' in clip ? clip.volume : 1;
 
+  const drawn = useRef(false);
   useEffect(() => {
     const cv = ref.current;
     if (!cv || !asset || clip.kind === 'text' || clip.kind === 'caption') return;
     let cancelled = false;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = Math.max(1, Math.min(4096, Math.round(width * dpr)));
-    const h = Math.round(height * dpr);
-    const job = clip.kind === 'audio'
-      ? waveform(asset.id).then((peaks) => { if (!cancelled) drawWave(cv, w, h, peaks, srcIn, clip.duration * speed, volume); })
-      : thumbnails(asset.id, asset.duration).then((thumbs) => { if (!cancelled) drawFilm(cv, w, h, thumbs, srcIn, clip.duration * speed); });
-    job.catch(() => undefined);
-    return () => { cancelled = true; };
+    const draw = () => {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.max(1, Math.min(4096, Math.round(width * dpr)));
+      const h = Math.round(height * dpr);
+      const job = clip.kind === 'audio'
+        ? waveform(asset.id).then((peaks) => { if (!cancelled) drawWave(cv, w, h, peaks, srcIn, clip.duration * speed, volume); })
+        : thumbnails(asset.id, asset.duration).then((thumbs) => { if (!cancelled) drawFilm(cv, w, h, thumbs, srcIn, clip.duration * speed); });
+      job.catch(() => undefined);
+    };
+    // A pinch changes the width on every move: what is drawn stretches with it, and every clip redraws once it rests
+    // (audit V-101: all the film strips were drawn again on each frame of the gesture).
+    if (!drawn.current) { drawn.current = true; draw(); return () => { cancelled = true; }; }
+    const timer = setTimeout(draw, REDRAW_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [clip.kind, asset, width, height, srcIn, speed, volume, clip.duration]);
 
   const label = clip.kind === 'text' ? clip.text
@@ -383,7 +434,7 @@ const ClipFace = memo(function ClipFace({ clip, asset, zoom, height }: { clip: C
     : clip.kind === 'audio' ? asset?.name ?? 'Audio' : null;
   return (
     <>
-      {clip.kind !== 'text' && clip.kind !== 'caption' && <canvas ref={ref} className="clip-canvas" />}
+      {clip.kind !== 'text' && clip.kind !== 'caption' && <canvas ref={ref} className="clip-canvas" aria-hidden />}
       {label && <span className="clip-label">{label}</span>}
       <span className="clip-badges">
         {speed !== 1 && <b>{speed}×</b>}

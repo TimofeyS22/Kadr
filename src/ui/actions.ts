@@ -10,9 +10,8 @@ import {
 } from '../core/timeline';
 import type { Asset, CaptionClip, CaptionWord, Clip, ImageClip, Project, SoundClip, VideoClip } from '../core/types';
 import { deleteBlob, getBlob } from '../storage/db';
-import { prepareClipSound } from '../engine/audiofx';
 import { coverScale, reframeKeys } from '../core/reframe';
-import { saveFile } from '../engine/exporter';
+import { saveFile } from '../engine/save';
 import { MediaError, captureFrame } from '../engine/media';
 import { importFile, importFiles, pickFiles } from '../engine/importer';
 import { putBlob } from '../storage/db';
@@ -22,7 +21,7 @@ import { readBody, within } from '../lib/limits';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { mark } from '../lib/perf';
-import { t } from '../lib/i18n';
+import { importNoteText, t } from '../lib/i18n';
 
 export type AddTarget = 'main' | 'overlay' | 'audio';
 
@@ -44,7 +43,7 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   let assets: Asset[] = [];
   try {
     assets = await importFiles(files, (name, e) => s.toast(t('Could not add {name}: {error}', { name, error: errorMessage(e) }), 'error'), busy,
-      (name, error) => s.toast(t('{name}: its sound does not decode in this browser ({error}). The video is added without sound.', { name, error }), 'info', 10_000));
+      (name, note) => s.toast(importNoteText(name, note), 'info', 10_000));
   } finally {
     useEditor.setState({ busy: null });
   }
@@ -337,7 +336,7 @@ export async function updateClipSound(clipId: string, change: (c: SoundClip) => 
   const clip = f.clip;
   const key = expectedAudioKey(clip);
   if (key && clip.audioKey === key && clip.audioAssetId && p.assets[clip.audioAssetId]) return;
-  const r = key ? await prepareClipSound(p, clip, onProgress, signal) : null;
+  const r = key ? await (await import('../engine/audiofx')).prepareClipSound(p, clip, onProgress, signal) : null;
   // Attaching the processed sound is not an edit of its own: undo goes straight back to the previous settings.
   editor().amend((d) => {
     if (r) {

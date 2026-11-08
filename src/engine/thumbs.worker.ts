@@ -1,12 +1,13 @@
 // Timeline thumbnails off the main thread (docs/04, H2). Each thumbnail decodes only the keyframe nearest to its
 // time: one frame instead of up to a whole GOP per seek, so a 1-minute clip costs ~40 decodes, not ~1200.
-import { ALL_FORMATS, BlobSource, EncodedPacketSink, Input, VideoSampleSink } from 'mediabunny';
+import { BlobSource, EncodedPacketSink, Input, VideoSampleSink } from 'mediabunny';
+import { READABLE } from './formats';
 
 export interface ThumbJob { id: number; blob: Blob; duration: number; height: number; count: number }
 export type ThumbReply = { id: number; t: number; bmp: ImageBitmap } | { id: number; done: true; error?: string };
 
 export async function renderThumbs(job: ThumbJob, emit: (t: number, bmp: ImageBitmap) => void, canvas: OffscreenCanvas | HTMLCanvasElement): Promise<void> {
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(job.blob) });
+  const input = new Input({ formats: READABLE, source: new BlobSource(job.blob) });
   try {
     const track = await input.getPrimaryVideoTrack();
     if (!track) return;

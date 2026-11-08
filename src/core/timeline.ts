@@ -793,3 +793,11 @@ export function cutTimelineRanges(p: Project, ranges: [number, number][]): numbe
   }
   return r6(before - projectDuration(p));
 }
+
+/** The beats of a music clip's file that fall inside the clip, in timeline seconds. */
+export function clipBeatTimes(p: Project, clip: AudioClip): number[] {
+  const beats = p.assets[clip.assetId]?.beats;
+  if (!beats) return [];
+  const end = clip.in + sourceSpan(clip);
+  return beats.times.filter((s) => s >= clip.in && s <= end).map((s) => timelineTimeOf(clip, s)).filter((t) => t <= clipEnd(clip));
+}

@@ -1,10 +1,11 @@
 // Reverse: re-encodes the used part of a clip backwards (frames and sound) into a new asset.
 // Frames are decoded in short windows from the end so memory stays bounded on phones.
 import {
-  ALL_FORMATS, AudioBufferSource, BlobSource, CanvasSink, CanvasSource, Input,
+  AudioBufferSource, BlobSource, CanvasSink, CanvasSource, Input,
   Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
   type WrappedCanvas,
 } from 'mediabunny';
+import { READABLE } from './formats';
 import { MemoryTarget } from './memTarget';
 import { sourceSpan } from '../core/timeline';
 import type { Asset, Project, VideoClip } from '../core/types';
@@ -27,7 +28,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
   const s0 = clip.in;
   const s1 = Math.min(asset.duration, clip.in + sourceSpan(clip)); // a speed curve shows more or less than duration × speed (audit V-144)
   if (s1 - s0 > MAX_REVERSE_S) throw new MediaError('Reverse works on clips up to {n} s. Split the clip first.', { n: MAX_REVERSE_S });
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(blob) });
+  const input = new Input({ formats: READABLE, source: new BlobSource(blob) });
   let started: { output: Output; sources: { close(): void }[] } | null = null;
   try {
     const video = await input.getPrimaryVideoTrack();

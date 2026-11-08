@@ -87,7 +87,13 @@ export default defineConfig({
   base: process.env.KADR_BASE ?? '/',
   // A chunk named after a dot-folder (@soundtouchjs/core's "dist" → ".dist-*.js") is skipped by the precache glob:
   // voice effects and pitch-kept speed then fail offline. Chunk names never start with a dot.
-  build: { rollupOptions: { output: { chunkFileNames: (c) => `assets/${c.name.replace(/^\.+/, '') || 'chunk'}-[hash].js` } } },
+  build: {
+    rollupOptions: {
+      output: {
+        chunkFileNames: (c) => `assets/${c.name.replace(/^\.+/, '') || 'chunk'}-[hash].js`,
+      },
+    },
+  },
   plugins: [
     react(),
     thirdPartyLicenses,

@@ -1,6 +1,6 @@
 import { produce } from 'immer';
 import { ChevronLeft, Pause, Play, Redo2, Smartphone, Undo2, Upload } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { runStartTask } from './tasks';
 import { normalizeProject, projectDuration, withUsedAssets } from '../core/timeline';
 import type { Project } from '../core/types';
@@ -8,18 +8,20 @@ import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { ProjectConflict, clearJournal, deleteBlob, deleteTake, forgetLoadedMedia, unfinishedTakes, forgetProject, journalProject, loadProject, onSavedElsewhere, saveProject } from '../storage/db';
-import { startExport } from './ExportSheet';
+import { startExport } from './exportPrefs';
 import { forgetThumbs, probe } from '../engine/media';
 import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
 import { formatTime } from './format';
 import { Preview } from './Preview';
-import { Sheets } from './sheets';
 import { Timeline } from './Timeline';
 import { Toolbar } from './Toolbar';
 import { PerfOverlay, perfOverlayEnabled } from './PerfOverlay';
 
 const showPerf = perfOverlayEnabled();
 import { t } from '../lib/i18n';
+
+// Fetched as the editor mounts, not before it can be used: the editor's first load is the budget that counts (audit V-143).
+const Sheets = lazy(() => import('./sheets').then((m) => ({ default: m.Sheets })));
 
 const snapshot = () => Promise.race([player.snapshot(), new Promise<null>((r) => setTimeout(() => r(null), 800))]);
 
@@ -174,10 +176,12 @@ export function Editor({ id }: { id: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
-      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable) return; // the s in a list must not cut the video (audit V-186)
       const s = useEditor.getState();
+      if (e.key === 'Escape') { if (s.closeSheet()) s.select(null); return; } // from a field or a slider in a sheet too
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable) return; // the s in a list must not cut the video (audit V-186)
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
+      if ((key === ' ' || key === 'enter') && el.closest('button, a, [role="button"]')) return; // the control's own key: Space on Undo undoes
       if (mod && key === 'z') { e.preventDefault(); if (e.shiftKey) s.redo(); else s.undo(); return; }
       if (mod && key === 'y') { e.preventDefault(); s.redo(); return; }
       if (mod && key === 'd') { e.preventDefault(); if (s.multi) duplicateMulti(); else duplicateSelected(); return; }
@@ -185,7 +189,6 @@ export function Editor({ id }: { id: string }) {
       if (key === ' ') { e.preventDefault(); player.toggle(); }
       else if (key === 's') splitAtPlayhead();
       else if (key === 'delete' || key === 'backspace') { if (s.multi) deleteMulti(); else deleteSelected(); }
-      else if (key === 'escape') { if (s.closeSheet()) s.select(null); }
       else if (key === 'arrowleft' || key === 'arrowright') {
         e.preventDefault();
         const step = e.shiftKey ? 1 : 1 / (s.project?.settings.fps ?? 30);
@@ -227,7 +230,7 @@ export function Editor({ id }: { id: string }) {
       <Timeline />
       {showPerf && <PerfOverlay />}
       <Toolbar />
-      <Sheets />
+      <Suspense fallback={null}><Sheets /></Suspense>
       <BusyOverlay />
       <ElsewhereNotice />
       <Coach />

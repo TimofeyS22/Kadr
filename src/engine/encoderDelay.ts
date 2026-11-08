@@ -3,7 +3,8 @@
 // its picture, and every processed sound (noise reduction, natural pitch, voice effects) added another 44 ms.
 // The delay is measured once per codec and channel count: a burst is encoded and decoded the way the app plays
 // sound (ResilientSink, by timestamp), and that many samples are then dropped before encoding.
-import { ALL_FORMATS, AudioBufferSource, BlobSource, Input, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, type AudioCodec } from 'mediabunny';
+import { AudioBufferSource, BlobSource, Input, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, type AudioCodec } from 'mediabunny';
+import { READABLE } from './formats';
 import { MemoryTarget } from './memTarget';
 import { ResilientSink } from './sound';
 
@@ -50,7 +51,7 @@ async function measure(codec: AudioCodec, channels: number, sr: number, signal: 
   await source.add(buf);
   source.close();
   await output.finalize();
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(output.target.blob()) });
+  const input = new Input({ formats: READABLE, source: new BlobSource(output.target.blob()) });
   signal.addEventListener('abort', () => input.dispose());
   try {
     const track = await input.getPrimaryAudioTrack();

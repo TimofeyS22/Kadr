@@ -121,6 +121,13 @@ if [ ! -f hostile_random.mp4 ]; then
   ff -i landscape.mp4 -c copy -movflags +faststart half_tmp.mp4 # header first, like a download cut short
   head -c $(( $(wc -c < half_tmp.mp4) / 2 )) half_tmp.mp4 > hostile_half.mp4 && rm half_tmp.mp4
 fi
+# The size changes inside the file (audit V-232): 2 s wide, then 2 s square, under one track header.
+if [ ! -f resize.webm ]; then
+  ff -f lavfi -i "color=c=0xff0000:s=640x360:r=30:d=2" -c:v libvpx-vp9 -b:v 300k -pix_fmt yuv420p resize_a.webm
+  ff -f lavfi -i "color=c=0x00ff00:s=360x360:r=30:d=2" -c:v libvpx-vp9 -b:v 300k -pix_fmt yuv420p resize_b.webm
+  printf "file 'resize_a.webm'\nfile 'resize_b.webm'\n" > resize.txt
+  ff -f concat -safe 0 -i resize.txt -c copy resize.webm && rm resize_a.webm resize_b.webm resize.txt
+fi
 if [ ! -f photo_48mp.jpg ]; then
   ff -f lavfi -i "testsrc2=s=8064x6048" -frames:v 1 -q:v 3 photo_48mp.jpg
 fi

@@ -10,8 +10,9 @@ vi.mock('mediabunny', () => {
   class BlobSource { constructor(readonly blob: Blob) {} }
   class VideoSampleSink { constructor(t: { file: string }) { made.push({ file: t.file }); } samples() { return samples(); } }
   class EncodedPacketSink { }
-  return { ALL_FORMATS: [], BlobSource, EncodedPacketSink, Input, VideoSampleSink };
+  return { BlobSource, EncodedPacketSink, Input, VideoSampleSink };
 });
+vi.mock('./formats', () => ({ READABLE: [] }));
 vi.mock('./thumbs.worker', () => ({ renderThumbs: vi.fn() }));
 vi.mock('./sound', () => ({ ResilientSink: class {}, playableAudioTrack: async () => null }));
 vi.mock('../storage/db', () => ({ getBlob: async (id: string) => new Blob([], { type: id }), getPeaks: vi.fn(), putPeaks: vi.fn() }));

@@ -1,8 +1,9 @@
 // Media access on top of Mediabunny/WebCodecs: probing, per-clip decoding streams, thumbnails, waveforms.
 import {
-  ALL_FORMATS, BlobSource, EncodedPacketSink, Input, VideoSampleSink,
-  type InputAudioTrack, type InputVideoTrack, type VideoSample,
+  BlobSource, EncodedPacketSink, Input, VideoSampleSink,
+  type InputAudioTrack, type InputTrack, type InputVideoTrack, type VideoSample,
 } from 'mediabunny';
+import { READABLE } from './formats';
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
 import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
@@ -19,6 +20,8 @@ export interface Probe {
   kind: AssetKind; duration: number; width: number; height: number; hasAudio: boolean;
   /** A video whose sound is there but does not decode in this browser: why (it is added without sound). */
   soundError?: string;
+  /** A file cut short: the length its index promises (`duration` is what is really there). */
+  promised?: number;
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -29,10 +32,12 @@ const DECODE_RETRIES = 2;
  * frame, so this is generous; a decoder that says nothing for this long never will (audit V-257).
  */
 const DECODER_MS = 15_000;
+/** Forward jumps longer than this, while scrubbing, show the nearest keyframe first. */
+const SCRUB_GAP = 0.3;
 /** The browser's own words go to the error's details (`vars.error`), not into the sentence. */
 export const DECODER_FAILED = 'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.';
 
-const openInput = (blob: Blob) => new Input({ formats: ALL_FORMATS, source: new BlobSource(blob) });
+const openInput = (blob: Blob) => new Input({ formats: READABLE, source: new BlobSource(blob) });
 
 export async function probe(file: Blob): Promise<Probe> {
   if (file.type.startsWith('image/')) {
@@ -51,12 +56,16 @@ export async function probe(file: Blob): Promise<Probe> {
       throw new MediaError(codec === 'hevc' ? 'This browser cannot decode {codec} video. On iPhone, set Camera → Formats → Most Compatible.' : 'This browser cannot decode {codec} video. Try Chrome or Safari.', { codec });
     }
     let why = '';
-    const hasAudio = !!(await playableAudioTrack(input, (reason) => { why = reason; }));
+    const audio = await playableAudioTrack(input, (reason) => { why = reason; });
+    const hasAudio = !!audio;
     // A sound track that is there but does not decode says why (QA: "no playable audio" hid a decoder refusal).
     if (!video && !hasAudio && why) throw new MediaError('The sound of this file cannot be decoded in this browser ({error})', { error: why });
     if (!video && !hasAudio) throw new MediaError('No playable video or audio found');
-    const duration = await input.computeDuration();
-    if (!(duration > 0)) throw new MediaError('The file has no duration');
+    const promised = await input.computeDuration();
+    if (!(promised > 0)) throw new MediaError('The file has no duration');
+    // A check, not a condition for opening: a file it cannot read to the end keeps the length its index gives.
+    const duration = await readableEnd((video ?? audio)!, promised).catch((e: unknown) => { console.warn('Could not check where the data of this file ends', e); return promised; });
+    if (!(duration > 0)) throw new MediaError('This file is cut short: there is no video or sound in it.');
     return {
       kind: video ? 'video' : 'audio',
       duration,
@@ -64,10 +73,34 @@ export async function probe(file: Blob): Promise<Probe> {
       height: video ? await video.getDisplayHeight() : 0,
       hasAudio,
       ...(video && !hasAudio && why ? { soundError: why } : {}),
+      ...(promised - duration > CUT_SHORT_S ? { promised } : {}),
     };
   } finally {
     input.dispose();
   }
+}
+
+/** Less than this missing at the end is not worth a word: the last frames of an ordinary file can lie past its data. */
+const CUT_SHORT_S = 0.5;
+
+/**
+ * How far a track's data really goes. The index of a file cut short (an interrupted copy or download) still promises the
+ * whole length: the clip got that length, the picture froze on the last frame there was and the export said "Ready" (audit
+ * V-168). A packet whose bytes are missing is known to the index and comes back empty; data lie in file order, so the
+ * edge between what is there and what is not is found by halving.
+ */
+async function readableEnd(track: InputTrack, promised: number): Promise<number> {
+  const sink = new EncodedPacketSink(track);
+  if (await sink.getPacket(promised) || !await sink.getPacket(promised, { metadataOnly: true })) return promised;
+  const first = await sink.getFirstPacket();
+  if (!first) return 0;
+  let lo = first.timestamp, hi = promised, end = first.timestamp + first.duration;
+  while (hi - lo > 0.02) {
+    const mid = (lo + hi) / 2;
+    const packet = await sink.getPacket(mid);
+    if (packet) { lo = mid; end = packet.timestamp + packet.duration; } else hi = mid;
+  }
+  return end;
 }
 
 function fitSize(w: number, h: number, maxDim: number): [number, number] {
@@ -218,7 +251,10 @@ class VideoStream {
   }
 
   private show(s: VideoSample, exact: boolean, frameMax: number): Picture {
-    if (exact && Math.max(s.codedWidth, s.codedHeight) <= frameMax) {
+    // A frame of another shape than the track's (the size changes inside the file) is fitted only on the canvas path; the
+    // frame path would stretch it over the slot, on WebKit alone (audit V-232).
+    const sameShape = Math.abs(s.displayWidth * this.height - s.displayHeight * this.width) <= 0.02 * s.displayHeight * this.width;
+    if (exact && sameShape && Math.max(s.codedWidth, s.codedHeight) <= frameMax) {
       if (this.out?.sample !== s) {
         this.out?.frame.close();
         this.out = { sample: s, frame: s.toVideoFrame() };
@@ -241,7 +277,9 @@ class VideoStream {
     if (this.closed) return null;
     const cur = this.cur;
     const far = !this.it || !cur || t < cur.timestamp - 1e-4 || t > cur.timestamp + 2.5;
-    if (far && fast) {
+    // While a finger scrubs, even a short jump forward is a keyframe now: decoding up to the exact frame took seconds on
+    // files with few keyframes (audit V-173). The exact frame follows once the finger rests.
+    if (fast && (far || t > cur.timestamp + SCRUB_GAP)) {
       // Scrubbing: show the nearest keyframe right away (one decode); the exact frame follows when asked.
       const key = await this.answer(this.packets.getKeyPacket(t), () => undefined);
       const s = await this.answer(this.sink.getSample(key?.timestamp ?? t), (late) => late?.close());

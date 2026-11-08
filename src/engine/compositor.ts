@@ -279,6 +279,10 @@ export function slotOf(l: Layer): string | null {
   }
 }
 
+export const GPU_LOST = 'The graphics of this device were reset during the export (usually too little memory). Close other apps and export again.';
+/** A context was had in this page: a later refusal is a reset, not a browser without WebGL. */
+let hadContext = false;
+
 export class Compositor {
   private gl!: WebGL2RenderingContext;
   private prog!: WebGLProgram;
@@ -323,7 +327,9 @@ export class Compositor {
 
   private init(): void {
     const gl = this.canvas.getContext('webgl2', { alpha: false, antialias: false, preserveDrawingBuffer: this.preserve, premultipliedAlpha: true });
-    if (!gl) throw new MediaError('WebGL2 is not available in this browser');
+    // After a reset the GPU can refuse a new context for a moment: that is the reset, not a browser without WebGL (audit V-156).
+    if (!gl) throw new MediaError(hadContext && this.preserve ? GPU_LOST : 'WebGL2 is not available in this browser');
+    hadContext = true;
     this.gl = gl;
     const sh = (type: number, src: string) => {
       const s = gl.createShader(type)!;

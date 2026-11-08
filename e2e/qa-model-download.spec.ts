@@ -99,8 +99,9 @@ test('a broken part is caught by its checksum and a hung part is asked for again
   await speechProject(page);
   await tool(page, 'Captions').click();
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
-  expect(asked.filter((p) => p === 'encoder@0')).toHaveLength(2);
-  expect(asked.filter((p) => p === 'decoder@1')).toHaveLength(2);
+  // At least twice: the retry goes to the other host, and a slow Hugging Face may cost one more try before the site answers.
+  expect(asked.filter((p) => p === 'encoder@0').length).toBeGreaterThanOrEqual(2);
+  expect(asked.filter((p) => p === 'decoder@1').length).toBeGreaterThanOrEqual(2);
   expect(await toasts(page)).toEqual([]);
 });
 

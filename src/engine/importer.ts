@@ -10,8 +10,10 @@ export const MAX_FILE_BYTES = 4 * 1024 ** 3;
 
 export { pickFiles } from '../lib/pickFiles';
 
-/** `onSoundLost`: the video is added, but its sound does not decode in this browser (the reason is given). */
-export async function importFile(file: File | Blob, name = (file as File).name ?? 'media', onSoundLost?: (reason: string) => void): Promise<Asset> {
+/** What the person is told about a file that did go in: its sound does not decode here, or it holds less than it promises. */
+export type ImportNote = { kind: 'sound'; error: string } | { kind: 'cut'; kept: number; total: number };
+
+export async function importFile(file: File | Blob, name = (file as File).name ?? 'media', onNote?: (note: ImportNote) => void): Promise<Asset> {
   if (file.size > MAX_FILE_BYTES) throw new MediaError('{name} is larger than 4 GB', { name });
   // The first bytes decide when they are known: a photo without an extension, a video renamed to .jpg.
   const sniffed = sniffMime(new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer()));
@@ -23,8 +25,9 @@ export async function importFile(file: File | Blob, name = (file as File).name ?
     if (size && size.width * size.height > MAX_IMAGE_PIXELS) throw new MediaError('This image is too large for this device ({mp} megapixels).', { mp: Math.round((size.width * size.height) / 1e6) });
     file = await toDecodableImage(file);
   }
-  const { soundError, ...info } = await probe(file);
-  if (soundError) onSoundLost?.(soundError);
+  const { soundError, promised, ...info } = await probe(file);
+  if (soundError) onNote?.({ kind: 'sound', error: soundError });
+  if (promised) onNote?.({ kind: 'cut', kept: info.duration, total: promised });
   const asset: Asset = { id: uid(), name, mime: file.type, size: file.size, ...info };
   await ensureRoom(file.size, name);
   await putBlob(asset.id, file);
@@ -61,13 +64,13 @@ function persistOnce(): void {
 /** Imports files one by one; failures are reported per file instead of aborting the batch. */
 export async function importFiles(
   files: File[], onError: (name: string, e: unknown) => void, onProgress?: (done: number, total: number) => void,
-  onSoundLost?: (name: string, reason: string) => void,
+  onNote?: (name: string, note: ImportNote) => void,
 ): Promise<Asset[]> {
   const out: Asset[] = [];
   for (const [i, f] of files.entries()) {
     onProgress?.(i, files.length);
     try {
-      out.push(await importFile(f, f.name, (reason) => onSoundLost?.(f.name, reason)));
+      out.push(await importFile(f, f.name, (note) => onNote?.(f.name, note)));
     } catch (e) {
       onError(f.name, e);
     }

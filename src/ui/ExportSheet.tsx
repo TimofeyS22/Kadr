@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { projectDuration } from '../core/timeline';
-import {
-  MAX_GIF_S, downloadFile, exportAudio, exportFrame, exportGif, exportProject, gifSize, outputSize, saveFile, supportedResolutions, type ExportResult, type Resolution,
-} from '../engine/exporter';
+import type { ExportResult } from '../engine/exporter';
+import { MAX_GIF_S, gifSize, outputSize, supportedResolutions, type Resolution } from '../engine/exportSizes';
+import { downloadFile, saveFile } from '../engine/save';
+import { exportPrefs, savePrefs } from './exportPrefs';
 import { releaseSpeechModel } from '../engine/captions';
 import { player } from '../engine/player';
 import { within } from '../lib/limits';
@@ -28,27 +29,6 @@ type Phase = { kind: 'setup' } | { kind: 'running'; progress: number; label?: st
  * right away with the last settings and saves when done, like CapCut. Android and desktop download the file by
  * themselves; iPhone saves to Photos only through the share sheet, which needs a fresh tap, so it gets one Save button.
  */
-/** The frame rate is not kept: it follows each project's own. */
-interface ExportPrefs {
-  quick: boolean; resolution: Resolution; quality: 'standard' | 'high';
-  /** Saved under a new name: every earlier export stored the old default, on, and a file then sounded unlike the preview (audit V-247). */
-  evenLoudness: boolean;
-}
-const PREFS_KEY = 'kadr.exportPrefs';
-function exportPrefs(): ExportPrefs {
-  const base: ExportPrefs = { quick: true, resolution: 1080, quality: 'high', evenLoudness: false };
-  try { return { ...base, ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<ExportPrefs>) }; } catch { return base; }
-}
-function savePrefs(p: ExportPrefs): void {
-  try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* storage off: defaults next time */ }
-}
-
-/** The Export button: with quick export on, the sheet starts rendering at once. */
-export function startExport(): void {
-  useEditor.setState({ startAuto: exportPrefs().quick });
-  editor().openSheet('export');
-}
-
 /** The encoder gets this long to say which sizes it can do (docs/12 stage 2); then these are offered. */
 const RESOLUTIONS_MS = 8000;
 const FALLBACK_RESOLUTIONS: Resolution[] = [720, 1080];
@@ -103,6 +83,7 @@ export function ExportSheet() {
   }, [project.settings]);
   // The finished file is on the device only while this sheet offers it (audit V-189).
   useEffect(() => () => { if (done.current) void clearDiskFiles(); }, []);
+  useEffect(() => { void import('../engine/exporter').catch(() => undefined); }, []); // fetched now, so the button does not wait; a failure is said by the button's own import
 
   const duration = projectDuration(project);
   const [w, h] = outputSize(project.settings, resolution);
@@ -127,10 +108,11 @@ export function ExportSheet() {
       const withSound = format === 'video' || format === 'audio';
       const p = withSound && staleSoundClips(project).length ? await prepareStaleSounds((f) => setPhase({ kind: 'running', progress: f, label: t('Preparing the sound…') }), ac.signal) : project;
       if (!p) return;
-      const result = format === 'photo' ? await exportFrame(p, player.time, resolution)
-        : format === 'gif' ? await exportGif(p, progress, ac.signal)
-        : format === 'audio' ? await exportAudio(p, loudness, progress, ac.signal)
-        : await exportProject(p, { resolution: res, fps, quality, loudness }, progress, ac.signal);
+      const exporter = await import('../engine/exporter');
+      const result = format === 'photo' ? await exporter.exportFrame(p, player.time, resolution)
+        : format === 'gif' ? await exporter.exportGif(p, progress, ac.signal)
+        : format === 'audio' ? await exporter.exportAudio(p, loudness, progress, ac.signal)
+        : await exporter.exportProject(p, { resolution: res, fps, quality, loudness }, progress, ac.signal);
       setPhase({ kind: 'done', result, quick: isQuick });
       if (isQuick && !IOS) downloadFile(result.blob, result.fileName);
       track('export_completed', { resolution: res, fps, quick: isQuick, seconds: Math.round(result.seconds), mb: Math.round(result.blob.size / 1e6) });

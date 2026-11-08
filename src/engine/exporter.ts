@@ -2,7 +2,7 @@
 // mixes audio in sample-aligned windows, and muxes with Mediabunny (MP4 H.264/AAC when available).
 import {
   AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, QUALITY_HIGH, QUALITY_VERY_HIGH,
-  StreamTarget, WebMOutputFormat, canEncodeVideo, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
+  StreamTarget, WebMOutputFormat, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
 } from 'mediabunny';
 import { MemoryTarget } from './memTarget';
 import { diskFile } from './opfs';
@@ -13,18 +13,19 @@ import { buildFrame } from '../core/frame';
 import { withoutGuides } from '../core/music';
 import { soundEntries } from './audio';
 import { clipEnd, projectDuration } from '../core/timeline';
-import type { Project, ProjectSettings } from '../core/types';
+import type { Project } from '../core/types';
 import { renderAudioWindow } from './audio';
-import { Compositor, slotOf } from './compositor';
+import { Compositor, GPU_LOST, slotOf } from './compositor';
 import { MediaError, MediaPool } from './media';
 import { resolveDrawables } from './render';
 import { warmFaces } from './faces';
 import { warmSegmenter } from './segment';
 import { TextRasterizer } from './text';
 import { matchStreamRange } from './videoRange';
+import { MAX_GIF_S, gifSize, outputSize, type Resolution } from './exportSizes';
+export type { Resolution } from './exportSizes';
 import { within } from '../lib/limits';
 
-export type Resolution = 720 | 1080 | 1440 | 2160;
 export interface ExportOptions {
   resolution: Resolution; fps: number; quality: 'standard' | 'high';
   /** Normalize the mix to -14 LUFS with a -1 dBFS limiter (default on). */
@@ -41,11 +42,8 @@ const AUDIO_WINDOW_S = 2;
 /** More than either encoder makes: AAC 47 packets a second, Opus 50. */
 const AUDIO_PACKETS_PER_S = 60;
 
-const even = (x: number) => Math.max(2, Math.round(x / 2) * 2);
 export const PLATFORM_LUFS = -14;
-export const MAX_GIF_S = 30;
 const GIF_FPS = 12;
-const GIF_SIDE = 480;
 
 const fileBase = (p: Project) => p.name.replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim() || 'kadr';
 
@@ -152,27 +150,11 @@ class MixStream {
   }
 }
 
-export function outputSize(s: ProjectSettings, resolution: Resolution): [number, number] {
-  const k = resolution / Math.min(s.width, s.height);
-  return [even(s.width * k), even(s.height * k)];
-}
-
-/** Resolutions this device can encode for the project (checked once per export sheet open). */
-export async function supportedResolutions(s: ProjectSettings): Promise<Resolution[]> {
-  const all: Resolution[] = [720, 1080, 1440, 2160];
-  const ok = await Promise.all(all.map(async (r) => {
-    const [width, height] = outputSize(s, r);
-    return (await canEncodeVideo('avc', { width, height })) || (await canEncodeVideo('vp9', { width, height }));
-  }));
-  return all.filter((_, i) => ok[i]);
-}
-
 // MessageChannel instead of setTimeout: timers are throttled to ~1/s in background tabs, messages are not.
 const yieldToUi = () => new Promise<void>((r) => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
 
 type Target = { target: StreamTarget; result: () => Promise<Blob> };
 
-const GPU_LOST = 'The graphics of this device were reset during the export (usually too little memory). Close other apps and export again.';
 /** The browser gets this long to say which codecs it can encode (docs/12 G2): a query that never answers is a failure. */
 const CAPS_MS = 10_000;
 const noAnswer = (): never => { throw new MediaError('This device did not say whether it can encode video. Restart the browser and try again.'); };
@@ -431,11 +413,6 @@ async function frameOnce(p: Project, t: number, resolution: Resolution): Promise
   }
 }
 
-export const gifSize = (s: ProjectSettings): [number, number] => {
-  const k = GIF_SIDE / Math.max(s.width, s.height);
-  return [even(s.width * k), even(s.height * k)];
-};
-
 /** Animated GIF (looping, 12 fps, 480 px long side) with one palette sampled across the video: no flicker. */
 export function exportGif(p: Project, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
   return withGpuRetry(() => gifOnce(withoutGuides(p), onProgress, signal), () => onProgress(0), signal);
@@ -472,30 +449,4 @@ async function gifOnce(p: Project, onProgress: (f: number) => void, signal: Abor
   } finally {
     r.dispose();
   }
-}
-
-/** Opens the share sheet on phones (save to Photos/Files) or downloads on desktop. Call from a user gesture. */
-/** Offers the file to the person; false when they turned the share sheet down. */
-export async function saveFile(blob: Blob, fileName: string): Promise<boolean> {
-  const file = new File([blob], fileName, { type: blob.type });
-  if (navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file] });
-      return true;
-    } catch (e) {
-      if ((e as Error).name === 'AbortError') return false;
-    }
-  }
-  downloadFile(blob, fileName);
-  return true;
-}
-
-/** Saves through the browser's downloads, with no share sheet (needs no fresh tap, so it works when an export finishes). */
-export function downloadFile(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

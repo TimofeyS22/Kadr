@@ -1,8 +1,8 @@
 import { ArrowDown, ArrowUp, BringToFront, Play, SendToBack } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_PAUSES, removedSeconds, silenceLevel, speechRanges } from '../core/silence';
-import { clipEnd, cutMainToBeats, layerPlace, moveLayer, removeSourceGaps, soundAssetId, sourceSpan, timelineTimeOf, type LayerMove } from '../core/timeline';
-import type { AudioClip, Clip, ImageClip, Mask, Project, SoundClip, VideoClip } from '../core/types';
+import { clipBeatTimes, cutMainToBeats, layerPlace, moveLayer, removeSourceGaps, soundAssetId, type LayerMove } from '../core/timeline';
+import type { AudioClip, Clip, ImageClip, Mask, SoundClip, VideoClip } from '../core/types';
 import { detectBeats } from '../engine/analysis';
 import { PEAKS_PER_SEC, waveform } from '../engine/media';
 import { SFX, renderSfx } from '../engine/sfx';
@@ -127,14 +127,6 @@ export function SfxBody() {
 }
 
 // ---------- Beats ----------
-
-/** Beat times of an audio clip on the timeline (source beats mapped through speed and curves). */
-export function clipBeatTimes(p: Project, clip: AudioClip): number[] {
-  const beats = p.assets[clip.assetId]?.beats;
-  if (!beats) return [];
-  const end = clip.in + sourceSpan(clip);
-  return beats.times.filter((s) => s >= clip.in && s <= end).map((s) => timelineTimeOf(clip, s)).filter((t) => t <= clipEnd(clip));
-}
 
 export function BeatsBody({ clip }: { clip: AudioClip }) {
   const grid = useEditor((s) => s.project?.assets[clip.assetId]?.beats);

@@ -296,7 +296,7 @@ export function Preview() {
 
   return (
     <div className="preview" ref={wrap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDoubleClick}>
-      <canvas key={surface} ref={canvas} className="preview-canvas" />
+      <canvas key={surface} ref={canvas} className="preview-canvas" role="img" aria-label={t('Video preview')} />
       <div ref={guideV} className="guide v" aria-hidden />
       <div ref={guideH} className="guide h" aria-hidden />
       <div ref={angleTag} className="angle-tag" aria-live="polite" />
