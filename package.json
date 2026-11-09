@@ -16,7 +16,8 @@
     "e2e": "playwright test",
     "perf": "PERF=1 playwright test --project perf",
     "lint": "oxlint src e2e --deny-warnings && knip",
-    "registry": "node scripts/registry-count.mjs"
+    "registry": "node scripts/registry-count.mjs",
+    "gate": "sh scripts/gate.sh"
   },
   "dependencies": {
     "@fontsource/amatic-sc": "^5.3.0",
