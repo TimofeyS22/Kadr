@@ -2,7 +2,8 @@
 // mixes audio in sample-aligned windows, and muxes with Mediabunny (MP4 H.264/AAC when available).
 import {
   AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, QUALITY_HIGH, QUALITY_VERY_HIGH,
-  StreamTarget, WebMOutputFormat, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
+  StreamTarget, WebMOutputFormat, canEncodeVideo, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
+  type Quality,
 } from 'mediabunny';
 import { MemoryTarget } from './memTarget';
 import { diskFile } from './opfs';
@@ -11,6 +12,7 @@ import { encoderDelay } from './encoderDelay';
 import { Limiter, LoudnessMeter, normalizeGain } from '../core/dsp';
 import { buildFrame } from '../core/frame';
 import { withoutGuides } from '../core/music';
+import { avcBaseline } from '../core/avc';
 import { soundEntries } from './audio';
 import { clipEnd, projectDuration } from '../core/timeline';
 import type { Project } from '../core/types';
@@ -25,6 +27,7 @@ import { matchStreamRange } from './videoRange';
 import { MAX_GIF_S, gifSize, outputSize, type Resolution } from './exportSizes';
 export type { Resolution } from './exportSizes';
 import { within } from '../lib/limits';
+import { track } from '../lib/telemetry';
 
 export interface ExportOptions {
   resolution: Resolution; fps: number; quality: 'standard' | 'high';
@@ -271,15 +274,53 @@ async function withGpuRetry<T>(run: () => Promise<T>, onRestart: () => void, sig
   }
 }
 
+/** The video encoder gave no packet at all with a profile above Baseline, standing still (`stall`) or failing with an
+ * error (`refused`), and the device says it encodes Baseline (`avc`, a codec string) at this size: worth one more start. */
+class BaselineWorthTrying extends Error {
+  constructor(readonly avc: string, readonly reason: 'stall' | 'refused', override readonly cause: unknown) { super('The video encoder failed above Baseline'); }
+}
+
+/** The Baseline codec string to start again with after `asked` failed, or null: it was Baseline, or the device has none. */
+async function baselineFor(asked: string, width: number, height: number, quality: Quality): Promise<string | null> {
+  const avc = avcBaseline(asked);
+  if (!avc) return null;
+  const can = canEncodeVideo('avc', { width, height, quality, fullCodecString: avc }).catch(() => false);
+  return await within(can, CAPS_MS, () => false) ? avc : null;
+}
+
+/**
+ * Some phones take an H.264 High configuration and then give nothing back, or refuse it, while their Constrained
+ * Baseline encoder works: the person got no file at all, and a lower resolution stalled the same way (audit V-259).
+ * That is not an error the person has to deal with either: the export starts again with Baseline, once, at the same
+ * size and frame rate, and the progress bar goes back to the start. Baseline failing too is said as it is.
+ * An encoder that gave packets and then stopped has shown that its profile works: it gets no second start, and the
+ * person does not watch a percent stand still for STALL_MS twice.
+ */
+async function withBaselineRetry<T>(run: (avc?: string) => Promise<T>, onRestart: (reason: 'stall' | 'refused') => void): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    if (!(e instanceof BaselineWorthTrying)) throw e;
+    console.warn(`the video encoder failed (${e.reason}); starting the export again with H.264 Baseline`, e.cause);
+    onRestart(e.reason);
+    return run(e.avc);
+  }
+}
+
 /** Renders and encodes the project through the preview's render path (WYSIWYG), sound mixed in sample-aligned windows. */
 export function exportProject(whole: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
   // Guide tracks are for editing only: one longer than the video wrote black and silence to the file (audit V-102).
   const p = withoutGuides(whole);
-  return withGpuRetry(() => exportOnce(p, opts, onProgress, signal), () => onProgress(0), signal);
+  const restart = () => onProgress(0);
+  return withBaselineRetry(
+    (avc) => withGpuRetry(() => exportOnce(p, opts, onProgress, signal, avc), restart, signal),
+    (reason) => { track('export_baseline_fallback', { reason, resolution: opts.resolution, fps: opts.fps }); restart(); },
+  );
 }
 
+/** `baseline`: the H.264 codec string to encode with instead of Mediabunny's choice (see withBaselineRetry). */
 async function exportOnce(
-  p: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal,
+  p: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal, baseline?: string,
 ): Promise<ExportResult> {
   const started = performance.now();
   const duration = projectDuration(p);
@@ -300,9 +341,15 @@ async function exportOnce(
     target,
   });
   const frames = new FrameRenderer(p, width, height);
+  const quality = opts.quality === 'high' ? QUALITY_VERY_HIGH : QUALITY_HIGH;
+  // What the video encoder was asked for, how many packets it gave, and whether the export was waiting for it when it
+  // failed: together they say that the encoder never worked with this profile, and which codec string to try instead.
+  const encoder = { asked: '', packets: 0, awaited: false };
   const video = new CanvasSource(frames.canvas, {
-    codec: videoCodec, bitrate: opts.quality === 'high' ? QUALITY_VERY_HIGH : QUALITY_HIGH, keyFrameInterval: 2,
-    onEncodedPacket: matchStreamRange,
+    codec: videoCodec, bitrate: quality, keyFrameInterval: 2,
+    ...(mp4 && baseline ? { fullCodecString: baseline } : {}),
+    onEncoderConfig: (config) => { encoder.asked = config.codec; },
+    onEncodedPacket: (packet, meta) => { encoder.packets++; matchStreamRange(packet, meta); },
   });
   output.addVideoTrack(video, { frameRate: opts.fps, maximumPacketCount: Math.ceil(duration * opts.fps) + 8 });
   const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, bitrate: QUALITY_HIGH }) : null;
@@ -314,6 +361,8 @@ async function exportOnce(
 
   await warmModels(p);
   const guard = stallGuard(signal);
+  // A frame handed over, or the end of the file: a stall or an error in here is the video encoder's.
+  const encoding = async (work: Promise<void>) => { encoder.awaited = true; await guard.race(work); encoder.awaited = false; };
   try {
     await guard.race(output.start());
     if (pre) await guard.race(mix.normalize(signal, (f) => { guard.tick(); onProgress(f * pre); }));
@@ -326,7 +375,7 @@ async function exportOnce(
       const t = i / opts.fps;
       await guard.race(pumpAudio(t + 1));
       await guard.race(frames.draw(t));
-      await guard.race(video.add(t, 1 / opts.fps));
+      await encoding(video.add(t, 1 / opts.fps));
       guard.tick();
       onProgress(pre + ((i + 1) / count) * (1 - pre));
       if (i % 8 === 0) await yieldToUi();
@@ -336,7 +385,7 @@ async function exportOnce(
     if (frames.unread > count / 2) throw new MediaError(UNREADABLE); // audit V-161, V-168
     video.close();
     audio?.close();
-    await guard.race(output.finalize());
+    await encoding(output.finalize());
     const blob = await result();
     return { blob, fileName: `${fileBase(p)}.${mp4 ? 'mp4' : 'webm'}`, seconds: (performance.now() - started) / 1000, noSound: !audio && soundEntries(p).length > 0 };
   } catch (e) {
@@ -350,6 +399,10 @@ async function exportOnce(
       closeEncoders(video, audio);
       void output.cancel().catch(() => undefined);
     }
+    // The export was waiting for the encoder, and it never gave a packet: this profile does not work here.
+    const dead = !baseline && !signal.aborted && encoder.awaited && encoder.packets === 0;
+    const avc = dead ? await baselineFor(encoder.asked, width, height, quality) : null;
+    if (avc && !signal.aborted) throw new BaselineWorthTrying(avc, guard.stalled ? 'stall' : 'refused', e);
     throw e;
   } finally {
     guard.stop();

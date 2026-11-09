@@ -78,3 +78,14 @@ export function avcFullRange(avcc: Uint8Array): boolean | null {
   if (8 + len > avcc.length) return null;
   try { return spsFullRange(avcc.subarray(8, 8 + len)); } catch { return null; }
 }
+
+/**
+ * The Constrained Baseline twin of an H.264 codec string, at the same level (`avc1.64001f` → `avc1.42401f`): the
+ * profile every H.264 encoder has, for a device whose High or Main encoder gives nothing back (audit V-259). Null for
+ * a string that is Baseline already, or not H.264: there is nothing simpler to ask for.
+ */
+export function avcBaseline(codec: string): string | null {
+  const m = /^avc[13]\.([0-9a-f]{2})[0-9a-f]{2}([0-9a-f]{2})$/i.exec(codec);
+  if (!m || m[1] === '42') return null;
+  return `avc1.4240${m[2].toLowerCase()}`; // 0x42 Baseline, constraint_set1_flag: Constrained
+}

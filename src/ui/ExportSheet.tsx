@@ -103,7 +103,8 @@ export function ExportSheet() {
     releaseSpeechModel(); // an export needs the memory more than a speech model kept for later
     try {
       let last = 0;
-      const progress = (f: number) => { if (f - last > 0.005 || f === 1) { last = f; setPhase({ kind: 'running', progress: f }); } };
+      // A lower value is an export that started again (the GPU was reset, the encoder fell back to Baseline): shown at once.
+      const progress = (f: number) => { if (f < last || f - last > 0.005 || f === 1) { last = f; setPhase({ kind: 'running', progress: f }); } };
       // Sound with natural pitch (or noise reduction) that is not ready yet is made first, so the file matches the settings.
       const withSound = format === 'video' || format === 'audio';
       const p = withSound && staleSoundClips(project).length ? await prepareStaleSounds((f) => setPhase({ kind: 'running', progress: f, label: t('Preparing the sound…') }), ac.signal) : project;
