@@ -25,9 +25,9 @@ describe('stale code (deploy skew, docs/12)', () => {
 
   it('turns the browser\'s words into what a person can act on', async () => {
     const { errorMessage } = await import('./telemetry');
-    expect(errorMessage(new TypeError('Importing a module script failed.'))).toBe('Part of Kadr did not load. Check the connection and reload the page.');
+    expect(errorMessage(new TypeError('Importing a module script failed.'))).toBe('Part of Kadr did not load. Reload the page.');
     expect(errorMessage(new DOMException('The quota has been exceeded.', 'QuotaExceededError'))).toMatch(/^Not enough storage/);
-    expect(errorMessage(new TypeError('Load failed'))).toBe('Could not reach the network. Check the connection and try again.');
+    expect(errorMessage(new TypeError('Load failed'))).toBe('The server did not answer. Try again in a minute, or on another network.');
     vi.stubGlobal('navigator', { onLine: false, language: 'en' });
     expect(errorMessage(new TypeError('Failed to fetch'))).toBe('No internet connection.');
   });
@@ -74,7 +74,7 @@ describe('stale code (deploy skew, docs/12)', () => {
     store.set('kadr.reloadedForUpdate', String(Date.now() - 10_000));
     const { reloadIntoUpdate, updatingMessage } = await import('./update');
     expect(reloadIntoUpdate()).toBe(false);
-    expect(updatingMessage()).toBe('Part of Kadr did not load. Check the connection and reload the page.');
+    expect(updatingMessage()).toBe('Part of Kadr did not load. Reload the page.');
     vi.advanceTimersByTime(5000);
     expect(reload).not.toHaveBeenCalled();
   });

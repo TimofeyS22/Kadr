@@ -29,7 +29,7 @@ export function errorMessage(e: unknown): string {
   if (e instanceof DOMException && e.name === 'NotReadableError') return t('This file can no longer be read. It may have been moved or deleted. Add it again.');
   if (e instanceof DOMException && ['EncodingError', 'OperationError', 'NotSupportedError', 'DataError'].includes(e.name)) return t('This device could not process the video. Close other apps and try again.');
   if (e instanceof TypeError && /^(Load failed|Failed to fetch|NetworkError)/i.test(e.message)) {
-    return navigator.onLine ? t('Could not reach the network. Check the connection and try again.') : t('No internet connection.');
+    return navigator.onLine ? t('The server did not answer. Try again in a minute, or on another network.') : t('No internet connection.');
   }
   if (e instanceof Error) return t(e.message, (e as Error & { vars?: Record<string, string | number> }).vars);
   return typeof e === 'string' ? e : 'Something went wrong';

@@ -18,7 +18,7 @@ export function modelLoad<T>(load: Promise<T>, release: (late: T) => void, ms = 
     timer = self.setTimeout(() => {
       void load.then(release, () => undefined);
       reject(navigator.onLine
-        ? new MediaError('The on-device model did not load. Check the connection and try again.')
+        ? new MediaError('The on-device model did not load: the server did not answer. Try again in a minute, or on another network.')
         : offline());
     }, ms);
   });

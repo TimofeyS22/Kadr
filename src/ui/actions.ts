@@ -497,7 +497,7 @@ export function loadManifest(): Promise<MusicManifest> {
 /** Downloads a library track (cached by the service worker afterwards) and stores it as a project asset. */
 export async function downloadLibraryTrack(tr: LibraryTrack, progress: (f: number) => void, signal: AbortSignal): Promise<Asset> {
   // A connection that hangs fails after MUSIC_STALL_MS of silence instead of holding the reel forever (docs/12 G2).
-  const failed = () => new MediaError('Could not download the track. Check the connection and try again.');
+  const failed = () => new MediaError(navigator.onLine ? 'Could not download the track: the server did not answer. Try again in a minute, or on another network.' : 'No internet. A track downloads once; after that it works offline.');
   const ctrl = new AbortController();
   const cancel = () => ctrl.abort();
   signal.addEventListener('abort', cancel);

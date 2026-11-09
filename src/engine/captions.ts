@@ -181,7 +181,7 @@ const outOfMemory = (message: string) => /out of memory|maximum memory|cannot en
 const tooBigFor = (r: Extract<AsrResponse, { type: 'error' }>) => outOfMemory(r.message) && r.heap?.capMb != null;
 function engineError(message: string, error: string): MediaError {
   console.error('speech engine:', message);
-  if (message.includes(DOWNLOAD_STOPPED)) return new MediaError('The speech model download stopped. Check the connection and tap again: it continues from where it stopped.');
+  if (message.includes(DOWNLOAD_STOPPED)) return new MediaError(navigator.onLine ? 'The speech model download stopped: the server stopped answering. Tap again: it continues from where it stopped.' : 'No internet. The speech model download stopped. Tap again when you are online: it continues from where it stopped.');
   if (/quota/i.test(message)) return new MediaError('Not enough storage for Kadr on this device. Delete old projects or free up space, then try again.');
   return outOfMemory(message)
     ? new MediaError('Not enough memory on this device for the speech model. Close other tabs and apps and try again, or choose a smaller model.')

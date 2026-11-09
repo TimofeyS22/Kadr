@@ -86,7 +86,7 @@ export const setUpdateApplier = (f: () => Promise<boolean>): void => { applier =
 
 /** What the person reads instead of the browser's words: the page reloads, or (the reload already tried) what to do. */
 export function updatingMessage(): string {
-  if (!pending) return t('Part of Kadr did not load. Check the connection and reload the page.');
+  if (!pending) return navigator.onLine ? t('Part of Kadr did not load. Reload the page.') : t('No internet. Part of Kadr did not load. Reload the page when you are online.');
   if (updated) return holds > 0 ? t('Kadr has been updated. The page reloads when the current job ends.') : t('Kadr has been updated. Reloading the page…');
   return holds > 0 ? t('Part of Kadr did not load. The page reloads when the current job ends.') : t('Part of Kadr did not load. Reloading the page…');
 }
