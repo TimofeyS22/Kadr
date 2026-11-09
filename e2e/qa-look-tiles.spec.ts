@@ -203,6 +203,37 @@ test('holding Before / after shows the clip without its look; letting go brings 
   await expect.poll(() => previewChroma(page), { message: 'released: the look' }).toBeLessThan(original * 0.5);
 });
 
+test('nothing in the sheet rides over anything else, however it is scrolled, on a small phone', async ({ page }, info) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await openWith(page, ['landscape.mp4', 'portrait.mp4']);
+  await select(page, 0);
+  for (const name of ['Filters', 'Adjust', 'Effects']) {
+    await tool(page, name).click();
+    await expect(sheet(page)).toBeVisible();
+    await tilePainted(page, name === 'Adjust' ? 'Exposure' : 'None');
+    for (const part of [0, 0.5, 1]) {
+      const seen = await page.evaluate((f) => {
+        const body = document.querySelector('.sheet-body')!;
+        body.scrollTop = (body.scrollHeight - body.clientHeight) * f;
+        const box = (e: Element) => e.getBoundingClientRect();
+        const actions = box(document.querySelector('.look-actions')!);
+        const firstCat = document.querySelector('.pick-cat');
+        const tiles = [...document.querySelectorAll('.tile')].map(box);
+        let crossed = 0;
+        for (let i = 0; i < tiles.length; i++) for (let j = i + 1; j < tiles.length; j++) {
+          if (Math.min(tiles[i].right, tiles[j].right) - Math.max(tiles[i].left, tiles[j].left) > 0.5 && Math.min(tiles[i].bottom, tiles[j].bottom) - Math.max(tiles[i].top, tiles[j].top) > 0.5) crossed++;
+        }
+        return { crossed, actionsBottom: actions.bottom, catTop: firstCat ? box(firstCat).top : null, scrolls: body.scrollHeight - body.clientHeight };
+      }, part);
+      expect(seen.crossed, `${name} at ${part}: tiles do not cross`).toBe(0);
+      if (seen.catTop !== null) expect(seen.catTop, `${name} at ${part}: categories stay below the buttons (scrolls ${seen.scrolls} px)`).toBeGreaterThanOrEqual(seen.actionsBottom - 0.5);
+    }
+    await page.screenshot({ path: info.outputPath(`${name}-small.png`) });
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(sheet(page)).toHaveCount(0);
+  }
+});
+
 test('in Russian, the longest button stays inside its half of a 375 px sheet', async ({ page }, info) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru'));

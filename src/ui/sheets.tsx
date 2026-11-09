@@ -190,7 +190,7 @@ function FiltersBody({ clip }: { clip: LookClip }) {
   return (
     <>
       <LookActions clip={clip} parts={['filter']} />
-      <StylePicker items={FILTER_ITEMS} categories={FILTER_CATEGORIES} value={clip.filter?.id ?? 'none'} label={t('Filters')} draw={draw}
+      <StylePicker items={FILTER_ITEMS} categories={FILTER_CATEGORIES} value={clip.filter?.id ?? 'none'} label={t('Filters')} draw={draw} rows={1}
         onChange={(id) => (clip.filter?.id ?? 'none') !== id && editClip(clip.id, (c) => { if ('filter' in c) c.filter = id === 'none' ? null : { id, intensity: c.filter?.intensity ?? 0.8 }; })} />
       {clip.filter && (
         <Slider label={t('Intensity')} value={clip.filter.intensity} min={0} max={1} format={pct} reset={0.8}

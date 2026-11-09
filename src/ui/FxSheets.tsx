@@ -28,7 +28,7 @@ export function EffectsBody({ clip }: { clip: MediaVisual }) {
   return (
     <>
       <LookActions clip={clip} parts={['effect']} />
-      <StylePicker items={EFFECT_ITEMS} categories={ONE_CATEGORY} value={clip.effect?.id ?? 'none'} label={t('Effects')} draw={draw}
+      <StylePicker items={EFFECT_ITEMS} categories={ONE_CATEGORY} value={clip.effect?.id ?? 'none'} label={t('Effects')} draw={draw} rows={1}
         onChange={(id) => editClip(clip.id, (c) => {
           if (c.kind !== 'video' && c.kind !== 'image') return;
           if (id === 'none') delete c.effect;
