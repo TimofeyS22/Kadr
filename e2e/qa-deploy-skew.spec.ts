@@ -121,6 +121,8 @@ test.afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
 test('a tab opened before a deploy keeps working: the deploy keeps the previous version\'s files', async ({ page }) => {
   test.setTimeout(400_000);
+  // The check after a deploy looks for the mirrored models: a build without them is a wrong setup, not a broken deploy.
+  expect(fs.existsSync(path.join(BUILD, 'models')), `${BUILD} has no models: node scripts/mirror-models.mjs <that folder>, and NEW_DIST=<that folder>`).toBe(true);
   const site = path.join(tmp, 'site');
   copyBuild(OLD ?? BUILD, site);
   const server = await pages(site);
