@@ -6,7 +6,8 @@
   ],
   "ignoreBinaries": [
     "ffmpeg",
-    "ffprobe"
+    "ffprobe",
+    "safaridriver"
   ],
   "ignoreExportsUsedInFile": true
 }
