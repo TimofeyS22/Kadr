@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "frozen": "2026-11-09",
+  "ru": [
+    "capcut",
+    "cap cut",
+    "капкат",
+    "капкут",
+    "кап кат",
+    "кепкат",
+    "capcut не экспортирует",
+    "capcut платно про функция",
+    "capcut оплата россия",
+    "capcut вылетает лагает",
+    "capcut пропал проект",
+    "capcut чем заменить"
+  ],
+  "en": [
+    "CapCut",
+    "CapCut review",
+    "CapCut app",
+    "CapCut 2026",
+    "CapCut mobile",
+    "CapCut pro",
+    "CapCut export failed",
+    "CapCut paywall",
+    "CapCut refund charged",
+    "CapCut crash lag",
+    "CapCut lost projects",
+    "CapCut alternative switched"
+  ],
+  "websearch": {
+    "4pda.to": "ru",
+    "dtf.ru": "ru",
+    "vc.ru": "ru",
+    "x.com,twitter.com": "ru",
+    "trustpilot.com": "en"
+  },
+  "site_search": {
+    "otvet.mail.ru": "ru",
+    "pikabu.ru": "ru"
+  },
+  "listings": {
+    "irecommend": [
+      "https://irecommend.ru/content/prilozhenie-capcut-video-editor",
+      "https://irecommend.ru/content/prilozhenie-capcut-dlya-android"
+    ],
+    "otzovik": [
+      "https://otzovik.com/?search_text=capcut"
+    ]
+  },
+  "note": "5 доменов × 12 = 60 запросов WebSearch; остаток предела 80 — поиск каналов Telegram (docs/15 §4, §9).",
+  "deviations": [
+    "2026-11-09: сайтовый поиск otvet.mail.ru отдаёт в HTML один результат, остальное — внутренний API, запрос к которому заблокирован разрешениями. Вместо него те же 12 запросов ключа ru через WebSearch с allowed_domains otvet.mail.ru (укладывается в предел 80). Документы found_by=query."
+  ]
+}

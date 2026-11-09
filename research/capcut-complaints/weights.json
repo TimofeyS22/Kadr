@@ -1,0 +1,86 @@
+{
+ "gp_ru|high|0": {
+  "pool": 3685,
+  "sampled": 83
+ },
+ "gp_ru|high|1": {
+  "pool": 3133,
+  "sampled": 83
+ },
+ "gp_ru|high|2": {
+  "pool": 2744,
+  "sampled": 83
+ },
+ "gp_ru|low|0": {
+  "pool": 4015,
+  "sampled": 150
+ },
+ "gp_ru|low|1": {
+  "pool": 3437,
+  "sampled": 150
+ },
+ "gp_ru|low|2": {
+  "pool": 2753,
+  "sampled": 150
+ },
+ "gp_ru|mid|0": {
+  "pool": 834,
+  "sampled": 33
+ },
+ "gp_ru|mid|1": {
+  "pool": 739,
+  "sampled": 33
+ },
+ "gp_ru|mid|2": {
+  "pool": 559,
+  "sampled": 33
+ },
+ "gp_en|high|0": {
+  "pool": 4595,
+  "sampled": 83
+ },
+ "gp_en|high|1": {
+  "pool": 3964,
+  "sampled": 83
+ },
+ "gp_en|high|2": {
+  "pool": 3558,
+  "sampled": 83
+ },
+ "gp_en|low|0": {
+  "pool": 3468,
+  "sampled": 150
+ },
+ "gp_en|low|1": {
+  "pool": 2989,
+  "sampled": 150
+ },
+ "gp_en|low|2": {
+  "pool": 2175,
+  "sampled": 150
+ },
+ "gp_en|mid|0": {
+  "pool": 444,
+  "sampled": 33
+ },
+ "gp_en|mid|1": {
+  "pool": 382,
+  "sampled": 33
+ },
+ "gp_en|mid|2": {
+  "pool": 324,
+  "sampled": 33
+ },
+ "as-ru|all": {
+  "pool": 489,
+  "sampled": 100
+ },
+ "as-by|all": {
+  "pool": 124,
+  "sampled": 100
+ },
+ "as-kz|all": {
+  "pool": 300,
+  "sampled": 100
+ }
+}

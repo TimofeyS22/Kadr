@@ -1,0 +1,74 @@
+{
+ "as-by.jsonl": {
+  "sha256": "245479a990199ed2354c98ba3f2fb7112e98effd218705090fe4e333bd97c609",
+  "lines": 500
+ },
+ "as-kz.jsonl": {
+  "sha256": "ac11e40bbfdefe6b863e185d6f2ab1e1c7155e23f26785b05ee8bac80c8a9827",
+  "lines": 500
+ },
+ "as-ru.jsonl": {
+  "sha256": "6421a59f6b555879ef2c1658ed9c6443dbf56610dc988c941171ab629bfe3d29",
+  "lines": 500
+ },
+ "clean.jsonl": {
+  "sha256": "36714048f4e9410d0a78bb7b757c8caee8c5f82c89d6dd385a7e198de624a85f",
+  "lines": 112251
+ },
+ "forums.jsonl": {
+  "sha256": "ce02fbbb6fa7a9b828ba619c53dfd7a0aefc2dcf96d5bcdd295859415c12a69c",
+  "lines": 220
+ },
+ "gp-en.jsonl": {
+  "sha256": "64df8c23b70b562de9c6267f1773fe4f89584deb0ccf993f3df3075b015ff3a6",
+  "lines": 86977
+ },
+ "gp-ru.jsonl": {
+  "sha256": "6237c79cccb347bf16f0c9895c32c9ac50790e63b0535eb4a8089b77fb66306c",
+  "lines": 23535
+ },
+ "labels_as.jsonl": {
+  "sha256": "15d6f8f9eee5ff36d8336b0568e02ac97d72bdc5ede808e24bcc681751c4c2ca",
+  "lines": 300
+ },
+ "labels_forums.jsonl": {
+  "sha256": "5c8ab46a45553720461159a5e0287d270055cacb9e17ff622d9239f3733b2e43",
+  "lines": 267
+ },
+ "labels_gp_en.jsonl": {
+  "sha256": "a25af78dc66f38e4f2025f48a8815dcbc3a1bb3d58d396b0c4982d2dd9bfedd4",
+  "lines": 798
+ },
+ "labels_gp_ru.jsonl": {
+  "sha256": "8d08f0cfb4d307662f25c90a9bae6ddb1659bad6bf53595bfe71bec8bfe87403",
+  "lines": 798
+ },
+ "labels_second.jsonl": {
+  "sha256": "fbf7bc24fe618f0de9413063c7347d58362b9d3de36f8dacc03fa35a9c08721d",
+  "lines": 150
+ },
+ "sample_as.jsonl": {
+  "sha256": "fe1158bcd7315045fb3dbc9f381928536420d5728f767b0bc2b269aa05e052c3",
+  "lines": 300
+ },
+ "sample_forums.jsonl": {
+  "sha256": "1cb7c35cd80cdf68a65a2b7f4a4463b7cd9c4abe65a4091a1d5090d814d76e86",
+  "lines": 267
+ },
+ "sample_gp_en.jsonl": {
+  "sha256": "05521d8fae60cccede01f7e93c67fd63fea5f674dfdf143e391069133e60e56e",
+  "lines": 798
+ },
+ "sample_gp_ru.jsonl": {
+  "sha256": "98814614b71e94499fb405f17bd583d817dbc6adeb19fbae3ac81995b0d43f48",
+  "lines": 798
+ },
+ "sample_second.jsonl": {
+  "sha256": "7fe3898384e81326ab261dedd403ae8a31ba757fc0de5d582449c2c66dc395e3",
+  "lines": 150
+ },
+ "search.jsonl": {
+  "sha256": "a099378260e1b6f553c53ff4e9dc084518aef29bb3140bad117da774e33e811d",
+  "lines": 52
+ }
+}

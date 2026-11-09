@@ -1,0 +1,335 @@
+{
+ "A1": {
+  "total": 234,
+  "by_type": {
+   "store": 230,
+   "social": 1,
+   "review": 3
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "A3": {
+  "total": 19,
+  "by_type": {
+   "store": 16,
+   "forum": 2,
+   "review": 1
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "C6": {
+  "total": 14,
+  "by_type": {
+   "store": 14
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "J2": {
+  "total": 38,
+  "by_type": {
+   "store": 36,
+   "forum": 2
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "I1": {
+  "total": 19,
+  "by_type": {
+   "store": 19
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "L3": {
+  "total": 69,
+  "by_type": {
+   "store": 68,
+   "forum": 1
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "E5": {
+  "total": 27,
+  "by_type": {
+   "store": 25,
+   "forum": 2
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "B3": {
+  "total": 18,
+  "by_type": {
+   "store": 18
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "I2": {
+  "total": 72,
+  "by_type": {
+   "store": 70,
+   "forum": 2
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "D2": {
+  "total": 1,
+  "by_type": {
+   "store": 1
+  },
+  "label": "СИГНАЛ"
+ },
+ "G3": {
+  "total": 37,
+  "by_type": {
+   "store": 37
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "I3": {
+  "total": 58,
+  "by_type": {
+   "store": 58
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "C2": {
+  "total": 102,
+  "by_type": {
+   "store": 101,
+   "review": 1
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "X1": {
+  "total": 55,
+  "by_type": {
+   "store": 52,
+   "forum": 2,
+   "social": 1
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "C5": {
+  "total": 21,
+  "by_type": {
+   "store": 21
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "Y1": {
+  "total": 57,
+  "by_type": {
+   "store": 57
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "L1": {
+  "total": 28,
+  "by_type": {
+   "store": 28
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "C3": {
+  "total": 31,
+  "by_type": {
+   "store": 30,
+   "social": 1
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "C1": {
+  "total": 33,
+  "by_type": {
+   "store": 31,
+   "review": 2
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "L2": {
+  "total": 3,
+  "by_type": {
+   "store": 3
+  },
+  "label": "СИГНАЛ"
+ },
+ "E1": {
+  "total": 22,
+  "by_type": {
+   "store": 22
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "B4": {
+  "total": 21,
+  "by_type": {
+   "store": 20,
+   "review": 1
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "J1": {
+  "total": 15,
+  "by_type": {
+   "store": 15
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "B1": {
+  "total": 7,
+  "by_type": {
+   "store": 6,
+   "review": 1
+  },
+  "label": "СИГНАЛ"
+ },
+ "D1": {
+  "total": 35,
+  "by_type": {
+   "store": 33,
+   "review": 2
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "B2": {
+  "total": 11,
+  "by_type": {
+   "store": 10,
+   "social": 1
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "H1": {
+  "total": 17,
+  "by_type": {
+   "store": 16,
+   "forum": 1
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "H2": {
+  "total": 8,
+  "by_type": {
+   "store": 8
+  },
+  "label": "СИГНАЛ"
+ },
+ "A7": {
+  "total": 19,
+  "by_type": {
+   "store": 15,
+   "social": 1,
+   "review": 3
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "F1": {
+  "total": 8,
+  "by_type": {
+   "store": 8
+  },
+  "label": "СИГНАЛ"
+ },
+ "A4": {
+  "total": 16,
+  "by_type": {
+   "store": 15,
+   "review": 1
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "G1": {
+  "total": 11,
+  "by_type": {
+   "store": 11
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "A6": {
+  "total": 24,
+  "by_type": {
+   "store": 21,
+   "review": 3
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "E2": {
+  "total": 9,
+  "by_type": {
+   "store": 9
+  },
+  "label": "СИГНАЛ"
+ },
+ "A5": {
+  "total": 16,
+  "by_type": {
+   "store": 12,
+   "forum": 4
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "M1": {
+  "total": 14,
+  "by_type": {
+   "store": 12,
+   "review": 2
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ },
+ "A2": {
+  "total": 9,
+  "by_type": {
+   "store": 8,
+   "social": 1
+  },
+  "label": "СИГНАЛ"
+ },
+ "E4": {
+  "total": 2,
+  "by_type": {
+   "store": 2
+  },
+  "label": "СИГНАЛ"
+ },
+ "E3": {
+  "total": 7,
+  "by_type": {
+   "store": 7
+  },
+  "label": "СИГНАЛ"
+ },
+ "K1": {
+  "total": 1,
+  "by_type": {
+   "store": 1
+  },
+  "label": "СИГНАЛ"
+ },
+ "B5": {
+  "total": 1,
+  "by_type": {
+   "store": 1
+  },
+  "label": "СИГНАЛ"
+ },
+ "F2": {
+  "total": 1,
+  "by_type": {
+   "store": 1
+  },
+  "label": "СИГНАЛ"
+ },
+ "C4": {
+  "total": 1,
+  "by_type": {
+   "store": 1
+  },
+  "label": "СИГНАЛ"
+ },
+ "G2": {
+  "total": 11,
+  "by_type": {
+   "store": 11
+  },
+  "label": "УСТОЙЧИВЫЙ СИГНАЛ"
+ }
+}

@@ -1,0 +1,131 @@
+{
+ "4pda": {
+  "raw": 7,
+  "period_undated": 7,
+  "lang_ru": 7,
+  "kept": 7
+ },
+ "as-by": {
+  "raw": 500,
+  "period_main": 151,
+  "lang_latin": 86,
+  "kept": 500,
+  "lang_ru": 411,
+  "period_older": 349,
+  "lang_mixed": 1,
+  "lang_none": 2
+ },
+ "as-kz": {
+  "raw": 500,
+  "period_main": 430,
+  "lang_ru": 343,
+  "kept": 500,
+  "lang_latin": 147,
+  "flag_mod": 1,
+  "lang_mixed": 3,
+  "lang_none": 2,
+  "lang_kk": 5,
+  "period_older": 70
+ },
+ "as-ru": {
+  "raw": 500,
+  "period_main": 500,
+  "lang_ru": 487,
+  "kept": 500,
+  "lang_latin": 11,
+  "lang_mixed": 2
+ },
+ "dtf": {
+  "raw": 2,
+  "period_older": 2,
+  "lang_ru": 2,
+  "flag_mod": 1,
+  "kept": 2
+ },
+ "gp-en": {
+  "raw": 86977,
+  "period_main": 86947,
+  "lang_latin": 85156,
+  "kept": 86947,
+  "lang_none": 1714,
+  "lang_ru": 62,
+  "flag_mod": 196,
+  "lang_mixed": 10,
+  "lang_uk": 1,
+  "drop_dup_text": 29,
+  "lang_kk": 4,
+  "drop_empty": 1
+ },
+ "gp-ru": {
+  "raw": 23535,
+  "period_main": 23533,
+  "lang_ru": 21959,
+  "kept": 23533,
+  "lang_latin": 980,
+  "lang_none": 509,
+  "lang_kk": 55,
+  "lang_mixed": 22,
+  "flag_mod": 61,
+  "lang_uk": 8,
+  "drop_dup_text": 1,
+  "drop_empty": 1
+ },
+ "irecommend": {
+  "raw": 27,
+  "period_main": 10,
+  "lang_ru": 27,
+  "kept": 27,
+  "period_older": 17
+ },
+ "otvet": {
+  "raw": 74,
+  "period_main": 8,
+  "lang_ru": 74,
+  "kept": 74,
+  "period_older": 66,
+  "flag_mod": 1
+ },
+ "otzovik": {
+  "raw": 5,
+  "period_older": 5,
+  "lang_ru": 5,
+  "kept": 5
+ },
+ "pikabu": {
+  "raw": 114,
+  "period_main": 83,
+  "lang_ru": 112,
+  "kept": 113,
+  "lang_mixed": 1,
+  "drop_dup_text": 1,
+  "period_older": 30,
+  "flag_mod": 1
+ },
+ "telegram": {
+  "raw": 3,
+  "period_older": 2,
+  "lang_ru": 3,
+  "kept": 3,
+  "period_main": 1
+ },
+ "trustpilot": {
+  "raw": 18,
+  "period_undated": 18,
+  "lang_latin": 18,
+  "kept": 18
+ },
+ "vc": {
+  "raw": 1,
+  "period_older": 1,
+  "lang_ru": 1,
+  "kept": 1
+ },
+ "x": {
+  "raw": 21,
+  "period_older": 15,
+  "lang_latin": 21,
+  "kept": 21,
+  "period_main": 6,
+  "flag_mod": 1
+ }
+}
