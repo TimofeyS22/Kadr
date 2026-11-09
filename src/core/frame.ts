@@ -78,6 +78,12 @@ function textAnim(a: TextAnim, p: number, layer: Layer, clip: TextClip): void {
   }
 }
 
+/** The frame with one clip's colour and effect left out: "before" while a person holds Before / after. Preview only. */
+export const withoutLook = (desc: FrameDesc, clipId: string): FrameDesc => ({
+  ...desc,
+  layers: desc.layers.map((l) => (l.id === clipId ? { ...l, adjust: null, lut: null, fx: null } : l)),
+});
+
 /** v1.5: repeating motion, deterministic in clip time (preview = export). */
 function textLoop(loop: TextLoop, local: number, layer: Layer): void {
   if (loop.type === 'none' || loop.period <= 0) return;

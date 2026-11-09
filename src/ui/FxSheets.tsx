@@ -1,26 +1,38 @@
 // v0.6 sheets: video effects, hiding faces and areas, imported LUTs.
+import { useMemo } from 'react';
 import { evalAnim, hasKeys, keyIndexAt, setAnim, toggleKey } from '../core/anim';
 import { anim } from '../core/defaults';
 import { EFFECTS } from '../core/effects';
-import { EFFECT_IDS, type ImageClip, type Privacy, type VideoClip } from '../core/types';
+import { EFFECT_IDS, type EffectId, type ImageClip, type Privacy, type VideoClip } from '../core/types';
 import { t } from '../lib/i18n';
 import { useEditor } from '../state/store';
 import { editClip, importLut, setHideFaces } from './actions';
 import { Chips, ClipScrub, Slider, Toggle, pct } from './controls';
+import { LookActions } from './LookControls';
+import { useLookTiles } from './lookTiles';
+import { StylePicker, type TileDraw } from './picker';
 
 type MediaVisual = VideoClip | ImageClip;
 const MAX_AREAS = 6;
 
+const EFFECT_ITEMS = [{ id: 'none', name: 'None', cat: 'all' }, ...EFFECT_IDS.map((id) => ({ id, name: EFFECTS.find((e) => e.id === id)!.name, cat: 'all' }))];
+const ONE_CATEGORY = [{ id: 'all', name: 'All' }];
+const LUT_CATEGORY = [{ id: 'lut', name: 'LUT' }];
+
 export function EffectsBody({ clip }: { clip: MediaVisual }) {
-  const ids = ['none', ...EFFECT_IDS] as const;
+  const paint = useLookTiles(clip);
+  const draw = useMemo<TileDraw<(typeof EFFECT_ITEMS)[number]>>(() => (item, canvas) => paint(canvas, (c) => {
+    if (item.id === 'none') delete c.effect;
+    else c.effect = { id: item.id as EffectId, amount: c.effect?.amount ?? 0.6 };
+  }), [paint]);
   return (
     <>
-      <Chips options={ids} value={clip.effect?.id ?? 'none'}
-        render={(id) => t(id === 'none' ? 'None' : EFFECTS.find((e) => e.id === id)!.name)}
+      <LookActions clip={clip} parts={['effect']} />
+      <StylePicker items={EFFECT_ITEMS} categories={ONE_CATEGORY} value={clip.effect?.id ?? 'none'} label={t('Effects')} draw={draw}
         onChange={(id) => editClip(clip.id, (c) => {
           if (c.kind !== 'video' && c.kind !== 'image') return;
           if (id === 'none') delete c.effect;
-          else c.effect = { id, amount: c.effect?.amount ?? 0.6 };
+          else c.effect = { id: id as EffectId, amount: c.effect?.amount ?? 0.6 };
         })} />
       {clip.effect && (
         <Slider label={t('Strength')} value={clip.effect.amount} min={0} max={1} format={pct} reset={0.6}
@@ -67,14 +79,18 @@ export function PrivacyBody({ clip }: { clip: MediaVisual }) {
   );
 }
 
-export function LutSection({ clip }: { clip: MediaVisual }) {
+export function LutSection({ clip, paint }: { clip: MediaVisual; paint: ReturnType<typeof useLookTiles> }) {
   const luts = useEditor((s) => s.project?.luts) ?? {};
-  const ids = ['none', ...Object.keys(luts)];
+  const items = useMemo(() => [{ id: 'none', name: 'None', cat: 'lut' }, ...Object.entries(luts).map(([id, l]) => ({ id, name: l.name, cat: 'lut' }))], [luts]);
+  const draw = useMemo<TileDraw<(typeof items)[number]>>(() => (item, canvas) => paint(canvas, (c) => {
+    if (item.id === 'none') delete c.lut;
+    else c.lut = { id: item.id, intensity: c.lut?.intensity ?? 1 };
+  }), [paint]);
   return (
     <>
       <h3>{t('LUT')}</h3>
-      {ids.length > 1 && (
-        <Chips options={ids} value={clip.lut && luts[clip.lut.id] ? clip.lut.id : 'none'} render={(id) => (id === 'none' ? t('None') : luts[id].name)}
+      {items.length > 1 && (
+        <StylePicker items={items} categories={LUT_CATEGORY} value={clip.lut && luts[clip.lut.id] ? clip.lut.id : 'none'} label={t('LUT')} draw={draw} rows={1}
           onChange={(id) => editClip(clip.id, (c) => {
             if (c.kind !== 'video' && c.kind !== 'image') return;
             if (id === 'none') delete c.lut;

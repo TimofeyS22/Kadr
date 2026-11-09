@@ -1,10 +1,12 @@
 import { TrianglesCenterlineDashedVertical, TrianglesCenterlineDashedHorizontal } from 'lucide-react';
 import { produce } from 'immer';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { evalAnim, hasKeys, keyIndexAt, setAnim, toggleKey } from '../core/anim';
 import { TEXT_CATEGORIES, TEXT_PRESETS } from '../core/presets';
 import { ASPECTS, defaultAdjust, defaultTransform } from '../core/defaults';
-import { FILTERS, adjustRange } from '../core/filters';
+import { FILTERS, FILTER_CATEGORIES, adjustRange } from '../core/filters';
+import { LookActions } from './LookControls';
+import { useLookTiles, type LookClip } from './lookTiles';
 import { CURVE_PRESETS } from '../core/speed';
 import { applyTransitionToAll, expectedAudioKey, findClip, keepsPitch, setCurve, setSpeed, setTransition, isSound } from '../core/timeline';
 import { CurveEditor } from './CurveEditor';
@@ -17,7 +19,7 @@ import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
 import { Chips, ClipScrub, Sheet, Slider, Swatches, Toggle, pct, secs, signed, useSheetGuard } from './controls';
-import { StylePicker } from './picker';
+import { StylePicker, type TileDraw } from './picker';
 import { FontPicker } from './FontPicker';
 import { TextLook } from './TextLook';
 import { drawTextTile } from './tiles';
@@ -69,8 +71,8 @@ export function Sheets() {
     <Sheet title={TITLES[sheet]}>
       {sheet === 'speed' && <SpeedBody clip={clip} />}
       {sheet === 'volume' && <VolumeBody clip={clip} />}
-      {sheet === 'adjust' && <AdjustBody clip={clip} />}
-      {sheet === 'filters' && <FiltersBody clip={clip} />}
+      {sheet === 'adjust' && (clip.kind === 'video' || clip.kind === 'image') && <AdjustBody clip={clip} />}
+      {sheet === 'filters' && (clip.kind === 'video' || clip.kind === 'image') && <FiltersBody clip={clip} />}
       {sheet === 'transform' && <TransformBody clip={clip} />}
       {sheet === 'chroma' && (clip.kind === 'video' || clip.kind === 'image') && <ChromaControls clip={clip} />}
       {sheet === 'voice' && isSound(clip) && <VoiceBody clip={clip} />}
@@ -152,35 +154,49 @@ const ADJUST_LABELS: Record<AdjustKey, string> = {
   tint: 'Tint', highlights: 'Highlights', shadows: 'Shadows', fade: 'Fade', vignette: 'Vignette', sharpen: 'Sharpen', grain: 'Grain',
 };
 
-function AdjustBody({ clip }: { clip: Clip }) {
-  if (clip.kind === 'audio' || clip.kind === 'text' || clip.kind === 'caption') return null;
+const ADJUST_ITEMS: { id: AdjustKey; name: string; cat: string }[] = (['exposure', 'brightness', 'contrast', 'highlights', 'shadows', 'saturation', 'temperature', 'tint', 'fade', 'vignette', 'sharpen', 'grain'] as const)
+  .map((id, i) => ({ id, name: ADJUST_LABELS[id], cat: i < 5 ? 'light' : i < 8 ? 'colour' : 'detail' }));
+const ADJUST_CATEGORIES = [{ id: 'light', name: 'Light' }, { id: 'colour', name: 'Colour' }, { id: 'detail', name: 'Detail' }];
+
+/** One slider under tiles that each show what their setting does: the picture stays in view, unlike twelve sliders. */
+function AdjustBody({ clip }: { clip: LookClip }) {
+  const [active, setActive] = useState<AdjustKey>('exposure');
+  const paint = useLookTiles(clip);
+  const draw = useMemo<TileDraw<(typeof ADJUST_ITEMS)[number]>>(() => (item, canvas) => paint(canvas, (c) => {
+    const [, hi] = adjustRange(item.id);
+    c.adjust[item.id] = Math.min(hi, c.adjust[item.id] + 0.6);
+  }), [paint]);
+  const items = ADJUST_ITEMS.map((it) => (Math.abs(clip.adjust[it.id]) >= 0.005 ? { ...it, note: signed(clip.adjust[it.id]) } : it));
+  const [min, max] = adjustRange(active);
+  const changed = ADJUST_KEYS.some((k) => Math.abs(clip.adjust[k]) >= 0.005);
   return (
     <>
-      {ADJUST_KEYS.map((k) => {
-        const [min, max] = adjustRange(k);
-        return (
-          <Slider key={k} label={ADJUST_LABELS[k]} value={clip.adjust[k]} min={min} max={max} format={signed} reset={0}
-            onChange={(v) => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust[k] = v; }, `adj:${k}:${clip.id}`)} />
-        );
-      })}
-      <button className="btn" onClick={() => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust = defaultAdjust(); })}>{t('Reset all')}</button>
+      <LookActions clip={clip} parts={['adjust']} />
+      <StylePicker items={items} categories={ADJUST_CATEGORIES} value={active} onChange={(id) => setActive(id as AdjustKey)} label={t('Adjust')} draw={draw} rows={1} />
+      <Slider key={active} label={ADJUST_LABELS[active]} value={clip.adjust[active]} min={min} max={max} format={signed} reset={0}
+        onChange={(v) => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust[active] = v; }, `adj:${active}:${clip.id}`)} />
+      <button className="btn" disabled={!changed} onClick={() => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust = defaultAdjust(); })}>{t('Reset all')}</button>
     </>
   );
 }
 
-function FiltersBody({ clip }: { clip: Clip }) {
-  if (clip.kind === 'audio' || clip.kind === 'text' || clip.kind === 'caption') return null;
-  const ids = ['none', ...FILTERS.map((f) => f.id)] as const;
-  const name = (id: string) => (id === 'none' ? 'None' : FILTERS.find((f) => f.id === id)!.name);
+const FILTER_ITEMS = [{ id: 'none', name: 'None', cat: FILTERS[0].cat }, ...FILTERS];
+
+function FiltersBody({ clip }: { clip: LookClip }) {
+  const paint = useLookTiles(clip);
+  const draw = useMemo<TileDraw<(typeof FILTER_ITEMS)[number]>>(() => (item, canvas) => paint(canvas, (c) => {
+    c.filter = item.id === 'none' ? null : { id: item.id, intensity: c.filter?.intensity ?? 0.8 };
+  }), [paint]);
   return (
     <>
-      <Chips options={ids} value={clip.filter?.id ?? 'none'} render={name}
+      <LookActions clip={clip} parts={['filter']} />
+      <StylePicker items={FILTER_ITEMS} categories={FILTER_CATEGORIES} value={clip.filter?.id ?? 'none'} label={t('Filters')} draw={draw}
         onChange={(id) => (clip.filter?.id ?? 'none') !== id && editClip(clip.id, (c) => { if ('filter' in c) c.filter = id === 'none' ? null : { id, intensity: c.filter?.intensity ?? 0.8 }; })} />
       {clip.filter && (
         <Slider label={t('Intensity')} value={clip.filter.intensity} min={0} max={1} format={pct} reset={0.8}
           onChange={(v) => editClip(clip.id, (c) => { if ('filter' in c && c.filter) c.filter.intensity = v; }, `fint:${clip.id}`)} />
       )}
-      <LutSection clip={clip} />
+      <LutSection clip={clip} paint={paint} />
     </>
   );
 }

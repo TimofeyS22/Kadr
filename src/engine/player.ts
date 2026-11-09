@@ -1,5 +1,5 @@
 // Preview playback: audio clock drives time; frames render asynchronously and drop when late.
-import { buildFrame } from '../core/frame';
+import { buildFrame, withoutLook } from '../core/frame';
 import { clamp, findClip, isMedia, projectDuration } from '../core/timeline';
 import type { Project } from '../core/types';
 import { AudioEngine, duckRanges, soundEntries } from './audio';
@@ -17,6 +17,8 @@ const CONTEXT_MS = 2500;
 export class Player {
   readonly pool = new MediaPool(PREVIEW_MAX_DIM);
   readonly text = new TextRasterizer();
+  /** The clip shown without its colour and effect while a person holds Before / after; never in an export. */
+  private original: string | null = null;
   readonly audio = new AudioEngine();
   private compositor: Compositor | null = null;
   private project: Project | null = null;
@@ -190,12 +192,19 @@ export class Player {
     }
   }
 
+  showOriginal(clipId: string | null): void {
+    if (this.original === clipId) return;
+    this.original = clipId;
+    this.requestRender();
+  }
+
   /** Draws the frame at `t` (from `from` instead of the project, if given); with `copy`, returns a copy of it. */
   private async drawFrame(t: number, comp: Compositor, from: Project | null, copy: boolean): Promise<HTMLCanvasElement | null> {
     const p = from ?? this.project!;
     const started = performance.now();
     const tt = Math.max(0, Math.min(t, this.duration - 1e-3));
-    const desc = buildFrame(p, tt);
+    const built = buildFrame(p, tt);
+    const desc = !from && this.original ? withoutLook(built, this.original) : built;
     const { width, height } = comp.canvas;
     const fast = this.fast;
     this.fast = false;

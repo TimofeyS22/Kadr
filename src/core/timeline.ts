@@ -78,6 +78,30 @@ export function mainTrack(p: Project): Track {
   return t;
 }
 
+/** What "Apply to all pieces" copies: a sheet's own part of the look. */
+export type LookPart = 'filter' | 'adjust' | 'effect';
+
+/** Copies a clip's look to the other video and photo pieces of its track; other properties stay. Returns how many changed. */
+export function applyLookToTrack(p: Project, id: string, parts: readonly LookPart[]): number {
+  const found = findClip(p, id);
+  if (!found || (found.clip.kind !== 'video' && found.clip.kind !== 'image')) return 0;
+  const from = found.clip;
+  let changed = 0;
+  for (const c of found.track.clips) {
+    if (c === from || (c.kind !== 'video' && c.kind !== 'image')) continue;
+    if (parts.includes('filter')) {
+      c.filter = from.filter ? { ...from.filter } : null;
+      if (from.lut) c.lut = { ...from.lut }; else delete c.lut;
+    }
+    if (parts.includes('adjust')) c.adjust = { ...from.adjust };
+    if (parts.includes('effect')) {
+      if (from.effect) c.effect = { ...from.effect }; else delete c.effect;
+    }
+    changed++;
+  }
+  return changed;
+}
+
 export function findClip(p: Project, id: string): { track: Track; clip: Clip; index: number } | null {
   for (const track of p.tracks) {
     const index = track.clips.findIndex((c) => c.id === id);

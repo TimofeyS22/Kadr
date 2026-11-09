@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../lib/i18n';
 
-export interface PickerItem { id: string; name: string; cat: string }
+export interface PickerItem { id: string; name: string; cat: string; /** Shown after the name, e.g. a value. */ note?: string }
 /** Draws `item` into `canvas` at demo time `t` (seconds); calls `redraw` if it could not draw yet (a font loading). */
 export type TileDraw<T> = (item: T, canvas: HTMLCanvasElement, t: number, redraw: () => void) => void;
 
@@ -13,9 +13,9 @@ export const DEMO_LOOP_S = 2.4;
 export const DEMO_STILL_S = 1.2;
 const TICK_MS = 80; // ~12 frames a second is enough for a 100 px preview, and cheap on a slow phone
 
-export function StylePicker<T extends PickerItem>({ items, categories, value, onChange, label, draw, animated = false }: {
+export function StylePicker<T extends PickerItem>({ items, categories, value, onChange, label, draw, animated = false, rows = 2 }: {
   items: readonly T[]; categories: readonly { id: string; name: string }[]; value: string | null; onChange: (id: string) => void;
-  label: string; draw: TileDraw<T>; animated?: boolean;
+  label: string; draw: TileDraw<T>; animated?: boolean; /** One row leaves more of the sheet for a slider. */ rows?: 1 | 2;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   const cats = useRef<HTMLDivElement>(null);
@@ -92,18 +92,20 @@ export function StylePicker<T extends PickerItem>({ items, categories, value, on
 
   return (
     <div className="picker">
-      <div ref={cats} className="pick-cats">
-        {groups.map((g) => (
-          <button key={g.id} className={`pick-cat ${g.id === cat ? 'on' : ''}`} aria-current={g.id === cat} onClick={() => jump(g.id)}>{t(g.name)}</button>
-        ))}
-      </div>
+      {groups.length > 1 && (
+        <div ref={cats} className="pick-cats">
+          {groups.map((g) => (
+            <button key={g.id} className={`pick-cat ${g.id === cat ? 'on' : ''}`} aria-current={g.id === cat} onClick={() => jump(g.id)}>{t(g.name)}</button>
+          ))}
+        </div>
+      )}
       <div ref={strip} className="pick-strip" role="radiogroup" aria-label={label} onScroll={onScroll} onPointerDown={() => { jumped.current = null; }}>
         {groups.map((g) => (
-          <div key={g.id} className="pick-group" data-cat={g.id}>
+          <div key={g.id} className={`pick-group rows-${rows}`} data-cat={g.id}>
             {g.items.map((it) => (
               <button key={it.id} role="radio" aria-checked={it.id === value} aria-label={t(it.name)} className={`tile ${it.id === value ? 'on' : ''}`} onClick={() => onChange(it.id)}>
                 <canvas data-id={it.id} aria-hidden />
-                <span aria-hidden>{t(it.name)}</span>
+                <span aria-hidden>{t(it.name)}{it.note ? ` ${it.note}` : ''}</span>
               </button>
             ))}
           </div>

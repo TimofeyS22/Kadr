@@ -24,5 +24,5 @@ until curl -sf "http://127.0.0.1:$PORT/" >/dev/null; do
 done
 E2E_URL="http://127.0.0.1:$PORT/" npx playwright test --project=iphone-webkit --project=android-chromium --output="$OUT/results" --reporter=line \
   e2e/qa-smoke.spec.ts e2e/qa-av-sync.spec.ts e2e/qa-share-save.spec.ts e2e/qa-privacy-canary.spec.ts \
-  e2e/qa-frames-60fps.spec.ts e2e/qa-faces-video.spec.ts e2e/qa-safari-storage.spec.ts e2e/qa-budgets.spec.ts
+  e2e/qa-frames-60fps.spec.ts e2e/qa-faces-video.spec.ts e2e/qa-safari-storage.spec.ts e2e/qa-budgets.spec.ts e2e/qa-look-tiles.spec.ts
 echo "gate: green on Mac engines. A real phone is still a separate check (docs/16 §1)."
