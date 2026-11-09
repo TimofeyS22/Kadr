@@ -145,6 +145,36 @@ try {
     await tap('Undo');
     await waitFor('clips back', async () => (await count('.tl-row.main .clip')) === before, 15_000);
   });
+  await step('filter tiles, before and after, all pieces', async () => {
+    if (!(await js("return document.querySelector('.tl-row.main .clip.sel') !== null"))) throw new Error('no clip selected');
+    const opened = Date.now();
+    await tap('Filters');
+    const TILE = `const c = [...document.querySelectorAll('.tile')].find((t) => t.getAttribute('aria-label') === arguments[0])?.querySelector('canvas');
+      if (!c || !c.width) return null;
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let sum = 0, chroma = 0;
+      for (let i = 0; i < d.length; i += 4) { sum += d[i] + d[i + 1] + d[i + 2]; chroma += Math.abs(d[i] - d[i + 1]) + Math.abs(d[i + 1] - d[i + 2]); }
+      const n = d.length / 4; return sum / n > 30 ? { chroma: Math.round(chroma / n) } : null;`;
+    const none = await waitFor('the None tile is painted', () => js(TILE, 'None'), 30_000);
+    const firstTileMs = Date.now() - opened;
+    await js("[...document.querySelectorAll('.pick-cat')].find((b) => b.textContent === 'B&W').click();");
+    const noir = await waitFor('the Noir tile is painted', () => js(TILE, 'Noir'), 30_000);
+    if (noir.chroma >= none.chroma * 0.6) throw new Error(`Noir tile keeps its colour: ${JSON.stringify({ none, noir })}`);
+    await shot('filters');
+    await tap('Noir');
+    await sleep(500);
+    await js(`const b = document.querySelector('.btn.compare'), r = b.getBoundingClientRect();
+      b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.left + 9, clientY: r.top + 9, pointerId: 8, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1 }));`);
+    await sleep(900);
+    await shot('held-before');
+    await js("window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 8, pointerType: 'touch', isPrimary: true }));");
+    await sleep(900);
+    await shot('released-after');
+    await tap('Apply to all pieces (2)');
+    await waitFor('the confirmation', () => js("return [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Applied to all pieces'))"), 10_000);
+    await tap('Done');
+    await sleep(400);
+    return { firstTileMs, none: none.chroma, noir: noir.chroma };
+  });
   let exportMs = 0;
   await step('export 1080p', async () => {
     await tap('Export');
