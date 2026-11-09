@@ -855,4 +855,13 @@ export const RU: Record<string, string> = {
   'The reel is still being made. Tap again to stop.': 'Рилс ещё собирается. Нажмите ещё раз, чтобы остановить.',
   'This is still running. Tap again to stop it.': 'Работа ещё идёт. Нажмите ещё раз, чтобы остановить её.',
   'This browser cannot encode sound, so the file has no sound. Try Chrome or Safari.': 'Этот браузер не умеет кодировать звук, поэтому файл без звука. Попробуйте Chrome или Safari.',
+  'This is the built-in browser of {app}: it cannot save videos.': 'Это встроенный браузер {app}: сохранить видео в нём не получится.',
+  'This is an app’s built-in browser: it cannot save videos.': 'Это встроенный браузер приложения: сохранить видео в нём не получится.',
+  'Open Kadr in Safari.': 'Откройте Kadr в Safari.',
+  'Open Kadr in Chrome.': 'Откройте Kadr в Chrome.',
+  'Open Kadr in your browser.': 'Откройте Kadr в обычном браузере.',
+  'Copy link': 'Скопировать ссылку',
+  'Link copied': 'Ссылка скопирована',
+  'Link to Kadr': 'Ссылка на Kadr',
+  'Press and hold the link to copy it.': 'Нажмите на ссылку и удерживайте, чтобы скопировать её.',
 };

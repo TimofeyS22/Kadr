@@ -18,6 +18,8 @@ import { useSheetGuard } from './controls';
 import { clearDiskFiles } from '../engine/opfs';
 import { keepError, type ErrorEntry } from '../lib/errorLog';
 import { ErrorDetails } from './ErrorDetails';
+import { IN_APP } from '../lib/device';
+import { InAppNotice } from './InAppNotice';
 
 type Format = 'video' | 'photo' | 'gif' | 'audio';
 const FORMATS: Record<Format, string> = { video: 'Video', photo: 'Photo', gif: 'GIF', audio: 'Audio' };
@@ -48,7 +50,8 @@ export function ExportSheet() {
   const [fps, setFps] = useState(project.settings.fps);
   const [quality, setQuality] = useState<'standard' | 'high'>(prefs.quality);
   // Consumed once: the Export button asked for a quick export (see startExport). It opens straight on the progress.
-  const [auto] = useState(() => { const a = useEditor.getState().startAuto; if (a) useEditor.setState({ startAuto: false }); return a; });
+  // Not in an app's built-in browser: the person first reads that the file cannot be saved there (audit V-203).
+  const [auto] = useState(() => { const a = useEditor.getState().startAuto; if (a) useEditor.setState({ startAuto: false }); return a && !IN_APP; });
   const [phase, setPhase] = useState<Phase>(() => (auto ? { kind: 'running', progress: 0 } : { kind: 'setup' }));
   useEffect(() => {
     if (phase.kind !== 'running') return;
@@ -131,6 +134,7 @@ export function ExportSheet() {
 
   return (
     <Sheet title={t('Export')}>
+      {(phase.kind === 'setup' || phase.kind === 'done') && <InAppNotice />}
       {phase.kind === 'setup' && (
         <Chips options={Object.keys(FORMATS) as Format[]} value={format} onChange={setFormat} render={(f) => t(FORMATS[f])} />
       )}

@@ -4,7 +4,7 @@ import { produce } from 'immer';
 import { ASPECTS, createProject } from '../core/defaults';
 import { TEMPLATES, buildTemplate, type TemplateSpec } from '../core/templates';
 import type { AspectId } from '../core/types';
-import { IOS, standalone } from '../lib/device';
+import { IN_APP, IOS, standalone } from '../lib/device';
 import { errorMessage, track } from '../lib/telemetry';
 import { pickFiles } from '../lib/pickFiles';
 import { holdUpdates, othersWorking, updatesHeld, useHoldUpdates } from '../lib/update';
@@ -13,6 +13,7 @@ import { collectOrphans, deleteProject, listProjects, loadProject, requestPersis
 import { formatTime } from './format';
 import { importNoteText, t, useLocale } from '../lib/i18n';
 import type { ImportNote } from '../engine/importer';
+import { InAppNotice, useInAppNotice } from './InAppNotice';
 import { useInstall } from './install';
 import { TASKS, isTask, openWithTask, projectFromAssets, type TaskId } from './tasks';
 
@@ -83,7 +84,9 @@ export function Home() {
 
   // Safari's 7-day rule (docs/12 §1.3 item 4): a site not on the Home Screen loses its data after a week away.
   const [keepTipSeen, setKeepTipSeen] = useState(() => { try { return !!localStorage.getItem(KEEP_TIP_KEY); } catch { return true; } });
-  const keepTip = IOS && !standalone() && !keepTipSeen && !busy && !!projects?.some((m) => m.duration > 0);
+  // Not in an app's built-in browser: it has no "Add to Home Screen", and the notice there says to leave it (audit V-203).
+  const inAppNotice = useInAppNotice();
+  const keepTip = IOS && !IN_APP && !standalone() && !keepTipSeen && !busy && !!projects?.some((m) => m.duration > 0);
   const dismissKeepTip = () => {
     try { localStorage.setItem(KEEP_TIP_KEY, '1'); } catch { /* shown again next time */ }
     setKeepTipSeen(true);
@@ -105,7 +108,8 @@ export function Home() {
   }, []);
 
   const route = useStartRoute();
-  const install = useInstall();
+  const offered = useInstall();
+  const install = IN_APP ? null : offered; // a built-in browser installs nothing, whatever it announces (audit V-203)
   const refresh = () => listProjects().then(setProjects).catch((e) => toast(errorMessage(e), 'error'));
   useEffect(() => { void refresh(); void requestPersistence(); }, []);
   useEffect(() => { if (isTask(route ?? undefined)) track('deeplink_task', { task: route! }); }, [route]);
@@ -297,6 +301,8 @@ export function Home() {
         </div>
       </header>
       <p className="tagline">{t('Edit videos right in your browser.')} <Lock size={14} /> {t('Nothing is uploaded — your media stays on this device.')}</p>
+
+      {inAppNotice.shown && <InAppNotice onDismiss={inAppNotice.dismiss} />}
 
       {!supported && (
         <div className="banner error">

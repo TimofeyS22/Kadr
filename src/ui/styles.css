@@ -60,6 +60,13 @@ h1, h2, h3 { margin: 0; }
 .banner.error { background: #3a1c1c; color: #ffc9c9; }
 .banner.keep-tip { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
 .banner.keep-tip p { margin: 0; }
+/* An app's built-in browser (audit V-203): the one notice on Home that says the work cannot be saved, so it is outlined. */
+.banner.in-app { display: grid; gap: 10px; border: 1px solid var(--accent); }
+.banner.in-app p { margin: 0; line-height: 1.45; }
+.in-app-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.in-app-link { width: 100%; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+.sheet .banner.in-app { margin: 0 0 12px; }
+.sheet .banner.in-app .btn { margin-top: 0; } /* the sheet spaces its own buttons; here the notice's gap does */
 
 /* ---------- Home ---------- */
 .home { max-width: 760px; margin: 0 auto; padding: calc(20px + var(--safe-top)) 16px calc(24px + var(--safe-bottom)); }
