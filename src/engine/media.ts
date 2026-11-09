@@ -1,14 +1,14 @@
 // Media access on top of Mediabunny/WebCodecs: probing, per-clip decoding streams, thumbnails, waveforms.
 import {
-  BlobSource, EncodedPacketSink, Input, VideoSampleSink,
-  type InputAudioTrack, type InputTrack, type InputVideoTrack, type VideoSample,
+  EncodedPacketSink, VideoSampleSink,
+  type Input, type InputAudioTrack, type InputTrack, type InputVideoTrack, type VideoSample,
 } from 'mediabunny';
-import { READABLE } from './formats';
+import { openInput } from './source';
 import { hdrTransfer, type Hdr } from './hdr';
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
 import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
-import { getBlob, getPeaks, putPeaks } from '../storage/db';
+import { getBlob, getPeaks, openMedia, putPeaks } from '../storage/db';
 import { ResilientSink, playableAudioTrack, type SoundSink } from './sound';
 import { within } from '../lib/limits';
 
@@ -37,8 +37,6 @@ const DECODER_MS = 15_000;
 const SCRUB_GAP = 0.3;
 /** The browser's own words go to the error's details (`vars.error`), not into the sentence. */
 export const DECODER_FAILED = 'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.';
-
-const openInput = (blob: Blob) => new Input({ formats: READABLE, source: new BlobSource(blob) });
 
 export async function probe(file: Blob): Promise<Probe> {
   if (file.type.startsWith('image/')) {
@@ -336,11 +334,17 @@ export class MediaPool {
     let h = this.handles.get(assetId);
     if (!h) {
       h = (async () => {
-        const blob = await getBlob(assetId);
-        if (!blob) throw new MediaError('Media file is missing from this device');
-        const input = openInput(blob);
-        const video = await input.getPrimaryVideoTrack();
-        return { input, video, hdr: video ? await hdrTransfer(video) : undefined, audio: await playableAudioTrack(input) };
+        // Not a whole Blob: in a private tab that is the file put together in memory (audit V-253).
+        const media = await openMedia(assetId);
+        if (!media) throw new MediaError('Media file is missing from this device');
+        const input = openInput(media);
+        try {
+          const video = await input.getPrimaryVideoTrack();
+          return { input, video, hdr: video ? await hdrTransfer(video) : undefined, audio: await playableAudioTrack(input) };
+        } catch (e) {
+          input.dispose(); // a file that does not open is asked for again: no try leaves its input behind
+          throw e;
+        }
       })();
       h.catch(() => this.handles.delete(assetId));
       this.handles.set(assetId, h);
@@ -495,15 +499,19 @@ export function thumbnails(assetId: string, duration: number, height = 96): Prom
   let p = thumbCache.get(assetId);
   if (!p) {
     p = (async () => {
-      const blob = await getBlob(assetId);
-      if (!blob) return [];
-      if (blob.type.startsWith('image/')) {
+      const media = await openMedia(assetId);
+      if (!media) return [];
+      if (media.type.startsWith('image/')) {
+        const blob = media instanceof Blob ? media : await getBlob(assetId); // a photo is decoded from a whole Blob
+        if (!blob) return [];
         // Resize options are not supported everywhere (older Safari); fall back to full size.
         const bmp = await createImageBitmap(blob, { resizeHeight: height, resizeQuality: 'medium' }).catch(() => createImageBitmap(blob));
         return [{ t: 0, bmp }];
       }
-      const job: ThumbJob = { id: ++nextJob, blob, duration, height, count: Math.min(40, Math.max(2, Math.ceil(duration / 1.5))) };
-      const w = worker();
+      const job: ThumbJob = { id: ++nextJob, media, duration, height, count: Math.min(40, Math.max(2, Math.ceil(duration / 1.5))) };
+      // A file kept in chunks is read on this thread, through its storage and its two-chunk cache: a reader cannot be
+      // posted, and a second cache in the worker would double what a private tab holds (audit V-253).
+      const w = media instanceof Blob ? worker() : null;
       const out = w
         ? await within(new Promise<Thumb[]>((resolve, reject) => { waiting.set(job.id, { out: [], resolve, reject }); w.postMessage(job); }), THUMBS_MS, () => {
           // A decoder in the worker hung: the worker goes (with what it holds), the strip retries on its next showing.
@@ -531,9 +539,9 @@ export function waveform(assetId: string): Promise<Float32Array> {
     p = (async () => {
       const stored = await getPeaks(assetId);
       if (stored) return stored;
-      const blob = await getBlob(assetId);
-      if (!blob) return new Float32Array();
-      const input = openInput(blob);
+      const media = await openMedia(assetId);
+      if (!media) return new Float32Array();
+      const input = openInput(media);
       try {
         const audio = await playableAudioTrack(input);
         if (!audio) return new Float32Array();

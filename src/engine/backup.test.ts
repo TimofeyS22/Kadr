@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../storage/db', () => ({
-  getBlob: async (id: string) => (id === 'gone' ? undefined : new Blob([id])),
+  openMedia: async (id: string) => (id === 'gone' ? undefined : new Blob([id])),
   deleteBlob: vi.fn(), putBlob: vi.fn(), saveProject: vi.fn(),
 }));
 vi.mock('./importer', () => ({ ensureRoom: vi.fn() }));

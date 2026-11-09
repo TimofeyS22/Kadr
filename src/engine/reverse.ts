@@ -1,17 +1,17 @@
 // Reverse: re-encodes the used part of a clip backwards (frames and sound) into a new asset.
 // Frames are decoded in short windows from the end so memory stays bounded on phones.
 import {
-  AudioBufferSource, BlobSource, CanvasSink, CanvasSource, Input,
+  AudioBufferSource, CanvasSink, CanvasSource,
   Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
   type WrappedCanvas,
 } from 'mediabunny';
-import { READABLE } from './formats';
 import { MemoryTarget } from './memTarget';
 import { sourceSpan } from '../core/timeline';
 import type { Asset, Project, VideoClip } from '../core/types';
-import { getBlob } from '../storage/db';
+import { openMedia } from '../storage/db';
 import { importFile } from './importer';
 import { MediaError } from './media';
+import { openInput } from './source';
 import { ResilientSink, playableAudioTrack } from './sound';
 import { matchStreamRange } from './videoRange';
 import { abandon } from './abandon';
@@ -23,12 +23,12 @@ const MAX_DIM = 1280;
 
 export async function reverseClipSource(p: Project, clip: VideoClip, onProgress: (f: number) => void, signal: AbortSignal): Promise<Asset> {
   const asset = p.assets[clip.assetId];
-  const blob = await getBlob(clip.assetId);
-  if (!asset || !blob) throw new MediaError('Media file is missing from this device');
+  const media = await openMedia(clip.assetId);
+  if (!asset || !media) throw new MediaError('Media file is missing from this device');
   const s0 = clip.in;
   const s1 = Math.min(asset.duration, clip.in + sourceSpan(clip)); // a speed curve shows more or less than duration × speed (audit V-144)
   if (s1 - s0 > MAX_REVERSE_S) throw new MediaError('Reverse works on clips up to {n} s. Split the clip first.', { n: MAX_REVERSE_S });
-  const input = new Input({ formats: READABLE, source: new BlobSource(blob) });
+  const input = openInput(media);
   let started: { output: Output; sources: { close(): void }[] } | null = null;
   try {
     const video = await input.getPrimaryVideoTrack();

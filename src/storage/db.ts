@@ -1,9 +1,11 @@
 // Local persistence. Projects are small JSON documents; media are Blobs stored as-is
 // (IndexedDB keeps them on disk and Mediabunny reads them in slices).
-import { del, get, keys, set, update, type UseStore } from 'idb-keyval';
+import { del, get, keys, promisifyRequest, set, update, type UseStore } from 'idb-keyval';
 import { clearDiskFiles } from '../engine/opfs';
 import { projectDuration } from '../core/timeline';
 import type { AspectId, Project } from '../core/types';
+import { perf } from '../lib/perf';
+import { CHUNK, ChunkCache, HELD_CHUNKS, chunkedMedia, type Chunked, type StoredMedia } from './chunks';
 
 /**
  * The 'kadr'/'kv' store, opened again when the browser drops the connection. WebKit drops it while the page is in the
@@ -176,10 +178,9 @@ export async function deleteProject(id: string): Promise<void> {
 
 // Media storage. Blobs are stored as-is when the browser allows it (disk-backed, cheapest). Safari refuses
 // Blobs in IndexedDB in private browsing and some other cases (the request fails with a null error), so
-// the fallback stores the file as 16 MB ArrayBuffer chunks, which every engine accepts.
-const CHUNK = 16 * 1024 * 1024;
-interface Chunked { type: string; size: number; chunks: number }
-const assembled = new Map<string, Promise<Blob>>();
+// the fallback stores the file as 16 MB ArrayBuffer chunks, which every engine accepts. Those are read a chunk at a
+// time (`openMedia`), never kept together: in a private tab the stored copy is already in memory once (audit V-253).
+const held = new ChunkCache(HELD_CHUNKS, perf.chunks);
 
 /** The storage is full: as the one error the app explains (some engines say "quota" under another name). */
 function quotaError(e: unknown): DOMException | null {
@@ -208,28 +209,45 @@ export async function putBlob(assetId: string, blob: Blob): Promise<void> {
   }
 }
 
+/** The record of a file kept in chunks, if all of them are there. Only keys are asked for: nothing is read into memory. */
+async function chunkedMeta(assetId: string): Promise<Chunked | undefined> {
+  const meta = await get<Chunked>(`c:${assetId}`, store);
+  if (!meta) return undefined;
+  const prefix = `c:${assetId}:`;
+  const have = new Set(await store('readonly', (s) => promisifyRequest(s.getAllKeys(IDBKeyRange.bound(prefix, `${prefix}\uffff`)))));
+  for (let i = 0; i < meta.chunks; i++) if (!have.has(`${prefix}${i}`)) return undefined;
+  return meta;
+}
+
+/**
+ * A stored file to decode: the Blob where the browser keeps one, else a reader that fetches the file's chunks as they
+ * are asked for. Video and sound go through this; `getBlob` is for what must be handed over whole.
+ */
+export async function openMedia(assetId: string): Promise<StoredMedia | undefined> {
+  const direct = await get<Blob>(`b:${assetId}`, store);
+  if (direct) return direct;
+  const meta = await chunkedMeta(assetId);
+  return meta && chunkedMedia(assetId, meta, (i) => get<ArrayBuffer>(`c:${assetId}:${i}`, store), held);
+}
+
+/**
+ * A stored file as one Blob, for what takes nothing else (a photo to decode, a font). A file kept in chunks is put
+ * together in memory for the caller alone and is not kept: do not read a video this way.
+ */
 export async function getBlob(assetId: string): Promise<Blob | undefined> {
   const direct = await get<Blob>(`b:${assetId}`, store);
   if (direct) return direct;
-  let p = assembled.get(assetId);
-  if (!p) {
-    p = (async () => {
-      const meta = await get<Chunked>(`c:${assetId}`, store);
-      if (!meta) throw new Error('missing');
-      const parts: ArrayBuffer[] = [];
-      for (let i = 0; i < meta.chunks; i++) {
-        const part = await get<ArrayBuffer>(`c:${assetId}:${i}`, store);
-        if (!part) throw new Error('missing');
-        parts.push(part);
-      }
-      return new Blob(parts, { type: meta.type });
-    })();
-    assembled.set(assetId, p);
-  }
   try {
-    return await p;
+    const meta = await get<Chunked>(`c:${assetId}`, store);
+    if (!meta) return undefined;
+    const parts: ArrayBuffer[] = [];
+    for (let i = 0; i < meta.chunks; i++) {
+      const part = await get<ArrayBuffer>(`c:${assetId}:${i}`, store);
+      if (!part) return undefined;
+      parts.push(part);
+    }
+    return new Blob(parts, { type: meta.type });
   } catch {
-    assembled.delete(assetId);
     return undefined;
   }
 }
@@ -238,7 +256,7 @@ export async function getBlob(assetId: string): Promise<Blob | undefined> {
 export async function deleteBlob(assetId: string): Promise<void> {
   const meta = await get<Chunked>(`c:${assetId}`, store).catch(() => undefined);
   const keys = [`b:${assetId}`, `w:${assetId}`, `c:${assetId}`, ...Array.from({ length: meta?.chunks ?? 0 }, (_, i) => `c:${assetId}:${i}`)];
-  assembled.delete(assetId);
+  held.drop(`${assetId}:`);
   await Promise.all(keys.map((k) => del(k, store)));
 }
 /**
@@ -266,8 +284,8 @@ export async function collectOrphans(): Promise<number> {
   return orphans.size;
 }
 
-/** Lets go of the files assembled in memory for the project just left (the chunked fallback holds them whole). */
-export function forgetLoadedMedia(): void { assembled.clear(); }
+/** Lets go of the chunks held in memory for the project just left (the chunked fallback keeps the last two it read). */
+export function forgetLoadedMedia(): void { held.drop(); }
 
 // A camera take, written second by second as it is recorded (audit V-250): it used to live in the page's memory until
 // Stop, so memory grew with every second and a crash lost all of it.

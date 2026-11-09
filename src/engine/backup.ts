@@ -4,7 +4,7 @@ import { uid } from '../core/defaults';
 import { repairBackup } from '../core/restore';
 import { normalizeProject, remapAssets, withUsedAssets } from '../core/timeline';
 import { SCHEMA_VERSION, type Project } from '../core/types';
-import { deleteBlob, getBlob, putBlob, saveProject } from '../storage/db';
+import { deleteBlob, openMedia, putBlob, saveProject } from '../storage/db';
 import { ensureRoom } from './importer';
 import { MediaError } from './media';
 import { diskFile } from './opfs';
@@ -13,6 +13,8 @@ import { zipEntries, zipEntryBlob, type ZipEntry } from './zipread';
 
 /** The file system gets this long to open the backup file; then the backup is made in memory. */
 const DISK_MS = 5000;
+/** A file kept in chunks (a private tab) goes into the zip in pieces of this size. */
+const PIECE = 1024 * 1024;
 
 /**
  * The backup streams to a file in the origin-private file system where there is one (docs/12 P2): a project with
@@ -53,16 +55,24 @@ async function addEntries(zip: Zip, whole: Project, written: () => Promise<void>
   const ids = [...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)]; // media and the user's fonts
   let missing = 0;
   for (let i = 0; i < ids.length; i++) {
-    const blob = await getBlob(ids[i]);
-    if (!blob) { missing++; continue; } // told to the person now, not on the day the copy is needed (audit V-236)
+    const media = await openMedia(ids[i]);
+    if (!media) { missing++; continue; } // told to the person now, not on the day the copy is needed (audit V-236)
     const entry = new ZipPassThrough(`media/${ids[i]}`);
     zip.add(entry);
-    const reader = blob.stream().getReader();
-    for (;;) {
-      const { value, done: end } = await reader.read();
-      if (end) break;
-      entry.push(value);
-      await written(); // the disk keeps up: at most one piece of media is in memory at a time
+    if (media instanceof Blob) {
+      const reader = media.stream().getReader();
+      for (;;) {
+        const { value, done: end } = await reader.read();
+        if (end) break;
+        entry.push(value);
+        await written(); // the disk keeps up: at most one piece of media is in memory at a time
+      }
+    } else {
+      // Kept in chunks: read as it is zipped, not put together into a Blob first (audit V-253).
+      for (let at = 0; at < media.size; at += PIECE) {
+        entry.push(await media.read(at, Math.min(media.size, at + PIECE)));
+        await written();
+      }
     }
     entry.push(new Uint8Array(0), true);
     onProgress?.((i + 1) / ids.length);

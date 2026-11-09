@@ -15,7 +15,7 @@ vi.mock('mediabunny', () => {
 vi.mock('./formats', () => ({ READABLE: [] }));
 vi.mock('./thumbs.worker', () => ({ renderThumbs: vi.fn() }));
 vi.mock('./sound', () => ({ ResilientSink: class {}, playableAudioTrack: async () => null }));
-vi.mock('../storage/db', () => ({ getBlob: async (id: string) => new Blob([], { type: id }), getPeaks: vi.fn(), putPeaks: vi.fn() }));
+vi.mock('../storage/db', () => { const file = async (id: string) => new Blob([], { type: id }); return { getBlob: file, openMedia: file, getPeaks: vi.fn(), putPeaks: vi.fn() }; });
 
 import { MediaError, MediaPool } from './media';
 
