@@ -272,10 +272,11 @@ function TextBody({ clip }: { clip: TextClip }) {
   const s = clip.style;
   return (
     <>
-      <StylePicker items={TEXT_PRESETS} categories={TEXT_CATEGORIES} value={null} label={t('Style')} draw={drawTextTile}
-        onChange={(id) => e((c) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; c.style = structuredClone(pr.style); if (pr.animIn) c.animIn = { ...pr.animIn }; })} />
+      {/* The words first: under the style grid the field was below the fold on phones shorter than 812 px (audit V-202). */}
       <textarea className="text-input" value={clip.text} rows={2} maxLength={500} aria-label={t('Text')}
         onChange={(ev) => e((c) => { c.text = ev.target.value; }, 'txt')} />
+      <StylePicker items={TEXT_PRESETS} categories={TEXT_CATEGORIES} value={null} label={t('Style')} draw={drawTextTile}
+        onChange={(id) => e((c) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; c.style = structuredClone(pr.style); if (pr.animIn) c.animIn = { ...pr.animIn }; })} />
       <FontPicker clipId={clip.id} style={s} onFont={(f) => e((c) => { c.style.font = f; })} onWeight={(w) => e((c) => { c.style.weight = w; })} />
       <Slider label={t('Size')} value={s.size} min={0.02} max={0.2} step={0.001} format={(v) => `${Math.round(v * 1000) / 10}`} reset={0.055}
         onChange={(v) => e((c) => { c.style.size = v; }, 'tsize')} />
