@@ -25,7 +25,7 @@ export const UI: Record<Lang, {
     whyItems: [
       'Бесплатно и без водяного знака: экспорт MP4 вплоть до 4K.',
       'Видео не покидает телефон: всё обрабатывается на устройстве, ничего не загружается на сервер.',
-      'Работает по ссылке в браузере — iPhone (Safari, iOS 26+) и Android (Chrome). После первого визита работает и без интернета.',
+      'Открывается по ссылке в браузере: рассчитан на iPhone (Safari, iOS 26+) и Android (Chrome). Это бета: проверка на настоящих телефонах ещё идёт. После первого визита работает и без интернета.',
       'Никаких кредитов и подписок за базовые функции, права на ваш контент остаются у вас.',
     ],
     faq: 'Вопросы', more: 'Другие задачи', all: 'Все инструменты',
@@ -41,7 +41,7 @@ export const UI: Record<Lang, {
     whyItems: [
       'Free with no watermark: MP4 export up to 4K.',
       'Your video never leaves your phone: everything is processed on the device, nothing is uploaded.',
-      'Works from a link in the browser — iPhone (Safari, iOS 26+) and Android (Chrome). After the first visit it works offline too.',
+      'Opens from a link in the browser, built for iPhone (Safari, iOS 26+) and Android (Chrome). This is a beta: testing on real phones is still under way. After the first visit it works offline too.',
       'No credits or subscriptions for the basics, and your content stays yours.',
     ],
     faq: 'Questions', more: 'Other tasks', all: 'All tools',
