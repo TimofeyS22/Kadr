@@ -1,0 +1,527 @@
+<title>Чётко: три направления</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Manrope:wght@500;600;700;800&family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Layout: a reading column of text and tables; each direction is a band with its phones in a row that stacks on a phone. */
+:root {
+  --bg: #f3f3f1; --surface: #ffffff; --fg: #18181a; --muted: #62626a; --line: #d9d9d4; --mark: #1d4ed8; --mark-soft: #e4ebfb; --warn: #9a4a00;
+  --text: "Onest", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #131315; --surface: #1c1c1f; --fg: #ededee; --muted: #a0a0a8; --line: #303036; --mark: #8fb0ff; --mark-soft: #1c2740; --warn: #f0b070; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #131315; --surface: #1c1c1f; --fg: #ededee; --muted: #a0a0a8; --line: #303036; --mark: #8fb0ff; --mark-soft: #1c2740; --warn: #f0b070; color-scheme: dark }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.55 var(--text); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 44px; }
+h1 { font-size: clamp(28px, 6vw, 44px); line-height: 1.08; letter-spacing: -0.02em; margin: 0; font-weight: 700; text-wrap: balance; }
+h2 { font-size: 24px; line-height: 1.2; margin: 0; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+h3 { font-size: 17px; margin: 0; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.lead { font-size: 18px; color: var(--muted); }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.note { color: var(--muted); font-size: 14px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; line-height: 1.45; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; color: var(--muted); font-size: 13px; }
+td.n, th.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td b { font-weight: 600; }
+.dir { display: flex; flex-direction: column; gap: 22px; padding-top: 28px; border-top: 2px solid var(--fg); }
+.dir-head { display: flex; flex-direction: column; gap: 8px; }
+.words { font-size: 15px; color: var(--muted); }
+.phones { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; align-items: start; }
+figure { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+figcaption { font-size: 13.5px; color: var(--muted); max-width: 375px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px 36px; }
+.cols ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+.sw { display: flex; flex-wrap: wrap; gap: 6px; }
+.sw span { width: 44px; height: 44px; border-radius: 6px; border: 1px solid var(--line); }
+.spec { font-size: 26px; line-height: 1.15; }
+.pick { background: var(--mark-soft); border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.pick h2 { color: var(--mark); }
+.tag { color: var(--warn); font-weight: 600; }
+
+/* ---------- Phone mock-ups: drawn at 375 × 720 px and scaled to the column by --k ---------- */
+.ph { width: 100%; max-width: 375px; aspect-ratio: 375 / var(--h, 720); position: relative; overflow: hidden; border-radius: 22px; outline: 1px solid var(--line); background: #000; }
+.s { position: absolute; left: 0; top: 0; width: 375px; height: calc(var(--h, 720) * 1px); transform-origin: 0 0; transform: scale(var(--k, 1)); display: flex; flex-direction: column;
+  background: var(--m-bg); color: var(--m-tx); font: 500 13px/1.25 var(--m-f); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+.s * { box-sizing: border-box; }
+.s .i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; display: block; }
+.s .ib { width: 44px; height: 44px; display: grid; place-items: center; flex: none; color: inherit; }
+.s .mu { color: var(--m-mu); }
+.s .row { display: flex; align-items: center; }
+.s .grow { flex: 1; min-width: 0; }
+.s .tb { height: 48px; padding: 0 6px; gap: 2px; flex: none; }
+.s .ttl { font-weight: 600; font-size: 15px; white-space: nowrap; }
+.s .saved { font-size: 11.5px; color: var(--m-mu); display: flex; align-items: center; gap: 4px; margin-left: 8px; }
+.s .saved .i { width: 13px; height: 13px; }
+.s .pv { flex: 1; min-height: 0; display: flex; justify-content: center; padding: 6px 0; background: #000; position: relative; }
+.s .fr { height: 100%; aspect-ratio: 9 / 16; position: relative; flex: none; }
+.s .fr > svg, .s .th svg { width: 100%; height: 100%; display: block; }
+.s .tl { flex: none; position: relative; background: var(--m-pn); overflow: hidden; }
+.s .tl .head { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #fff; z-index: 2; }
+.s .rul { height: 18px; font-size: 10px; color: var(--m-mu); position: relative; }
+.s .rul span { position: absolute; top: 3px; }
+.s .trk { position: relative; margin: 0 0 4px 187px; display: flex; }
+.s .clip { height: 44px; display: flex; overflow: hidden; position: relative; }
+.s .clip .th { width: 40px; height: 44px; flex: none; }
+.s .aud { height: 18px; background: #2e6a5a; color: #bfe9da; font-size: 10px; padding: 0 8px; align-items: center; display: flex; }
+.s .txt { height: 18px; background: #5b4a86; color: #e6dcff; font-size: 10px; padding: 0 8px; align-items: center; display: flex; margin-bottom: 4px; }
+
+/* A · Прицел */
+.a { --m-bg: #111111; --m-pn: #1a1a1a; --m-rs: #262626; --m-ln: #383838; --m-tx: #f3f3f1; --m-mu: #9c9c98; --m-ac: #ffc53d; --m-on: #17140a; --m-f: "Golos Text", system-ui, sans-serif; --m-n: "JetBrains Mono", ui-monospace, monospace; }
+.a .num { font-family: var(--m-n); font-weight: 500; letter-spacing: -0.02em; }
+.a .exp { height: 36px; padding: 0 14px; border-radius: 4px; background: var(--m-ac); color: var(--m-on); font-weight: 700; font-size: 14px; gap: 6px; margin-right: 6px; }
+.a .exp .i { width: 16px; height: 16px; stroke-width: 2.2; }
+.a .br::before, .a .br::after, .a .br i::before, .a .br i::after { content: ""; position: absolute; width: 14px; height: 14px; border: 2px solid var(--m-ac); }
+.a .br::before { left: -1px; top: -1px; border-right: 0; border-bottom: 0; } .a .br::after { right: -1px; top: -1px; border-left: 0; border-bottom: 0; }
+.a .br i::before { left: -1px; bottom: -1px; border-right: 0; border-top: 0; } .a .br i::after { right: -1px; bottom: -1px; border-left: 0; border-top: 0; }
+.a .tp { height: 44px; padding: 0 8px; flex: none; border-top: 1px solid var(--m-ln); }
+.a .play { width: 40px; height: 36px; border-radius: 4px; background: var(--m-tx); color: var(--m-bg); display: grid; place-items: center; }
+.a .play .i { fill: currentColor; stroke: none; }
+.a .tl { height: 92px; }
+.a .clip { border-radius: 3px; }
+.a .clip.sel { outline: 2px solid var(--m-ac); outline-offset: -2px; }
+.a .hd { width: 20px; background: var(--m-ac); flex: none; display: grid; place-items: center; }
+.a .hd::after { content: ""; width: 2px; height: 16px; background: var(--m-on); border-radius: 1px; }
+.a .strip { flex: none; background: var(--m-pn); border-top: 1px solid var(--m-ln); }
+.a .pars { height: 40px; padding: 0 4px 0 12px; gap: 18px; font-size: 13px; color: var(--m-mu); white-space: nowrap; overflow: hidden; }
+.a .pars .on { color: var(--m-tx); font-weight: 600; box-shadow: inset 0 -2px var(--m-ac); height: 40px; display: flex; align-items: center; }
+.a .dial { height: 72px; padding: 0 0 6px 12px; gap: 12px; }
+.a .val { font-size: 24px; width: 70px; }
+.a .ruler { height: 52px; position: relative; border-radius: 3px; background: repeating-linear-gradient(90deg, var(--m-ln) 0 1px, transparent 1px 9px) 0 50% / 100% 14px no-repeat, repeating-linear-gradient(90deg, var(--m-mu) 0 1px, transparent 1px 45px) 0 50% / 100% 26px no-repeat, var(--m-rs); }
+.a .ruler::after { content: ""; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 2px; background: var(--m-ac); }
+.a .tabs { height: 56px; flex: none; border-top: 1px solid var(--m-ln); background: var(--m-bg); }
+.a .tab { flex: 1; height: 56px; display: grid; justify-items: center; align-content: center; gap: 3px; font-size: 11.5px; color: var(--m-mu); }
+.a .tab.on { color: var(--m-ac); box-shadow: inset 0 2px var(--m-ac); }
+.a .tools { height: 64px; padding: 0 4px; flex: none; background: var(--m-pn); }
+.a .tool { flex: 1; min-width: 0; height: 56px; display: grid; justify-items: center; align-content: center; gap: 4px; font-size: 11.5px; }
+.a .tool.del { color: #ff7b72; }
+.a .home { padding: 0 16px; gap: 14px; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.a .logo { width: 30px; height: 30px; position: relative; display: grid; place-items: center; }
+.a .logo .i { width: 14px; height: 14px; fill: var(--m-ac); stroke: none; }
+.a .wm { font-weight: 800; font-size: 24px; letter-spacing: -0.03em; margin-left: 8px; }
+.a .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.a .card { background: var(--m-pn); border: 1px solid var(--m-ln); border-radius: 4px; overflow: hidden; }
+.a .card .th { height: 136px; position: relative; overflow: hidden; }
+.a .card .th svg { height: auto; }
+.a .dur { position: absolute; right: 6px; bottom: 6px; background: #000b; padding: 2px 5px; border-radius: 2px; font-size: 11px; }
+.a .card b { display: block; padding: 8px 10px 0; font-size: 14px; font-weight: 600; }
+.a .card small { display: block; padding: 2px 10px 0; font-size: 11.5px; color: var(--m-mu); }
+.a .acts { display: flex; justify-content: space-between; padding: 0 2px; color: var(--m-mu); }
+.a .dock { flex: none; padding: 12px 16px 16px; background: var(--m-bg); border-top: 1px solid var(--m-ln); display: flex; flex-direction: column; gap: 8px; }
+.a .big { height: 56px; border-radius: 4px; background: var(--m-ac); color: var(--m-on); font-weight: 700; font-size: 17px; justify-content: center; gap: 8px; }
+.a .big .i { stroke-width: 2.4; }
+.a .sec { height: 48px; border-radius: 4px; border: 1px solid var(--m-ln); justify-content: center; gap: 8px; font-size: 14.5px; font-weight: 600; }
+
+/* B · Стол */
+.b { --m-bg: #171615; --m-pn: #211f1d; --m-rs: #2e2b28; --m-ln: #403c38; --m-tx: #f6f3ee; --m-mu: #a8a199; --m-ac: #ff8a3d; --m-on: #1d0f04; --m-f: "Onest", system-ui, sans-serif; --m-d: "Unbounded", "Onest", sans-serif; }
+.b .exp { height: 38px; padding: 0 16px; border-radius: 19px; background: var(--m-tx); color: var(--m-bg); font: 700 12.5px var(--m-d); margin-right: 8px; }
+.b .pv { justify-content: flex-start; padding: 8px 0 8px 16px; }
+.b .lev { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 8px; }
+.b .lev .v { font: 700 22px var(--m-d); }
+.b .lev small { font-size: 11.5px; color: var(--m-mu); text-align: center; line-height: 1.25; }
+.b .rail { flex: 1; width: 64px; border-radius: 32px; background: var(--m-pn); border: 1px solid var(--m-ln); position: relative; }
+.b .rail::before { content: ""; position: absolute; left: 50%; top: 18px; bottom: 18px; width: 4px; margin-left: -2px; border-radius: 2px; background: linear-gradient(to top, var(--m-ln) 0 58%, var(--m-ac) 58% 100%); transform: scaleY(-1); }
+.b .rail::after { content: ""; position: absolute; left: 8px; right: 8px; top: 36%; height: 34px; border-radius: 17px; background: var(--m-tx); box-shadow: 0 2px 0 #0008; }
+.b .chips { height: 44px; flex: none; padding: 0 12px; gap: 6px; overflow: hidden; }
+.b .chip { height: 34px; padding: 0 13px; border-radius: 17px; background: var(--m-pn); display: flex; align-items: center; white-space: nowrap; font-size: 13px; color: var(--m-mu); flex: none; }
+.b .chip.on { background: var(--m-ac); color: var(--m-on); font-weight: 700; }
+.b .tp { height: 52px; padding: 0 10px; flex: none; }
+.b .play { width: 52px; height: 44px; border-radius: 22px; background: var(--m-tx); color: var(--m-bg); display: grid; place-items: center; }
+.b .play .i { fill: currentColor; stroke: none; width: 22px; height: 22px; }
+.b .time { font-size: 14px; font-weight: 600; }
+.b .tl { height: 84px; }
+.b .clip { border-radius: 10px; }
+.b .clip.sel { outline: 3px solid var(--m-tx); outline-offset: -3px; }
+.b .hd { width: 26px; background: var(--m-tx); flex: none; display: grid; place-items: center; }
+.b .hd::after { content: ""; width: 4px; height: 18px; background: var(--m-bg); border-radius: 2px; }
+.b .bar { height: 76px; flex: none; padding: 8px 10px; gap: 8px; background: var(--m-bg); }
+.b .btn { flex: 1; height: 60px; border-radius: 16px; background: var(--m-pn); display: grid; justify-items: center; align-content: center; gap: 4px; font-size: 11.5px; }
+.b .btn .i { width: 22px; height: 22px; }
+.b .btn.ok { background: var(--m-ac); color: var(--m-on); font: 700 13px var(--m-d); flex: 1.6; }
+.b .btn.all { background: transparent; border: 1.5px solid var(--m-ln); }
+.b .btn.del { color: #ff8f85; }
+.b .home { padding: 0 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; overflow: hidden; }
+.b .wm { font: 700 22px var(--m-d); letter-spacing: -0.02em; }
+.b .hh { font: 500 13px var(--m-d); color: var(--m-mu); margin-top: 4px; }
+.b .pr { background: var(--m-pn); border-radius: 18px; padding: 8px; gap: 12px; }
+.b .pr .th { width: 66px; height: 88px; border-radius: 12px; overflow: hidden; flex: none; }
+.b .pr b { font-size: 16px; font-weight: 600; display: block; }
+.b .pr small { font-size: 12px; color: var(--m-mu); }
+.b .pr .acts { display: flex; margin: 4px 0 0 -12px; color: var(--m-mu); }
+.b .dock { flex: none; padding: 12px 16px 16px; display: grid; grid-template-columns: 1.5fr 1fr; gap: 10px; background: var(--m-bg); }
+.b .tile { height: 104px; border-radius: 22px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; background: var(--m-pn); font: 700 14px/1.2 var(--m-d); }
+.b .tile.go { background: var(--m-ac); color: var(--m-on); }
+.b .tile .i { width: 26px; height: 26px; stroke-width: 2; }
+.b .sheet { flex: 1; background: var(--m-pn); border-radius: 24px 24px 0 0; padding: 10px 14px 0; display: flex; flex-direction: column; gap: 12px; }
+.b .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--m-ln); align-self: center; }
+.b .find { height: 46px; border-radius: 23px; background: var(--m-rs); padding: 0 14px; gap: 10px; color: var(--m-mu); font-size: 14.5px; }
+.b .cat { font: 500 11.5px var(--m-d); color: var(--m-mu); }
+.b .g4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.b .g4 .btn { background: var(--m-rs); height: 64px; }
+
+/* C · Лист */
+.c { --m-bg: #18191b; --m-pn: #222326; --m-rs: #2e3034; --m-ln: #3a3c41; --m-tx: #f2f3f5; --m-mu: #a2a5ad; --m-ac: #f2f3f5; --m-on: #18191b; --m-f: "Manrope", system-ui, sans-serif; }
+.c .exp { height: 36px; padding: 0 16px; border-radius: 18px; background: var(--m-ac); color: var(--m-on); font-weight: 800; font-size: 13.5px; margin-right: 8px; }
+.c .tp { height: 44px; padding: 0 10px; flex: none; }
+.c .play { width: 40px; height: 40px; border-radius: 20px; background: var(--m-rs); display: grid; place-items: center; }
+.c .play .i { fill: currentColor; stroke: none; }
+.c .sheet { flex: none; background: var(--m-pn); border-radius: 20px 20px 0 0; padding: 0 0 8px; }
+.c .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--m-ln); margin: 6px auto 0; }
+.c .sh { height: 40px; padding: 0 8px 0 16px; }
+.c .sh b { font-size: 16px; font-weight: 800; }
+.c .lnk { height: 32px; padding: 0 12px; display: flex; align-items: center; font-size: 13px; font-weight: 700; color: var(--m-mu); }
+.c .done { height: 32px; padding: 0 14px; border-radius: 16px; background: var(--m-rs); display: flex; align-items: center; font-size: 13px; font-weight: 800; }
+.c .mini { height: 26px; margin: 2px 16px 0; border-radius: 8px; overflow: hidden; display: flex; position: relative; }
+.c .mini .th { width: 34px; height: 26px; flex: none; opacity: 0.75; }
+.c .mini::after { content: ""; position: absolute; left: 36%; top: 0; bottom: 0; width: 2px; background: #fff; }
+.c .seg { margin: 10px 16px 0; height: 34px; border-radius: 12px; background: var(--m-bg); padding: 3px; }
+.c .seg span { flex: 1; height: 28px; display: grid; place-items: center; border-radius: 9px; font-size: 13px; font-weight: 700; color: var(--m-mu); }
+.c .seg .on { background: var(--m-rs); color: var(--m-tx); }
+.c .tiles { padding: 10px 16px 0; gap: 8px; overflow: hidden; }
+.c .tile { width: 79px; flex: none; display: grid; gap: 4px; justify-items: center; font-size: 11.5px; font-weight: 600; color: var(--m-mu); }
+.c .tile .th { width: 79px; height: 44px; border-radius: 10px; overflow: hidden; }
+.c .tile .th svg { height: auto; margin-top: -60px; }
+.c .tile.on { color: var(--m-tx); } .c .tile.on .th { outline: 2px solid var(--m-tx); outline-offset: 1px; }
+.c .sl { height: 52px; padding: 0 8px; gap: 2px; }
+.c .track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--m-ln) 0 50%, var(--m-tx) 50% 58%, var(--m-ln) 58% 100%); position: relative; }
+.c .track::after { content: ""; position: absolute; left: 58%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 15px; background: var(--m-tx); box-shadow: 0 1px 4px #0009; }
+.c .sl .v { width: 46px; text-align: right; font-weight: 800; font-size: 15px; padding-right: 8px; }
+.c .tl { height: 88px; }
+.c .clip { border-radius: 12px; }
+.c .clip.sel { outline: 2px solid var(--m-tx); outline-offset: -2px; }
+.c .hd { width: 22px; background: var(--m-tx); flex: none; display: grid; place-items: center; }
+.c .hd::after { content: ""; width: 3px; height: 16px; background: var(--m-bg); border-radius: 2px; }
+.c .shelf { flex: none; background: var(--m-pn); border-radius: 20px 20px 0 0; padding: 10px 10px 8px; display: flex; flex-direction: column; gap: 6px; }
+.c .g5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.c .t { height: 58px; border-radius: 14px; display: grid; justify-items: center; align-content: center; gap: 4px; font-size: 11px; font-weight: 600; }
+.c .t.del { color: #ff8a80; }
+.c .dots { justify-content: center; gap: 6px; height: 14px; }
+.c .dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--m-ln); } .c .dots .on { width: 18px; background: var(--m-tx); }
+.c .home { padding: 0 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; overflow: hidden; }
+.c .wm { font-weight: 800; font-size: 26px; letter-spacing: -0.03em; }
+.c .pc { background: var(--m-pn); border-radius: 18px; overflow: hidden; }
+.c .pc .film { display: flex; height: 92px; overflow: hidden; }
+.c .pc .film .th { width: 86px; height: 92px; flex: none; overflow: hidden; }
+.c .pc .film svg { height: auto; margin-top: -40px; }
+.c .pc .meta { padding: 8px 4px 4px 14px; }
+.c .pc b { font-size: 15px; font-weight: 800; display: block; }
+.c .pc small { font-size: 12px; color: var(--m-mu); font-weight: 600; }
+.c .dock { flex: none; padding: 10px 16px 16px; gap: 10px; background: var(--m-bg); }
+.c .new { flex: 1; height: 56px; border-radius: 28px; background: var(--m-ac); color: var(--m-on); font-weight: 800; font-size: 16px; justify-content: center; gap: 8px; }
+.c .reel { height: 56px; padding: 0 18px; border-radius: 28px; background: var(--m-pn); font-weight: 700; font-size: 14px; gap: 8px; }
+</style>
+
+<!--SPRITE--><svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-audio-lines" viewBox="0 0 24 24"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></symbol><symbol id="i-captions" viewBox="0 0 24 24"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/></symbol><symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol><symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol><symbol id="i-clapperboard" viewBox="0 0 24 24"><path d="m12.296 3.464 3.02 3.956"/><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="m6.18 5.276 3.1 3.899"/></symbol><symbol id="i-contrast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/></symbol><symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol><symbol id="i-crop" viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></symbol><symbol id="i-film" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/></symbol><symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol><symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M10 16h.01"/><path d="M2.212 11.577a2 2 0 0 0-.212.896V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.527a2 2 0 0 0-.212-.896L18.55 5.11A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M21.946 12.013H2.054"/><path d="M6 16h.01"/></symbol><symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol><symbol id="i-move" viewBox="0 0 24 24"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></symbol><symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol><symbol id="i-person-standing" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><path d="m9 20 3-6 3 6"/><path d="m6 8 6 2 6-2"/><path d="M12 10v4"/></symbol><symbol id="i-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol><symbol id="i-redo-2" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></symbol><symbol id="i-rewind" viewBox="0 0 24 24"><path d="M12 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 12 18z"/><path d="M22 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 22 18z"/></symbol><symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol><symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></symbol><symbol id="i-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></symbol><symbol id="i-sliders-horizontal" viewBox="0 0 24 24"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></symbol><symbol id="i-snowflake" viewBox="0 0 24 24"><path d="m10 20-1.25-2.5L6 18"/><path d="M10 4 8.75 6.5 6 6"/><path d="m14 20 1.25-2.5L18 18"/><path d="m14 4 1.25 2.5L18 6"/><path d="m17 21-3-6h-4"/><path d="m17 3-3 6 1.5 3"/><path d="M2 12h6.5L10 9"/><path d="m20 10-1.5 2 1.5 2"/><path d="M22 12h-6.5L14 15"/><path d="m4 10 1.5 2L4 14"/><path d="m7 21 3-6-1.5-3"/><path d="m7 3 3 6h4"/></symbol><symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></symbol><symbol id="i-trash-2" viewBox="0 0 24 24"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol><symbol id="i-undo-2" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol><symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></symbol><symbol id="i-volume-2" viewBox="0 0 24 24"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/></symbol><symbol id="shot" viewBox="0 0 90 160"><defs><linearGradient id="sk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22395f"/><stop offset=".5" stop-color="#d9825a"/><stop offset=".72" stop-color="#f2c47c"/></linearGradient></defs><rect width="90" height="160" fill="url(#sk)"/><circle cx="60" cy="96" r="10" fill="#fff0c8"/><path d="M0 112 18 92 34 108 52 86 72 106 90 94V160H0Z" fill="#3d3552"/><path d="M0 130 24 114 46 128 70 114 90 126V160H0Z" fill="#241f34"/><circle cx="32" cy="116" r="5.5" fill="#14121c"/><path d="M24 160V134q0-10 8-10t8 10V160Z" fill="#14121c"/><path d="M38 128h5v14h-5Z" fill="#b5503c"/></symbol><symbol id="shot2" viewBox="0 0 90 160"><rect width="90" height="160" fill="#c9b79c"/><rect y="96" width="90" height="64" fill="#7a5a43"/><ellipse cx="45" cy="112" rx="30" ry="12" fill="#efe9df"/><ellipse cx="45" cy="110" rx="22" ry="8" fill="#d8572f"/><circle cx="38" cy="108" r="3" fill="#f3d36b"/><circle cx="52" cy="111" r="2.5" fill="#6f9a4c"/><rect x="62" y="28" width="18" height="44" rx="2" fill="#a8b8b0"/><rect x="10" y="20" width="34" height="50" rx="2" fill="#e6dccb"/><path d="M14 62 24 44 32 56 38 50 42 62Z" fill="#9fb38f"/></symbol></svg><!--/SPRITE-->
+
+<div class="wrap">
+
+<header class="stack">
+  <h1>Чётко: три направления</h1>
+  <p class="lead">Три разных ответа на один вопрос: каким должен быть редактор, чтобы кадр был крупным, нужный инструмент находился сразу, а человек после обновления ничего не искал. Выберите одно направление или назовите, что взять из каждого.</p>
+  <p class="note">Макеты живые, нарисованы на экране 375×720 и уменьшаются под ширину страницы. Кадр в них нарисован, настоящих видео здесь нет. Сравнение идёт с версией 1.7.1 на том же размере экрана.</p>
+</header>
+
+<section class="stack">
+  <h2>Что обязано решить любое направление</h2>
+  <p>Первый список — из замера нашей версии 1.7.1. Второй — из жалоб на CapCut: 617 жалоб русскоязычного Google Play и 269 жалоб App Store России, Беларуси и Казахстана. На внешний вид CapCut почти не жалуются. Жалуются на то, что после обновления всё переехало, что инструмент не слушается пальца и что непонятно, куда нажимать.</p>
+  <div class="scroll"><table>
+    <tr><th>Что нашёл замер версии 1.7.1</th><th class="n">Сейчас</th><th>Что требуется</th></tr>
+    <tr><td>Кадр при открытом листе настроек</td><td class="n">15% экрана</td><td>Кадр остаётся крупным, пока человек подбирает цвет</td></tr>
+    <tr><td>Инструменты видеокуска</td><td class="n">23 в ленте, видно 4</td><td>Любой инструмент — без шести прокруток</td></tr>
+    <tr><td>Ползунок и ручка обрезки</td><td class="n">131 и 16 px</td><td>Точная работа пальцем</td></tr>
+    <tr><td>«Отменить» и «Повторить»</td><td class="n">вверху экрана</td><td>В зоне большого пальца</td></tr>
+    <tr><td>Узнаваемость</td><td class="n">«без логотипа не узнать»</td><td>Свой характер формы, а не только цвет</td></tr>
+  </table></div>
+  <div class="scroll"><table>
+    <tr><th>На что жалуются в CapCut (пересказ)</th><th class="n">Жалоб</th><th>Правило для «Чётко»</th></tr>
+    <tr><td>Зачем менять то, что работало; после обновления не найти привычные инструменты; функция была и исчезла</td><td class="n">55 + 15</td><td><b>Ничего не переезжает молча.</b> Порядок инструментов сохраняется, перенос показан меткой «теперь здесь»</td></tr>
+    <tr><td>Проекты унесли туда, где их не удалить и не переименовать; видно только 5–10 работ; работа пропала</td><td class="n">30</td><td><b>Проекты — первыми и все.</b> Действия с проектом на виду, видно «сохранено»</td></tr>
+    <tr><td>Кнопка «добавить» не нажимается, её нет или она под системной кнопкой; ждал до 100%, и видео исчезло</td><td class="n">33</td><td><b>Первый шаг один и всегда нажимается:</b> крупная кнопка в зоне пальца, вне системных панелей</td></tr>
+    <tr><td>Скачала звук, а как поставить на видео, не знаю; где наложение; эффектов столько, что не сориентироваться</td><td class="n">16 + 6</td><td><b>Названо словами человека.</b> Весь набор виден с подписями и находится по слову</td></tr>
+    <tr><td>Куски улетают после нарезки; наложение не двигается; корзина исчезает; звучит один трек, выделен другой</td><td class="n">51 + 17</td><td><b>Инструмент слушается пальца.</b> «Удалить» всегда на своём месте, выделено то, что меняется</td></tr>
+    <tr><td>Из-за одного нажатия всё видео обрывается</td><td class="n">—</td><td><b>Одно касание ничего не ломает:</b> отмена рядом с пальцем</td></tr>
+    <tr><td>Реклама выскакивает в любой момент; всё платно; ИИ навязан и не выключается</td><td class="n">114 + 41</td><td><b>Ничего не навязываем:</b> нет баннеров, замков и значков Pro</td></tr>
+    <tr><td>Без интернета почти ничего нельзя</td><td class="n">—</td><td><b>Работает без сети, и это написано</b> на главной</td></tr>
+    <tr><td>Размер видео изменить нельзя, остаётся чёрное поле</td><td class="n">25</td><td><b>Нет чёрных полей по умолчанию:</b> формат задаёт первое видео</td></tr>
+  </table></div>
+  <p class="note">Число после плюса — жалобы из App Store. Это короткие отзывы из магазинов приложений, а не опрос: сигнал устойчивый, но не доказательство.</p>
+</section>
+
+<!-- ================= A ================= -->
+<section class="dir" id="a">
+  <div class="dir-head">
+    <h2>А. Прицел</h2>
+    <p class="words">точный, резкий, привычный</p>
+    <p>Редактор как прибор оператора. Графит и янтарь остаются, поэтому человек узнаёт приложение после обновления. Меняется форма: прямые углы, уголки видоискателя вокруг выделенного, цифры как на шкале камеры. Настройка крутится линейкой во всю ширину, а лист сжат до двух строк.</p>
+  </div>
+  <div class="phones">
+    <figure>
+      <div class="ph"><div class="s a">
+        <div class="row" style="height:60px;padding:0 16px;flex:none">
+          <span class="logo br"><i></i><svg class="i"><use href="#i-play"/></svg></span><span class="wm">Чётко</span><span class="grow"></span><span class="mu" style="font-size:13px;font-weight:600">RU</span>
+        </div>
+        <div class="home">
+          <div class="row mu" style="gap:8px;font-size:13px"><svg class="i" data-i="hard-drive"></svg>Всё хранится на этом телефоне. Работает без интернета.</div>
+          <div class="row" style="justify-content:space-between"><b style="font-size:17px">Проекты</b><span class="mu num">3</span></div>
+          <div class="grid">
+            <div class="card"><div class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg><span class="dur num">0:42</span></div><b>Поход на Алтай</b><small>сегодня, сохранено</small><div class="acts"><span class="ib"><svg class="i" data-i="copy"></svg></span><span class="ib"><svg class="i" data-i="pencil"></svg></span><span class="ib"><svg class="i" data-i="trash-2"></svg></span></div></div>
+            <div class="card"><div class="th"><svg viewBox="0 0 90 160"><use href="#shot2"/></svg><span class="dur num">0:15</span></div><b>Рецепт за минуту</b><small>вчера, сохранено</small><div class="acts"><span class="ib"><svg class="i" data-i="copy"></svg></span><span class="ib"><svg class="i" data-i="pencil"></svg></span><span class="ib"><svg class="i" data-i="trash-2"></svg></span></div></div>
+            <div class="card"><div class="th"><svg viewBox="0 0 90 160"><use href="#shot2"/></svg><span class="dur num">1:08</span></div><b>Обзор кроссовок</b><small>3 ноября</small></div>
+            <div class="card" style="display:grid;place-items:center;color:var(--m-mu);font-size:13px">Шаблоны ниже</div>
+          </div>
+        </div>
+        <div class="dock">
+          <div class="row big"><svg class="i" data-i="plus"></svg>Добавить видео</div>
+          <div class="row sec"><svg class="i" data-i="clapperboard"></svg>Рилс в 1 тап из записи речи</div>
+        </div>
+      </div></div>
+      <figcaption>Главная. Проекты первыми, у каждого на виду копия, имя и удаление. Одна главная кнопка внизу; формат кадра задаёт первое видео.</figcaption>
+    </figure>
+    <figure>
+      <div class="ph"><div class="s a">
+        <div class="row tb"><span class="ib"><svg class="i" data-i="chevron-left"></svg></span><span class="ttl">Поход на Алтай</span><span class="saved"><svg class="i" data-i="check"></svg>сохранено</span><span class="grow"></span><span class="row exp"><svg class="i" data-i="upload"></svg>Экспорт</span></div>
+        <div class="pv"><div class="fr br"><i></i><svg viewBox="0 0 90 160"><use href="#shot"/></svg></div></div>
+        <div class="row tp"><span class="ib"><svg class="i" data-i="undo-2"></svg></span><span class="ib mu"><svg class="i" data-i="redo-2"></svg></span><span class="grow"></span><span class="play"><svg class="i" data-i="play"></svg></span><span class="grow"></span><span class="num" style="font-size:13px;width:88px;text-align:right">0:02,4 <span class="mu">/ 0:42</span></span></div>
+        <div class="tl"><div class="head"></div>
+          <div class="rul num"><span style="left:190px">0:02</span><span style="left:280px">0:04</span></div>
+          <div class="trk"><div class="clip sel" style="margin-left:-110px"><span class="hd"></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="hd"></span></div><div class="clip" style="margin-left:3px"><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span></div></div>
+          <div class="trk"><div class="aud" style="margin-left:-110px;width:320px;border-radius:2px">Orchid, lo-fi</div></div>
+        </div>
+        <div class="strip">
+          <div class="row pars"><span class="on">Экспозиция</span><span>Яркость</span><span>Контраст</span><span>Света</span><span>Тени</span><span class="grow"></span><span class="ib"><svg class="i" data-i="rotate-ccw"></svg></span></div>
+          <div class="row dial"><span class="val num">+0,4</span><span class="ruler grow"></span><span class="ib"><svg class="i" data-i="contrast"></svg></span></div>
+        </div>
+        <div class="row tabs"><span class="tab"><svg class="i" data-i="scissors"></svg>Монтаж</span><span class="tab"><svg class="i" data-i="volume-2"></svg>Звук</span><span class="tab"><svg class="i" data-i="crop"></svg>Кадр</span><span class="tab on"><svg class="i" data-i="sliders-horizontal"></svg>Цвет</span><span class="tab"><svg class="i" data-i="person-standing"></svg>Вырез</span></div>
+      </div></div>
+      <figcaption>Настройка цвета. Лист занимает две строки: параметры и линейка, которую тянут в любом месте. Таймлайн и игла остаются под рукой.</figcaption>
+    </figure>
+    <figure>
+      <div class="ph" style="--h:122"><div class="s a">
+        <div class="row tools"><span class="tool"><svg class="i" data-i="scissors"></svg>Разрезать</span><span class="tool"><svg class="i" data-i="copy"></svg>Дублир.</span><span class="tool del"><svg class="i" data-i="trash-2"></svg>Удалить</span><span class="tool"><svg class="i" data-i="gauge"></svg>Скорость</span><span class="tool"><svg class="i" data-i="snowflake"></svg>Стоп-кадр</span><span class="tool"><svg class="i" data-i="rewind"></svg>Реверс</span></div>
+        <div class="row tabs"><span class="tab on"><svg class="i" data-i="scissors"></svg>Монтаж</span><span class="tab"><svg class="i" data-i="volume-2"></svg>Звук</span><span class="tab"><svg class="i" data-i="crop"></svg>Кадр</span><span class="tab"><svg class="i" data-i="sliders-horizontal"></svg>Цвет</span><span class="tab"><svg class="i" data-i="person-standing"></svg>Вырез</span></div>
+      </div></div>
+      <figcaption>Панель куска. Пять разделов, в каждом до шести инструментов без прокрутки. Первые четыре стоят там же, где сегодня.</figcaption>
+    </figure>
+  </div>
+  <div class="cols">
+    <div class="stack"><h3>Как отвечает на требования</h3><ul>
+      <li>Кадр при настройке: <b data-m="a">26%</b> экрана против 15% сейчас, таймлайн виден.</li>
+      <li>Любой инструмент: раздел и касание, без прокруток. Порядок внутри разделов сегодняшний.</li>
+      <li>Линейка вместо ползунка: тянется вся ширина, значение крупно. Ручки обрезки 20 px, зона захвата 44.</li>
+      <li>Отмена слева от кнопки воспроизведения. Галочки нет: настройка применяется сразу, рядом сброс.</li>
+      <li>Узнаётся по уголкам видоискателя и цифрам шкалы.</li>
+    </ul></div>
+    <div class="stack"><h3>Палитра и шрифт</h3>
+      <div class="sw"><span style="background:#111111"></span><span style="background:#1a1a1a"></span><span style="background:#262626"></span><span style="background:#f3f3f1"></span><span style="background:#ffc53d"></span></div>
+      <p class="spec" style="font-family:'Golos Text',sans-serif;font-weight:700">Разрезать и склеить <span style="font-family:'JetBrains Mono',monospace;font-weight:500">0:02,4</span></p>
+      <p class="note">Golos Text и JetBrains Mono для цифр. Golos уже есть в сборке, моноширинный новый.</p>
+    </div>
+    <div class="stack"><h3>Цена и риск</h3><ul>
+      <li>Самый малый риск жалоб «всё переехало»: цвет и расположение знакомы.</li>
+      <li>Разделы добавляют касание для инструментов дальше четвёртого. Взамен пропадают прокрутки.</li>
+      <li>Самая слабая смена лица: янтарь на графите уже есть у VN.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ================= B ================= -->
+<section class="dir" id="b">
+  <div class="dir-head">
+    <h2>Б. Стол</h2>
+    <p class="words">крупный, тёплый, ручной</p>
+    <p>Монтажный стол, за которым работают руками. Кнопок на экране мало, и они большие. Настройка живёт не под кадром, а сбоку от него: кадр сдвинут влево, справа рычаг под большой палец. Все инструменты открываются одним листом с подписями и поиском по словам.</p>
+  </div>
+  <div class="phones">
+    <figure>
+      <div class="ph"><div class="s b">
+        <div class="row" style="height:64px;padding:0 16px;flex:none"><span class="wm">чётко</span><span class="grow"></span><span class="mu" style="font-size:13px;font-weight:600">RU</span></div>
+        <div class="home">
+          <div class="row mu" style="gap:8px;font-size:13px"><svg class="i" data-i="hard-drive"></svg>Видео остаются на телефоне. Интернет не нужен.</div>
+          <div class="hh">Проекты, 3</div>
+          <div class="row pr"><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="grow"><b>Поход на Алтай</b><small>0:42, сегодня, сохранено</small><span class="acts"><span class="ib"><svg class="i" data-i="copy"></svg></span><span class="ib"><svg class="i" data-i="pencil"></svg></span><span class="ib"><svg class="i" data-i="trash-2"></svg></span></span></span></div>
+          <div class="row pr"><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span><span class="grow"><b>Рецепт за минуту</b><small>0:15, вчера, сохранено</small><span class="acts"><span class="ib"><svg class="i" data-i="copy"></svg></span><span class="ib"><svg class="i" data-i="pencil"></svg></span><span class="ib"><svg class="i" data-i="trash-2"></svg></span></span></span></div>
+          <div class="row pr"><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span><span class="grow"><b>Обзор кроссовок</b><small>1:08, 3 ноября</small><span class="acts"><span class="ib"><svg class="i" data-i="copy"></svg></span><span class="ib"><svg class="i" data-i="pencil"></svg></span><span class="ib"><svg class="i" data-i="trash-2"></svg></span></span></span></div>
+        </div>
+        <div class="dock">
+          <div class="tile go"><svg class="i" data-i="plus"></svg>Добавить видео</div>
+          <div class="tile"><svg class="i" data-i="clapperboard"></svg>Рилс в 1 тап</div>
+        </div>
+      </div></div>
+      <figcaption>Главная. Проекты списком с крупными строками, внизу две плитки: главная и «Рилс».</figcaption>
+    </figure>
+    <figure>
+      <div class="ph"><div class="s b">
+        <div class="row tb"><span class="ib"><svg class="i" data-i="chevron-left"></svg></span><span class="ttl">Поход на Алтай</span><span class="saved"><svg class="i" data-i="check"></svg>сохранено</span><span class="grow"></span><span class="row exp">Экспорт</span></div>
+        <div class="pv"><div class="fr" style="border-radius:10px;overflow:hidden"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></div>
+          <div class="lev"><span class="v">+0,4</span><div class="rail"></div><small>тяните<br>где удобно</small><span class="ib"><svg class="i" data-i="rotate-ccw"></svg></span></div>
+        </div>
+        <div class="row chips"><span class="chip on">Экспозиция</span><span class="chip">Яркость</span><span class="chip">Контраст</span><span class="chip">Света</span><span class="chip">Тени</span></div>
+        <div class="row tp"><span class="ib"><svg class="i" data-i="undo-2"></svg></span><span class="ib mu"><svg class="i" data-i="redo-2"></svg></span><span class="grow"></span><span class="play"><svg class="i" data-i="play"></svg></span><span class="grow"></span><span class="time" style="width:88px;text-align:right">0:02,4 <span class="mu">/ 0:42</span></span></div>
+        <div class="tl" style="padding-top:8px"><div class="head"></div>
+          <div class="trk"><div class="clip sel" style="margin-left:-110px"><span class="hd"></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="hd"></span></div><div class="clip" style="margin-left:4px"><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span></div></div>
+          <div class="trk"><div class="aud" style="margin-left:-110px;width:320px;border-radius:9px">Orchid, lo-fi</div></div>
+        </div>
+        <div class="row bar"><span class="btn"><svg class="i" data-i="rotate-ccw"></svg>Сбросить</span><span class="btn"><svg class="i" data-i="contrast"></svg>До и после</span><span class="btn ok">Готово</span></div>
+      </div></div>
+      <figcaption>Настройка цвета. Кадр того же размера, что и без листа. Рычаг справа двигается относительным движением пальца в любом месте колонки.</figcaption>
+    </figure>
+    <figure>
+      <div class="ph" style="--h:392"><div class="s b" style="padding-top:10px">
+        <div class="sheet">
+          <span class="grab"></span>
+          <div class="row find"><svg class="i" data-i="search"></svg>Найти: звук, фон, текст, скорость</div>
+          <span class="cat">Монтаж</span>
+          <div class="g4"><span class="btn"><svg class="i" data-i="scissors"></svg>Разрезать</span><span class="btn"><svg class="i" data-i="copy"></svg>Дублировать</span><span class="btn del"><svg class="i" data-i="trash-2"></svg>Удалить</span><span class="btn"><svg class="i" data-i="gauge"></svg>Скорость</span></div>
+          <span class="cat">Звук</span>
+          <div class="g4"><span class="btn"><svg class="i" data-i="volume-2"></svg>Громкость</span><span class="btn"><svg class="i" data-i="audio-lines"></svg>Голос</span><span class="btn"><svg class="i" data-i="captions"></svg>Субтитры</span><span class="btn"><svg class="i" data-i="sparkles"></svg>Без пауз</span></div>
+          <span class="cat">Кадр и цвет</span>
+          <div class="g4"><span class="btn"><svg class="i" data-i="crop"></svg>Кадрировать</span><span class="btn"><svg class="i" data-i="move"></svg>Положение</span><span class="btn"><svg class="i" data-i="sliders-horizontal"></svg>Цвет</span><span class="btn"><svg class="i" data-i="film"></svg>Фильтры</span></div>
+        </div>
+      </div></div>
+      <figcaption>Лист «Все инструменты». Весь набор с подписями на одном листе и поиск по обычным словам. Внизу редактора остаются четыре частые кнопки и «Все».</figcaption>
+    </figure>
+  </div>
+  <div class="cols">
+    <div class="stack"><h3>Как отвечает на требования</h3><ul>
+      <li>Кадр при настройке: <b data-m="b">33%</b> экрана против 15% сейчас.</li>
+      <li>Четыре частые кнопки в одно касание, остальное — «Все» и касание. Ответ на «не понимаю, куда нажимать».</li>
+      <li>Рычаг шириной 64 px вместо ползунка 131×28. Ручки обрезки 26 px.</li>
+      <li>Отмена слева от воспроизведения. «Готово» и «Сбросить» названы словами.</li>
+      <li>Узнаётся по крупной форме, рычагу сбоку и шрифту заголовков.</li>
+    </ul></div>
+    <div class="stack"><h3>Палитра и шрифт</h3>
+      <div class="sw"><span style="background:#171615"></span><span style="background:#211f1d"></span><span style="background:#2e2b28"></span><span style="background:#f6f3ee"></span><span style="background:#ff8a3d"></span></div>
+      <p class="spec" style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:22px">Разрезать и склеить</p>
+      <p class="note">Unbounded для заголовков и главных кнопок, Onest для текста. Unbounded новый для сборки.</p>
+    </div>
+    <div class="stack"><h3>Цена и риск</h3><ul>
+      <li class="tag">Самый высокий риск «всё переехало»: меняется место настроек и вид панели.</li>
+      <li>Рычаг сбоку работает, пока у кадра есть боковые поля. Для 16:9 и 1:1 нужен другой вид, это вторая раскладка.</li>
+      <li>Тёплый серый рядом с кадром слегка окрашивает восприятие цвета. Нужна проверка на настоящих видео.</li>
+      <li>Самая большая работа: новые компоненты, новый лист, поиск.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ================= C ================= -->
+<section class="dir" id="c">
+  <div class="dir-head">
+    <h2>В. Лист</h2>
+    <p class="words">тихий, ровный, нейтральный</p>
+    <p>Интерфейс без собственного цвета. Цвет есть только у видео человека и у дорожек, остальное — оттенки серого и белая главная кнопка. Лист подстраивается под содержимое и несёт свою маленькую полосу таймлайна. Инструменты стоят полкой в два ряда.</p>
+  </div>
+  <div class="phones">
+    <figure>
+      <div class="ph"><div class="s c">
+        <div class="row" style="height:64px;padding:0 16px;flex:none"><span class="wm">Чётко</span><span class="grow"></span><span class="mu" style="font-size:13px;font-weight:700">RU</span></div>
+        <div class="home">
+          <div class="row mu" style="gap:8px;font-size:13px;font-weight:600"><svg class="i" data-i="hard-drive"></svg>Всё на этом телефоне. Без интернета.</div>
+          <div class="pc"><div class="film"><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span></div><div class="row meta"><span class="grow"><b>Поход на Алтай</b><small>0:42, сегодня, сохранено</small></span><span class="ib mu"><svg class="i" data-i="copy"></svg></span><span class="ib mu"><svg class="i" data-i="pencil"></svg></span><span class="ib mu"><svg class="i" data-i="trash-2"></svg></span></div></div>
+          <div class="pc"><div class="film"><span class="th"><svg viewBox="0 0 90 160"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160"><use href="#shot2"/></svg></span></div><div class="row meta"><span class="grow"><b>Рецепт за минуту</b><small>0:15, вчера, сохранено</small></span><span class="ib mu"><svg class="i" data-i="copy"></svg></span><span class="ib mu"><svg class="i" data-i="pencil"></svg></span><span class="ib mu"><svg class="i" data-i="trash-2"></svg></span></div></div>
+          <div class="pc"><div class="film"><span class="th"><svg viewBox="0 0 90 160"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span></div></div>
+        </div>
+        <div class="row dock"><span class="row new"><svg class="i" data-i="plus"></svg>Новое видео</span><span class="row reel"><svg class="i" data-i="clapperboard"></svg>Рилс</span></div>
+      </div></div>
+      <figcaption>Главная. Проект показан лентой своих кадров. Белая кнопка внизу — единственный яркий элемент.</figcaption>
+    </figure>
+    <figure>
+      <div class="ph"><div class="s c">
+        <div class="row tb"><span class="ib"><svg class="i" data-i="chevron-left"></svg></span><span class="ttl">Поход на Алтай</span><span class="saved"><svg class="i" data-i="check"></svg>сохранено</span><span class="grow"></span><span class="row exp">Экспорт</span></div>
+        <div class="pv"><div class="fr" style="border-radius:6px;overflow:hidden"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></div></div>
+        <div class="row tp"><span class="play"><svg class="i" data-i="play"></svg></span><span style="font-size:13px;font-weight:700;margin-left:10px">0:02,4 <span class="mu">/ 0:42</span></span><span class="grow"></span><span class="ib"><svg class="i" data-i="undo-2"></svg></span><span class="ib mu"><svg class="i" data-i="redo-2"></svg></span></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="row sh"><b>Цвет</b><span class="grow"></span><span class="lnk">Сбросить</span><span class="done">Готово</span></div>
+          <div class="mini"><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span><span class="th"><svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><use href="#shot2"/></svg></span></div>
+          <div class="row seg"><span class="on">Свет</span><span>Цвет</span><span>Детали</span></div>
+          <div class="row tiles"><span class="tile on"><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span>Экспозиция</span><span class="tile"><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span>Яркость</span><span class="tile"><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span>Контраст</span><span class="tile"><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span>Света</span><span class="tile"><span class="th"><svg viewBox="0 0 90 160"><use href="#shot"/></svg></span>Тени</span></div>
+          <div class="row sl"><span class="ib"><svg class="i" data-i="minus"></svg></span><span class="track grow"></span><span class="ib"><svg class="i" data-i="plus"></svg></span><span class="v">+0,4</span></div>
+        </div>
+      </div></div>
+      <figcaption>Настройка цвета. Лист по высоте содержимого, сверху полоса таймлайна с иглой. Ползунок во всю ширину, рядом шаг «минус» и «плюс».</figcaption>
+    </figure>
+    <figure>
+      <div class="ph" style="--h:176"><div class="s c" style="justify-content:flex-end">
+        <div class="shelf">
+          <div class="g5"><span class="t"><svg class="i" data-i="scissors"></svg>Разрезать</span><span class="t"><svg class="i" data-i="copy"></svg>Дублир.</span><span class="t del"><svg class="i" data-i="trash-2"></svg>Удалить</span><span class="t"><svg class="i" data-i="gauge"></svg>Скорость</span><span class="t"><svg class="i" data-i="volume-2"></svg>Громкость</span></div>
+          <div class="g5"><span class="t"><svg class="i" data-i="audio-lines"></svg>Голос</span><span class="t"><svg class="i" data-i="captions"></svg>Субтитры</span><span class="t"><svg class="i" data-i="sparkles"></svg>Без пауз</span><span class="t"><svg class="i" data-i="crop"></svg>Кадр</span><span class="t"><svg class="i" data-i="sliders-horizontal"></svg>Цвет</span></div>
+          <div class="row dots"><i class="on"></i><i></i><i></i></div>
+        </div>
+      </div></div>
+      <figcaption>Полка куска. Десять инструментов видны сразу, остальные тринадцать — на двух следующих страницах. Порядок сегодняшний.</figcaption>
+    </figure>
+  </div>
+  <div class="cols">
+    <div class="stack"><h3>Как отвечает на требования</h3><ul>
+      <li>Кадр при настройке: <b data-m="c">27%</b> экрана против 15% сейчас. Игла двигается прямо в листе.</li>
+      <li>Десять инструментов в одно касание, до остальных одна-две прокрутки вместо шести.</li>
+      <li>Ползунок во всю ширину с бегунком 30 px и шагом по кнопкам. Ручки обрезки 22 px.</li>
+      <li>Отмена справа под кадром. «Готово» и «Сбросить» названы словами.</li>
+      <li>Узнаётся слабее всех: по лентам кадров и отсутствию цвета.</li>
+    </ul></div>
+    <div class="stack"><h3>Палитра и шрифт</h3>
+      <div class="sw"><span style="background:#18191b"></span><span style="background:#222326"></span><span style="background:#2e3034"></span><span style="background:#a2a5ad"></span><span style="background:#f2f3f5"></span></div>
+      <p class="spec" style="font-family:'Manrope',sans-serif;font-weight:800">Разрезать и склеить</p>
+      <p class="note">Manrope, уже есть в сборке.</p>
+    </div>
+    <div class="stack"><h3>Цена и риск</h3><ul>
+      <li>Лучшая среда для оценки цвета: рядом с кадром нет ни одного цветного пятна.</li>
+      <li>Риск «всё переехало» средний: панель становится полкой, но порядок прежний.</li>
+      <li>Без своего цвета приложение трудно запомнить и показать в магазине.</li>
+    </ul></div>
+  </div>
+</section>
+
+<section class="stack">
+  <h2>Сравнение</h2>
+  <div class="scroll"><table>
+    <tr><th></th><th>Сейчас, 1.7.1</th><th>А. Прицел</th><th>Б. Стол</th><th>В. Лист</th></tr>
+    <tr><td>Кадр при настройке цвета, доля экрана 375×720</td><td class="n">15%</td><td class="n" data-m="a">26%</td><td class="n" data-m="b">33%</td><td class="n" data-m="c">27%</td></tr>
+    <tr><td>Таймлайн виден при настройке</td><td>нет</td><td>да, целиком</td><td>да, целиком</td><td>полоса в листе</td></tr>
+    <tr><td>До «Фильтров» у видеокуска</td><td>3 прокрутки и касание</td><td>2 касания</td><td>2 касания</td><td>прокрутка и касание</td></tr>
+    <tr><td>До «Громкости»</td><td>прокрутка и касание</td><td>2 касания</td><td>2 касания</td><td>1 касание</td></tr>
+    <tr><td>Первые четыре инструмента</td><td>1 касание</td><td>1 касание, те же места</td><td>1 касание, те же места</td><td>1 касание, те же места</td></tr>
+    <tr><td>«Отменить»</td><td>вверху</td><td>под кадром слева</td><td>под кадром слева</td><td>под кадром справа</td></tr>
+    <tr><td>Риск «после обновления всё переехало»</td><td>—</td><td>низкий</td><td>высокий</td><td>средний</td></tr>
+    <tr><td>Новые шрифты в сборке</td><td>—</td><td>один, для цифр</td><td>один, для заголовков</td><td>нет</td></tr>
+    <tr><td>Объём работы</td><td>—</td><td>меньший</td><td>наибольший</td><td>средний</td></tr>
+  </table></div>
+  <p class="note">Доли кадра измерены на этих макетах, а не в продукте. Число действий посчитано по макетам. На телефоне ничего из этого ещё не проверено.</p>
+</section>
+
+<section class="stack">
+  <h2>Общее для всех трёх</h2>
+  <div class="cols">
+    <div class="stack"><h3>Жесты</h3><ul>
+      <li>Касание по куску выделяет, протяжка двигает, ручка обрезает.</li>
+      <li>Щипок на таймлайне меняет масштаб, на кадре — размер объекта.</li>
+      <li>У каждого жеста есть кнопка: размер и поворот в «Положении», выбор куска стрелками.</li>
+      <li>Ничего не тянется ближе 20 px к краям экрана: там жесты Safari.</li>
+    </ul></div>
+    <div class="stack"><h3>Масштаб страницы</h3><ul>
+      <li>Увеличение двумя пальцами разрешаем везде, кроме кадра и таймлайна. Сейчас оно запрещено целиком.</li>
+      <li>Поля ввода не меньше 16 px, иначе Safari сам приближает страницу.</li>
+    </ul></div>
+    <div class="stack"><h3>Поворот телефона</h3><ul>
+      <li>Проектируем вертикальный экран. Нынешняя горизонтальная раскладка остаётся как есть и перерисовывается после экранов редактора.</li>
+    </ul></div>
+  </div>
+</section>
+
+<section class="pick">
+  <h2>Рекомендация</h2>
+  <p>Взять «Прицел» за основу и добавить к нему из «Стола» лист «Все инструменты» с поиском по словам.</p>
+  <p>Причина в жалобах: чаще всего люди ругают CapCut за то, что привычное переехало. «Прицел» решает найденные проблемы и при этом оставляет цвет, порядок и места знакомыми. Поиск по словам закрывает вторую жалобу: «не понимаю, куда нажимать».</p>
+  <p class="note">Слабое место этого выбора: лицо меняется меньше всего. Если узнаваемость важнее привычки, сильнее «Стол».</p>
+</section>
+
+</div>
+
+<script>
+// Icons: an svg with a data-i attribute takes its drawing from the sprite; phones scale to their column.
+for (const el of document.querySelectorAll('svg[data-i]')) el.innerHTML = '<use href="#i-' + el.dataset.i + '"/>';
+const fit = (el) => el.style.setProperty('--k', (el.clientWidth / 375).toFixed(4));
+const ro = new ResizeObserver((es) => { for (const e of es) fit(e.target); });
+for (const el of document.querySelectorAll('.ph')) { fit(el); ro.observe(el); }
+</script>
