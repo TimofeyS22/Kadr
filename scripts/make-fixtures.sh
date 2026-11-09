@@ -106,6 +106,10 @@ if [ ! -f avsync_long.mp4 ]; then
   ff -f lavfi -i "color=c=black:s=360x640:r=30:d=30" -f lavfi -i "aevalsrc='gte(t,1)*lt(mod(t-1,4),0.03)*0.5*sin(2*PI*1000*t)':s=48000:d=30" \
     -vf "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='gte(n,30)*eq(mod(n-30,120),0)'" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest avsync_long.mp4
 fi
+# A phone's 60 fps (audit V-241): export at 30 fps skips every other decoded frame, and each one skipped must be released.
+if [ ! -f fps60.mp4 ]; then
+  ff -f lavfi -i testsrc2=size=720x1280:rate=60:duration=6 -f lavfi -i sine=frequency=440:duration=6 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest fps60.mp4
+fi
 # An iPhone-style HDR original (v1.2.2): HEVC Main 10, HLG, BT.2020 in a .mov — what "Format: Current" hands over.
 if [ ! -f iphone_hdr.mov ] && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libx265; then
   ff -f lavfi -i "smptehdbars=s=1920x1080:r=30:d=4" -f lavfi -i "sine=f=440:sample_rate=48000:d=4" -c:v libx265 -tag:v hvc1 -pix_fmt yuv420p10le \
