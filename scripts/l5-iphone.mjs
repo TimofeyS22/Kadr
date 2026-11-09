@@ -3,7 +3,7 @@
 // file is checked in the page instead of going to the share sheet.
 //   node scripts/l5-iphone.mjs [site URL]     (phone: unlocked, Web Inspector and Remote Automation on)
 // Env: L5_UDID picks a phone when several are connected.
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -192,31 +192,23 @@ try {
   await step('the file is whole', async () => {
     await tap('Save / Share');
     await waitFor('the file', () => js('return !!window.__l5.blob'), 15_000);
-    const seen = await jsAsync(`const done = arguments[arguments.length - 1];
-      (async () => {
-        const b = window.__l5.blob;
-        // iOS loads a video only if it is in the page and has been asked to play.
-        const v = Object.assign(document.createElement('video'), { muted: true, playsInline: true, preload: 'auto', src: URL.createObjectURL(b) });
-        v.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01';
-        document.body.append(v);
-        await Promise.race([v.play().catch(() => undefined), new Promise((ok) => setTimeout(ok, 3000))]);
-        v.pause();
-        if (!(v.readyState >= 1)) await new Promise((ok, ko) => { v.onloadedmetadata = ok; v.onerror = () => ko(new Error('the file does not load')); setTimeout(() => ko(new Error('no metadata in 20 s')), 20000); });
-        const c = Object.assign(document.createElement('canvas'), { width: 32, height: 56 });
-        const g = c.getContext('2d', { willReadFrequently: true });
-        const luma = async (t) => {
-          await new Promise((ok) => { v.onseeked = ok; v.currentTime = t; setTimeout(ok, 5000); });
-          await new Promise((ok) => setTimeout(ok, 200));
-          g.drawImage(v, 0, 0, 32, 56);
-          const d = g.getImageData(0, 0, 32, 56).data; let n = 0;
-          for (let i = 0; i < d.length; i += 4) n += (d[i] + d[i + 1] + d[i + 2]) / 3;
-          return Math.round(n / (d.length / 4));
-        };
-        return { type: b.type, mb: Math.round(b.size / 1e5) / 10, duration: v.duration, width: v.videoWidth, height: v.videoHeight, start: await luma(0.5), end: await luma(v.duration - 0.5) };
-      })().then(done, (e) => done({ error: String(e) }));`);
-    if (seen.error) throw new Error(seen.error);
-    if (seen.start < 12 || seen.end < 12) throw new Error(`a black picture: ${JSON.stringify(seen)}`);
-    journal.realtime = Math.round((seen.duration * 1000 / exportMs) * 100) / 100;
+    // The bytes come to the Mac and ffmpeg reads every frame: a <video> on iOS did not always finish seeking before it
+    // was read, so the same frame was measured twice and a dark one looked like a defect.
+    const b64 = await jsAsync(`const done = arguments[arguments.length - 1];
+      const r = new FileReader(); r.onload = () => done(r.result.split(',')[1]); r.onerror = () => done(null); r.readAsDataURL(window.__l5.blob);`);
+    if (!b64) throw new Error('the file could not be read');
+    const file = join(OUT, 'export.mp4');
+    writeFileSync(file, Buffer.from(b64, 'base64'));
+    const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-show_entries', 'stream=codec_type,codec_name,width,height,nb_read_frames:format=duration', '-of', 'json', file], { encoding: 'utf8' }));
+    const video = probe.streams.find((x) => x.codec_type === 'video'), audio = probe.streams.find((x) => x.codec_type === 'audio');
+    const stats = spawnSync('ffmpeg', ['-hide_banner', '-i', file, '-vf', 'signalstats,metadata=print:key=lavfi.signalstats.YAVG', '-an', '-f', 'null', '-'], { encoding: 'utf8', maxBuffer: 64 << 20 }).stderr;
+    const luma = [...stats.matchAll(/YAVG=([\d.]+)/g)].map((m) => Number(m[1]));
+    const duration = Number(probe.format.duration);
+    const seen = { video: video?.codec_name, audio: audio?.codec_name ?? null, width: video?.width, height: video?.height, frames: Number(video?.nb_read_frames), duration, mb: Math.round(b64.length * 0.75 / 1e5) / 10, lumaMin: Math.round(Math.min(...luma)), lumaMax: Math.round(Math.max(...luma)), blackFrames: luma.filter((y) => y < 18).length };
+    if (!video || !audio) throw new Error(`a stream is missing: ${JSON.stringify(seen)}`);
+    if (Math.abs(seen.frames - duration * 30) > 3) throw new Error(`frames lost: ${JSON.stringify(seen)}`);
+    if (seen.blackFrames > 0) throw new Error(`black frames: ${JSON.stringify(seen)}`);
+    journal.realtime = Math.round((duration * 1000 / exportMs) * 100) / 100;
     return { ...seen, realtimeX: journal.realtime };
   });
   await step('close and open: the project is the same', async () => {
