@@ -17,8 +17,6 @@ export function track(name: string, props: Props = {}): void {
   if (import.meta.env.DEV) console.debug('[telemetry]', name, props);
 }
 
-export const telemetryEvents = (): readonly { name: string; props: Props; at: number }[] => buffer;
-
 /** User-facing, translated message; MediaError-style errors carry `vars` for their placeholders. */
 export function errorMessage(e: unknown): string {
   noteError(e); // the error toast showing this text keeps the details (lib/errorLog.ts)

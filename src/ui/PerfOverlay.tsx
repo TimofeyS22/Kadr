@@ -19,7 +19,7 @@ export function PerfOverlay() {
     const id = setInterval(() => {
       const now = performance.now();
       const fps = ((perf.drawn - drawn) * 1000) / (now - at);
-      const recent = [...perf.drawMs.slice(-60)].sort((a, b) => a - b);
+      const recent = perf.drawMs.slice(-60).sort((a, b) => a - b);
       const p95 = recent.length ? recent[Math.floor(recent.length * 0.95)] : 0;
       const blocked = perf.longTasks.slice(tasks).reduce((s, d) => s + Math.max(0, d - 50), 0);
       const mem = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;

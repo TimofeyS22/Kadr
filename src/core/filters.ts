@@ -45,5 +45,3 @@ export function resolveAdjust(adjust: Adjustments, filter: FilterRef | null): Ad
   }
   return out;
 }
-
-export const isNeutral = (a: Adjustments): boolean => ADJUST_KEYS.every((k) => a[k] === 0);

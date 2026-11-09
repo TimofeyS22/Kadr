@@ -96,7 +96,7 @@ describe('freeze frame, crop and backups', () => {
 
   it('freeze frame splits the main clip and inserts a still with the same look', () => {
     const still: Asset = { ...asset('still', 0), kind: 'image' };
-    let p = produce(oneClip(), (d) => { mainTrack(d).clips[0].kind === 'video' && ((mainTrack(d).clips[0] as { crop?: object }).crop = { x: 0.1, y: 0, w: 0.5, h: 1 }); });
+    let p = produce(oneClip(), (d) => { if (mainTrack(d).clips[0].kind === 'video') ((mainTrack(d).clips[0] as { crop?: object }).crop = { x: 0.1, y: 0, w: 0.5, h: 1 }); });
     p = produce(p, (d) => { insertFreezeFrame(d, mainTrack(d).clips[0].id, 4, still, 2); });
     const clips = mainTrack(p).clips;
     expect(clips.map((c) => [c.kind, c.start, c.duration])).toEqual([['video', 0, 4], ['image', 4, 2], ['video', 6, 6]]);

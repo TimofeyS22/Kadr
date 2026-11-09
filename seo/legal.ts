@@ -118,7 +118,6 @@ const LIBRARIES: [string, string, string][] = [
   ['MediaPipe Tasks Vision', 'Apache-2.0', 'https://github.com/google-ai-edge/mediapipe'],
   ['@shiguredo/rnnoise-wasm', 'Apache-2.0', 'https://github.com/shiguredo/rnnoise-wasm'],
   ['Lucide icons (lucide-react)', 'ISC', 'https://github.com/lucide-icons/lucide'],
-  ['@use-gesture', 'MIT', 'https://github.com/pmndrs/use-gesture'],
   ['Zustand', 'MIT', 'https://github.com/pmndrs/zustand'],
   ['Immer', 'MIT', 'https://github.com/immerjs/immer'],
   ['fflate', 'MIT', 'https://github.com/101arrowz/fflate'],
@@ -160,7 +159,7 @@ export const LICENSES: Record<Lang, LegalPage> = {
       { h: 'Модели (скачиваются при первом использовании)', items: MODELS.ru },
       { h: 'Библиотеки', items: LIBRARIES.map(([n, l, u]) => `[${n}](${u}) — ${l}`) },
       { h: 'Исходный код под MPL-2.0', p: [
-        'Mediabunny и SoundTouchJS распространяются по [Mozilla Public License 2.0](https://www.mozilla.org/MPL/2.0/); их исходный код — по ссылкам выше. Kadr при сборке меняет одну строку в файле src/target.js библиотеки Mediabunny: буфер в памяти растёт обычными ArrayBuffer вместо резервирования 4 ГиБ адресного пространства. Изменение — [scripts/no-reserve.ts](https://github.com/TimofeyS22/Kadr/blob/main/scripts/no-reserve.ts) в открытом репозитории Kadr.',
+        'Mediabunny и SoundTouchJS распространяются по [Mozilla Public License 2.0](https://www.mozilla.org/MPL/2.0/); их исходный код — по ссылкам выше. Kadr при сборке меняет две строки библиотеки Mediabunny: в src/target.js буфер в памяти растёт обычными ArrayBuffer вместо резервирования 4 ГиБ адресного пространства, а в src/media-source.js проверка задержки кодировщика ограничена по времени и не может остановить экспорт. Изменения — [scripts/no-reserve.ts](https://github.com/TimofeyS22/Kadr/blob/main/scripts/no-reserve.ts) в открытом репозитории Kadr.',
       ] },
       { h: 'Шрифты', p: [`${FONTS.join(', ')} — [SIL Open Font License 1.1](https://openfontlicense.org), пакеты [Fontsource](https://fontsource.org).`] },
       { h: 'Музыка', p: [`Авторы треков библиотеки: ${ARTISTS.ru}. Все треки — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (общественное достояние), источник — [Free Music Archive](https://freemusicarchive.org/). Название, автор и ссылка на источник каждого трека есть в Kadr, в кнопке «Скопировать лицензию».`] },
@@ -177,7 +176,7 @@ export const LICENSES: Record<Lang, LegalPage> = {
       { h: 'Models (downloaded on first use)', items: MODELS.en },
       { h: 'Libraries', items: LIBRARIES.map(([n, l, u]) => `[${n}](${u}) — ${l}`) },
       { h: 'Source code under MPL-2.0', p: [
-        'Mediabunny and SoundTouchJS are distributed under the [Mozilla Public License 2.0](https://www.mozilla.org/MPL/2.0/); their source code is at the links above. When Kadr is built, it changes one line of Mediabunny’s src/target.js: an in-memory buffer grows with plain ArrayBuffers instead of reserving 4 GiB of address space. The change is [scripts/no-reserve.ts](https://github.com/TimofeyS22/Kadr/blob/main/scripts/no-reserve.ts) in Kadr’s open repository.',
+        'Mediabunny and SoundTouchJS are distributed under the [Mozilla Public License 2.0](https://www.mozilla.org/MPL/2.0/); their source code is at the links above. When Kadr is built, it changes two lines of Mediabunny: in src/target.js an in-memory buffer grows with plain ArrayBuffers instead of reserving 4 GiB of address space, and in src/media-source.js the encoder delay probe is bounded in time and cannot stop an export. The changes are [scripts/no-reserve.ts](https://github.com/TimofeyS22/Kadr/blob/main/scripts/no-reserve.ts) in Kadr’s open repository.',
       ] },
       { h: 'Fonts', p: [`${FONTS.join(', ')}: [SIL Open Font License 1.1](https://openfontlicense.org), [Fontsource](https://fontsource.org) packages.`] },
       { h: 'Music', p: [`Library tracks are by ${ARTISTS.en}. All of them are [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (public domain), from the [Free Music Archive](https://freemusicarchive.org/). The title, artist and source link of each track are in Kadr, under “Copy license”.`] },

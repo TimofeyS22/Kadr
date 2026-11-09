@@ -30,7 +30,7 @@ export interface EditorState {
   transitionFor: string | null;
   sheet: SheetId | null;
   /** Task to start once the next project loads (home card, deep link, share target), see ui/tasks.ts. */
-  startTask: import('../ui/tasks').TaskId | null;
+  startTask: import('../core/taskIds').TaskId | null;
   /** The sheet that opens should run by itself (the reel). */
   startAuto: boolean;
   time: number;

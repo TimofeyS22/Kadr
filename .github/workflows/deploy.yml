@@ -26,6 +26,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts # third-party install scripts do not run where the site is built (audit V-230)
+      - name: Lint and dead code
+        run: npm run lint
       - name: Typecheck and unit tests
         run: npm run check
       - name: Production build

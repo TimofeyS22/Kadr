@@ -33,7 +33,7 @@ Kadr — видеоредактор для телефона, который от
 
 ## 4. Инженерные стандарты (Definition of Done)
 
-- TypeScript `strict`, без `any` в доменном коде. `npm run check` (typecheck + tests) зелёный. ESLint добавим в M2.
+- TypeScript `strict`, без `any` в доменном коде. `npm run check` (typecheck + tests) и `npm run lint` (oxlint + knip) зелёные.
 - `src/core/` — чистая логика без DOM: модель проекта, операции таймлайна, ключевые кадры, история. Каждая операция покрыта юнит-тестом.
 - Операции над проектом иммутабельны и проходят через store (`commit`), поэтому undo/redo работает для всего.
 - Любые ресурсы (VideoDecoder, VideoFrame, итераторы, AudioNode, object URL) освобождаются явно. Утечка на телефоне = краш.

@@ -1,7 +1,7 @@
 {
   "name": "kadr",
   "private": true,
-  "version": "1.6.5",
+  "version": "1.6.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,8 @@
     "predev": "node scripts/copy-assets.mjs --dev",
     "prebuild": "node scripts/copy-assets.mjs",
     "e2e": "playwright test",
-    "perf": "PERF=1 playwright test --project perf"
+    "perf": "PERF=1 playwright test --project perf",
+    "lint": "oxlint src e2e --deny-warnings && knip"
   },
   "dependencies": {
     "@fontsource/amatic-sc": "^5.3.0",
@@ -58,17 +59,17 @@
     "@fontsource/tektur": "^5.3.0",
     "@fontsource/unbounded": "^5.3.0",
     "@fontsource/yeseva-one": "^5.3.0",
-    "@huggingface/transformers": "^4.3.0",
+    "@huggingface/transformers": "^4.3.2",
     "@mediapipe/tasks-vision": "^1.0.1",
     "@shiguredo/rnnoise-wasm": "^2025.1.5",
     "@soundtouchjs/core": "^2.1.1",
-    "@use-gesture/react": "^10.3.1",
     "fflate": "^0.8.3",
     "gifenc": "^1.0.3",
     "idb-keyval": "^6.3.0",
     "immer": "^11.1.18",
     "lucide-react": "^1.48.0",
-    "mediabunny": "^1.60.0",
+    "mediabunny": "^1.65.2",
+    "onnxruntime-web": "^1.31.0-dev.20260914-8d85527a0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.0.15"
@@ -79,6 +80,8 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "knip": "^6.44.2",
+    "oxlint": "^1.92.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.6",
     "vite-plugin-pwa": "^1.3.0",

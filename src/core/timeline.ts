@@ -563,6 +563,7 @@ export function usedAssetIds(p: Project): Set<string> {
       if (isMedia(c) && c.reversedFrom) used.add(c.reversedFrom.assetId);
     }
   }
+  // oxlint-disable-next-line unicorn/no-useless-spread -- a copy: the loop adds to the set it walks
   for (const id of [...used]) {
     const d = p.assets[id]?.derived;
     if (!d) continue;

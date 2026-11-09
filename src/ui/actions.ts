@@ -1,5 +1,5 @@
 // User-level editing actions shared by the toolbar, sheets and keyboard shortcuts.
-import { captionPages, parseSubtitles, setCaptionLayout, toSrt, type CaptionLayout } from '../core/captions';
+import { parseSubtitles, setCaptionLayout, toSrt, type CaptionLayout } from '../core/captions';
 import { anim, createAudioClip, createCaptionClip, createImageClip, createTextClip, createVideoClip, uid } from '../core/defaults';
 import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
 import { fitTrack, type LibraryTrack, type MusicManifest } from '../core/music';
@@ -321,8 +321,6 @@ export async function exportSubtitles(): Promise<void> {
   if (!clips.length) { editor().toast(t('There are no captions yet')); return; }
   await saveFile(new Blob([toSrt(clips)], { type: 'application/x-subrip' }), `${p.name || 'captions'}.srt`);
 }
-
-export const pageCount = (c: CaptionClip): number => captionPages(c.words, Math.max(1, c.wordsPerPage)).length;
 
 /**
  * Changes a clip's sound settings (noise reduction, keep pitch) and builds the processed sound on device if

@@ -23,7 +23,7 @@ function useProjectRoute(): string | null {
       // The system Back closes the open sheet first, as the Done button would, warning about work it would lose. Before,
       // it left the editor under the sheet: long jobs went on with nowhere to report (audit V-226).
       const s = useEditor.getState();
-      if (s.project && s.sheet && !/^#\/p\//.test(location.hash)) {
+      if (s.project && s.sheet && !location.hash.startsWith('#/p/')) {
         history.pushState(null, '', shown);
         s.closeSheet();
         return;

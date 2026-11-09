@@ -8,9 +8,9 @@ import { t } from '../lib/i18n';
 import { track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { saveProject } from '../storage/db';
+import { TASK_IDS, type TaskId } from '../core/taskIds';
 
-export const TASK_IDS = ['reel', 'captions', 'pauses', 'speed', 'music', 'background', 'teleprompter', 'denoise', 'trim', 'gif'] as const;
-export type TaskId = typeof TASK_IDS[number];
+export type { TaskId };
 
 interface TaskSpec {
   /** Banner title on the home screen (translation key). */

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { TASK_IDS } from '../src/ui/tasks';
+import { TASK_IDS } from '../src/core/taskIds';
 import { LANGS, buildSite } from './render';
 import { PAGES } from './tasks';
 

@@ -1,0 +1,17 @@
+{
+  "rules": {
+    "unicorn/no-new-array": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/*.test.ts",
+        "e2e/**"
+      ],
+      "rules": {
+        "require-yield": "off",
+        "typescript/no-this-alias": "off"
+      }
+    }
+  ]
+}

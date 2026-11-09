@@ -117,8 +117,6 @@ export interface Transcript {
 }
 
 const SR = 16000;
-const MAX_CHUNK_S = 28;
-const MIN_CHUNK_S = 18;
 
 export type CaptionProgress = { phase: 'download'; fraction: number; mb: number } | { phase: 'prepare' } | { phase: 'listen' } | { phase: 'transcribe'; fraction: number };
 
@@ -147,25 +145,6 @@ async function timelineAudio(p: Project, signal: AbortSignal, skipped: Set<strin
     pool.dispose();
   }
   return out;
-}
-
-/** Chunk boundaries (sample indices) at the quietest 100 ms between MIN and MAX chunk length (kept for long speech). */
-export function chunkBounds(audio: Float32Array, sr = SR): number[] {
-  const bounds = [0];
-  const win = Math.round(sr * 0.1);
-  while (audio.length - bounds[bounds.length - 1] > MAX_CHUNK_S * sr) {
-    const from = bounds[bounds.length - 1] + MIN_CHUNK_S * sr;
-    const to = bounds[bounds.length - 1] + MAX_CHUNK_S * sr;
-    let best = to, bestE = Infinity;
-    for (let s = from; s + win <= to; s += win) {
-      let e = 0;
-      for (let k = s; k < s + win; k++) e += audio[k] * audio[k];
-      if (e < bestE) { bestE = e; best = s + Math.round(win / 2); }
-    }
-    bounds.push(best);
-  }
-  bounds.push(audio.length);
-  return bounds;
 }
 
 let worker: Worker | null = null;
