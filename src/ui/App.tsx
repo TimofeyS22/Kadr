@@ -14,6 +14,9 @@ const diag = new URLSearchParams(location.search).has('diag');
 // Template check (v1.5): every caption and text template drawn by this device, only with `?styles` in the address.
 const StylesCheck = lazy(() => import('./StylesCheck').then((m) => ({ default: m.StylesCheck })));
 const styles = new URLSearchParams(location.search).has('styles');
+// The gallery of the Chetko design system (docs/17 stage Ч2): tokens as this device draws them, only with `?ds`.
+const DesignSystem = lazy(() => import('./DesignSystem').then((m) => ({ default: m.DesignSystem })));
+const ds = new URLSearchParams(location.search).has('ds');
 
 function useProjectRoute(): string | null {
   const [hash, setHash] = useState(location.hash);
@@ -82,6 +85,8 @@ export function App() {
         <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><Diag /></Suspense>
       ) : styles ? (
         <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><StylesCheck /></Suspense>
+      ) : ds ? (
+        <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><DesignSystem /></Suspense>
       ) : id ? (
         <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><Editor key={id} id={id} /></Suspense>
       ) : <Home />}

@@ -100,7 +100,7 @@ describe('privacy and licenses (docs/12 stage 6)', () => {
   });
   it('name every bundled font family, each one under the OFL (CLAUDE.md §4)', () => {
     const deps = Object.keys((JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string> }).dependencies);
-    const fonts = deps.filter((d) => d.startsWith('@fontsource/'));
+    const fonts = deps.filter((d) => /^@fontsource(?:-variable)?\//.test(d)); // the variable faces too (Geologica, docs/17)
     expect(fonts.length).toBeGreaterThan(30);
     for (const f of fonts) {
       const dir = new URL(`../node_modules/${f}/`, import.meta.url);

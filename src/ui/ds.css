@@ -1,0 +1,66 @@
+/* Chetko: the primitives of the sign and the gallery page (`?ds`). Every value here comes from tokens.css; the drift test
+   (tokens.test.ts) turns red on a colour, a font size, a radius, a layer, a duration or an off-grid gap written by hand. */
+
+/* ---- the wordmark: the two dots of «ё» are the in and out marks of a cut ---- */
+.ck-wm { display: inline-block; font-family: var(--font-ui); font-weight: var(--weight-heavy); letter-spacing: -0.04em; line-height: 1; white-space: nowrap; }
+.ck-yo { position: relative; display: inline-block; }
+.ck-yo::before, .ck-yo::after { content: ''; position: absolute; top: 0.12em; width: 0.13em; height: 0.24em; background: var(--signal); }
+.ck-yo::before { left: 0.07em; }
+.ck-yo::after { right: 0.07em; }
+
+/* ---- the mark: whatever lies between two marks is held (a piece, an export, a value) ---- */
+.ck-held { position: relative; }
+.ck-held::before, .ck-held::after {
+  content: ''; position: absolute; top: calc(-1 * var(--mark-overhang)); bottom: calc(-1 * var(--mark-overhang));
+  width: var(--mark-width); background: var(--mark-was); z-index: var(--z-mark);
+}
+.ck-held::before { left: calc(var(--mark-width) / -2); }
+.ck-held::after { right: calc(var(--mark-width) / -2); }
+.ck-held.ck-now::after { background: var(--signal); }
+
+/* ---- the digit of a value: soft and pale while it moves, sharp and heavy when it rests ---- */
+.ck-digit {
+  font-size: var(--type-xl); font-weight: var(--weight-heavy); letter-spacing: -0.02em; line-height: var(--leading-tight); color: var(--signal);
+  font-variation-settings: 'SHRP' var(--sharp-rest);
+  transition: font-variation-settings var(--dur-value) var(--ease-soft), font-weight var(--dur-value) var(--ease-soft), color var(--dur-value) var(--ease-soft), opacity var(--dur-value) var(--ease-soft);
+}
+.ck-digit[data-moving='true'] { font-variation-settings: 'SHRP' var(--sharp-move); font-weight: var(--weight-regular); color: var(--text-primary); opacity: 0.6; }
+
+/* ---- the gallery ---- */
+.ds { height: 100%; overflow-y: auto; }
+.ds-in { max-width: 760px; margin: 0 auto; padding: var(--space-8) var(--space-4) calc(var(--space-8) + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: var(--space-8); }
+.ds h1, .ds h2, .ds h3, .ds p { margin: 0; }
+.ds h1 { font-size: var(--type-display); line-height: var(--leading-tight); }
+.ds h2 { font-size: var(--type-lg); font-weight: var(--weight-strong); letter-spacing: -0.01em; }
+.ds h3 { font-size: var(--type-md); font-weight: var(--weight-strong); }
+.ds section { display: flex; flex-direction: column; gap: var(--space-4); }
+.ds .ds-dim { color: var(--text-secondary); }
+.ds .ds-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.ds .ds-tile { background: var(--surface-raised); border-radius: var(--radius-control); padding: var(--space-6) var(--space-4); display: grid; place-items: center; min-height: 96px; }
+.ds .ds-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
+.ds .ds-field { background: var(--surface-field); }
+.ds .ds-strip { width: 160px; height: 32px; background: linear-gradient(90deg, var(--ink-30), var(--ink-50), var(--ink-65)); box-shadow: inset 0 0 0 2px var(--mark-was); }
+.ds .ds-icon { width: 96px; height: 96px; border-radius: 24%; background: var(--surface-field); position: relative; box-shadow: 0 0 0 var(--hairline) var(--border-subtle); }
+.ds .ds-icon::before { content: ''; position: absolute; left: 34%; right: 34%; top: 47.5%; height: 5%; background: var(--mark-was); }
+.ds .ds-icon i { position: absolute; top: 29%; bottom: 29%; width: 7%; background: var(--signal); }
+.ds .ds-icon i:first-child { left: 23%; }
+.ds .ds-icon i:last-child { right: 23%; }
+.ds table { border-collapse: collapse; width: 100%; }
+.ds th, .ds td { text-align: left; padding: var(--space-2) var(--space-3) var(--space-2) 0; box-shadow: inset 0 calc(-1 * var(--hairline)) var(--border-subtle); vertical-align: middle; }
+.ds th { color: var(--text-secondary); font-weight: var(--weight-medium); font-size: var(--type-xs); }
+.ds td.ds-num { white-space: nowrap; }
+.ds .ds-sw { width: 44px; height: 32px; border-radius: var(--radius-clip); box-shadow: 0 0 0 var(--hairline) var(--image-outline); display: grid; place-items: center; font-size: var(--type-xs); font-weight: var(--weight-heavy); }
+.ds .ds-bad { color: var(--action-danger); font-weight: var(--weight-heavy); }
+.ds .ds-scroll { overflow-x: auto; }
+.ds code { font-family: inherit; color: var(--text-secondary); font-size: var(--type-xs); }
+.ds .ds-type { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--space-3); align-items: baseline; padding: var(--space-2) 0; box-shadow: inset 0 calc(-1 * var(--hairline)) var(--border-subtle); }
+.ds .ds-type span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds .ds-box { width: 72px; height: 72px; background: var(--surface-raised); box-shadow: inset 0 0 0 var(--hairline) var(--tick-minor); display: grid; place-items: center; font-size: var(--type-xs); color: var(--text-secondary); }
+.ds .ds-bar { height: 12px; background: var(--tick-major); border-radius: var(--radius-clip); }
+.ds .ds-touch { width: var(--touch); height: var(--touch); border-radius: var(--radius-control); background: var(--action-primary); color: var(--text-on-action); display: grid; place-items: center; font-size: var(--type-xs); font-weight: var(--weight-heavy); }
+.ds .ds-btn { min-height: var(--touch); padding: 0 var(--space-4); border-radius: var(--radius-control); border: 0; background: var(--action-primary); color: var(--text-on-action); font: inherit; font-weight: var(--weight-strong); cursor: pointer; transition: scale var(--dur-press) var(--ease-soft); }
+.ds .ds-btn:active { scale: 0.96; }
+.ds .ds-btn:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.ds .ds-track { height: var(--touch); position: relative; background: var(--surface-raised); border-radius: var(--radius-control); overflow: hidden; }
+.ds .ds-dot { position: absolute; top: 12px; left: 12px; width: 20px; height: 20px; border-radius: 50%; background: var(--signal); transition-property: translate; transition-timing-function: var(--ease-out); }
+.ds .ds-track[data-on='true'] .ds-dot { translate: 200px 0; }

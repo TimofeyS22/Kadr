@@ -138,7 +138,7 @@ const ARTISTS = {
 
 const FONTS = [
   'Amatic SC', 'Anton', 'Bad Script', 'Bebas Neue', 'Caveat', 'Comfortaa', 'Cormorant Garamond', 'Days One', 'Dela Gothic One', 'Exo 2',
-  'Fira Sans', 'Golos Text', 'Inter', 'Jost', 'Lobster', 'Lora', 'Manrope', 'Marck Script', 'Montserrat', 'Neucha', 'Nunito', 'Onest',
+  'Fira Sans', 'Geologica', 'Golos Text', 'Inter', 'Jost', 'Lobster', 'Lora', 'Manrope', 'Marck Script', 'Montserrat', 'Neucha', 'Nunito', 'Onest',
   'Oswald', 'Pacifico', 'Pangolin', 'Play', 'Playfair Display', 'Press Start 2P', 'PT Serif', 'Raleway', 'Roboto Mono', 'Rubik',
   'Rubik Bubbles', 'Rubik Glitch', 'Rubik Mono One', 'Rubik Spray Paint', 'Ruslan Display', 'Russo One', 'Tektur', 'Unbounded',
   'Yeseva One'
