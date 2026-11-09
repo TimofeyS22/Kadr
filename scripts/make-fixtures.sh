@@ -100,6 +100,12 @@ if [ ! -f avsync.mp4 ]; then
   ff -f lavfi -i "color=c=black:s=720x1280:r=30:d=4" -f lavfi -i "aevalsrc='if(between(t,1,1.03)+between(t,2.5,2.53),0.5*sin(2*PI*1000*t),0)':s=48000:d=4" \
     -vf "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='between(t,1,1.032)+between(t,2.5,2.532)'" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest avsync.mp4
 fi
+# The same marks over a whole file (audit V-110): white frame and 1 kHz beep together every 4 s from 1 s to 29 s, 8 pairs,
+# so drift along the file and sound that ends early both show.
+if [ ! -f avsync_long.mp4 ]; then
+  ff -f lavfi -i "color=c=black:s=360x640:r=30:d=30" -f lavfi -i "aevalsrc='gte(t,1)*lt(mod(t-1,4),0.03)*0.5*sin(2*PI*1000*t)':s=48000:d=30" \
+    -vf "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='gte(n,30)*eq(mod(n-30,120),0)'" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest avsync_long.mp4
+fi
 # An iPhone-style HDR original (v1.2.2): HEVC Main 10, HLG, BT.2020 in a .mov — what "Format: Current" hands over.
 if [ ! -f iphone_hdr.mov ] && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libx265; then
   ff -f lavfi -i "smptehdbars=s=1920x1080:r=30:d=4" -f lavfi -i "sine=f=440:sample_rate=48000:d=4" -c:v libx265 -tag:v hvc1 -pix_fmt yuv420p10le \
