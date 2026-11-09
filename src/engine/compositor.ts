@@ -5,7 +5,7 @@ import { fxLod, fxScale } from '../core/fxScale';
 import { fromBase64 } from '../core/lut';
 import { ADJUST_KEYS, type BlendMode, type LutData } from '../core/types';
 import type { Drawable } from './text';
-import { MediaError, type Turn } from './media';
+import { MediaError, type Hdr, type Turn } from './media';
 import { WEBKIT } from '../lib/device';
 
 const VS = `#version 300 es
@@ -233,7 +233,24 @@ uniform vec2 uOut;
 uniform int uTurn;
 uniform float uMirror;
 uniform int uTaps;
+uniform int uHdr;
 out vec4 outColor;
+// HDR (BT.2100) to SDR, once, where the frame enters: everything after it sees ordinary video (preview and export alike).
+// Diffuse white is 203 nits (BT.2408); the highlights above it roll off instead of clipping.
+const mat3 BT2020_TO_709 = mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187);
+float hlgToScene(float e) { return e <= 0.5 ? e * e / 3.0 : (exp((e - 0.55991073) / 0.17883277) + 0.28466892) / 12.0; }
+float pqToNits(float e) { float p = pow(max(e, 0.0), 1.0 / 78.84375); return 10000.0 * pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125); }
+vec3 toSdr(vec3 c) {
+  vec3 l;
+  if (uHdr == 1) {
+    vec3 s = vec3(hlgToScene(c.r), hlgToScene(c.g), hlgToScene(c.b));
+    l = s * pow(max(dot(s, vec3(0.2627, 0.678, 0.0593)), 1e-6), 0.2) * 1000.0 / 203.0; // the OOTF of a 1000-nit display
+  } else l = vec3(pqToNits(c.r), pqToNits(c.g), pqToNits(c.b)) / 203.0;
+  float m = max(l.r, max(l.g, l.b));
+  if (m > 0.85) l *= (0.85 + 0.15 * (1.0 - exp(-1.5 * (m - 0.85) / 0.15))) / m;
+  vec3 o = clamp(BT2020_TO_709 * l, 0.0, 1.0);
+  return mix(o * 12.92, 1.055 * pow(o, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, o));
+}
 // Upright position (row 0 at the top, as texImage2D puts a canvas) → position in the frame as decoded.
 vec2 decoded(vec2 p) {
   p.x = mix(p.x, 1.0 - p.x, uMirror);
@@ -250,10 +267,11 @@ void main() {
     }
   }
   outColor = acc / (n * n);
+  if (uHdr != 0) outColor.rgb = toSdr(outColor.rgb);
 }`;
 
 /** What a layer draws; with `turn`, `image` is a decoder frame (`Picture` in media.ts), drawn upright by `fromFrame`. */
-export type Source = Drawable & { turn?: Turn };
+export type Source = Drawable & { turn?: Turn; hdr?: Hdr };
 
 /** WebGL refused a decoder frame once (an untried format, say): from then on every video comes through a 2D canvas. */
 let framesRefused = false;
@@ -293,7 +311,7 @@ export class Compositor {
   private frameNo = 0;
   /** Decoder frames: the program that turns them upright and the target it draws to. */
   private frameProg!: WebGLProgram;
-  private frameU!: Record<'uOut' | 'uTurn' | 'uMirror' | 'uTaps', WebGLUniformLocation | null>;
+  private frameU!: Record<'uOut' | 'uTurn' | 'uMirror' | 'uTaps' | 'uHdr', WebGLUniformLocation | null>;
   private target!: WebGLFramebuffer;
   /**
    * Textures decoder frames arrive in, one per frame size: clips of one size share it (a 4K one is 33 MB), and a size
@@ -350,7 +368,7 @@ export class Compositor {
     const fp = (this.frameProg = link(VS_FRAME, FS_FRAME));
     gl.useProgram(fp);
     gl.uniform1i(gl.getUniformLocation(fp, 'uSrc'), 0);
-    this.frameU = { uOut: gl.getUniformLocation(fp, 'uOut'), uTurn: gl.getUniformLocation(fp, 'uTurn'), uMirror: gl.getUniformLocation(fp, 'uMirror'), uTaps: gl.getUniformLocation(fp, 'uTaps') };
+    this.frameU = { uOut: gl.getUniformLocation(fp, 'uOut'), uTurn: gl.getUniformLocation(fp, 'uTurn'), uMirror: gl.getUniformLocation(fp, 'uMirror'), uTaps: gl.getUniformLocation(fp, 'uTaps'), uHdr: gl.getUniformLocation(fp, 'uHdr') };
     const prog = link(VS, FS);
     this.prog = prog;
     gl.useProgram(prog);
@@ -412,8 +430,8 @@ export class Compositor {
     }
     gl.bindTexture(gl.TEXTURE_2D, s.tex);
     if (s.key !== d.key || (mips && !s.mips)) {
-      if (!d.turn) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, d.image);
-      else if (!this.fromFrame(s, d as Source & { image: VideoFrame; turn: Turn })) return s.key ? s : null; // keeps its last picture
+      if (!d.turn && !d.hdr) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, d.image);
+      else if (!this.fromFrame(s, d as Source & { image: VideoFrame | HTMLCanvasElement })) return s.key ? s : null; // keeps its last picture
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -439,10 +457,11 @@ export class Compositor {
    * it. The frame itself goes to WebGL as it is: WebKit uploads a `VideoFrame` on the GPU, while a 2D canvas it copied
    * back through the CPU on every frame (`Picture` in media.ts). False when the frame did not go in.
    */
-  private fromFrame(s: Slot, d: Source & { image: VideoFrame; turn: Turn }): boolean {
+  private fromFrame(s: Slot, d: Source & { image: VideoFrame | HTMLCanvasElement }): boolean {
     const gl = this.gl, f = d.image;
-    if (!f.displayWidth) return false; // closed under us (never expected)
-    const size = `${f.displayWidth}x${f.displayHeight}`;
+    const [imageW, imageH] = 'displayWidth' in f ? [f.displayWidth, f.displayHeight] : [f.width, f.height]; // an HDR picture can be a canvas
+    if (!imageW) return false; // closed under us (never expected)
+    const size = `${imageW}x${imageH}`;
     let raw = this.raws.get(size);
     const first = !raw;
     if (!raw) {
@@ -481,12 +500,13 @@ export class Compositor {
     gl.viewport(0, 0, d.w, d.h);
     gl.useProgram(this.frameProg);
     gl.disable(gl.BLEND);
-    const quarter = d.turn.rotation / 90;
-    const [fw, fh] = quarter % 2 ? [f.displayHeight, f.displayWidth] : [f.displayWidth, f.displayHeight];
+    const quarter = (d.turn?.rotation ?? 0) / 90;
+    const [fw, fh] = quarter % 2 ? [imageH, imageW] : [imageW, imageH];
     const u = this.frameU;
     gl.uniform2f(u.uOut, d.w, d.h);
     gl.uniform1i(u.uTurn, quarter);
-    gl.uniform1f(u.uMirror, d.turn.flip ? 1 : 0);
+    gl.uniform1f(u.uMirror, d.turn?.flip ? 1 : 0);
+    gl.uniform1i(u.uHdr, d.hdr === 'hlg' ? 1 : d.hdr === 'pq' ? 2 : 0);
     gl.uniform1i(u.uTaps, Math.min(4, Math.max(1, Math.ceil(Math.max(fw / d.w, fh / d.h) / 2 - 0.01))));
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0); // a swept slot is not kept alive

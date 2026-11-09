@@ -6,7 +6,7 @@ const made: { file: string }[] = [];
 let samples: () => AsyncGenerator<never, void, unknown> = async function* () { /* empty */ };
 
 vi.mock('mediabunny', () => {
-  class Input { source: { blob: Blob }; constructor(o: { source: { blob: Blob } }) { this.source = o.source; } async getPrimaryVideoTrack() { await new Promise((r) => setTimeout(r, 1)); return { file: this.source.blob.type, getDisplayWidth: async () => 640, getDisplayHeight: async () => 360 }; } dispose() { /* nothing */ } }
+  class Input { source: { blob: Blob }; constructor(o: { source: { blob: Blob } }) { this.source = o.source; } async getPrimaryVideoTrack() { await new Promise((r) => setTimeout(r, 1)); return { file: this.source.blob.type, getColorSpace: async () => ({}), getDisplayWidth: async () => 640, getDisplayHeight: async () => 360 }; } dispose() { /* nothing */ } }
   class BlobSource { constructor(readonly blob: Blob) {} }
   class VideoSampleSink { constructor(t: { file: string }) { made.push({ file: t.file }); } samples() { return samples(); } }
   class EncodedPacketSink { }

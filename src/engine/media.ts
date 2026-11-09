@@ -80,6 +80,24 @@ export async function probe(file: Blob): Promise<Probe> {
   }
 }
 
+/**
+ * HDR video (an iPhone records HLG by default) came out dim and off in colour, each browser in its own way: Chromium squeezes
+ * it towards SDR itself, WebKit passes the signal through. The decoder is told the signal is plain video, so every browser
+ * hands over the same values, and the compositor turns them into SDR in one place (`Compositor.fromFrame`).
+ */
+async function hdrTransfer(track: InputVideoTrack): Promise<Hdr | undefined> {
+  const space = await track.getColorSpace();
+  const transfer: string | null | undefined = space.transfer; // TypeScript's list stops short of the HDR ones
+  const hdr = transfer === 'hlg' ? 'hlg' : transfer === 'pq' ? 'pq' : undefined;
+  if (!hdr) return undefined;
+  const config = track.getDecoderConfig.bind(track);
+  track.getDecoderConfig = async () => {
+    const c = await config();
+    return c && { ...c, colorSpace: { primaries: 'bt709', transfer: 'bt709', matrix: space.matrix ?? 'bt2020-ncl', fullRange: space.fullRange ?? false } as VideoColorSpaceInit };
+  };
+  return hdr;
+}
+
 /** Less than this missing at the end is not worth a word: the last frames of an ordinary file can lie past its data. */
 const CUT_SHORT_S = 0.5;
 
@@ -137,7 +155,8 @@ export interface Turn { rotation: 0 | 90 | 180 | 270; flip: boolean }
  * made an iPhone export 3× slower (2026-10-30). A keyframe while scrubbing, and a frame too big for a texture, still come
  * as an upright canvas. The decoder frame stays open until the stream reads on: draw it before the clip's next read.
  */
-export interface Picture { image: HTMLCanvasElement | VideoFrame; width: number; height: number; turn?: Turn; timestamp: number; exact: boolean }
+export type Hdr = 'hlg' | 'pq';
+export interface Picture { image: HTMLCanvasElement | VideoFrame; width: number; height: number; turn?: Turn; timestamp: number; exact: boolean; hdr?: Hdr }
 
 /**
  * Sequential per-clip decoding (docs/04, H4). Frames the preview skips are closed without being drawn: only the
@@ -167,6 +186,7 @@ class VideoStream {
     private sink: VideoSampleSink, private packets: EncodedPacketSink, private width: number, private height: number,
     /** Asks the pool to close the other streams nobody is drawing: a phone has few hardware decoders. */
     private starved?: () => void,
+    private hdr?: Hdr,
   ) { this.closing.catch(() => undefined); }
 
   /** A decoder's answer, or an error if it stays silent; `drop` closes what arrives after nobody is waiting. */
@@ -247,7 +267,7 @@ class VideoStream {
   }
 
   private canvasPicture(f: StreamFrame): Picture {
-    return { image: f.canvas, width: f.canvas.width, height: f.canvas.height, timestamp: f.timestamp, exact: f.exact };
+    return { image: f.canvas, width: f.canvas.width, height: f.canvas.height, timestamp: f.timestamp, exact: f.exact, hdr: this.hdr };
   }
 
   private show(s: VideoSample, exact: boolean, frameMax: number): Picture {
@@ -260,7 +280,7 @@ class VideoStream {
         this.out = { sample: s, frame: s.toVideoFrame() };
       }
       this.shown = null; // a scrub that finds no keyframe must not bring back an older canvas
-      return { image: this.out.frame, width: this.width, height: this.height, turn: { rotation: s.rotation, flip: s.flip }, timestamp: s.timestamp, exact };
+      return { image: this.out.frame, width: this.width, height: this.height, turn: { rotation: s.rotation, flip: s.flip }, timestamp: s.timestamp, exact, hdr: this.hdr };
     }
     if (this.shown?.timestamp !== s.timestamp || this.shown.exact !== exact) {
       this.canvases ??= [0, 1].map(() => Object.assign(document.createElement('canvas'), { width: this.width, height: this.height }));
@@ -313,7 +333,7 @@ class VideoStream {
   }
 }
 
-interface Handle { input: Input; video: InputVideoTrack | null; audio: InputAudioTrack | null }
+interface Handle { input: Input; video: InputVideoTrack | null; hdr?: Hdr; audio: InputAudioTrack | null }
 /** A photo the pool holds; `bitmap` once it is decoded. */
 interface Photo { loading: Promise<ImageBitmap>; bitmap: ImageBitmap | null; used: number }
 /** Decoded photos a pool keeps: dozens at preview size, a handful at 4K. */
@@ -336,7 +356,8 @@ export class MediaPool {
         const blob = await getBlob(assetId);
         if (!blob) throw new MediaError('Media file is missing from this device');
         const input = openInput(blob);
-        return { input, video: await input.getPrimaryVideoTrack(), audio: await playableAudioTrack(input) };
+        const video = await input.getPrimaryVideoTrack();
+        return { input, video, hdr: video ? await hdrTransfer(video) : undefined, audio: await playableAudioTrack(input) };
       })();
       h.catch(() => this.handles.delete(assetId));
       this.handles.set(assetId, h);
@@ -411,7 +432,7 @@ export class MediaPool {
         if (!h.video) return null;
         const [width, height] = fitSize(await h.video.getDisplayWidth(), await h.video.getDisplayHeight(), this.maxDim);
         if (this.disposed) return null;
-        const s = new VideoStream(assetId, new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height, () => this.sweep(new Set([clipId]), 300));
+        const s = new VideoStream(assetId, new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height, () => this.sweep(new Set([clipId]), 300), h.hdr);
         s.lastUsed = performance.now();
         this.streams.get(clipId)?.close();
         this.streams.set(clipId, s);

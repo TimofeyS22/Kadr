@@ -5090,3 +5090,30 @@ test('Hugging Face blocked: English captions come whole from Kadr\'s own site (a
   expect(await toastErrors(page)).toEqual([]);
   expect(asked, 'WebKit does not show a worker\'s requests to routes: this list proves it in Chromium').toEqual([]);
 });
+
+for (const transfer of ['hlg', 'pq'] as const) {
+  test(`HDR video (${transfer.toUpperCase()}) comes out as the colours it stands for, not dim`, async ({ page, browserName }, info) => {
+    test.setTimeout(180_000);
+    const file = browserName === 'webkit' ? `hdr_${transfer}.mp4` : `hdr_${transfer}_vp9.mp4`;
+    test.skip(!fs.existsSync(fx(file)), 'needs npm run fixtures');
+    await page.goto('./');
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.locator('.aspect-card', { hasText: '16:9' }).click();
+    await importFiles(page, 'Media', [file]);
+    await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
+    await page.getByRole('button', { name: 'Close tools' }).click();
+    const out = await exportAs(page, info, 'Video', 'Export video');
+    const [w, h] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', out]).toString().trim().split(',').map(Number);
+    const rgb = execFileSync('ffmpeg', ['-v', 'error', '-ss', '1', '-i', out, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 64 * 1024 * 1024 });
+    const expected: [string, number[]][] = [['white', [255, 255, 255]], ['red', [204, 51, 51]], ['skin', [194, 145, 115]], ['grey', [128, 128, 128]]];
+    const seen = expected.map(([name, e], i) => {
+      const at = 3 * (Math.floor(h / 2) * w + Math.floor((0.125 + 0.25 * i) * w));
+      const got = [rgb[at], rgb[at + 1], rgb[at + 2]];
+      return { name, got, off: Math.round(Math.hypot(got[0] - e[0], got[1] - e[1], got[2] - e[2])) };
+    });
+    console.log(`HDR ${transfer} (${info.project.name}): ${seen.map((s) => `${s.name} ${s.got} (${s.off})`).join(', ')}`);
+    // WebKit's decoder leaves saturated reds up to 16 away (was 61); Chromium's are within 8.
+    const allowed = browserName === 'webkit' ? 20 : 15;
+    expect(seen.filter((s) => s.off > allowed).map((s) => `${s.name}: ${s.got}, ${s.off} away`)).toEqual([]);
+  });
+}

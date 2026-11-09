@@ -136,6 +136,17 @@ if [ ! -f speech_pl.mp4 ] && say -v Zosia "" 2>/dev/null; then
   say -v Zosia -o speech_pl.aiff "Dzień dobry wszystkim. Dzisiaj opowiem wam o moim ulubionym mieście i o tym, dlaczego warto je odwiedzić wiosną. Jest tam piękny stary rynek i bardzo dobre jedzenie."
   ff -f lavfi -i "color=c=0x334455:s=640x360:r=30" -i speech_pl.aiff -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac speech_pl.mp4 && rm speech_pl.aiff
 fi
+# HDR with known colours (docs/14, F-02): each patch must come out as the SDR colour it stands for.
+if [ ! -f hdr_hlg.mp4 ]; then
+  for t in hlg pq; do
+    case $t in hlg) trc=arib-std-b67;; pq) trc=smpte2084;; esac
+    python3 ../scripts/make-hdr-frame.py $t > hdr.yuv
+    set_tags="setparams=color_primaries=bt2020:color_trc=$trc:colorspace=bt2020nc:range=tv"
+    ff -f rawvideo -pix_fmt yuv420p10le -s 640x360 -r 30 -stream_loop 89 -i hdr.yuv -vf "$set_tags" -c:v libx265 -x265-params "log-level=error:colorprim=bt2020:transfer=$trc:colormatrix=bt2020nc" -tag:v hvc1 -pix_fmt yuv420p10le -b:v 2M -t 3 hdr_$t.mp4
+    ff -f rawvideo -pix_fmt yuv420p10le -s 640x360 -r 30 -stream_loop 89 -i hdr.yuv -vf "$set_tags" -c:v libvpx-vp9 -profile:v 2 -pix_fmt yuv420p10le -b:v 2M -t 3 -tag:v vp09 hdr_${t}_vp9.mp4
+    rm hdr.yuv
+  done
+fi
 echo "fixtures ready: $(ls | wc -l | tr -d ' ') files"
 
 # Performance benchmark (docs/04): S1 = four 60 s 1080p clips; S2 (PERF_S2=1) = one 15 min 720p clip.
