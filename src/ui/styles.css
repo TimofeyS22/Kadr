@@ -451,6 +451,8 @@ h1, h2, h3 { margin: 0; }
 .pick-strip { position: relative; display: flex; gap: 14px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin: 0 -16px; padding: 2px 16px 6px; scroll-padding-inline: 16px; }
 .pick-group { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, 78px); grid-auto-columns: 104px; gap: 8px; flex: none; }
 .pick-group.rows-1 { grid-template-rows: 78px; }
+.steps { margin: 10px 0 4px; font-size: 16px; line-height: 1.4; font-weight: 700; }
+.hint.lead { margin-top: 0; color: var(--text); }
 .look-actions { position: sticky; top: -4px; z-index: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 -16px 6px; padding: 4px 16px 8px; background: var(--panel); }
 .look-actions .btn { margin-top: 0; height: 52px; padding: 0 10px; font-size: 14px; line-height: 1.2; }
 /* The buttons above are 64 px with their padding, minus the 4 they start above the edge: nothing slides under them. */

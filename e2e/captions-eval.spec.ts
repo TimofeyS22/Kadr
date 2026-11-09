@@ -44,7 +44,7 @@ for (const model of models) for (const sample of samples) {
     if (pageModel !== model) {
       await page?.context().close();
       page = await (await browser.newContext({ baseURL: test.info().project.use.baseURL })).newPage();
-      await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.locale', 'en'); });
+      await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.locale', 'en'); });
       pageModel = model;
     }
     await page.goto('./');

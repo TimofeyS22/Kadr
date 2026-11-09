@@ -10,7 +10,7 @@ test('smoke: Home shows this version, the sample opens, a split undoes, the vide
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.addInitScript(() => {
-    localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false }));
     Object.defineProperty(navigator, 'canShare', { value: undefined });

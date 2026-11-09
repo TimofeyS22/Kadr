@@ -11,7 +11,7 @@ test.use({ serviceWorkers: 'block' }); // the speech worker is rewritten below
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
   });

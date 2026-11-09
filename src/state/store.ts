@@ -7,7 +7,7 @@ import { reloadPending, updatingMessage } from '../lib/update';
 
 export type SheetId =
   | 'speed' | 'volume' | 'adjust' | 'filters' | 'transform' | 'text' | 'transition' | 'canvas' | 'export'
-  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera' | 'music' | 'reel' | 'chroma' | 'voice' | 'layers';
+  | 'crop' | 'captions' | 'captionEdit' | 'voiceover' | 'stickers' | 'pauses' | 'mask' | 'sfx' | 'beats' | 'effects' | 'privacy' | 'camera' | 'music' | 'reel' | 'chroma' | 'voice' | 'layers' | 'iosFormat';
 
 /** `detail`: what an error toast offers under "Details" (lib/errorLog.ts); `kept`: opened, so it stays until closed. */
 export interface Toast { id: number; text: string; kind: 'info' | 'error'; detail?: ErrorEntry; kept?: boolean }

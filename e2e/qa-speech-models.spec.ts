@@ -46,7 +46,7 @@ async function memoryLimit(context: BrowserContext, limitMb: number) {
 }
 
 async function russianCaptions(page: Page) {
-  await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.hint.move', '1'); });
+  await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.hint.move', '1'); });
   await page.goto('./');
   await page.getByRole('button', { name: 'Новый проект' }).click();
   await page.locator('.aspect-card', { hasText: '9:16' }).click();

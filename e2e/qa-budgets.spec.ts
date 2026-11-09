@@ -11,7 +11,7 @@ const BUDGET_MS = { start: 8000, editor: 5000, import: 8000, sheet: 3000, export
 test('start, a new project, an import, a tool sheet and a 6 s export each fit their budget', async ({ page }, info) => {
   test.setTimeout(180_000);
   await page.addInitScript(() => {
-    localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
     localStorage.setItem('kadr.iosVideoTip.v3', '1');

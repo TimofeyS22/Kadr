@@ -41,7 +41,7 @@ test('names and text stay on the device: no request carries them, and the check 
   page.context().on('request', (r) => { if (!/^(blob|data):/.test(r.url())) pending.push(record(r)); });
   page.on('dialog', (d) => void (d.type() === 'prompt' ? d.accept(PROJECT_MARK) : d.accept()));
   await page.addInitScript(() => {
-    localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
     localStorage.setItem('kadr.iosVideoTip.v3', '1');

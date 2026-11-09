@@ -28,7 +28,7 @@ async function srtWords(page: Page): Promise<string[]> {
 test('reel eval: speech kept, silence removed, time', async ({ page }, info) => {
   test.setTimeout(900_000);
   await page.addInitScript(() => {
-    localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.reel', JSON.stringify({ music: null })); // music would hide the silence; language: Auto
     localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false })); // the eval picks its export settings

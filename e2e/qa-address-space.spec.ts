@@ -17,7 +17,7 @@ test.use({ serviceWorkers: 'block' });
 /** Records every ArrayBuffer that reserves 256 MiB or more on the main thread, with where it came from. */
 async function watchReservations(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
     localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false }));

@@ -201,6 +201,8 @@ export interface Asset {
   width: number; // 0 for audio
   height: number;
   hasAudio: boolean;
+  /** The video codec as the file has it (avc, hevc, vp9…), since v1.8: tells an iPhone original from a re-encoded copy. */
+  codec?: string;
   /** Cache of processed versions of this asset's sound, e.g. { denoise: assetId }. */
   derived?: { denoise?: string; enhance?: string; pitch?: Record<string, string>; voice?: Record<string, string>; sync?: number };
   /** Beat grid of the asset's sound, in source seconds. */

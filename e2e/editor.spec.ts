@@ -32,7 +32,7 @@ test.beforeEach(async ({ page }) => {
   });
   page.context().on('response', (r) => { if (r.status() >= 400) consoleErrors.push(`HTTP ${r.status()} ${r.url().slice(0, 200)}`); });
   await page.addInitScript(() => {
-    localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
     // Export tests pick their settings; quick export (on by default, v1.3) has its own test.

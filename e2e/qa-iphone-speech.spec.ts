@@ -84,7 +84,7 @@ test('?diag where even 1 GB is refused: the heap steps down and says what was re
 test('iPhone-like memory, Russian interface, one tap: Russian captions (the compact model on an iPhone)', async ({ page, context }) => {
   test.setTimeout(500_000);
   await likeIphone(context, [1024]);
-  await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.hint.move', '1'); });
+  await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.hint.move', '1'); });
   const errors: string[] = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto('./');
@@ -104,7 +104,7 @@ test('iPhone-like memory, Russian interface, one tap: Russian captions (the comp
 test('a speech engine that ran out of memory says so plainly, and the next tap starts afresh and works', async ({ page, context }) => {
   test.setTimeout(500_000);
   await likeIphone(context, [100, 0]); // the first worker can reserve nothing; the next one is a healthy device
-  await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.hint.move', '1'); });
+  await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.hint.move', '1'); });
   const toasts: string[] = [];
   await page.exposeFunction('__toast', (s: string) => { if (!toasts.includes(s)) toasts.push(s); });
   await page.addInitScript(() => new MutationObserver(() => document.querySelectorAll('.toast.error').forEach((el) => {

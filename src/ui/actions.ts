@@ -25,15 +25,24 @@ import { importNoteText, t } from '../lib/i18n';
 
 export type AddTarget = 'main' | 'overlay' | 'audio';
 
-export async function addMedia(target: AddTarget): Promise<void> {
+/** `afterCard`: the person has just read the format card and tapped its button. */
+export async function addMedia(target: AddTarget, afterCard = false): Promise<void> {
+  if (IOS && target !== 'audio' && !afterCard && !seen(IOS_CARD_KEY)) {
+    cardTarget = target;
+    editor().openSheet('iosFormat');
+    return;
+  }
+  const opened = performance.now();
   const files = await pickFiles(target === 'audio' ? 'audio/*,video/*' : 'video/*,image/*');
-  await addFiles(files, target);
+  const waited = performance.now() - opened;
+  await addFiles(files, target, {}, waited);
 }
 
 /** Imports files and places them at the playhead (also used for drag and drop). */
 /** `meta.script`: the teleprompter text the files were recorded with (kept on their assets for captions). */
 /** Adds the files to the project; how many went in. */
-export async function addFiles(files: File[], target: AddTarget, meta: { script?: string } = {}): Promise<number> {
+/** `pickMs`: how long the system picker was open, when the files came from it. */
+export async function addFiles(files: File[], target: AddTarget, meta: { script?: string } = {}, pickMs = 0): Promise<number> {
   if (!files.length) return 0;
   const s = editor();
   const owner = s.project?.id;
@@ -75,26 +84,41 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   if (first) editor().select(first);
   if (assets.some((a) => a.mime === 'image/gif')) editor().toast(t('A GIF comes in as a still picture: its first frame.'), 'info', 6000); // audit V-227
   track('media_imported', { count: assets.length, target });
-  if (assets.some((a) => a.kind === 'video')) iosVideoTip();
+  slowPickTip(assets, pickMs);
   return assets.length;
 }
 
 export { IOS };
-const IOS_TIP_KEY = 'kadr.iosVideoTip.v3';
+const IOS_CARD_KEY = 'kadr.iosFormatCard.v1';
+const SLOW_PICK_KEY = 'kadr.iosSlowPick';
+/** The picker open this long with an H.264 video coming out of it: the iPhone was re-encoding, not the person browsing. */
+const SLOW_PICK_MS = 15_000;
+const SLOW_PICK_TIMES = 3;
+let cardTarget: AddTarget = 'main';
+
+function seen(key: string): boolean {
+  try { return !!localStorage.getItem(key); } catch { return true; } // no storage: no card either, it would come every time
+}
+
+/** The button of the format card: the picker opens inside this tap. */
+export function pickAfterFormatCard(): Promise<void> {
+  try { localStorage.setItem(IOS_CARD_KEY, '1'); } catch { /* shown again next time */ }
+  editor().openSheet(null);
+  return addMedia(cardTarget, true);
+}
 
 /**
- * iOS re-encodes HEVC videos picked from Photos to H.264 unless the picker's format is "Current" (⋯ → Options):
- * measured on iOS 26.1, a 20 s 4K clip took 30–90 s re-encoded vs 3 s as the original, and the choice is remembered
- * (reports/Долгая загрузка видео на iPhone.md). Files picked through the Files app also arrive untouched. Said once per
- * device; the key's version moved when the advice was corrected (v2 said "Files only").
+ * An iPhone records HEVC unless told otherwise, so an H.264 video after a long wait in the picker is almost certainly
+ * the picker's re-encoded copy. Said with the seconds it took, a few times at most; an HEVC original never triggers it.
  */
-function iosVideoTip(): void {
-  if (!IOS) return;
+function slowPickTip(assets: Asset[], pickMs: number): void {
+  if (!IOS || pickMs < SLOW_PICK_MS || !assets.some((a) => a.kind === 'video' && a.codec === 'avc')) return;
   try {
-    if (localStorage.getItem(IOS_TIP_KEY)) return;
-    localStorage.setItem(IOS_TIP_KEY, '1');
+    const shown = Number(localStorage.getItem(SLOW_PICK_KEY) ?? 0);
+    if (shown >= SLOW_PICK_TIMES) return;
+    localStorage.setItem(SLOW_PICK_KEY, String(shown + 1));
   } catch { return; }
-  editor().toast(t('Tip: iPhone re-encodes videos from Photos unless you ask for the original — slow, and the quality drops. In the photo picker tap ⋯ → Options → Format: Current once (iPhone remembers it), or add the video from Files.'), 'info', 14000);
+  editor().toast(t('The Photos window was open for {n} s and the video arrived as H.264: the iPhone has probably re-encoded it. For videos in seconds and at full quality, tap ⋯ → Options → Format: Current in that window.', { n: Math.round(pickMs / 1000) }), 'info', 20_000);
 }
 
 function clipFor(a: Asset, target: AddTarget): Clip | null {

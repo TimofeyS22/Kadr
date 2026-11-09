@@ -8,7 +8,7 @@ const tool = (page: Page, name: string) => page.getByRole('button', { name, exac
 test('offline first use of the AI tools: each one says what to do within 25 s, none waits forever', async ({ page, context, browserName }) => {
   test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
   test.setTimeout(400_000);
-  await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.locale', 'en'); localStorage.setItem('kadr.hint.move', '1'); });
+  await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.locale', 'en'); localStorage.setItem('kadr.hint.move', '1'); });
   await page.goto('./');
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
   await page.reload();

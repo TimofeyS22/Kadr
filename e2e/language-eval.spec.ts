@@ -39,7 +39,7 @@ for (const s of SAMPLES) {
     test.setTimeout(600_000);
     if (!page) {
       page = await (await browser.newContext({ baseURL: test.info().project.use.baseURL })).newPage();
-      await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.locale', 'en'); });
+      await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.locale', 'en'); });
     }
     await page.goto('./');
     await page.getByRole('button', { name: 'New project' }).click();

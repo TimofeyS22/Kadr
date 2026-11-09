@@ -6,7 +6,7 @@ const toast = (page: Page) => page.locator('.toast.error');
 
 async function musicSheet(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'ru');
     localStorage.setItem('kadr.hint.move', '1');
   });

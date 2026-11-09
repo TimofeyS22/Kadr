@@ -95,7 +95,7 @@ let failed = false;
 try {
   await step('cold start to the home screen', async () => {
     await call('POST', `${S}/url`, { url: URL_ });
-    await js("localStorage.setItem('kadr.tips','99');localStorage.setItem('kadr.locale','en');localStorage.setItem('kadr.hint.move','1');localStorage.setItem('kadr.iosVideoTip.v3','1');localStorage.setItem('kadr.exportPrefs',JSON.stringify({quick:false}));");
+    await js("localStorage.setItem('kadr.tips','99');localStorage.setItem('kadr.iosFormatCard.v1','1');localStorage.setItem('kadr.locale','en');localStorage.setItem('kadr.hint.move','1');localStorage.setItem('kadr.iosVideoTip.v3','1');localStorage.setItem('kadr.exportPrefs',JSON.stringify({quick:false}));");
     await call('POST', `${S}/url`, { url: URL_ });
     await button('Try a sample', 60_000);
     await js(WATCH);

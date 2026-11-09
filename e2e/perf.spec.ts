@@ -19,7 +19,7 @@ const LENGTH = S2 ? 900 : 240;
 test(S2 ? 'S2: one 15-minute clip' : 'S1: four 1-minute 1080p clips', async ({ page }, info) => {
   test.setTimeout(600_000);
   const report: Record<string, unknown> = {};
-  await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.locale', 'en'); });
+  await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.locale', 'en'); });
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Performance.enable');
   const heapMb = async () => {
@@ -139,7 +139,7 @@ test(S2 ? 'S2: one 15-minute clip' : 'S1: four 1-minute 1080p clips', async ({ p
 // S3: background removal on a walking person (docs/05 M4): playback rate and frame cost with segmentation on.
 test('S3: cutout playback', async ({ page }, info) => {
   test.setTimeout(300_000);
-  await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.locale', 'en'); });
+  await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.locale', 'en'); });
   const cdp = await page.context().newCDPSession(page);
   await page.goto('./');
   await page.getByRole('button', { name: 'New project' }).click();

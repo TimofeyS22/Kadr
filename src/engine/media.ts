@@ -18,7 +18,7 @@ export class MediaError extends Error {
 }
 
 export interface Probe {
-  kind: AssetKind; duration: number; width: number; height: number; hasAudio: boolean;
+  kind: AssetKind; duration: number; width: number; height: number; hasAudio: boolean; codec?: string;
   /** A video whose sound is there but does not decode in this browser: why (it is added without sound). */
   soundError?: string;
   /** A file cut short: the length its index promises (`duration` is what is really there). */
@@ -73,6 +73,7 @@ export async function probe(file: Blob): Promise<Probe> {
       width: video ? await video.getDisplayWidth() : 0,
       height: video ? await video.getDisplayHeight() : 0,
       hasAudio,
+      ...(video ? { codec: (await video.getCodec()) ?? undefined } : {}),
       ...(video && !hasAudio && why ? { soundError: why } : {}),
       ...(promised - duration > CUT_SHORT_S ? { promised } : {}),
     };

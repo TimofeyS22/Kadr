@@ -37,7 +37,7 @@ test.use({ serviceWorkers: 'block' });
 if (process.env.M_GPU) test.use({ launchOptions: { args: ['--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] } });
 
 const init = () => {
-    localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
     localStorage.setItem('kadr.iosVideoTip.v3', '1');

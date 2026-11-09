@@ -12,7 +12,7 @@ const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 const FILE = 'landscape.mp4';
 
 const setup = () => {
-  localStorage.setItem('kadr.tips', '99');
+  localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
   localStorage.setItem('kadr.locale', 'en');
   localStorage.setItem('kadr.hint.move', '1');
   localStorage.setItem('kadr.iosVideoTip.v3', '1');

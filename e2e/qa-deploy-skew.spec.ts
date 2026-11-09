@@ -85,7 +85,7 @@ function deploy(site: string, build: string) {
 
 /** Russian interface, no tips; every toast the page shows is recorded as 'error: …' or 'info: …'. */
 async function watchToasts(page: Page, toasts: string[]) {
-  await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.hint.move', '1'); });
+  await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.hint.move', '1'); });
   await page.exposeFunction('__toast', (s: string) => { if (!toasts.includes(s)) toasts.push(s); });
   await page.addInitScript(() => new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => {
     void (window as unknown as { __toast(s: string): Promise<void> }).__toast(`${el.classList.contains('error') ? 'error' : 'info'}: ${el.textContent}`);

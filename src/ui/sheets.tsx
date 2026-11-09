@@ -6,6 +6,7 @@ import { TEXT_CATEGORIES, TEXT_PRESETS } from '../core/presets';
 import { ASPECTS, defaultAdjust, defaultTransform } from '../core/defaults';
 import { FILTERS, FILTER_CATEGORIES, adjustRange } from '../core/filters';
 import { LookActions } from './LookControls';
+import { IosFormatBody } from './IosFormatSheet';
 import { useLookTiles, type LookClip } from './lookTiles';
 import { CURVE_PRESETS } from '../core/speed';
 import { applyTransitionToAll, expectedAudioKey, findClip, keepsPitch, setCurve, setSpeed, setTransition, isSound } from '../core/timeline';
@@ -43,11 +44,11 @@ const TITLES: Record<SheetId, string> = {
   speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform & keyframes',
   text: 'Text', transition: 'Transition', canvas: 'Canvas', export: 'Export',
   crop: 'Crop', captions: 'Auto captions', captionEdit: 'Captions', voiceover: 'Voice-over', stickers: 'Stickers',
-  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap', chroma: 'Chroma key', voice: 'Voice', layers: 'Layers',
+  pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap', chroma: 'Chroma key', voice: 'Voice', layers: 'Layers', iosFormat: 'Videos in seconds',
 };
 
 /** The sheets that are about the project, not about a selected clip. */
-const NO_CLIP = new Set<SheetId>(['export', 'camera', 'music', 'reel', 'canvas', 'transition', 'captions', 'voiceover', 'stickers', 'sfx']);
+const NO_CLIP = new Set<SheetId>(['export', 'camera', 'music', 'reel', 'canvas', 'transition', 'captions', 'voiceover', 'stickers', 'sfx', 'iosFormat']);
 
 export function Sheets() {
   const sheet = useEditor((s) => s.sheet);
@@ -60,6 +61,7 @@ export function Sheets() {
   if (sheet === 'camera') return <CameraSheet />;
   if (sheet === 'music') return <Sheet title={TITLES.music}><MusicBody /></Sheet>;
   if (sheet === 'reel') return <Sheet title={TITLES.reel}><ReelBody /></Sheet>;
+  if (sheet === 'iosFormat') return <Sheet title={TITLES.iosFormat}><IosFormatBody /></Sheet>;
   if (sheet === 'canvas') return <Sheet title={TITLES.canvas}><CanvasBody /></Sheet>;
   if (sheet === 'transition') return <Sheet title={TITLES.transition}><TransitionBody /></Sheet>;
   if (sheet === 'captions') return <Sheet title={TITLES.captions}><CaptionsBody /></Sheet>;
