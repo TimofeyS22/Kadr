@@ -697,7 +697,6 @@ export const RU: Record<string, string> = {
   'This device did not say whether it can encode video. Restart the browser and try again.': 'Устройство не ответило, может ли оно кодировать видео. Перезапустите браузер и попробуйте снова.',
   'The recording is empty': 'Запись пустая',
   'The speech model download stopped: the server stopped answering. Tap again: it continues from where it stopped.': 'Скачивание модели речи остановилось: сервер перестал отвечать. Нажмите ещё раз: загрузка продолжится с того же места.',
-  'iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen so your projects stay: Share → Add to Home Screen. For an important project, also save a backup (↓).': 'iPhone стирает данные сайта, если его не открывали 7 дней. Добавьте Kadr на экран «Домой», и проекты сохранятся: «Поделиться» → «На экран „Домой“». Для важного проекта сохраните ещё и бэкап (↓).',
   'Not enough storage on this device for “{name}” ({mb} MB). Delete old projects or free up space, then try again.': 'На устройстве не хватает места для «{name}» ({mb} МБ). Удалите старые проекты или освободите память и попробуйте снова.',
   'Details': 'Подробнее',
   'Error details': 'Подробности ошибки',
@@ -864,4 +863,7 @@ export const RU: Record<string, string> = {
   'Link copied': 'Ссылка скопирована',
   'Link to Kadr': 'Ссылка на Kadr',
   'Press and hold the link to copy it.': 'Нажмите на ссылку и удерживайте, чтобы скопировать её.',
+  'iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.': 'iPhone стирает данные сайта, если его не открывали 7 дней. Добавьте Kadr на экран «Домой» и делайте проекты там: «Поделиться» → «На экран „Домой“».',
+  'Projects made in Safari stay in Safari, and you have {n} here. To move one, save its backup here (↓), then tap “Restore backup” in the Home Screen app.': 'Проекты, сделанные в Safari, остаются в Safari — сейчас их здесь: {n}. Чтобы перенести проект, сохраните здесь его копию (↓), а в приложении с экрана «Домой» нажмите «Восстановить копию».',
+  'Projects made in Safari stay in Safari. To bring one here, open Kadr in Safari, save a backup of the project (↓), then tap “Restore backup” here.': 'Проекты, сделанные в Safari, остаются в Safari. Чтобы перенести проект сюда, откройте Kadr в Safari, сохраните копию проекта (↓) и нажмите здесь «Восстановить копию».',
 };

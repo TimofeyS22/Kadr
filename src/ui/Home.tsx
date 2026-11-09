@@ -82,15 +82,20 @@ export function Home() {
   const { locale, setLocale } = useLocale();
   const supported = browserSupported();
 
-  // Safari's 7-day rule (docs/12 §1.3 item 4): a site not on the Home Screen loses its data after a week away.
-  const [keepTipSeen, setKeepTipSeen] = useState(() => { try { return !!localStorage.getItem(KEEP_TIP_KEY); } catch { return true; } });
+  // Safari's 7-day rule (docs/12 §1.3 item 4): a site not on the Home Screen loses its data after a week away. The app
+  // on the Home Screen has its own storage, so what was made in Safari does not appear there (audit V-164): the advice
+  // comes before the first project, when nothing is left behind, and with projects it says how many stay in Safari and
+  // that a backup moves one. Dismissed with no projects ('0'), it is said once more, in full, when there is one to lose.
+  const [keepTipSeen, setKeepTipSeen] = useState(() => { try { return localStorage.getItem(KEEP_TIP_KEY); } catch { return '1'; } });
   // Not in an app's built-in browser: it has no "Add to Home Screen", and the notice there says to leave it (audit V-203).
   const inAppNotice = useInAppNotice();
-  const keepTip = IOS && !IN_APP && !standalone() && !keepTipSeen && !busy && !!projects?.some((m) => m.duration > 0);
+  const kept = projects?.length ?? 0;
+  const keepTip = IOS && !IN_APP && !standalone() && !busy && projects !== null && (kept ? keepTipSeen !== '1' : keepTipSeen === null);
   const dismissKeepTip = () => {
-    try { localStorage.setItem(KEEP_TIP_KEY, '1'); } catch { /* shown again next time */ }
-    setKeepTipSeen(true);
-    track('keep_tip_dismissed');
+    const seen = kept ? '1' : '0';
+    try { localStorage.setItem(KEEP_TIP_KEY, seen); } catch { /* shown again next time */ }
+    setKeepTipSeen(seen);
+    track('keep_tip_dismissed', { projects: kept });
   };
 
   // Once a page load, when nothing here or in another tab is working: media left behind by what never finished.
@@ -265,7 +270,11 @@ export function Home() {
     <>
       <h2 className="section-title">{t('Your projects')}</h2>
       {projects === null ? <p className="hint">{t('Loading…')}</p> : projects.length === 0 ? (
-        <p className="hint">{t('No projects yet. Start a new one or try the sample.')}</p>
+        <>
+          <p className="hint">{t('No projects yet. Start a new one or try the sample.')}</p>
+          {/* The person who followed the advice and finds this list empty (audit V-164). */}
+          {IOS && standalone() && <p className="hint">{t('Projects made in Safari stay in Safari. To bring one here, open Kadr in Safari, save a backup of the project (↓), then tap “Restore backup” here.')}</p>}
+        </>
       ) : (
         <ul className="project-grid">
           {projects.map((m) => (
@@ -367,7 +376,8 @@ export function Home() {
 
       {keepTip && (
         <div className="banner keep-tip" role="note">
-          <p>{t('iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen so your projects stay: Share → Add to Home Screen. For an important project, also save a backup (↓).')}</p>
+          <p>{t('iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.')}</p>
+          {kept > 0 && <p>{t('Projects made in Safari stay in Safari, and you have {n} here. To move one, save its backup here (↓), then tap “Restore backup” in the Home Screen app.', { n: kept })}</p>}
           <button className="btn" onClick={dismissKeepTip}>{t('Got it')}</button>
         </div>
       )}

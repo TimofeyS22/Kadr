@@ -165,3 +165,66 @@ test('a browser of its own (Safari on iPhone, Chrome on Android): no notice, on 
   await expect(notice(page)).toHaveCount(0);
 });
 
+// The Home Screen advice on an iPhone (audit V-164): the app on the Home Screen has its own storage, so the advice says
+// that the projects made in Safari stay in Safari, how many there are, and the way that moves one: a backup.
+const IPHONE_SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1';
+const SHORT = 'iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.';
+
+test.describe('Safari on an iPhone', () => {
+  test.use({ userAgent: IPHONE_SAFARI, viewport: { width: 375, height: 812 } });
+
+  test('no projects yet: the advice is short, and nothing is said about moving', async ({ page }) => {
+    await home(page);
+    const tip = advice(page);
+    await expect(tip).toBeVisible();
+    await expect(tip.locator('p')).toHaveText([SHORT]);
+    await fitsPhone(page, tip);
+    await expect(notice(page)).toHaveCount(0);
+  });
+
+  test('with projects: they stay in Safari, their number, and the backup that moves one; dismissed, it stays away', async ({ page }) => {
+    await home(page);
+    await projectWithVideo(page);
+    await backHome(page, 1);
+    const tip = advice(page);
+    await expect(tip.locator('p')).toHaveText([SHORT, 'Projects made in Safari stay in Safari, and you have 1 here. To move one, save its backup here (↓), then tap “Restore backup” in the Home Screen app.']);
+    // The two controls the advice names are on this screen.
+    await expect(page.getByRole('button', { name: 'Restore backup' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Save a backup of / })).toHaveCount(1);
+    await fitsPhone(page, tip);
+
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.locator('.aspect-card', { hasText: '9:16' }).click();
+    await expect(page.locator('.preview-canvas')).toBeVisible();
+    await backHome(page, 2);
+    await expect(tip).toContainText('you have 2 here');
+
+    await tip.getByRole('button', { name: 'Got it' }).click();
+    await expect(tip).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator('.project-card')).toHaveCount(2);
+    await expect(tip).toHaveCount(0);
+  });
+
+  test('the short advice, dismissed before there was anything to lose, is said in full once there is a project', async ({ page }) => {
+    await home(page);
+    const tip = advice(page);
+    await tip.getByRole('button', { name: 'Got it' }).click();
+    await expect(tip).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
+    await expect(page.getByText('No projects yet')).toBeVisible();
+    await expect(tip).toHaveCount(0);
+    await projectWithVideo(page);
+    await backHome(page, 1);
+    await expect(tip).toContainText('you have 1 here');
+  });
+
+  test('opened from the Home Screen with an empty list: Kadr says where the Safari projects are and how to bring one', async ({ page }) => {
+    await page.addInitScript(() => { Object.defineProperty(navigator, 'standalone', { value: true }); });
+    await home(page);
+    await expect(page.getByText('Projects made in Safari stay in Safari. To bring one here, open Kadr in Safari, save a backup of the project (↓), then tap “Restore backup” here.')).toBeVisible();
+    await expect(advice(page), 'already on the Home Screen: no advice to add it').toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 'no sideways scroll').toBeLessThanOrEqual(0);
+  });
+});

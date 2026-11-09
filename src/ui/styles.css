@@ -58,8 +58,8 @@ h1, h2, h3 { margin: 0; }
 .diag-report { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin: 12px 0 16px; }
 .banner { padding: 12px 14px; border-radius: var(--radius); background: var(--panel-2); margin: 16px 0; font-size: 14px; }
 .banner.error { background: #3a1c1c; color: #ffc9c9; }
-.banner.keep-tip { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
-.banner.keep-tip p { margin: 0; }
+.banner.keep-tip { display: grid; gap: 10px; justify-items: start; } /* two paragraphs with projects: the button goes under them */
+.banner.keep-tip p { margin: 0; line-height: 1.45; }
 /* An app's built-in browser (audit V-203): the one notice on Home that says the work cannot be saved, so it is outlined. */
 .banner.in-app { display: grid; gap: 10px; border: 1px solid var(--accent); }
 .banner.in-app p { margin: 0; line-height: 1.45; }
