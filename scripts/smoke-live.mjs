@@ -6,7 +6,19 @@
 const [site, version] = process.argv.slice(2);
 if (!site) throw new Error('usage: node scripts/smoke-live.mjs <live site URL> [expected version]');
 const base = site.endsWith('/') ? site : `${site}/`;
-const get = (p) => fetch(base + p, { cache: 'no-store' });
+// Pages answers 503 or drops a connection now and then (one file of 622 on the v1.6.7 deploy): only what keeps failing counts.
+async function patient(url, init) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.status < 500 || attempt === 4) return res;
+    } catch (e) {
+      if (attempt === 4) throw e;
+    }
+    await new Promise((r) => setTimeout(r, attempt * 2000));
+  }
+}
+const get = (p) => patient(base + p, { cache: 'no-store' });
 
 let manifest;
 for (let i = 0; ; i++) {
@@ -23,7 +35,7 @@ const files = [...new Set(manifest.generations.flatMap((g) => g.files.map((f) =>
 const bad = [];
 for (let i = 0; i < files.length; i += 16) {
   await Promise.all(files.slice(i, i + 16).map(async (f) => {
-    const res = await fetch(`${base}assets/${f}`, { method: 'HEAD', cache: 'no-store' });
+    const res = await patient(`${base}assets/${f}`, { method: 'HEAD', cache: 'no-store' });
     if (!res.ok) bad.push(`${f} ${res.status}`);
   }));
 }
@@ -39,7 +51,7 @@ for (let i = 0; i < expected.length; i += 16) {
   await Promise.all(expected.slice(i, i + 16).map(async ([p, size]) => {
     // Uncompressed: Pages gzips application/octet-stream for a client that accepts it (Node's fetch does), and the
     // length is then the gzip's (FACT, 2026-10-29: 4546883 for a 6381951-byte part). Browsers unpack it themselves.
-    const res = await fetch(base + p, { method: 'HEAD', cache: 'no-store', headers: { 'accept-encoding': 'identity' } });
+    const res = await patient(base + p, { method: 'HEAD', cache: 'no-store', headers: { 'accept-encoding': 'identity' } });
     const length = Number(res.headers.get('content-length'));
     if (!res.ok || (size && length !== size)) bad.push(`${p} ${res.status} ${length || ''}`);
   }));
