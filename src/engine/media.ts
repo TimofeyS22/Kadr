@@ -4,6 +4,7 @@ import {
   type InputAudioTrack, type InputTrack, type InputVideoTrack, type VideoSample,
 } from 'mediabunny';
 import { READABLE } from './formats';
+import { hdrTransfer, type Hdr } from './hdr';
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
 import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
@@ -80,24 +81,6 @@ export async function probe(file: Blob): Promise<Probe> {
   }
 }
 
-/**
- * HDR video (an iPhone records HLG by default) came out dim and off in colour, each browser in its own way: Chromium squeezes
- * it towards SDR itself, WebKit passes the signal through. The decoder is told the signal is plain video, so every browser
- * hands over the same values, and the compositor turns them into SDR in one place (`Compositor.fromFrame`).
- */
-async function hdrTransfer(track: InputVideoTrack): Promise<Hdr | undefined> {
-  const space = await track.getColorSpace();
-  const transfer: string | null | undefined = space.transfer; // TypeScript's list stops short of the HDR ones
-  const hdr = transfer === 'hlg' ? 'hlg' : transfer === 'pq' ? 'pq' : undefined;
-  if (!hdr) return undefined;
-  const config = track.getDecoderConfig.bind(track);
-  track.getDecoderConfig = async () => {
-    const c = await config();
-    return c && { ...c, colorSpace: { primaries: 'bt709', transfer: 'bt709', matrix: space.matrix ?? 'bt2020-ncl', fullRange: space.fullRange ?? false } as VideoColorSpaceInit };
-  };
-  return hdr;
-}
-
 /** Less than this missing at the end is not worth a word: the last frames of an ordinary file can lie past its data. */
 const CUT_SHORT_S = 0.5;
 
@@ -155,7 +138,6 @@ export interface Turn { rotation: 0 | 90 | 180 | 270; flip: boolean }
  * made an iPhone export 3× slower (2026-10-30). A keyframe while scrubbing, and a frame too big for a texture, still come
  * as an upright canvas. The decoder frame stays open until the stream reads on: draw it before the clip's next read.
  */
-export type Hdr = 'hlg' | 'pq';
 export interface Picture { image: HTMLCanvasElement | VideoFrame; width: number; height: number; turn?: Turn; timestamp: number; exact: boolean; hdr?: Hdr }
 
 /**

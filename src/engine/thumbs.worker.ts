@@ -2,6 +2,7 @@
 // time: one frame instead of up to a whole GOP per seek, so a 1-minute clip costs ~40 decodes, not ~1200.
 import { BlobSource, EncodedPacketSink, Input, VideoSampleSink } from 'mediabunny';
 import { READABLE } from './formats';
+import { hdrTransfer, pixelsToSdr } from './hdr';
 
 export interface ThumbJob { id: number; blob: Blob; duration: number; height: number; count: number }
 export type ThumbReply = { id: number; t: number; bmp: ImageBitmap } | { id: number; done: true; error?: string };
@@ -11,6 +12,7 @@ export async function renderThumbs(job: ThumbJob, emit: (t: number, bmp: ImageBi
   try {
     const track = await input.getPrimaryVideoTrack();
     if (!track) return;
+    const hdr = await hdrTransfer(track);
     const aspect = (await track.getDisplayWidth()) / (await track.getDisplayHeight());
     canvas.width = Math.max(2, Math.round(job.height * aspect));
     canvas.height = job.height;
@@ -28,6 +30,11 @@ export async function renderThumbs(job: ThumbJob, emit: (t: number, bmp: ImageBi
       if (!sample) continue;
       sample.drawWithFit(ctx, { fit: 'cover' });
       sample.close();
+      if (hdr) {
+        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        pixelsToSdr(image.data, hdr);
+        ctx.putImageData(image, 0, 0);
+      }
       emit(kt, await createImageBitmap(canvas));
     }
   } finally {

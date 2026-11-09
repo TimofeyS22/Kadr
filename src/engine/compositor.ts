@@ -5,7 +5,8 @@ import { fxLod, fxScale } from '../core/fxScale';
 import { fromBase64 } from '../core/lut';
 import { ADJUST_KEYS, type BlendMode, type LutData } from '../core/types';
 import type { Drawable } from './text';
-import { MediaError, type Hdr, type Turn } from './media';
+import type { Hdr } from './hdr';
+import { MediaError, type Turn } from './media';
 import { WEBKIT } from '../lib/device';
 
 const VS = `#version 300 es

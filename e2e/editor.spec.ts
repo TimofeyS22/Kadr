@@ -4822,9 +4822,12 @@ test('someone coming back sees their projects before the templates (audit V-187)
   await importFiles(page, 'Media', ['landscape.mp4']);
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Back to projects' }).click();
-  const yours = (await page.getByRole('heading', { name: 'Your projects' }).boundingBox())!;
-  const templates = (await page.getByRole('heading', { name: 'Start from a template' }).boundingBox())!;
-  expect(yours.y).toBeLessThan(templates.y);
+  // Read in one step: the home screen draws again when the list arrives, and a heading can be replaced between two reads.
+  await expect.poll(() => page.evaluate(() => {
+    const y = (text: string) => [...document.querySelectorAll('h2')].find((h) => h.textContent === text)?.getBoundingClientRect().y;
+    const yours = y('Your projects'), templates = y('Start from a template');
+    return yours !== undefined && templates !== undefined && yours < templates;
+  })).toBe(true);
 });
 
 test('a reversed clip keeps its sound on its picture (audit V-159)', async ({ page }, info) => {
@@ -5101,6 +5104,8 @@ for (const transfer of ['hlg', 'pq'] as const) {
     await page.locator('.aspect-card', { hasText: '16:9' }).click();
     await importFiles(page, 'Media', [file]);
     await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
+    // The film strip too: the white patch of the first thumbnail.
+    await expect.poll(() => page.locator('.clip-canvas').first().evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(Math.floor((c.height * 16) / 9 / 8), c.height >> 1, 1, 1).data[0]), { timeout: 30_000 }).toBeGreaterThan(235);
     await page.getByRole('button', { name: 'Close tools' }).click();
     const out = await exportAs(page, info, 'Video', 'Export video');
     const [w, h] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', out]).toString().trim().split(',').map(Number);
