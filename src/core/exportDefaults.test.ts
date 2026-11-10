@@ -119,10 +119,14 @@ describe('size', () => {
     expect(exportDefaults(project('9:16', video(720, 1280, 30)), ALL, ALL).resolution).toBe(720);
   });
 
-  it('a 4K video starts at 4K, or at the largest the encoder takes', () => {
+  it('a 4K or 2K video starts at 1080p (owner, 2026-11-11): 4K is a tap away, and a larger size picked before is kept', () => {
     const p = project('16:9', video(3840, 2160, 30));
-    expect(exportDefaults(p, ALL, ALL).resolution).toBe(2160);
-    expect(exportDefaults(p, [720, 1080], []).resolution).toBe(1080);
+    expect(exportDefaults(p, ALL, ALL).resolution).toBe(1080);
+    expect(exportDefaults(project('9:16', video(2160, 3840, 30)), ALL, ALL).resolution).toBe(1080);
+    expect(exportDefaults(project('16:9', video(2560, 1440, 30)), ALL, ALL).resolution).toBe(1080);
+    expect(exportDefaults(p, ALL, ALL, 2160).resolution).toBe(2160);
+    expect(exportDefaults(p, ALL, ALL, 1440).resolution).toBe(1440);
+    expect(exportDefaults(p, [720], []).resolution, 'or the largest the encoder takes').toBe(720);
   });
 
   it('several videos: the largest decides', () => {
@@ -185,6 +189,7 @@ describe('a size picked at an earlier export', () => {
   it('decides the size before the frame rate: 60 only if the encoder takes that size at 60', () => {
     const p = project('16:9', video(3840, 2160, 60));
     expect(exportDefaults(p, ALL, [720, 1080], 1080)).toEqual({ resolution: 1080, fps: 60 });
-    expect(exportDefaults(p, ALL, [720, 1080])).toEqual({ resolution: 2160, fps: 30 });
+    expect(exportDefaults(p, ALL, [720, 1080]), 'nothing picked: 1080p keeps every frame').toEqual({ resolution: 1080, fps: 60 });
+    expect(exportDefaults(p, ALL, [720, 1080], 2160), '4K picked: the sheet says frames are dropped').toEqual({ resolution: 2160, fps: 30 });
   });
 });

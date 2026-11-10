@@ -10,8 +10,12 @@ const FAST_FPS = 50;
 const UNKNOWN_FPS = 30;
 /** The frame rate a new project is given: untouched, it is nobody's choice and the videos decide. */
 const PROJECT_FPS = 30;
-/** The size of a project without video (photos, text): there is nothing to follow, so the old default stays. */
-const PLAIN_SIZE = 1080;
+/**
+ * The largest size an export starts at, unless a larger one was picked at an earlier export (owner, 2026-11-11). On an
+ * iPhone 15 30 s of 4K60 took 48 s and 154 MB, against 22 s and 31 MB at 1080p60, and Reels, TikTok and Shorts show
+ * 1080p anyway. 4K is a tap away in the sheet. A project without video (photos, text) starts here too.
+ */
+const START_MOST = 1080;
 
 export interface ExportSource {
   /** The highest frame rate among the videos, as the timeline plays them; null when none of them has a measured one. */
@@ -53,19 +57,20 @@ const projectFps = (p: Project): number | null => (p.settings.fpsSet === true ||
  * The size and frame rate an export starts with. `sizes` are the short sides this device encodes, smallest first;
  * `sizes60` those of them it encodes at 60 fps (asked, not assumed: see `supportedResolutions`).
  *
- * Size: the largest that does not enlarge the video; when every size would, the smallest.
+ * Size: the largest that does not enlarge the video, up to 1080p (`START_MOST`); when every size would enlarge it, the
+ * smallest.
  *
  * `picked` is a size chosen by hand at an earlier export, and it differs from a choice made in the open sheet. In the
- * sheet any size can be taken, a larger one too, and the sheet says what it costs. Remembered, it is a wish for smaller
- * files: it holds the size down for the next video and never pushes it up, so 1080p picked for one video does not blow
- * up a 720p one exported in one tap, where nobody sees the sheet.
+ * sheet any size can be taken, a larger one too, and the sheet says what it costs. Remembered, it takes the place of
+ * 1080p as the most an export starts at, but never enlarges a video: 1080p picked for one video does not blow up a 720p
+ * one exported in one tap, where nobody sees the sheet, and 4K picked once is where the next 4K video starts.
  *
  * Frame rate: the project's own when somebody set it. Otherwise 60 when a video has 50 or more and the encoder takes
  * the size at 60; else 30. Several videos: the fastest decides, so that none of them loses frames.
  */
 export function exportDefaults<R extends number>(p: Project, sizes: readonly R[], sizes60: readonly R[], picked?: R): { resolution: R | undefined; fps: number } {
   const source = exportSource(p);
-  const most = Math.min(picked ?? (source ? Infinity : PLAIN_SIZE), source?.side ?? Infinity);
+  const most = Math.min(picked ?? START_MOST, source?.side ?? Infinity);
   const resolution = sizes.filter((r) => r <= most).at(-1) ?? sizes[0];
   const fast = isFast(source) && resolution !== undefined && sizes60.includes(resolution);
   return { resolution, fps: projectFps(p) ?? (fast ? 60 : PROJECT_FPS) };

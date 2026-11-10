@@ -82,6 +82,20 @@ const storedFps = (page: Page) => page.evaluate(async () => {
   return p?.tracks.find((t) => t.kind === 'main')!.clips.map((c) => p.assets[c.assetId].fps ?? null) ?? [];
 });
 
+test('a 4K video starts at 1080p, and 4K is one tap away (owner, 2026-11-11)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openWith(page, '16:9', ['phone_4k_h264.mp4']);
+  await openSheet(page);
+  // On an iPhone 15 30 s of 4K60 took 48 s and 154 MB, 1080p60 22 s and 31 MB; social networks show 1080p.
+  await expect(chip(page, '1080p'), 'what the sheet starts with for a 4K video').toBeChecked();
+  await expect(page.getByText(LARGER)).toHaveCount(0);
+  const uhd = chip(page, '4K');
+  test.skip(!(await uhd.count()), 'this engine does not encode 4K: nothing more to see');
+  await uhd.click();
+  await expect(uhd).toBeChecked();
+  await expect(page.getByText(LARGER), '4K is the video\'s own size').toHaveCount(0);
+});
+
 test('a 60 fps video is exported at 60 fps and at its own size when nothing is picked', async ({ page }, info) => {
   test.setTimeout(240_000);
   await openWith(page, '9:16', ['fps60.mp4']);
