@@ -198,6 +198,12 @@ export interface Asset {
   mime: string;
   size: number;
   duration: number; // 0 for images
+  /**
+   * Video: frames a second, measured from the file's own timestamps when it was added (see `probe`); for a variable
+   * frame rate file, the rate most of its frames follow each other at. Absent on files added before it was measured:
+   * unknown, exported as 30 fps like before (audit V-216).
+   */
+  fps?: number;
   width: number; // 0 for audio
   height: number;
   hasAudio: boolean;
@@ -219,6 +225,8 @@ export interface ProjectSettings {
   width: number;
   height: number;
   fps: number;
+  /** The frame rate was picked in the project's settings. Unset, 30 is only what a project is created with, and an export follows its videos (audit V-216). */
+  fpsSet?: boolean;
   background: { mode: 'color' | 'blur'; color: string };
 }
 

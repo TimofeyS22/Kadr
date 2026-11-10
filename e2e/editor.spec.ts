@@ -2003,7 +2003,7 @@ test('Captions in one tap from a selected video caption every clip; a second tap
 test('quick export: one tap on Export renders with the last settings and saves; Settings stops it', async ({ page }, info) => {
   test.setTimeout(180_000);
   await newProject(page);
-  await page.evaluate(() => localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: true, resolution: 720, quality: 'standard', loudness: true })));
+  await page.evaluate(() => localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: true, size: 720, quality: 'standard', loudness: true })));
   await importFiles(page, 'Media', ['landscape.mp4']);
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   // "Settings" while it renders: back to the settings, nothing saved.
@@ -4548,7 +4548,7 @@ test('Undo with a sheet open does not leave the editor folded (audit V-158)', as
 
 test('Cancel before a quick export has started means no export at all (audit V-131)', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: true, resolution: 720, quality: 'standard' }));
+    localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: true, size: 720, quality: 'standard' }));
     const real = VideoEncoder.isConfigSupported.bind(VideoEncoder);
     VideoEncoder.isConfigSupported = async (c) => { await new Promise((r) => setTimeout(r, 1500)); return real(c); };
   });

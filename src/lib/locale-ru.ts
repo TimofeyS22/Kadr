@@ -886,4 +886,8 @@ export const RU: Record<string, string> = {
   'You are on mobile data now.': 'Сейчас вы на мобильном интернете.',
   'Download and make captions': 'Скачать и сделать субтитры',
   'Download and make the reel': 'Скачать и сделать рилс',
+  'Larger than the source: the file grows, the picture does not get sharper.': 'Больше исходника: файл вырастет, а картинка чётче не станет.',
+  'The video is {src} fps: at {fps} every second frame is dropped.': 'В видео {src} кадров/с: при {fps} пропадёт каждый второй кадр.',
+  'The video is {src} fps: at {fps} some of its frames are dropped.': 'В видео {src} кадров/с: при {fps} часть кадров пропадёт.',
+  'This device cannot encode this size at 60 fps.': 'Это устройство не кодирует такой размер при 60 кадрах/с.',
 };

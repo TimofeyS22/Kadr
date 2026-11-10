@@ -23,6 +23,8 @@ export interface Probe {
   soundError?: string;
   /** A file cut short: the length its index promises (`duration` is what is really there). */
   promised?: number;
+  /** Video: frames a second (see `frameRate`); absent when the file does not say. */
+  fps?: number;
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -65,6 +67,7 @@ export async function probe(file: Blob): Promise<Probe> {
     // A check, not a condition for opening: a file it cannot read to the end keeps the length its index gives.
     const duration = await readableEnd((video ?? audio)!, promised).catch((e: unknown) => { console.warn('Could not check where the data of this file ends', e); return promised; });
     if (!(duration > 0)) throw new MediaError('This file is cut short: there is no video or sound in it.');
+    const fps = video ? await frameRate(video) : undefined;
     return {
       kind: video ? 'video' : 'audio',
       duration,
@@ -74,10 +77,27 @@ export async function probe(file: Blob): Promise<Probe> {
       ...(video ? { codec: (await video.getCodec()) ?? undefined } : {}),
       ...(video && !hasAudio && why ? { soundError: why } : {}),
       ...(promised - duration > CUT_SHORT_S ? { promised } : {}),
+      ...(fps ? { fps } : {}),
     };
   } finally {
     input.dispose();
   }
+}
+
+/**
+ * Frames a second of a video, for the export to keep (audit V-216). The header's number is not trusted: the rate comes
+ * from the timestamps of the first 256 packets, read from the index, nothing is decoded. A constant rate is found even
+ * with frames missing. A variable one (screen recordings, a phone in low light) has no single number: it counts as
+ * the rate most of those frames follow each other at, the median. The average would put a recording that is 60 fps
+ * while something moves and nearly still otherwise at 30, and every second frame of the motion would go.
+ * A file that changes its rate after those first seconds is still judged by them.
+ */
+async function frameRate(video: InputVideoTrack): Promise<number | undefined> {
+  // A check, not a condition for opening: a file that does not say is exported at 30 fps, as every file was before.
+  const m = await video.computeFrameRateMetrics().catch((e: unknown) => { console.warn('Could not measure the frame rate of this file', e); return null; });
+  // One frame has no rate (the library then answers with the time base).
+  if (!m || m.probedPacketCount < 2 || !(m.bestGuessFrameRate > 0) || !Number.isFinite(m.bestGuessFrameRate)) return undefined;
+  return Math.round(m.bestGuessFrameRate * 100) / 100;
 }
 
 /** Less than this missing at the end is not worth a word: the last frames of an ordinary file can lie past its data. */

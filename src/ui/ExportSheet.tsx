@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { exportCost, exportDefaults, exportSource, isFast } from '../core/exportDefaults';
 import { projectDuration } from '../core/timeline';
 import type { ExportResult } from '../engine/exporter';
 import { MAX_GIF_S, gifSize, outputSize, supportedResolutions, type Resolution } from '../engine/exportSizes';
@@ -33,7 +34,9 @@ type Phase = { kind: 'setup' } | { kind: 'running'; progress: number; label?: st
  */
 /** The encoder gets this long to say which sizes it can do (docs/12 stage 2); then these are offered. */
 const RESOLUTIONS_MS = 8000;
-const FALLBACK_RESOLUTIONS: Resolution[] = [720, 1080];
+/** What the encoder said: the sizes it takes, and those of them it takes at 60 fps (null: not asked, or no answer). */
+interface Encodable { sizes: Resolution[]; sizes60: Resolution[] | null }
+const NO_ANSWER: Encodable = { sizes: [720, 1080], sizes60: null };
 const QUALITY_MBPS: Record<Resolution, number> = { 720: 5, 1080: 10, 1440: 18, 2160: 35 };
 const LABEL: Record<Resolution, string> = { 720: '720p', 1080: '1080p', 1440: '2K', 2160: '4K' };
 const PRESETS = [
@@ -44,10 +47,20 @@ const PRESETS = [
 
 export function ExportSheet() {
   const project = useEditor((s) => s.project)!;
-  const [supported, setSupported] = useState<Resolution[] | null>(null);
+  const [encodable, setEncodable] = useState<Encodable | null>(null);
+  const supported = encodable?.sizes ?? null;
   const [prefs] = useState(exportPrefs);
-  const [resolution, setResolution] = useState<Resolution>(prefs.resolution);
+  // Both are placeholders until the encoder answers: the start is then worked out from the videos (core/exportDefaults).
+  const [resolution, setResolution] = useState<Resolution>(prefs.size ?? 1080);
   const [fps, setFps] = useState(project.settings.fps);
+  // Picked by hand in this sheet: the encoder's answer does not undo it, and only a size picked by hand is remembered.
+  const picked = useRef({ size: false, fps: false });
+  const pickSize = (r: Resolution) => { picked.current.size = true; setResolution(r); };
+  const pickFps = (f: number) => { picked.current.fps = true; setFps(f); };
+  /** The size the videos get when no size was ever picked. */
+  const own = useRef<Resolution | undefined>(undefined);
+  const source = useMemo(() => exportSource(project), [project]);
+  const cost = exportCost(source, resolution, fps, encodable?.sizes60 ?? null);
   const [quality, setQuality] = useState<'standard' | 'high'>(prefs.quality);
   // Consumed once: the Export button asked for a quick export (see startExport). It opens straight on the progress.
   // Not in an app's built-in browser: the person first reads that the file cannot be saved there (audit V-203).
@@ -74,13 +87,21 @@ export function ExportSheet() {
   useEffect(() => {
     // The encoder is asked about each size; a browser that never answers gets the sizes every phone encodes.
     let alive = true;
-    void within(supportedResolutions(project.settings), RESOLUTIONS_MS, () => FALLBACK_RESOLUTIONS).catch(() => FALLBACK_RESOLUTIONS).then((r) => {
+    // 60 fps is asked about only where a video has it: on some browsers every question is a trial encode.
+    const ask = Promise.all([supportedResolutions(project.settings), isFast(exportSource(project)) ? supportedResolutions(project.settings, 60) : null])
+      .then(([sizes, sizes60]): Encodable => ({ sizes, sizes60 }));
+    void within(ask, RESOLUTIONS_MS, () => NO_ANSWER).catch(() => NO_ANSWER).then((e) => {
       if (!alive) return; // closed before the answer: starting now would be an export nobody can see or stop (audit V-131)
-      setSupported(r);
-      // The saved resolution, or the best this device can encode below it.
-      const fit = r.includes(prefs.resolution) ? prefs.resolution : r.filter((x) => x <= prefs.resolution).at(-1) ?? r.at(-1);
-      if (fit && fit !== prefs.resolution) setResolution(fit);
-      if (auto) { if (fit) void run(fit, true); else setPhase({ kind: 'setup' }); }
+      setEncodable(e);
+      // Without an answer about 60 fps the export stays at 30: a rate the encoder did not agree to is not started on a guess.
+      const start = exportDefaults(project, e.sizes, e.sizes60 ?? [], prefs.size);
+      own.current = exportDefaults(project, e.sizes, e.sizes60 ?? []).resolution;
+      if (start.resolution && !picked.current.size) setResolution(start.resolution);
+      // A preset tapped before the answer keeps its size where the encoder takes it, else the largest below it.
+      else if (picked.current.size) setResolution((r) => (e.sizes.includes(r) ? r : e.sizes.filter((x) => x <= r).at(-1) ?? e.sizes[0] ?? r));
+      if (!picked.current.fps) setFps(start.fps);
+      // Quick export (nobody sees the sheet) starts with the same size and frame rate the sheet would show.
+      if (auto) { if (start.resolution) void run(start.resolution, start.fps, true); else setPhase({ kind: 'setup' }); }
     });
     return () => { alive = false; abort.current?.abort(); };
   }, [project.settings]);
@@ -92,8 +113,11 @@ export function ExportSheet() {
   const [w, h] = outputSize(project.settings, resolution);
   const estMb = (QUALITY_MBPS[resolution] * (quality === 'high' ? 1.5 : 1) * (fps > 30 ? 1.4 : 1) * duration) / 8;
 
-  async function run(res: Resolution = resolution, isQuick = false) {
-    if (format === 'video') savePrefs({ quick, resolution: res, quality, evenLoudness: loudness });
+  async function run(res: Resolution = resolution, rate = fps, isQuick = false) {
+    // The size is remembered only when picked by hand, and forgotten when the pick is the videos' own size: tapping
+    // that is the way back to "as the video". A size worked out here and stored would hold the next, larger video down.
+    const size = !picked.current.size ? exportPrefs().size : res === own.current ? undefined : res;
+    if (format === 'video') savePrefs({ quick, quality, evenLoudness: loudness, ...(size ? { size } : {}) });
     player.pause();
     const ac = new AbortController();
     abort.current = ac;
@@ -102,7 +126,7 @@ export function ExportSheet() {
     // Keep the screen on: a phone going to sleep is the most common way long exports die. Not awaited: a lock that
     // never answers must not hold the export.
     const awake = keepAwake();
-    track('export_started', { format, resolution: res, fps, quality, loudness, quick: isQuick, duration: Math.round(duration) });
+    track('export_started', { format, resolution: res, fps: rate, quality, loudness, quick: isQuick, duration: Math.round(duration) });
     releaseSpeechModel(); // an export needs the memory more than a speech model kept for later
     try {
       let last = 0;
@@ -116,16 +140,16 @@ export function ExportSheet() {
       const result = format === 'photo' ? await exporter.exportFrame(p, player.time, resolution)
         : format === 'gif' ? await exporter.exportGif(p, progress, ac.signal)
         : format === 'audio' ? await exporter.exportAudio(p, loudness, progress, ac.signal)
-        : await exporter.exportProject(p, { resolution: res, fps, quality, loudness }, progress, ac.signal);
+        : await exporter.exportProject(p, { resolution: res, fps: rate, quality, loudness }, progress, ac.signal);
       setPhase({ kind: 'done', result, quick: isQuick });
       if (isQuick && !IOS) downloadFile(result.blob, result.fileName);
-      track('export_completed', { resolution: res, fps, quick: isQuick, seconds: Math.round(result.seconds), mb: Math.round(result.blob.size / 1e6) });
+      track('export_completed', { resolution: res, fps: rate, quick: isQuick, seconds: Math.round(result.seconds), mb: Math.round(result.blob.size / 1e6) });
     } catch (e) {
       // An encoder or decoder interrupted by Cancel fails with its own error: that is a cancel, not a failure.
       if ((e as Error).name === 'AbortError' || ac.signal.aborted) { setPhase({ kind: 'setup' }); track('export_cancelled'); return; }
       const message = errorMessage(e);
       setPhase({ kind: 'error', message, detail: keepError(e, 'export') });
-      track('export_failed', { resolution: res, fps, quick: isQuick, error: message.slice(0, 80) });
+      track('export_failed', { resolution: res, fps: rate, quick: isQuick, error: message.slice(0, 80) });
     }
     finally {
       awake();
@@ -141,7 +165,7 @@ export function ExportSheet() {
       {phase.kind === 'setup' && format === 'photo' && (
         <>
           <h3>{t('Resolution')}</h3>
-          {supported && <Chips options={supported} value={resolution} onChange={setResolution} render={(r) => LABEL[r]} />}
+          {supported && <Chips options={supported} value={resolution} onChange={pickSize} render={(r) => LABEL[r]} />}
           <p className="hint">{t('The frame at the playhead as a {w}×{h} JPEG.', { w, h })}</p>
           <button className="btn primary big" disabled={duration <= 0} onClick={() => void run()}>{t('Save photo')}</button>
         </>
@@ -167,15 +191,25 @@ export function ExportSheet() {
             value={PRESETS.find((p) => p.resolution === resolution && p.fps === fps && p.quality === quality)?.id ?? null}
             onChange={(id) => {
               const pr = PRESETS.find((p) => p.id === id)!;
-              const res = supported?.includes(pr.resolution) ? pr.resolution : supported?.at(-1) ?? 1080;
-              setResolution(res); setFps(pr.fps); setQuality(pr.quality);
+              // Tapped before the encoder answered: the preset's own size, fitted to the answer when it comes (see above).
+              const res = !supported || supported.includes(pr.resolution) ? pr.resolution : supported.at(-1) ?? 1080;
+              pickSize(res); pickFps(pr.fps); setQuality(pr.quality);
             }} />
           <h3>{t('Resolution')}</h3>
           {supported?.length === 0 ? <p className="error-text">{t('This browser cannot encode video. Try Chrome or Safari.')}</p> : supported === null ? <p className="hint">{t('Checking what this device can encode…')}</p> : (
-            <Chips options={supported} value={resolution} onChange={setResolution} render={(r) => LABEL[r]} />
+            <Chips options={supported} value={resolution} onChange={pickSize} render={(r) => LABEL[r]} />
           )}
+          {/* Nothing is lost or blown up without a word (audit V-216): a choice that costs the video something says what. */}
+          {!!supported?.length && cost.larger && <p className="hint">{t('Larger than the source: the file grows, the picture does not get sharper.')}</p>}
           <h3>{t('Frame rate')}</h3>
-          <Chips options={[24, 25, 30, 60] as const} value={fps} onChange={setFps} render={(f) => `${f}`} />
+          <Chips options={[24, 25, 30, 60] as const} value={fps} onChange={pickFps} render={(f) => `${f}`} />
+          {!!supported?.length && cost.frames && (
+            <p className="hint">
+              {cost.frames.half ? t('The video is {src} fps: at {fps} every second frame is dropped.', { src: cost.frames.from, fps })
+                : t('The video is {src} fps: at {fps} some of its frames are dropped.', { src: cost.frames.from, fps })}
+              {cost.no60 && ` ${t('This device cannot encode this size at 60 fps.')}`}
+            </p>
+          )}
           <h3>{t('Quality')}</h3>
           <Chips options={['standard', 'high'] as const} value={quality} onChange={setQuality} render={(q) => (q === 'high' ? t('High') : t('Standard'))} />
           <Toggle label={t('Even loudness for TikTok and YouTube (−14 LUFS)')} value={loudness} onChange={setLoudness} />

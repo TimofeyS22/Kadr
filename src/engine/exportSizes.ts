@@ -14,12 +14,16 @@ export function outputSize(s: ProjectSettings, resolution: Resolution): [number,
   return [even(s.width * k), even(s.height * k)];
 }
 
-/** Resolutions this device can encode for the project (checked once per export sheet open). */
-export async function supportedResolutions(s: ProjectSettings): Promise<Resolution[]> {
+/**
+ * Resolutions this device can encode for the project (checked once per export sheet open). With `frameRate`, those it
+ * can encode at that rate: an encoder has a ceiling of pixels a second, so a size it takes at 30 fps is not promised
+ * at 60, and a 60 fps export is offered by default only where the encoder said yes (audit V-216).
+ */
+export async function supportedResolutions(s: ProjectSettings, frameRate?: number): Promise<Resolution[]> {
   const all: Resolution[] = [720, 1080, 1440, 2160];
   const ok = await Promise.all(all.map(async (r) => {
     const [width, height] = outputSize(s, r);
-    return (await canEncodeVideo('avc', { width, height })) || (await canEncodeVideo('vp9', { width, height }));
+    return (await canEncodeVideo('avc', { width, height, frameRate })) || (await canEncodeVideo('vp9', { width, height, frameRate }));
   }));
   return all.filter((_, i) => ok[i]);
 }

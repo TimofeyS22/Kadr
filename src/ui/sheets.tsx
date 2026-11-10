@@ -345,7 +345,7 @@ function CanvasBody() {
         ))}
       </div>
       <h3>{t('Frame rate')}</h3>
-      <Chips options={[24, 25, 30, 60] as const} value={settings.fps} render={(f) => `${f} fps`} onChange={(f) => commit((d) => { d.settings.fps = f; })} />
+      <Chips options={[24, 25, 30, 60] as const} value={settings.fps} render={(f) => `${f} fps`} onChange={(f) => commit((d) => { d.settings.fps = f; d.settings.fpsSet = true; })} />
     </>
   );
 }
