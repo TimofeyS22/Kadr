@@ -55,7 +55,8 @@ const tap = async (names, ms = 30_000) => {
 };
 const checked = (names, ms) => waitFor(`"${[names].flat()[0]}" on`, () => js(`${FIND.replace('return [', 'const el = [')} return !!el && (el.getAttribute('aria-checked') === 'true' || el.checked === true);`, [names].flat()), ms);
 const count = (css) => js('return document.querySelectorAll(arguments[0]).length', css);
-const closeTools = () => js("const c = document.querySelector('[aria-label=\"Close tools\"],[aria-label=\"Закрыть инструменты\"]'); if (c) c.click();");
+// 'Back: close tools' since Chetko Ч4 release 3 (v1.8.1), 'Close tools' before it.
+const closeTools = () => js("const c = document.querySelector('[aria-label=\"Back: close tools\"],[aria-label=\"Назад: закрыть инструменты\"],[aria-label=\"Close tools\"],[aria-label=\"Закрыть инструменты\"]'); if (c) c.click();");
 const selectClip = async (n = 0) => {
   await js(`const el = document.querySelectorAll('.tl-row.main .clip')[arguments[0]], r = el.getBoundingClientRect();
     const at = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, pointerId: 7, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1 };
