@@ -14,6 +14,7 @@ test.beforeEach(async ({ page }) => {
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
     localStorage.setItem('kadr.iosVideoTip.v3', '1');
+    localStorage.setItem('kadr.iosFormatCard.v1', '1'); // on an iPhone the format card comes before the first pick (D-10)
   });
 });
 
@@ -63,7 +64,7 @@ test.describe('Instagram on an iPhone', () => {
     // It does not block the app.
     await page.getByRole('button', { name: 'New project' }).click();
     await expect(page.locator('.aspect-card').first()).toBeVisible();
-    await page.getByRole('button', { name: 'New project' }).click();
+    await page.getByRole('dialog', { name: 'Frame format' }).getByRole('button', { name: 'Close' }).click(); // a sheet since Chetko Ч4 release 2
 
     await box.getByRole('button', { name: 'Copy link' }).click();
     await expect(box.getByRole('button', { name: 'Link copied' })).toBeVisible();

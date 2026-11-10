@@ -178,8 +178,8 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
 .ck-field-count { margin-left: auto; white-space: nowrap; }
 
 /* ---- a project on the home screen: the whole frame, the name, that it is saved, the actions in sight ---- */
-.ck-project { position: relative; display: grid; grid-template-columns: 54px minmax(0, 1fr); grid-template-areas: 'thumb title' 'thumb acts'; column-gap: var(--space-3); padding: var(--space-2) 0; box-shadow: inset 0 calc(-1 * var(--hairline)) var(--border-subtle); }
-.ck-project-thumb { grid-area: thumb; width: 54px; height: 96px; overflow: hidden; border-radius: var(--radius-clip); outline: var(--hairline) solid var(--image-outline); outline-offset: calc(-1 * var(--hairline)); }
+.ck-project { position: relative; display: grid; grid-template-columns: 96px minmax(0, 1fr); grid-template-areas: 'thumb title' 'thumb acts'; column-gap: var(--space-3); padding: var(--space-2) 0; box-shadow: inset 0 calc(-1 * var(--hairline)) var(--border-subtle); }
+.ck-project-thumb { grid-area: thumb; align-self: start; justify-self: center; width: var(--thumb-w, 72px); height: var(--thumb-h, 128px); overflow: hidden; border-radius: var(--radius-clip); outline: var(--hairline) solid var(--image-outline); outline-offset: calc(-1 * var(--hairline)); }
 .ck-project-thumb > * { display: block; width: 100%; height: 100%; }
 .ck-project-open { grid-area: title; display: grid; align-content: start; gap: var(--space-1); min-height: var(--touch); padding: var(--space-2) 0 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 /* The whole row opens the project; the actions lie above that. */
@@ -222,6 +222,8 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
 .ck-confirm h2 { margin: 0; font-size: var(--type-lg); font-weight: var(--weight-strong); letter-spacing: -0.01em; text-wrap: balance; }
 .ck-confirm p { margin: var(--space-2) 0 var(--space-6); color: var(--text-secondary); }
 .ck-confirm-acts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.ck-confirm-busy { margin: 0; color: var(--text-secondary); }
+.ck-confirm-busy:empty { display: none; }
 
 /* ---- the transport under the frame ---- */
 .ck-transport { display: flex; align-items: center; min-height: calc(var(--touch) + var(--space-1)); padding: 0 var(--space-3) 0 var(--space-1); background: var(--surface-panel); }

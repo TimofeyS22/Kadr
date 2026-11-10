@@ -1,7 +1,7 @@
 // Chetko components for the home screen (DESIGN.md §5): a project as a row, and the screen with nothing on it yet.
 // A project shows its first frame whole (a vertical video is not cut into a square), says how long it is and that it is
 // saved, and keeps its actions in sight (rule Ж2: people lost projects they could not rename or delete).
-import type { ReactNode } from 'react';
+import { useId, type CSSProperties, type ReactNode } from 'react';
 
 interface ProjectProps {
   title: string;
@@ -12,15 +12,27 @@ interface ProjectProps {
   onOpen: () => void;
   /** Icon buttons: a copy, the name, deleting. Each says which project it acts on. */
   actions: ReactNode;
+  /** The name of the open button, when the screen has one: «Открыть «Поход на Алтай»». Without it the title and the state
+   *  are the button's own words; with it the state (length, date, saved) is read as its description. */
+  openLabel?: string;
+  /** Width / height of the project's frame: the picture keeps its format, fitted whole into a 96 × 128 box, and the
+   *  names of all rows stand in one line beside the box. */
+  aspect?: number;
+  /** Extra class names for the row and its open button: hooks that tests and the iPhone scripts already rely on. */
+  hooks?: { row?: string; open?: string };
 }
-export function ProjectRow({ title, meta, thumb, onOpen, actions }: ProjectProps) {
+export function ProjectRow({ title, meta, thumb, onOpen, actions, hooks, openLabel, aspect = 9 / 16 }: ProjectProps) {
+  const id = useId();
+  const box = [96, 128] as const;
+  const [w, h] = aspect >= box[0] / box[1] ? [box[0], box[0] / aspect] : [box[1] * aspect, box[1]];
+  const size = { '--thumb-w': `${Math.round(w)}px`, '--thumb-h': `${Math.round(h)}px` } as CSSProperties;
   return (
-    <article className="ck-project" aria-label={title}>
+    <article className={hooks?.row ? `ck-project ${hooks.row}` : 'ck-project'} aria-label={title} style={size}>
       <span className="ck-project-thumb" aria-hidden="true">{thumb}</span>
-      {/* No aria-label: the name and the state of the project are the button's own words. */}
-      <button type="button" className="ck-project-open" onClick={onOpen}>
+      <button type="button" className={hooks?.open ? `ck-project-open ${hooks.open}` : 'ck-project-open'} onClick={onOpen}
+        aria-label={openLabel} aria-describedby={openLabel ? `${id}-meta` : undefined}>
         <span className="ck-project-title">{title}</span>
-        <span className="ck-project-meta"><span className="ck-sr">, </span>{meta}</span>
+        <span className="ck-project-meta" id={`${id}-meta`}><span className="ck-sr">, </span>{meta}</span>
       </button>
       <div className="ck-project-acts">{actions}</div>
     </article>

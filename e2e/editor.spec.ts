@@ -70,6 +70,16 @@ async function newProject(page: Page) {
   await expect(page.locator('.preview-canvas')).toBeVisible();
 }
 
+/** Home: the name is typed in the app's own sheet (Chetko Ч4 release 2), no longer in the browser's prompt. */
+async function renameTo(page: Page, name: string) {
+  const sheet = page.getByRole('dialog', { name: 'Rename' });
+  await sheet.getByRole('textbox', { name: 'Project name' }).fill(name);
+  await sheet.getByRole('button', { name: 'Save' }).click();
+}
+/** Home: deleting is asked once in the app's own window (Chetko Ч4 release 2), no longer in the browser's confirm. */
+async function confirmDelete(page: Page) {
+  await page.getByRole('dialog', { name: /^Delete “/ }).getByRole('button', { name: 'Delete', exact: true }).click();
+}
 /**
  * The first time a speech model is needed, the sheet asks before it downloads anything (audit V-181; its own tests
  * are in qa-model-consent.spec.ts). Every test starts with no model on the device, so the person says yes here…
@@ -576,12 +586,14 @@ test('home: sample, backup, restore, rename, delete and every template', async (
   await expect(first).toBeVisible();
   const name = (await first.getAttribute('aria-label'))!.replace(/^Open /, '');
   await page.getByRole('button', { name: `Rename ${name}` }).click();
+  await renameTo(page, 'Renamed');
   await expect(page.getByRole('button', { name: 'Open Renamed' })).toBeVisible();
   const dl = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save a backup of Renamed' }).click();
   const backup = info.outputPath((await dl).suggestedFilename());
   await (await dl).saveAs(backup);
   await page.getByRole('button', { name: 'Delete Renamed' }).click();
+  await confirmDelete(page);
   await expect(page.getByRole('button', { name: 'Open Renamed' })).toHaveCount(0);
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: 'Restore backup' }).click();
@@ -3461,6 +3473,7 @@ test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a 
   const first = page.locator('.project-open').first();
   const name = (await first.getAttribute('aria-label'))!.replace(/^Open /, '');
   await page.getByRole('button', { name: `Rename ${name}` }).click();
+  await renameTo(page, 'Mine');
   const dl = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save a backup of Mine' }).click();
   const realPath = info.outputPath((await dl).suggestedFilename());
@@ -4481,6 +4494,7 @@ test('on a full disk a project with a journal still opens and can be deleted (au
   await page.goto('./');
   await page.reload();
   await page.getByRole('button', { name: /^Delete / }).first().click();
+  await confirmDelete(page);
   await expect(page.getByRole('button', { name: /^Open / })).toHaveCount(0, { timeout: 10_000 });
   await page.evaluate(() => localStorage.removeItem('test.deny'));
   await page.reload();
@@ -4504,6 +4518,7 @@ test('deleting a project removes its last export from the device (audit V-189)',
   await page.getByRole('button', { name: 'Export again' }).click(); // the file stays until the sheet closes
   await page.getByRole('button', { name: 'Back to projects' }).click();
   await page.getByRole('button', { name: 'Delete Secret' }).click();
+  await confirmDelete(page);
   await expect(page.getByRole('button', { name: 'Open Secret', exact: true })).toHaveCount(0, { timeout: 10_000 });
   expect((await diskFiles(page)).filter((n) => n.startsWith('export-'))).toEqual([]);
   void info;
@@ -4933,6 +4948,7 @@ test('deleting a project removes its video from the device (audit V-196)', async
   expect((await media()).length, 'the video is stored').toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Back to projects' }).click();
   await page.getByRole('button', { name: 'Delete Gone' }).click();
+  await confirmDelete(page);
   await expect(page.getByRole('button', { name: 'Open Gone', exact: true })).toHaveCount(0);
   await expect.poll(media).toEqual([]);
 });
@@ -4984,6 +5000,7 @@ test('a backup brings back the frame size of a portrait video (audit V-210)', as
   const file = info.outputPath('tall.kadr');
   await (await dl).saveAs(file);
   await page.getByRole('button', { name: 'Delete Tall' }).click();
+  await confirmDelete(page);
   await expect(page.getByRole('button', { name: 'Open Tall', exact: true })).toHaveCount(0);
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: 'Restore backup' }).click();

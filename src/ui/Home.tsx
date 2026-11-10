@@ -1,5 +1,5 @@
-import { ArchiveRestore, ChevronRight, Clapperboard, Download, Lock, Pencil, Plus, Smartphone, Sparkles, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArchiveRestore, ChevronRight, Clapperboard, Download, Lock, Pencil, Plus, Smartphone, Sparkles, Trash2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { produce } from 'immer';
 import { ASPECTS, createProject } from '../core/defaults';
 import { TEMPLATES, buildTemplate, type TemplateSpec } from '../core/templates';
@@ -16,6 +16,15 @@ import type { ImportNote } from '../engine/importer';
 import { InAppNotice, useInAppNotice } from './InAppNotice';
 import { useInstall } from './install';
 import { TASKS, isTask, openWithTask, projectFromAssets, type TaskId } from './tasks';
+// Chetko, stage Ч4 release 2 (docs/17): the home screen is built from the components of the system.
+import './ck/ck.css';
+import './home.css';
+import { Segments } from './ck/choice';
+import { Button, IconButton } from './ck/controls';
+import { Confirm } from './ck/feedback';
+import { Field } from './ck/Field';
+import { Empty, ProjectRow } from './ck/home';
+import { Sheet } from './ck/Sheet';
 
 /** The task from a deep link (#/start/<task>, the task pages) or "share" (Android share target, #/share). */
 function useStartRoute(): TaskId | 'share' | null {
@@ -70,12 +79,25 @@ export const browserSupported = (): boolean =>
   'VideoDecoder' in window && 'VideoEncoder' in window && !!document.createElement('canvas').getContext('webgl2');
 
 const open = (id: string) => { location.hash = `#/p/${id}`; };
+/** Width / height of a project's frame (a list from before aspects were kept counts as vertical). */
+const frame = (a: AspectId | undefined) => { const [w, h] = (a && ASPECTS[a]) || ASPECTS['9:16']; return w / h; };
 const KEEP_TIP_KEY = 'kadr.keepTip';
+/** The buttons moved to the bottom (release 2 of Ч4): said once, where they were, to someone who knew them there (rule Ж1). */
+const MOVED_KEY = 'kadr.homeMoved.v1';
+const seenKey = (key: string) => { try { return localStorage.getItem(key) !== null; } catch { return true; } };
+const setKey = (key: string) => { try { localStorage.setItem(key, '1'); } catch { /* said again next time */ } };
 
 export function Home() {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [naming, setNaming] = useState<ProjectMeta | null>(null);
+  const [name, setName] = useState('');
+  const [asked, setAsked] = useState<ProjectMeta | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [movedSeen, setMovedSeen] = useState(() => seenKey(MOVED_KEY));
+  const root = useRef<HTMLElement>(null);
+  const dock = useRef<HTMLElement>(null);
   useHoldUpdates(!!busy);
   const toast = useEditor((s) => s.toast);
   const noted = (name: string, note: ImportNote) => toast(importNoteText(name, note), 'info', 10_000);
@@ -252,143 +274,200 @@ export function Home() {
     }
   }
 
-  async function rename(m: ProjectMeta) {
-    const name = prompt(t('Project name'), m.name)?.trim();
-    if (!name) return;
+  async function rename(m: ProjectMeta, to: string) {
+    const fresh = to.trim();
+    if (!fresh) return;
+    setNaming(null);
     const p = await loadProject(m.id);
-    if (p) { await saveProject({ ...p, name }); void refresh(); }
+    if (p) { await saveProject({ ...p, name: fresh }); void refresh(); }
   }
 
   async function remove(m: ProjectMeta) {
-    if (!confirm(t('Delete “{name}”? Its media will be removed from this device.', { name: m.name }))) return;
-    try { await deleteProject(m.id); } catch (e) { toast(t('Could not delete the project: {error}', { error: errorMessage(e) }), 'error'); }
-    void refresh();
+    setDeleting(true); // the question waits: a second tap must not delete twice, nor «Отмена» pretend to stop it
+    try {
+      await deleteProject(m.id);
+      toast(t('“{name}” is deleted', { name: m.name }));
+    } catch (e) { toast(t('Could not delete the project: {error}', { error: errorMessage(e) }), 'error'); }
+    // The question closes after the row is gone, so the focus goes to what is left (Confirm's afterClose), not to nothing.
+    await refresh();
+    setDeleting(false);
+    setAsked(null);
   }
+
+  // Someone who knew the buttons at the top is told once where they went; a first visit never saw them there.
+  useEffect(() => { if (projects !== null && !projects.length && !movedSeen) { setKey(MOVED_KEY); setMovedSeen(true); } }, [projects, movedSeen]);
+  const dismissMoved = () => { setKey(MOVED_KEY); setMovedSeen(true); };
+  const movedNote = !movedSeen && !!projects?.length && !busy;
+
+  // The dock lies over the bottom of the page: the page ends above it, and what gets the focus scrolls clear of it.
+  useEffect(() => {
+    const el = dock.current;
+    if (!el) return;
+    const page = document.documentElement;
+    const ro = new ResizeObserver(() => page.style.setProperty('--home-dock', `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => { ro.disconnect(); page.style.removeProperty('--home-dock'); };
+  }, []);
+
+  // Renaming is typing: the name is in the field and selected, ready to be written over.
+  useEffect(() => {
+    if (!naming) return;
+    const input = root.current?.querySelector<HTMLInputElement>('.ck-home-form input');
+    input?.focus({ preventScroll: true });
+    input?.select();
+  }, [naming]);
 
   // Someone coming back sees their work first; the first visit starts with what can be made (audit V-187).
   const yours = (
-    <>
-      <h2 className="section-title">{t('Your projects')}</h2>
-      {projects === null ? <p className="hint">{t('Loading…')}</p> : projects.length === 0 ? (
-        <>
-          <p className="hint">{t('No projects yet. Start a new one or try the sample.')}</p>
+    <section className="ck-home-section" aria-labelledby="home-yours">
+      <h2 id="home-yours" className="ck-home-title">{t('Your projects')}{!!projects?.length && <span className="ck-home-count">{projects.length}</span>}</h2>
+      {projects === null ? <p className="ck-home-dim">{t('Loading…')}</p> : projects.length === 0 ? (
+        <Empty title={t('No projects yet')}>
+          {t('Start a new one or try the sample.')}
           {/* The person who followed the advice and finds this list empty (audit V-164). */}
-          {IOS && standalone() && <p className="hint">{t('Projects made in Safari stay in Safari. To bring one here, open Kadr in Safari, save a backup of the project (↓), then tap “Restore backup” here.')}</p>}
-        </>
+          {IOS && standalone() && <> {t('Projects made in Safari stay in Safari. To bring one here, open Kadr in Safari, save a backup of the project (↓), then tap “Restore backup” here.')}</>}
+        </Empty>
       ) : (
-        <ul className="project-grid">
+        <ul className="ck-home-list">
           {projects.map((m) => (
-            <li key={m.id} className="project-card">
-              <button className="project-open" onClick={() => open(m.id)} aria-label={t('Open {name}', { name: m.name })}>
-                <span className="project-thumb" style={{ aspectRatio: ASPECTS[m.aspect].join(' / ') }}>
-                  {m.thumb && <img src={m.thumb} alt="" />}
-                </span>
-                <span className="project-name">{m.name}</span>
-                <span className="project-meta">{formatTime(m.duration, false)}, {new Date(m.updatedAt).toLocaleDateString()}</span>
-              </button>
-              <div className="project-actions">
-                <button className="icon-btn" onClick={() => void backup(m)} aria-label={t('Save a backup of {name}', { name: m.name })}><Download size={16} /></button>
-                <button className="icon-btn" onClick={() => void rename(m)} aria-label={t('Rename {name}', { name: m.name })}><Pencil size={16} /></button>
-                <button className="icon-btn" onClick={() => void remove(m)} aria-label={t('Delete {name}', { name: m.name })}><Trash2 size={16} /></button>
-              </div>
+            <li key={m.id}>
+              <ProjectRow title={m.name} meta={`${formatTime(m.duration, false)}, ${new Date(m.updatedAt).toLocaleDateString()}, ${t('saved')}`}
+                thumb={m.thumb ? <img src={m.thumb} alt="" /> : <span />} aspect={frame(m.aspect)} onOpen={() => open(m.id)} openLabel={t('Open {name}', { name: m.name })} hooks={{ row: 'project-card', open: 'project-open' }}
+                actions={<>
+                  <IconButton label={t('Save a backup of {name}', { name: m.name })} onClick={() => void backup(m)}><Download aria-hidden /></IconButton>
+                  <IconButton label={t('Rename {name}', { name: m.name })} onClick={() => { setName(m.name); setNaming(m); }}><Pencil aria-hidden /></IconButton>
+                  <IconButton label={t('Delete {name}', { name: m.name })} danger onClick={() => setAsked(m)}><Trash2 aria-hidden /></IconButton>
+                </>} />
             </li>
           ))}
         </ul>
       )}
-    </>
+    </section>
   );
 
+  const aspects = (Object.keys(ASPECTS) as AspectId[]).map((a) => {
+    const [w, h] = ASPECTS[a];
+    return (
+      <button key={a} type="button" className="ck-home-aspect aspect-card" onClick={() => { setPicking(false); void create(a); }}>
+        <span className="ck-home-aspect-shape" style={{ aspectRatio: `${w} / ${h}` }} aria-hidden />
+        <b>{a}</b>
+        <small>{t(ASPECT_HINT[a])}</small>
+      </button>
+    );
+  });
+
   return (
-    <main className="home">
-      <header className="home-head">
-        <div className="logo" aria-hidden><span /></div>
-        <h1>Kadr</h1>
-        <div className="lang" role="radiogroup" aria-label={t('Language')}>
-          {(['en', 'ru'] as const).map((l) => (
-            <button key={l} role="radio" aria-checked={locale === l} className={locale === l ? 'on' : ''} onClick={() => setLocale(l)}>{l.toUpperCase()}</button>
-          ))}
-        </div>
-      </header>
-      <p className="tagline">{t('Edit videos right in your browser.')} <Lock size={14} /> {t('Nothing is uploaded — your media stays on this device.')}</p>
+    <main className="ck ck-home" ref={root}>
+      <div className="ck-home-in">
+        <header className="ck-home-head">
+          <span className="ck-home-logo" aria-hidden />
+          <h1 className="ck-home-name">Kadr</h1>
+          <div className="ck-home-lang">
+            <Segments label={t('Language')} items={[{ id: 'en', label: 'EN' }, { id: 'ru', label: 'RU' }]} value={locale} onChange={(l) => setLocale(l as typeof locale)} />
+          </div>
+        </header>
+        <p className="ck-home-note"><Lock aria-hidden />{t('Edit videos right in your browser.')} {t('Nothing is uploaded — your media stays on this device.')}</p>
+        {install && !busy && (
+          <div className="ck-home-install">
+            <p className="ck-home-dim">{t('Installed, Kadr shows up in “Share” in your gallery: send a video straight to the editor.')}</p>
+            <Button icon={<Smartphone aria-hidden />} onClick={() => void install()}>{t('Install Kadr')}</Button>
+          </div>
+        )}
 
-      {inAppNotice.shown && <InAppNotice onDismiss={inAppNotice.dismiss} />}
+        {inAppNotice.shown && <InAppNotice onDismiss={inAppNotice.dismiss} />}
 
-      {!supported && (
-        <div className="banner error">
-          {t('This browser can’t edit video yet. Use a current Chrome, Edge or Safari 26+ (iPhone: iOS 26+).')}
-        </div>
-      )}
+        {!supported && (
+          <div className="banner error">
+            {t('This browser can’t edit video yet. Use a current Chrome, Edge or Safari 26+ (iPhone: iOS 26+).')}
+          </div>
+        )}
 
-      {isTask(route ?? undefined) && !busy && (
-        <div className="task-banner">
-          <b>{t(TASKS[route as TaskId].title)}</b>
-          <button className="btn primary big" disabled={!supported} onClick={() => void startTask(route as TaskId, true)}>
-            {TASKS[route as TaskId].accept ? t('Choose a video') : t('Open')}
+        {isTask(route ?? undefined) && !busy && (
+          <section className="ck-home-card ck-home-task task-banner" aria-label={t(TASKS[route as TaskId].title)}>
+            <b>{t(TASKS[route as TaskId].title)}</b>
+            <div className="ck-home-task-acts">
+              <Button variant="primary" disabled={!supported} onClick={() => void startTask(route as TaskId, true)}>
+                {TASKS[route as TaskId].accept ? t('Choose a video') : t('Open')}
+              </Button>
+              <Button onClick={() => { location.hash = ''; }}>{t('Not now')}</Button>
+            </div>
+          </section>
+        )}
+
+        {!busy && !isTask(route ?? undefined) && (
+          <button type="button" className="ck-home-card ck-home-reel" disabled={!supported} onClick={() => void startTask('reel')}>
+            <Clapperboard aria-hidden />
+            <span><b>{t('Reel in 1 tap')}</b><small>{t('Pick a video of you talking: pauses and “um”s go, captions, zooms and music come.')}</small></span>
+            <ChevronRight className="ck-home-go" aria-hidden />
           </button>
-          <button className="btn" onClick={() => { location.hash = ''; }}>{t('Not now')}</button>
-        </div>
-      )}
+        )}
 
-      {!busy && !isTask(route ?? undefined) && (
-        <button className="reel-card" disabled={!supported} onClick={() => void startTask('reel')}>
-          <Clapperboard size={28} aria-hidden />
-          <span><b>{t('Reel in 1 tap')}</b><small>{t('Pick a video of you talking: pauses and “um”s go, captions, zooms and music come.')}</small></span>
-          <ChevronRight className="reel-go" size={22} aria-hidden />
-        </button>
-      )}
+        {movedNote && (
+          <div className="ck-home-moved" role="note">
+            <p>{t('The “New project”, “Try a sample” and “Restore backup” buttons are now at the bottom ↓')}</p>
+            <Button variant="plain" onClick={dismissMoved}>{t('Got it')}</Button>
+          </div>
+        )}
 
-      {busy ? <div className="banner">{busy}</div> : (
-        <div className="home-actions">
-          <button className="btn primary big" disabled={!supported} onClick={() => setPicking((v) => !v)}><Plus size={20} /> {t('New project')}</button>
-          <button className="btn big" disabled={!supported} onClick={() => void sample()}><Sparkles size={18} /> {t('Try a sample')}</button>
-          <button className="btn big" onClick={() => void held(restore)}><ArchiveRestore size={18} /> {t('Restore backup')}</button>
-          {install && <button className="btn big" onClick={() => void install()}><Smartphone size={18} /> {t('Install Kadr')}</button>}
-        </div>
-      )}
-      {install && !busy && <p className="hint">{t('Installed, Kadr shows up in “Share” in your gallery: send a video straight to the editor.')}</p>}
+        {/* The first step, in reach of the thumb (rule Ж3): one white button and what else starts a project. It comes
+            here in reading order, after the reel, and lies at the bottom of the screen (on a low screen, here). */}
+        <section className="ck-home-dock" ref={dock} aria-label={t('Start a project')}>
+          {busy ? <p className="ck-home-busy" role="status">{busy}</p> : (
+            <>
+              <Button variant="primary" size="large" disabled={!supported} icon={<Plus aria-hidden />} onClick={() => { dismissMoved(); setPicking(true); }}>{t('New project')}</Button>
+              <div className="ck-home-alt">
+                <Button disabled={!supported} icon={<Sparkles aria-hidden />} onClick={() => void sample()}>{t('Try a sample')}</Button>
+                <Button icon={<ArchiveRestore aria-hidden />} onClick={() => void held(restore)}>{t('Restore backup')}</Button>
+              </div>
+            </>
+          )}
+        </section>
 
-      {picking && !busy && (
-        <div className="aspect-grid" role="list">
-          {(Object.keys(ASPECTS) as AspectId[]).map((a) => {
-            const [w, h] = ASPECTS[a];
-            return (
-              <button key={a} className="aspect-card" onClick={() => void create(a)} role="listitem">
-                <span className="aspect-shape" style={{ aspectRatio: `${w} / ${h}` }} />
-                <b>{a}</b>
-                <small>{t(ASPECT_HINT[a])}</small>
+        {!!projects?.length && yours}
+
+        <section className="ck-home-section" aria-labelledby="home-templates">
+          <h2 id="home-templates" className="ck-home-title">{t('Start from a template')}</h2>
+          <div className="ck-home-templates">
+            {TEMPLATES.map((tpl) => (
+              <button key={tpl.id} type="button" className="ck-home-template template-card" disabled={!supported || !!busy} onClick={() => void held(() => fromTemplate(tpl))}>
+                <span className={`ck-home-art ck-art-${tpl.id}`} style={{ aspectRatio: ASPECTS[tpl.aspect].join(' / ') }} aria-hidden />
+                <b>{t(tpl.name)}</b>
+                <small>{t(tpl.description)}</small>
               </button>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        </section>
 
-      {!!projects?.length && yours}
+        {keepTip && (
+          <div className="ck-home-card ck-home-tip" role="note">
+            <p>{t('iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.')}</p>
+            {kept > 0 && <p>{t('Projects made in Safari stay in Safari, and you have {n} here. To move one, save its backup here (↓), then tap “Restore backup” in the Home Screen app.', { n: kept })}</p>}
+            <Button onClick={dismissKeepTip}>{t('Got it')}</Button>
+          </div>
+        )}
 
-      <h2 className="section-title">{t('Start from a template')}</h2>
-      <div className="template-grid">
-        {TEMPLATES.map((tpl) => (
-          <button key={tpl.id} className="template-card" disabled={!supported || !!busy} onClick={() => void held(() => fromTemplate(tpl))}>
-            <span className={`template-art t-${tpl.id}`} style={{ aspectRatio: ASPECTS[tpl.aspect].join(' / ') }} aria-hidden />
-            <b>{t(tpl.name)}</b>
-            <small>{t(tpl.description)}</small>
-          </button>
-        ))}
+        {!projects?.length && yours}
+
+        <footer className="ck-home-foot home-foot">{/* home-foot: the iPhone script and the smoke test read the version here */}
+          {t('Projects and media are stored in this browser.')} Kadr v{__APP_VERSION__}
+          {' · '}<a href={`${locale}/privacy/`}>{t('Privacy')}</a>{' · '}<a href={`${locale}/licenses/`}>{t('Licenses')}</a>
+        </footer>
       </div>
 
-      {keepTip && (
-        <div className="banner keep-tip" role="note">
-          <p>{t('iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.')}</p>
-          {kept > 0 && <p>{t('Projects made in Safari stay in Safari, and you have {n} here. To move one, save its backup here (↓), then tap “Restore backup” in the Home Screen app.', { n: kept })}</p>}
-          <button className="btn" onClick={dismissKeepTip}>{t('Got it')}</button>
-        </div>
-      )}
-
-      {!projects?.length && yours}
-
-      <footer className="home-foot">
-        {t('Projects and media are stored in this browser.')} Kadr v{__APP_VERSION__}
-        {' · '}<a href={`${locale}/privacy/`}>{t('Privacy')}</a>{' · '}<a href={`${locale}/licenses/`}>{t('Licenses')}</a>
-      </footer>
+      <Sheet open={picking && !busy} title={t('Frame format')} closeLabel={t('Close')} closeIcon={<X aria-hidden />} onClose={() => setPicking(false)}>
+        <div className="ck-home-aspects">{aspects}</div>
+      </Sheet>
+      <Sheet open={!!naming} title={t('Rename')} closeLabel={t('Close')} closeIcon={<X aria-hidden />} onClose={() => setNaming(null)}>
+        <form className="ck-home-form" onSubmit={(e) => { e.preventDefault(); if (naming) void rename(naming, name); }}>
+          <Field label={t('Project name')} value={name} onChange={setName} maxLength={80} count countLabel={(n, max) => t('{n} of {max} characters', { n, max })} enterKeyHint="done"
+            error={name.trim() ? undefined : t('Write at least one letter: the name is how you find a project in the list.')} />
+          <Button variant="primary" type="submit" disabled={!name.trim()}>{t('Save')}</Button>
+        </form>
+      </Sheet>
+      <Confirm open={!!asked} title={t('Delete “{name}”?', { name: asked?.name ?? '' })}
+        text={t('Its video and edits will be removed from this device. They cannot be brought back.')}
+        confirmLabel={t('Delete')} cancelLabel={t('Cancel')} busy={deleting ? t('Deleting…') : undefined} onCancel={() => setAsked(null)} onConfirm={() => { if (asked) void remove(asked); }}
+        afterClose={() => root.current?.querySelector<HTMLElement>('.ck-project-open') ?? root.current?.querySelector<HTMLElement>('.ck-home-dock .ck-primary')} />
     </main>
   );
 }

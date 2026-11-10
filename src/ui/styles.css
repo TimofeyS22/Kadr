@@ -62,8 +62,6 @@ h1, h2, h3 { margin: 0; }
 .diag-report { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin: 12px 0 16px; }
 .banner { padding: 12px 14px; border-radius: var(--radius); background: var(--panel-2); margin: 16px 0; font-size: 14px; }
 .banner.error { background: #3a1c1c; color: #ffc9c9; }
-.banner.keep-tip { display: grid; gap: 10px; justify-items: start; } /* two paragraphs with projects: the button goes under them */
-.banner.keep-tip p { margin: 0; line-height: 1.45; }
 /* An app's built-in browser (audit V-203): the one notice on Home that says the work cannot be saved, so it is outlined. */
 .banner.in-app { display: grid; gap: 10px; border: 1px solid var(--accent); }
 .banner.in-app p { margin: 0; line-height: 1.45; }
@@ -72,34 +70,7 @@ h1, h2, h3 { margin: 0; }
 .sheet .banner.in-app { margin: 0 0 12px; }
 .sheet .banner.in-app .btn { margin-top: 0; } /* the sheet spaces its own buttons; here the notice's gap does */
 
-/* ---------- Home ---------- */
-.home { max-width: 760px; margin: 0 auto; padding: calc(20px + var(--safe-top)) 16px calc(24px + var(--safe-bottom)); }
-.home-head { display: flex; align-items: center; gap: 10px; }
-.home-head h1 { font-size: 28px; font-weight: 900; letter-spacing: -0.02em; }
-.logo { width: 34px; height: 34px; border-radius: 10px; background: var(--panel-2); display: grid; place-items: center; border: 2px solid var(--text); }
-.logo span { width: 0; height: 0; border-left: 11px solid var(--accent); border-top: 7px solid transparent; border-bottom: 7px solid transparent; margin-left: 3px; }
-.tagline { color: var(--muted); line-height: 1.5; margin: 12px 0 20px; }
-.tagline svg { vertical-align: -2px; }
-.home-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.aspect-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; margin-top: 14px; }
-.aspect-card {
-  display: grid; justify-items: center; gap: 6px; padding: 14px 8px; border-radius: var(--radius);
-  background: var(--panel); border: 1px solid var(--line); text-align: center;
-}
-.aspect-card small { color: var(--muted); font-size: 11px; }
-.aspect-shape { height: 44px; max-width: 78px; border: 2px solid var(--text); border-radius: 4px; }
-.section-title { font-size: 17px; margin: 28px 0 12px; }
-.project-grid { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-.project-card { position: relative; background: var(--panel); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
-.project-open { display: grid; gap: 4px; width: 100%; padding: 0 0 10px; border: 0; background: none; text-align: left; }
-.project-thumb { display: block; width: 100%; max-height: 220px; background: #000; overflow: hidden; }
-.project-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.project-name { padding: 0 10px; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.project-meta { padding: 0 10px; color: var(--muted); font-size: 12px; }
-.project-actions { position: absolute; top: 4px; right: 4px; display: flex; }
-.project-actions .icon-btn { position: relative; width: 36px; height: 36px; background: rgba(0, 0, 0, 0.55); margin-left: 4px; }
-.home-foot { margin-top: 32px; color: var(--muted); font-size: 12px; }
-.home-foot a { display: inline-block; padding: 14px 4px; color: inherit; } /* a 44 px tap target in small type */
+/* ---------- Home: on the Chetko system since Ч4 release 2 (home.css) ---------- */
 
 /* ---------- Editor layout ---------- */
 .editor {
@@ -221,10 +192,9 @@ h1, h2, h3 { margin: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
 .chip { position: relative; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); font-size: 13px; }
 /* A finger gets 44 px: the visible pill stays compact (audit V-114). */
-.chip::after, .kf-btn::after, .project-actions .icon-btn::after { content: ''; position: absolute; inset: -4px 0; }
+.chip::after, .kf-btn::after { content: ''; position: absolute; inset: -4px 0; }
 .chips.scroll { padding-block: 4px; }
 .kf-btn::after { inset: -6px; }
-.project-actions .icon-btn::after { inset: -4px -2px; }
 .chip.on { background: var(--panel-2); border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); color: var(--text); font-weight: 600; } /* Ч4: chosen is a white ring; solid white is for actions */
 .toggle { display: flex; align-items: center; justify-content: space-between; min-height: 44px; font-size: 14px; }
 .toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
@@ -383,20 +353,6 @@ h1, h2, h3 { margin: 0; }
 .curve-dot { fill: var(--text); stroke: var(--panel-2); stroke-width: 3; cursor: ns-resize; }
 .curve-dot:focus-visible { outline: none; stroke: var(--accent); }
 
-.template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-.template-card { display: grid; gap: 6px; align-content: start; padding: 10px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel); text-align: left; }
-.template-card small { color: var(--muted); font-size: 12px; line-height: 1.4; }
-.template-art { display: block; height: 84px; max-width: 100%; border-radius: 8px; background: var(--panel-2); position: relative; overflow: hidden; }
-.template-art::after { content: ''; position: absolute; inset: 0; }
-.t-slideshow::after { background: linear-gradient(135deg, #3d5a47 0 45%, #34506b 45% 100%); }
-.t-beat::after { background: repeating-linear-gradient(90deg, #34506b 0 14px, #ffc53d 14px 16px); }
-.t-vlog::after { background: linear-gradient(90deg, #634a86 0 60%, #34506b 60%); }
-.t-beforeAfter::after { background: linear-gradient(180deg, #7a5c1c 0 50%, #3d5a47 50%); }
-.t-quote::after { background: radial-gradient(circle at 50% 50%, #f2f2f2 0 8%, #2a2a2a 9%); }
-.t-intro::after { background: linear-gradient(0deg, #1f1f1f 0 40%, #ffc53d 40% 48%, #1f1f1f 48%); }
-.lang { margin-left: auto; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--panel); } /* Ч4: the second plan keeps 4.5:1 on it */
-.lang button { min-width: 40px; min-height: 32px; border: 0; border-radius: 999px; background: none; font-size: 12px; font-weight: 700; color: var(--muted); }
-.lang button.on { background: var(--text); color: var(--bg); }
 
 /* ---------- v0.5 components ---------- */
 .cut-text { display: grid; gap: 8px; margin-top: 8px; }
@@ -496,18 +452,6 @@ button, [role=radio], [role=switch] { -webkit-touch-callout: none; -webkit-user-
 .reel-length { margin: 0; font-size: 22px; text-align: center; font-variant-numeric: tabular-nums; }
 .reel-list { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
 .reel-done .btn { margin: 0; }
-.reel-card {
-  display: flex; align-items: center; gap: 14px; width: 100%; margin: 0 0 14px; padding: 14px 16px; border-radius: var(--radius);
-  border: 1px solid var(--line); background: var(--panel); color: var(--text); text-align: left; font: inherit; /* Ч4: a quiet card; the amber tint is gone with the amber */
-}
-.reel-card svg { flex: none; color: var(--accent); }
-.reel-card .reel-go { margin-left: auto; color: var(--muted); } /* Ч4: the card is pressed, and says so */
-.reel-card span { display: grid; gap: 3px; }
-.reel-card b { font-size: 16px; }
-.reel-card small { color: var(--muted); font-size: 13px; line-height: 1.4; }
-.task-banner { display: grid; gap: 10px; margin: 0 0 16px; padding: 14px; border-radius: var(--radius); background: var(--panel-2); }
-.task-banner b { font-size: 17px; }
-.task-banner .btn { margin: 0; }
 .reel-lang { display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
 .script-input { width: 100%; min-height: 110px; resize: vertical; font: inherit; line-height: 1.4; padding: 10px 12px; }
 .flip-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }

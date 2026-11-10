@@ -67,9 +67,11 @@ interface ConfirmProps {
   onCancel: () => void;
   /** Where the focus goes when what opened the question is gone (the deleted row): the next row, the main button. */
   afterClose?: () => HTMLElement | null | undefined;
+  /** The answer is being carried out («Удаляю…»): both buttons wait, and neither Escape nor a tap outside cancels what has begun. */
+  busy?: string;
 }
 /** Asked only before what cannot be undone (docs/17 §4, principle 7). The safe answer has the focus. */
-export function Confirm({ open, title, text, confirmLabel, cancelLabel, onConfirm, onCancel, afterClose }: ConfirmProps) {
+export function Confirm({ open, title, text, confirmLabel, cancelLabel, onConfirm, onCancel, afterClose, busy }: ConfirmProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const safe = useRef<HTMLButtonElement>(null);
   const back = useRef<Element | null>(null);
@@ -86,13 +88,14 @@ export function Confirm({ open, title, text, confirmLabel, cancelLabel, onConfir
   }, [open]);
   return (
     <dialog ref={ref} className="ck-confirm" aria-labelledby={`${id}-t`} aria-describedby={`${id}-d`}
-      onCancel={(e) => { e.preventDefault(); onCancel(); }} onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      onCancel={(e) => { e.preventDefault(); if (!busy) onCancel(); }} onClick={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}>
       <div className="ck-confirm-in">
         <h2 id={`${id}-t`}>{title}</h2>
         <p id={`${id}-d`}>{text}</p>
+        <p className="ck-confirm-busy" role="status">{busy}</p>
         <div className="ck-confirm-acts">
-          <Button ref={safe} onClick={onCancel}>{cancelLabel}</Button>
-          <Button variant="danger" onClick={onConfirm}>{confirmLabel}</Button>
+          <Button ref={safe} disabled={!!busy} onClick={onCancel}>{cancelLabel}</Button>
+          <Button variant="danger" disabled={!!busy} onClick={onConfirm}>{confirmLabel}</Button>
         </div>
       </div>
     </dialog>

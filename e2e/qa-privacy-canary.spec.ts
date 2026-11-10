@@ -89,6 +89,9 @@ test('names and text stay on the device: no request carries them, and the check 
   // The name is typed on the home screen; coming back there also loads whatever the home screen loads.
   await page.goto('./');
   await page.getByRole('button', { name: /^Rename / }).first().click();
+  const sheet = page.getByRole('dialog', { name: 'Rename' }); // the app's own sheet since Chetko Ч4 release 2
+  await sheet.getByRole('textbox', { name: 'Project name' }).fill(PROJECT_MARK);
+  await sheet.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('button', { name: `Open ${PROJECT_MARK}` })).toBeVisible();
   await page.waitForTimeout(800);
 

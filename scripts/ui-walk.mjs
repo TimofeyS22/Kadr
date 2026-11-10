@@ -150,12 +150,13 @@ async function selectClip(index) {
 
 try {
   await page.goto(URL_);
-  await page.locator('.home-actions .btn.primary').waitFor();
+  const newProject = page.getByRole('button', { name: /^(New project|Новый проект)$/ });
+  await newProject.waitFor();
   await snap('home (empty)');
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await snap('home (empty), bottom');
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.locator('.home-actions .btn.primary').click();
+  await newProject.click();
   await snap('aspect picker');
   await page.locator('.aspect-card', { hasText: '9:16' }).click();
   await page.locator('.toolbar').waitFor();
@@ -216,7 +217,7 @@ try {
   if (await cancel.count() && await cancel.first().isVisible()) await cancel.first().click();
   await closeSheet();
   await page.locator('.topbar .icon-btn').first().click();
-  await page.locator('.home-actions .btn.primary').waitFor();
+  await newProject.waitFor();
   await snap('home (with a project)');
 } catch (e) {
   console.log(`stopped: ${e.message}`);
