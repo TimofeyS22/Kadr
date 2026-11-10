@@ -21,3 +21,12 @@ npm run fixtures   # test media for the e2e checks (ffmpeg; macOS `say` for spee
 
 Architecture, decisions and status: `docs/02-architecture-and-plan.md`. Market and feature research: `docs/01-market-and-features.md`, `reports/`.
 Every push to `main` runs the tests and deploys to GitHub Pages (`.github/workflows/deploy.yml`).
+
+## Roll back the site
+
+```bash
+node scripts/rollback.mjs 1.8.1        # says which deploy of 1.8.1 it would put back
+node scripts/rollback.mjs 1.8.1 --go   # puts that site back on the live address (a deploy)
+```
+
+The earlier deploy's site goes back as it was, without a build, in a few minutes (`.github/workflows/rollback.yml`); the files the live site serves stay next to it, so tabs still open on the newer version keep working. Sites are kept 30 days; for an older version, `git revert` and push. The next push to `main` deploys again.

@@ -1,0 +1,62 @@
+name: Roll back the site
+
+# Puts back the site an earlier "Test and deploy" run published, in minutes and without building (docs/12 G7, audit
+# V-166): that run's Pages artifact (kept 30 days), plus the files the live site serves now, so a tab opened on the
+# newer version keeps loading its code (docs/12 G9). Started by `node scripts/rollback.mjs <version> --go`, which finds
+# the run of that version. Every push to main deploys again, so the next release replaces the rolled-back site.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: The "Test and deploy" run whose site goes back up
+        required: true
+      version:
+        description: The version that run published (checked on the live site afterwards)
+        required: true
+
+permissions:
+  contents: read
+
+# The same queue as the deploy: a rollback never runs next to a deploy of main.
+concurrency:
+  group: pages-refs/heads/main
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # the artifact of another run
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v5
+        with:
+          name: github-pages
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: artifact
+      - name: Unpack the earlier site
+        run: mkdir dist && tar -xf artifact/artifact.tar -C dist
+      - name: Keep the files of the live site and earlier deployments
+        run: node scripts/keep-assets.mjs https://timofeys22.github.io/Kadr/ dist
+        env:
+          KEEP_ASSETS_VERSION: ${{ inputs.version }}
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+          retention-days: 30
+          include-hidden-files: true
+      - id: deployment
+        uses: actions/deploy-pages@v5
+      - name: The live site serves that version and every kept file
+        run: node scripts/smoke-live.mjs https://timofeys22.github.io/Kadr/ "${{ inputs.version }}"

@@ -71,7 +71,8 @@ const sha256 = (body) => createHash('sha256').update(body).digest('hex');
 async function main(site, dist) {
   const base = site.endsWith('/') ? site : `${site}/`;
   const assets = path.join(dist, 'assets');
-  const { version } = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  // A rollback deploys an earlier build: its version, not the one checked out (.github/workflows/rollback.yml).
+  const version = process.env.KEEP_ASSETS_VERSION ?? JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
   const own = fs.readdirSync(assets).filter((f) => fs.statSync(path.join(assets, f)).isFile()).sort().map((name) => {
     const body = fs.readFileSync(path.join(assets, name));
     return { name, size: body.length, sha256: sha256(body) };
