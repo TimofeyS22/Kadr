@@ -595,7 +595,9 @@ async function clipHasPerson(c: VideoClip | ImageClip): Promise<boolean> {
   await warmSegmenter();
   if (c.kind === 'image') {
     const blob = await getBlob(c.assetId);
-    return !!blob && hasPerson(await createImageBitmap(blob));
+    if (!blob) return false;
+    const bmp = await createImageBitmap(blob);
+    try { return await hasPerson(bmp); } finally { bmp.close(); } // a 48 MP photo's pixels are not left to the collector
   }
   const span = c.duration * c.speed;
   for (const at of [0.1, 0.5, 0.9]) {
