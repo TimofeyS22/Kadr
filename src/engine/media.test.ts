@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const made: { file: string }[] = [];
 let samples: () => AsyncGenerator<never, void, unknown> = async function* () { /* empty */ };
+let audioCheck: () => Promise<null> = async () => null;
 
 vi.mock('mediabunny', () => {
   class Input { source: { blob: Blob }; constructor(o: { source: { blob: Blob } }) { this.source = o.source; } async getPrimaryVideoTrack() { await new Promise((r) => setTimeout(r, 1)); return { file: this.source.blob.type, getColorSpace: async () => ({}), getDisplayWidth: async () => 640, getDisplayHeight: async () => 360 }; } dispose() { /* nothing */ } }
@@ -14,12 +15,12 @@ vi.mock('mediabunny', () => {
 });
 vi.mock('./formats', () => ({ READABLE: [] }));
 vi.mock('./thumbs.worker', () => ({ renderThumbs: vi.fn() }));
-vi.mock('./sound', () => ({ ResilientSink: class {}, playableAudioTrack: async () => null }));
+vi.mock('./sound', () => ({ ResilientSink: class {}, playableAudioTrack: () => audioCheck() }));
 vi.mock('../storage/db', () => { const file = async (id: string) => new Blob([], { type: id }); return { getBlob: file, openMedia: file, getPeaks: vi.fn(), putPeaks: vi.fn() }; });
 
 import { MediaError, MediaPool } from './media';
 
-beforeEach(() => { made.length = 0; samples = async function* () { /* empty */ }; });
+beforeEach(() => { made.length = 0; samples = async function* () { /* empty */ }; audioCheck = async () => null; });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('video streams', () => {
@@ -55,6 +56,47 @@ describe('video streams', () => {
     await new Promise((r) => setTimeout(r, 20));
     pool.dispose();
     await expect(Promise.race([got, new Promise((r) => setTimeout(() => r('still waiting'), 300))])).resolves.toBeNull();
+  });
+});
+
+describe('sound (V-248)', () => {
+  it('a clip shows its picture without waiting for the check of its sound, which runs after it, once', async () => {
+    let asked = 0;
+    audioCheck = () => { asked++; return new Promise(() => undefined); };
+    const pool = new MediaPool(1280);
+    const got = await Promise.race([pool.picture('c', 'a', 0).then(() => 'picture'), new Promise((r) => setTimeout(() => r('waits for the sound'), 300))]);
+    expect(got).toBe('picture');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(asked, 'checked once the picture is there, so Play does not wait for it').toBe(1);
+    await pool.picture('c', 'a', 1);
+    void pool.audioSink('a');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(asked, 'made once').toBe(1);
+    pool.dispose();
+  });
+
+  it('a picture that comes after the project was left does not open the file again for its sound', async () => {
+    let asked = 0;
+    audioCheck = async () => { asked++; return null; };
+    samples = async function* () { await new Promise((r) => setTimeout(r, 50)); };
+    const pool = new MediaPool(1280);
+    const got = pool.picture('c', 'a', 0);
+    await new Promise((r) => setTimeout(r, 10));
+    pool.release();
+    await got;
+    await new Promise((r) => setTimeout(r, 10));
+    expect(asked).toBe(0);
+    pool.dispose();
+  });
+
+  it('a sound check that failed is made again when the sound is asked for again', async () => {
+    let asked = 0;
+    audioCheck = async () => { asked++; if (asked === 1) throw new Error('refused'); return null; };
+    const pool = new MediaPool(1280);
+    await expect(pool.audioSink('a')).rejects.toThrow('refused');
+    await expect(pool.audioSink('a')).resolves.toBeNull();
+    expect(asked).toBe(2);
+    pool.dispose();
   });
 });
 

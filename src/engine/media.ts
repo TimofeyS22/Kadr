@@ -320,7 +320,7 @@ class VideoStream {
   }
 }
 
-interface Handle { input: Input; video: InputVideoTrack | null; hdr?: Hdr; sd: boolean; audio: InputAudioTrack | null }
+interface Handle { input: Input; video: InputVideoTrack | null; hdr?: Hdr; sd: boolean; audio: () => Promise<InputAudioTrack | null> }
 /** A photo the pool holds; `bitmap` once it is decoded. */
 interface Photo { loading: Promise<ImageBitmap>; bitmap: ImageBitmap | null; used: number }
 /** Decoded photos a pool keeps: dozens at preview size, a handful at 4K. */
@@ -346,7 +346,12 @@ export class MediaPool {
         const input = openInput(media);
         try {
           const video = await input.getPrimaryVideoTrack();
-          return { input, video, hdr: video ? await hdrTransfer(video) : undefined, sd: !!video && await sdMatrix(video), audio: await playableAudioTrack(input) };
+          // Which sound track plays is found by decoding its first packet: asked when the sound is wanted, not before the
+          // first picture of a clip (a scrub into a clip not opened yet waited for it, audit V-248). A check that failed
+          // is made again when asked again, as the whole handle was before.
+          let audio: Promise<InputAudioTrack | null> | null = null;
+          const sound = () => (audio ??= playableAudioTrack(input).catch((e: unknown) => { audio = null; throw e; }));
+          return { input, video, hdr: video ? await hdrTransfer(video) : undefined, sd: !!video && await sdMatrix(video), audio: sound };
         } catch (e) {
           input.dispose(); // a file that does not open is asked for again: no try leaves its input behind
           throw e;
@@ -409,10 +414,15 @@ export class MediaPool {
       this.streams.delete(clipId);
       s = null;
     }
+    const fresh = !s;
     s ??= await this.open(clipId, assetId);
     if (!s) return null;
     s.lastUsed = performance.now();
-    return s.frameAt(t, fast, frameMax);
+    const picture = await s.frameAt(t, fast, frameMax);
+    // The sound check runs once the clip has shown its first picture, so that Play does not wait for it either. Only on
+    // the file the pool still holds: a picture that comes after the project was left must not open the file again.
+    if (fresh) void this.handles.get(assetId)?.then((h) => h.audio()).catch(() => undefined);
+    return picture;
   }
 
   /** One stream per clip, however many callers ask at once: each extra one held a decoder nobody closed (audit V-160). */
@@ -437,8 +447,8 @@ export class MediaPool {
   }
 
   async audioSink(assetId: string): Promise<SoundSink | null> {
-    const h = await this.handle(assetId);
-    return h.audio ? new ResilientSink(h.audio) : null;
+    const track = await (await this.handle(assetId)).audio();
+    return track ? new ResilientSink(track) : null;
   }
 
   /** Closes decoders of clips that were not used recently (hardware decoders are scarce on phones). */
