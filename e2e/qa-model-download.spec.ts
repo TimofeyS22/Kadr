@@ -23,6 +23,8 @@ test.beforeEach(async ({ page }) => {
   });
 });
 const toasts = (page: Page) => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts);
+/** The question before a model download (audit V-181, qa-model-consent.spec.ts): the person says yes. */
+const agree = (page: Page) => page.getByRole('button', { name: 'Download and make captions', exact: true }).click({ timeout: 30_000 });
 
 /** Requests for Whisper's large files, from Kadr's site (…onnx.parts/<i>) or Hugging Face (…onnx with a Range). */
 const MODEL_FILES = /\/(encoder|decoder)_model\w*\.onnx(\.parts\/\d+)?$/;
@@ -64,6 +66,8 @@ test('the connection breaks mid-download: a plain message, and the next tap goes
   });
   await speechProject(page);
   await tool(page, 'Captions').click();
+  await expect(page.locator('.model-ask')).toContainText('77 MB will be downloaded once');
+  await agree(page);
   await expect.poll(() => toasts(page), { timeout: 240_000 }).toContainEqual(expect.stringContaining('The speech model download stopped'));
   expect((await toasts(page)).join(' ')).not.toMatch(/Failed to fetch|HTTP|part \d/); // the person's words, not the engine's
   const first = [...asked];
@@ -74,6 +78,10 @@ test('the connection breaks mid-download: a plain message, and the next tap goes
   broken = false;
   asked.length = 0;
   await page.getByRole('button', { name: 'Create captions', exact: true }).click();
+  // The question again, for what is still to come: the encoder and half of the decoder are kept (54 MB − 2 × 16 MiB).
+  await expect(page.locator('.model-ask')).toContainText('20 MB will be downloaded once');
+  expect(asked).toEqual([]);
+  await agree(page);
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 300_000 });
   // Only what was missing: the decoder's first two parts were kept before its third broke (parts go in order).
   expect(asked).toEqual(expect.arrayContaining(['decoder@2', 'decoder@3']));
@@ -98,6 +106,7 @@ test('a broken part is caught by its checksum and a hung part is asked for again
   });
   await speechProject(page);
   await tool(page, 'Captions').click();
+  await agree(page);
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
   // At least twice: the retry goes to the other host, and a slow Hugging Face may cost one more try before the site answers.
   expect(asked.filter((p) => p === 'encoder@0').length).toBeGreaterThanOrEqual(2);
@@ -118,6 +127,7 @@ test('Kadr\'s site is down and the fallback host ignores Range (as WebKit under 
   });
   await speechProject(page);
   await tool(page, 'Captions').click();
+  await agree(page);
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
   // One ranged try per file, answered with the whole file, then that whole file read once and cut into parts.
   expect(asked.filter((p) => p.endsWith('@whole')).sort()).toEqual(['decoder@whole', 'encoder@whole']);
@@ -136,6 +146,7 @@ test('Kadr\'s site does not have the file (404: a tab of an older Kadr after the
   });
   await speechProject(page);
   await tool(page, 'Captions').click();
+  await agree(page);
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
   expect(site.sort()).toEqual(['decoder@0', 'encoder@0']); // one look per file, not one per stumble
   expect(asked.filter((p) => p === 'decoder@1')).toHaveLength(2);
@@ -159,7 +170,7 @@ test('a model kept whole by an older Kadr moves into parts without being downloa
     if (p) asked.push(p);
     return route.continue();
   });
-  await tool(page, 'Captions').click();
+  await tool(page, 'Captions').click(); // the model is on the device, as the older Kadr left it: no question either
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 300_000 });
   expect(asked).toEqual([]);
   const left = await page.evaluate(async () => (await (await caches.open('transformers-cache')).keys()).map((r) => r.url).filter((u) => u.includes('whisper') && u.endsWith('.onnx')));

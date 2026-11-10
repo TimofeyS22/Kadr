@@ -32,6 +32,18 @@ test.afterAll(() => {
   fs.writeFileSync(path.join(import.meta.dirname, '..', 'test-results', 'language-eval.md'), out);
 });
 
+/**
+ * Says yes to every speech model download the run asks about (audit V-181; the question has its own tests in
+ * qa-model-consent.spec.ts), until the captions are on the timeline.
+ */
+async function untilCaptions(page: Page, timeout: number) {
+  const yes = page.getByRole('button', { name: 'Download and make captions', exact: true });
+  await expect(async () => {
+    if (await yes.isVisible()) await yes.click();
+    await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 1000 });
+  }).toPass({ timeout });
+}
+
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 for (const s of SAMPLES) {
@@ -50,12 +62,14 @@ for (const s of SAMPLES) {
     await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
     await page.getByRole('button', { name: 'Close tools' }).click();
     await page.getByRole('button', { name: 'Captions', exact: true }).click();
-    await page.getByRole('button', { name: 'Settings' }).click(); // the tool starts with the defaults (v1.3)
+    // The tool starts with the defaults (v1.3), or asks first when their model is not on the device (V-181): either
+    // way, on to the settings.
+    await page.getByRole('button', { name: 'Settings' }).or(page.getByRole('button', { name: 'Not now', exact: true })).click();
     await page.getByRole('combobox', { name: 'Language' }).selectOption({ label: 'Auto' });
     // EVAL_MODEL='Russian speech, compact' (a chip's label): detection as it runs with that model chosen.
     if (process.env.EVAL_MODEL) await page.locator('.sheet .chip', { hasText: new RegExp(`^${process.env.EVAL_MODEL}, \\d+ MB$`) }).click();
     await page.getByRole('button', { name: 'Create captions' }).click();
-    await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 540_000 });
+    await untilCaptions(page, 540_000);
     const toast = page.locator('.toast', { hasText: 'Speech language:' });
     await expect(toast).toBeVisible();
     const got = /Speech language: (.+?)\./.exec((await toast.textContent()) ?? '')?.[1] ?? '?';

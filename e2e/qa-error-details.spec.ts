@@ -49,6 +49,7 @@ test('a speech engine error: the toast has Details, they copy, name no file, and
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
+  await page.getByRole('button', { name: 'Download and make captions', exact: true }).click({ timeout: 30_000 }); // the question before the first model download (audit V-181)
   const toast = page.locator('.toast.error').filter({ hasText: 'Not enough memory on this device for the speech model' });
   await expect(toast).toBeVisible({ timeout: 120_000 });
   await toast.getByRole('button', { name: 'Details' }).click();

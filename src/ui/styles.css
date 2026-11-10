@@ -275,6 +275,12 @@ h1, h2, h3 { margin: 0; }
 }
 .sheet-body .btn { margin-top: 12px; }
 .export-progress { display: grid; gap: 12px; padding: 12px 0; text-align: center; }
+/* The question before a speech model download (audit V-181): the words, then the two answers, one under the other. */
+/* It takes the place of the progress pane, with its spacing and its buttons. */
+.model-ask { display: grid; gap: 12px; padding: 12px 0; text-align: center; }
+.model-ask p { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.model-ask-data { font-weight: 600; }
+.sheet-body .model-ask .btn { margin: 0; }
 .progress { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
 .progress div { height: 100%; background: var(--accent); transition: width 0.15s linear; }
 .error-text { color: #ffb3b3; }

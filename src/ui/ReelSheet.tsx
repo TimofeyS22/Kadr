@@ -3,16 +3,17 @@ import { useEffect, useRef, useState } from 'react';
 import { MOODS, type Mood } from '../core/music';
 import { player } from '../engine/player';
 import { CAPTION_CATEGORIES, CAPTION_PRESETS } from '../core/presets';
-import { CAPTION_LANGUAGES, defaultAsrModel } from '../engine/captions';
+import { CAPTION_LANGUAGES, defaultAsrModel, type DownloadConsent } from '../engine/captions';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
 import { projectDuration } from '../core/timeline';
-import { DEFAULT_REEL, makeReel, reelUsesSpeech, undoSteps, type ReelOptions, type ReelReport } from './autoreel';
+import { DEFAULT_REEL, makeReel, reelDownload, reelUsesSpeech, undoSteps, type ReelOptions, type ReelReport } from './autoreel';
 import { PaceBar, learnPace, speechStages } from './pace';
 import { Chips, Toggle, useSheetGuard } from './controls';
+import { ModelAsk, useModelAsk } from './modelAsk';
 import { MOOD_LABEL } from './MusicSheet';
 import { StylePicker } from './picker';
 import { drawCaptionTile } from './tiles';
@@ -33,8 +34,11 @@ type Phase = { kind: 'setup' } | { kind: 'running'; label: string } | { kind: 'd
 export function ReelBody() {
   const [o, setO] = useState(loadOptions);
   const [phase, setPhase] = useState<Phase>({ kind: 'setup' });
+  // The question before a model download (audit V-181). While it is on screen nothing runs: the sheet closes freely.
+  const { asked, ask, answer } = useModelAsk();
+  const checking = useRef(false);
   useHoldUpdates(phase.kind === 'running');
-  useSheetGuard(phase.kind === 'running' ? t('The reel is still being made. Tap again to stop.') : null);
+  useSheetGuard(phase.kind === 'running' && !asked ? t('The reel is still being made. Tap again to stop.') : null);
   const abort = useRef<AbortController | null>(null);
   const pace = useRef<Pace | null>(null);
   const set = (patch: Partial<ReelOptions>) => setO((x) => { const n = { ...x, ...patch }; saveOptions(n); return n; });
@@ -47,22 +51,35 @@ export function ReelBody() {
     void run();
   }, []);
 
-  /** `opts`: a one-off change (the language picked after a run); the saved options stay as they are. */
-  async function run(opts: ReelOptions = o) {
+  /**
+   * `opts`: a one-off change (the language picked after a run); the saved options stay as they are. `undo`: the steps
+   * of the reel this run replaces, walked back once the run really starts.
+   */
+  async function run(opts: ReelOptions = o, undo = 0) {
+    if (checking.current) return;
     const ac = new AbortController();
     abort.current = ac;
-    setPhase({ kind: 'running', label: t('Getting ready…') });
-    const p = editor().project;
-    const seconds = p ? projectDuration(p) : 0;
-    const stages = speechStages(opts.model, seconds, { pauses: true, music: !!opts.music });
-    pace.current = startPace(reelUsesSpeech(opts) ? stages : stages.filter((s) => s.id === 'pauses' || s.id === 'music'), performance.now());
+    let waited = false;
     let label = '';
     try {
+      // Before anything starts: the model this reel loads first, when this device does not keep it yet. "Not now"
+      // leaves the sheet and the project as they were, without a word.
+      checking.current = true;
+      const first = await reelDownload(opts).finally(() => { checking.current = false; });
+      if (first && !(await ask(first))) return;
+      undoSteps(undo);
+      setPhase({ kind: 'running', label: t('Getting ready…') });
+      const p = editor().project;
+      const seconds = p ? projectDuration(p) : 0;
+      const stages = speechStages(opts.model, seconds, { pauses: true, music: !!opts.music });
+      pace.current = startPace(reelUsesSpeech(opts) ? stages : stages.filter((s) => s.id === 'pauses' || s.id === 'music'), performance.now());
+      // A model that takes over later is asked about when it is needed; the wait for that answer is not this device's pace.
+      const consent: DownloadConsent = { agreed: first?.model, ask: (d) => { waited = true; return ask(d); } };
       const report = await makeReel(opts, (stage, l, f) => {
         if (pace.current) reportPace(pace.current, stage, f, performance.now());
         if (l !== label) { label = l; setPhase({ kind: 'running', label: l }); }
-      }, ac.signal);
-      if (pace.current) learnPace(opts.model, seconds, finishPace(pace.current, performance.now()));
+      }, ac.signal, consent);
+      if (pace.current && !waited) learnPace(opts.model, seconds, finishPace(pace.current, performance.now()));
       setPhase({ kind: 'done', report });
     } catch (e) {
       setPhase({ kind: 'setup' });
@@ -70,6 +87,7 @@ export function ReelBody() {
     }
   }
 
+  if (asked) return <ModelAsk d={asked} yes={t('Download and make the reel')} onAnswer={answer} />;
   if (phase.kind === 'running') {
     return (
       <div className="export-progress">
@@ -100,8 +118,7 @@ export function ReelBody() {
             <span>{r.detected ? t('Speech language (found by Kadr)') : t('Speech language')}</span>
             <select className="select" value={r.language} aria-label={t('Speech language')} onChange={(e) => {
               track('reel_language_changed', { from: r.language ?? '', to: e.target.value, detected: r.detected });
-              undoSteps(r.steps);
-              void run({ ...o, language: e.target.value });
+              void run({ ...o, language: e.target.value }, r.steps);
             }}>
               {CAPTION_LANGUAGES.filter((l) => l.id).map((l) => <option key={l.code} value={l.id!}>{t(l.label)}</option>)}
             </select>

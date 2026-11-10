@@ -116,6 +116,7 @@ test('a music download that hangs: the reel is still made, says why the music is
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
   await (await chooser).setFiles(fx('reel_ru.mp4'));
+  await page.getByRole('button', { name: 'Download and make the reel', exact: true }).click({ timeout: 60_000 }); // the question before the first model download (audit V-181)
   const done = page.locator('.reel-done');
   await expect(done).toBeVisible({ timeout: 300_000 });
   await expect(done).toContainText('Music was not added: Could not download the track');

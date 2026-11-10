@@ -64,6 +64,7 @@ test('no 4 GiB reservations: a reel, a video export to memory, an audio export a
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
   await (await chooser).setFiles(fx('reel_ru.mp4'));
+  await page.getByRole('button', { name: 'Download and make the reel', exact: true }).click({ timeout: 60_000 }); // the question before the first model download (audit V-181)
   await expect(page.locator('.reel-done')).toBeVisible({ timeout: 300_000 });
   const afterReel = await reserved(page);
   await page.getByRole('button', { name: 'Watch the reel' }).click();
@@ -114,6 +115,7 @@ test('an iPhone-sized address space: after two exports the speech heap still fit
   await page.getByRole('button', { name: 'Close tools' }).click();
   for (const n of [1, 2]) await exportAs(page, 'Video', 'Export video', test.info().outputPath(`v${n}.mp4`));
   await tool(page, 'Captions').click();
+  await page.getByRole('button', { name: 'Download and make captions', exact: true }).click({ timeout: 30_000 }); // the question before the first model download (audit V-181)
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 300_000 });
   await expect(page.locator('.toast.error')).toHaveCount(0);
 });

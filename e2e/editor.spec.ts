@@ -70,6 +70,14 @@ async function newProject(page: Page) {
   await expect(page.locator('.preview-canvas')).toBeVisible();
 }
 
+/**
+ * The first time a speech model is needed, the sheet asks before it downloads anything (audit V-181; its own tests
+ * are in qa-model-consent.spec.ts). Every test starts with no model on the device, so the person says yes here…
+ */
+const agreeToModel = (page: Page, yes = 'Download and make captions', timeout = 30_000) => page.getByRole('button', { name: yes, exact: true }).click({ timeout });
+/** …or "Not now", which leaves the caption settings open (with a model on the device, "Settings" stops the run instead). */
+const notNow = (page: Page) => page.getByRole('button', { name: 'Not now', exact: true }).click({ timeout: 30_000 });
+
 async function importFiles(page: Page, tool: string, files: string[]) {
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: tool, exact: true }).click();
@@ -539,6 +547,7 @@ test('auto captions, edit by text, .srt export', async ({ page }) => {
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click(); // one tap: no settings on the way (v1.3)
+  await agreeToModel(page);
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 240_000 });
   if (!(await sheet(page).isVisible())) await tool(page, 'Edit captions').click();
   await expect(page.getByRole('button', { name: 'Save as .srt' })).toBeVisible();
@@ -887,7 +896,7 @@ test('camera with teleprompter scrolls the script, records a mirrored clip onto 
   // waits under "From my text" (docs/09 D1, revised).
   if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await notNow(page);
   await expect(page.getByRole('radio', { name: 'Recognize speech' })).toHaveAttribute('aria-checked', 'true');
   await page.getByRole('radio', { name: 'From my text' }).click();
   await expect(page.getByRole('textbox', { name: 'Your text' })).toHaveValue('Hello! This is a teleprompter test.\nSecond line.');
@@ -1533,6 +1542,7 @@ test('reel in one tap: from the home card to a shorter reel with captions, title
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
   await (await chooser).setFiles(fx('reel_ru.mp4')); // 18.7 s: 1.5 s of silence, long pauses, "эээ", a repeat
+  await agreeToModel(page, 'Download and make the reel'); // it starts by itself: with the question, the first time
   const progress = sampleProgress(page, '.reel-done');
   const done = page.locator('.reel-done');
   await expect(done).toBeVisible({ timeout: 300_000 }); // started by itself
@@ -1643,7 +1653,7 @@ test('captions from my text: every word is the text\'s own, timed by the speech,
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await notNow(page);
   await expect(page.getByRole('radio', { name: 'Recognize speech' })).toHaveAttribute('aria-checked', 'true'); // no text yet
   await page.getByRole('radio', { name: 'From my text' }).click();
   await expect(page.getByRole('button', { name: 'Create captions' })).toBeDisabled();
@@ -1651,6 +1661,7 @@ test('captions from my text: every word is the text\'s own, timed by the speech,
   await page.getByRole('combobox', { name: 'Language' }).selectOption('russian');
   const progress = sampleProgress(page, '.clip-caption');
   await page.getByRole('button', { name: 'Create captions' }).click();
+  await agreeToModel(page);
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 300_000 });
   expectHonestProgress(await progress); // it used to fill on download and drop back to 0 (v1.2 Q4)
   if (!(await page.locator('.caption-row').first().isVisible())) await tool(page, 'Edit captions').click();
@@ -1698,6 +1709,7 @@ test('teleprompter → reel in one tap: the reel\'s captions are what was said; 
   await tool(page, 'Reel in 1 tap').click();
   await page.getByRole('combobox', { name: 'Language' }).selectOption('russian');
   await page.getByRole('button', { name: 'Make the reel' }).click();
+  await agreeToModel(page, 'Download and make the reel');
   const done = page.locator('.reel-done');
   await expect(done).toBeVisible({ timeout: 300_000 });
   await expect(done).toContainText(/Captions: \d+ words/); // from the recording, not the script (v1.6, the owner)
@@ -1956,6 +1968,7 @@ test('Captions in one tap from a selected video caption every clip; a second tap
   const clips = page.locator('.tl-row.main .clip');
   await expect(clips).toHaveCount(2);
   await tool(page, 'Captions').click(); // straight from the selected clip's tools
+  await agreeToModel(page);
   const caption = page.locator('.clip-caption');
   await expect(caption).toHaveCount(1, { timeout: 300_000 });
   const c = (await caption.boundingBox())!, a = (await clips.nth(0).boundingBox())!, b = (await clips.nth(1).boundingBox())!;
@@ -2032,6 +2045,7 @@ test('the browser refuses WebCodecs audio: captions are still made, from the rig
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
+  await agreeToModel(page);
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 240_000 });
   if (!(await sheet(page).isVisible())) await tool(page, 'Edit captions').click();
   const dl = page.waitForEvent('download');
@@ -2069,6 +2083,7 @@ test('a sound no decoder in the browser can read is left out of the captions, by
   });
   await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
+  await agreeToModel(page);
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 240_000 });
   await expect(page.getByText(/Captions are made without “landscape/)).toBeVisible();
 });
@@ -2082,10 +2097,15 @@ async function captionsWithRussianModel(page: Page, file: string): Promise<strin
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
-  await page.getByRole('button', { name: 'Settings' }).click(); // the tool starts with the defaults (v1.3)
+  await notNow(page); // the tool starts with the defaults (v1.3): not that model
   await expect(page.getByRole('combobox', { name: 'Language' })).toHaveValue('');
   await page.locator('.sheet .chip', { hasText: /^Russian speech, 225 MB$/ }).click();
   await page.getByRole('button', { name: 'Create captions' }).click();
+  await expect(page.locator('.model-ask')).toContainText('225 MB');
+  await agreeToModel(page);
+  // The speech here is not Russian: the Russian model is not sure of it, and Whisper is asked about before it comes.
+  await expect(page.locator('.model-ask')).toContainText('77 MB', { timeout: 400_000 });
+  await agreeToModel(page);
   await expect(page.getByRole('button', { name: 'Save as .srt' })).toBeVisible({ timeout: 400_000 });
   const dl = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save as .srt' }).click();
@@ -2102,6 +2122,7 @@ test('Russian interface, one tap: the Russian model (GigaAM; FastConformer on an
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
   await tool(page, 'Субтитры').click(); // one tap, the defaults: "Russian speech", Auto language
+  await agreeToModel(page, 'Скачать и сделать субтитры');
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
   if (!(await sheet(page).isVisible())) await tool(page, 'Субтитры').click();
   const dl = page.waitForEvent('download');
@@ -2137,10 +2158,11 @@ test('captions listen to the voice, not the library music under it: live speech 
   await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 60_000 });
   await page.getByRole('button', { name: 'Close tools' }).click();
   await tool(page, 'Captions').click();
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await notNow(page);
   await page.getByRole('combobox', { name: 'Language' }).selectOption('russian');
   await page.locator('.sheet .chip', { hasText: /^Russian speech, 225 MB$/ }).click();
   await page.getByRole('button', { name: 'Create captions' }).click();
+  await agreeToModel(page);
   await expect(page.getByRole('button', { name: 'Save as .srt' })).toBeVisible({ timeout: 400_000 });
   const dl = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save as .srt' }).click();
@@ -2165,6 +2187,7 @@ test('the Russian model (GigaAM; FastConformer on an iPhone) with its lenient sp
   await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 60_000 }); // a 136 s track: slower under a full run
   await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
   await tool(page, 'Субтитры').click();
+  await agreeToModel(page, 'Скачать и сделать субтитры');
   await expect(page.getByText('Речь в видео не найдена')).toBeVisible({ timeout: 400_000 });
   await expect(page.locator('.clip-caption')).toHaveCount(0);
 });
@@ -2419,6 +2442,7 @@ test('captions work offline once the speech model is on the device (Russian inte
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
   await tool(page, 'Субтитры').click(); // online: the model downloads once
+  await agreeToModel(page, 'Скачать и сделать субтитры');
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
   await page.waitForTimeout(1500); // autosave
   await context.setOffline(true);
@@ -2741,8 +2765,8 @@ test('history and persistence, overlays, sound and captions: text style, sticker
     await expect(page.locator('.tl-row.audio .clip')).toHaveCount(2);
   });
   await h.act('.srt captions', async () => {
-    await tool(page, 'Captions').click(); // one tap starts recognition (v1.3); Settings stops it
-    await page.getByRole('button', { name: 'Settings' }).click();
+    await tool(page, 'Captions').click(); // one tap asks before the first model download (V-181); "Not now" leaves the settings
+    await notNow(page);
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Import .srt or .vtt' }).click();
     await (await chooser).setFiles(fx('test.srt'));
@@ -3851,6 +3875,7 @@ test('the speech model is let go: alive after captions, gone when an export star
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   rows.push(`before: ${await rss() ?? '—'} MB`);
   await tool(page, 'Captions').click(); // one tap on the selected clip
+  await agreeToModel(page);
   const caption = page.locator('.clip-caption');
   await expect(caption).toHaveCount(1, { timeout: 300_000 });
   await expect.poll(asr, { message: 'the model is kept right after captions' }).toBe(1);
@@ -5078,6 +5103,7 @@ test('speech in a language beyond the first eleven is read in that language (aud
   await importFiles(page, 'Media', ['speech_pl.mp4']);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await page.locator('.toolbar').getByRole('button', { name: 'Captions', exact: true }).click();
+  await agreeToModel(page);
   await expect(page.locator('.tl-row .clip-caption')).toHaveCount(1, { timeout: 360_000 });
   await expect(page.locator('.toast').filter({ hasText: 'Polski' })).toBeVisible({ timeout: 20_000 });
   expect(await page.locator('.clip-caption').textContent()).not.toMatch(/[а-яё]/i);
@@ -5091,6 +5117,7 @@ test('Hugging Face blocked: English captions come whole from Kadr\'s own site (a
   await importFiles(page, 'Media', ['speech_en.mp4']);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await page.locator('.toolbar').getByRole('button', { name: 'Captions', exact: true }).click();
+  await agreeToModel(page);
   await expect(page.locator('.tl-row .clip-caption')).toHaveCount(1, { timeout: 360_000 });
   expect(await toastErrors(page)).toEqual([]);
   expect(asked, 'WebKit does not show a worker\'s requests to routes: this list proves it in Chromium').toEqual([]);

@@ -38,6 +38,7 @@ test('reel eval: speech kept, silence removed, time', async ({ page }, info) => 
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
   await (await chooser).setFiles(fx('reel_ru.mp4'));
+  await page.getByRole('button', { name: 'Download and make the reel', exact: true }).click({ timeout: 60_000 }); // the question before the first model download (audit V-181)
   const done = page.locator('.reel-done');
   let t0 = Date.now();
   await expect(done).toBeVisible({ timeout: 840_000 });

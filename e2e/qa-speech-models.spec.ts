@@ -45,7 +45,11 @@ async function memoryLimit(context: BrowserContext, limitMb: number) {
   });
 }
 
-async function russianCaptions(page: Page) {
+/**
+ * `questions`: what the sheet asks before each model download (audit V-181, qa-model-consent.spec.ts), in the order
+ * the questions come; each is answered yes. None when the model is on the device already.
+ */
+async function russianCaptions(page: Page, questions: RegExp[] = [/Один раз скачается \d+ МБ/]) {
   await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.hint.move', '1'); });
   await page.goto('./');
   await page.getByRole('button', { name: 'Новый проект' }).click();
@@ -56,6 +60,10 @@ async function russianCaptions(page: Page) {
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
   await tool(page, 'Субтитры').click(); // one tap: the default model for this device
+  for (const q of questions) {
+    await expect(page.locator('.model-ask')).toContainText(q, { timeout: 400_000 });
+    await page.getByRole('button', { name: 'Скачать и сделать субтитры', exact: true }).click();
+  }
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
   await expect(page.locator('.toast.error')).toHaveCount(0);
   return page.locator('.clip-caption').textContent();
@@ -75,20 +83,21 @@ test('a phone (an iPhone; Android with 4 GB): Russian captions come from the com
   expect(from(urls, HF)).toEqual([]);
 });
 
-test('GigaAM does not fit in memory: the compact model takes over without a word, and next time is chosen directly', async ({ page, context, browserName }) => {
+test('GigaAM does not fit in memory: the compact model takes over without an error (asked about first, as any download), and next time is chosen directly', async ({ page, context, browserName }) => {
   test.skip(browserName === 'webkit', 'an iPhone starts with the compact model (test above)');
   test.setTimeout(600_000);
   // 400 MB of heap at most: the compact model needs ~360, GigaAM ~480 (?diag, 2026-10-29).
   await memoryLimit(context, 400);
   await recordLoads(page);
   const urls = requests(context);
-  await russianCaptions(page);
+  // Yes to GigaAM; it does not fit; the compact model is another 132 MB, so it is asked about too (audit V-181).
+  await russianCaptions(page, [/Один раз скачается 225 МБ/, /не поместилась в память устройства.*Один раз скачается 132 МБ/]);
   expect(await loads(page)).toEqual(['ru', 'ru-fast']); // GigaAM first (a phone with the memory of a desktop), then the compact one
   expect(from(urls, GIGAAM).length).toBeGreaterThan(0);
   expect(from(urls, FAST).length).toBeGreaterThan(0);
   expect(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('kadr.speech.tooBig') ?? '{}')))).toEqual(['ru']);
-  // Next time, in a new project: straight to the compact model (now kept on the device), GigaAM is not tried.
-  await russianCaptions(page);
+  // Next time, in a new project: straight to the compact model (now kept on the device: no question), GigaAM is not tried.
+  await russianCaptions(page, []);
   expect(await loads(page)).toEqual(['ru-fast']);
 });
 

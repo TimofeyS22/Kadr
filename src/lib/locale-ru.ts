@@ -866,4 +866,11 @@ export const RU: Record<string, string> = {
   'iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.': 'iPhone стирает данные сайта, если его не открывали 7 дней. Добавьте Kadr на экран «Домой» и делайте проекты там: «Поделиться» → «На экран „Домой“».',
   'Projects made in Safari stay in Safari, and you have {n} here. To move one, save its backup here (↓), then tap “Restore backup” in the Home Screen app.': 'Проекты, сделанные в Safari, остаются в Safari — сейчас их здесь: {n}. Чтобы перенести проект, сохраните здесь его копию (↓), а в приложении с экрана «Домой» нажмите «Восстановить копию».',
   'Projects made in Safari stay in Safari. To bring one here, open Kadr in Safari, save a backup of the project (↓), then tap “Restore backup” here.': 'Проекты, сделанные в Safari, остаются в Safari. Чтобы перенести проект сюда, откройте Kadr в Safari, сохраните копию проекта (↓) и нажмите здесь «Восстановить копию».',
+  'Speech model download': 'Загрузка модели речи',
+  'This does not sound like Russian speech: another speech model will read it.': 'Это не похоже на русскую речь: её прочитает другая модель.',
+  'That speech model did not fit in this device’s memory: a smaller one is needed.': 'Та модель не поместилась в память устройства: нужна модель поменьше.',
+  '{mb} MB will be downloaded once; after that captions work offline.': 'Один раз скачается {mb} МБ, после этого субтитры работают без интернета.',
+  'You are on mobile data now.': 'Сейчас вы на мобильном интернете.',
+  'Download and make captions': 'Скачать и сделать субтитры',
+  'Download and make the reel': 'Скачать и сделать рилс',
 };

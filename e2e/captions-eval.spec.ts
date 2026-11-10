@@ -33,6 +33,18 @@ test.afterAll(() => {
 });
 
 // One page per model, so the model downloads once (the browser cache lives as long as the context).
+/**
+ * Says yes to every speech model download the run asks about (audit V-181; the question has its own tests in
+ * qa-model-consent.spec.ts), until the captions are on the timeline.
+ */
+async function untilCaptions(page: Page, timeout: number) {
+  const yes = page.getByRole('button', { name: 'Download and make captions', exact: true });
+  await expect(async () => {
+    if (await yes.isVisible()) await yes.click();
+    await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 1000 });
+  }).toPass({ timeout });
+}
+
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 let pageModel = '';
@@ -56,13 +68,15 @@ for (const model of models) for (const sample of samples) {
     await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
     await page.getByRole('button', { name: 'Close tools' }).click();
     await page.getByRole('button', { name: 'Captions', exact: true }).click();
-    await page.getByRole('button', { name: 'Settings' }).click(); // the tool starts with the defaults (v1.3)
+    // The tool starts with the defaults (v1.3), or asks first when their model is not on the device (V-181): either
+    // way, on to the settings.
+    await page.getByRole('button', { name: 'Settings' }).or(page.getByRole('button', { name: 'Not now', exact: true })).click();
     await page.getByRole('combobox', { name: 'Language' }).selectOption(lang === 'ru' ? 'russian' : 'english');
     const chip = { tiny: 'Fast', base: 'Accurate', small: 'Most accurate', ru: 'Russian speech', 'ru-fast': 'Russian speech, compact' }[model];
     await page.locator('.sheet .chip', { hasText: new RegExp(`${chip},`) }).first().click();
     const t0 = Date.now();
     await page.getByRole('button', { name: 'Create captions' }).click();
-    await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 840_000 });
+    await untilCaptions(page, 840_000);
     const seconds = (Date.now() - t0) / 1000;
     if (!(await page.locator('.sheet').isVisible())) await page.getByRole('button', { name: 'Edit captions', exact: true }).click();
     const dl = page.waitForEvent('download');

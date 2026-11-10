@@ -110,7 +110,10 @@ const scriptOf = (page: Page) => page.evaluate(() => document.querySelector<HTML
 async function makeReel(page: Page) {
   if (await page.getByRole('button', { name: 'Закрыть инструменты' }).isVisible()) await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
   await page.getByRole('button', { name: 'Рилс в 1 тап', exact: true }).click();
-  await page.getByRole('button', { name: 'Сделать рилс' }).click();
+  await page.getByRole('button', { name: 'Сделать рилс', exact: true }).click();
+  // The question before a model download (audit V-181). In these tests no reel gets as far as keeping the model
+  // before the next one starts, so each of them is asked.
+  await page.getByRole('button', { name: 'Скачать и сделать рилс', exact: true }).click({ timeout: 30_000 });
 }
 
 test.use({ serviceWorkers: 'block' }); // the network path: no service worker answers for the old files

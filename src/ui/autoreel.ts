@@ -7,7 +7,7 @@ import { fitTrack, type Mood } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import { cutTimelineRanges, endWithContent, mainTrack, placeClip, projectDuration, soundAssetId } from '../core/timeline';
 import type { CaptionWord, Project } from '../core/types';
-import type { AsrModel, CaptionProgress } from '../engine/captions';
+import type { AsrModel, CaptionProgress, DownloadConsent, ModelDownload } from '../engine/captions';
 import { MediaError, PEAKS_PER_SEC, waveform } from '../engine/media';
 import { player } from '../engine/player';
 import { t } from '../lib/i18n';
@@ -42,8 +42,22 @@ function speechLabel(p: CaptionProgress): [string, string, number | null] {
   return ['transcribe', t('Recognizing speech…'), p.fraction];
 }
 
-/** Runs the reel plan. Throws AbortError on cancel, after undoing whatever it had already changed. */
-export async function makeReel(o: ReelOptions, onProgress: (stage: string, label: string, f: number | null) => void, signal: AbortSignal): Promise<ReelReport> {
+/**
+ * The speech model download this reel would start with, for the question before it (audit V-181); null when the
+ * model is on this device, or the reel does not listen to speech at all.
+ */
+export async function reelDownload(o: ReelOptions): Promise<ModelDownload | null> {
+  const p = editor().project;
+  if (!p || !reelUsesSpeech(o) || !soundMainClips(p).length) return null;
+  const { firstDownload } = await import('../engine/captions');
+  return firstDownload(o.model, o.language || null);
+}
+
+/**
+ * Runs the reel plan. Throws AbortError on cancel — and on "not now" to a model download (`consent`) — after undoing
+ * whatever it had already changed.
+ */
+export async function makeReel(o: ReelOptions, onProgress: (stage: string, label: string, f: number | null) => void, signal: AbortSignal, consent: DownloadConsent): Promise<ReelReport> {
   const s = editor();
   const p0 = s.project;
   if (!p0 || !mainTrack(p0).clips.length) throw new MediaError('Add a video with speech first');
@@ -62,9 +76,9 @@ export async function makeReel(o: ReelOptions, onProgress: (stage: string, label
   try {
     const clips = soundMainClips(p0);
     let words: CaptionWord[] = [];
-    if ((o.captions || o.fillers || o.hook) && clips.length) {
+    if (reelUsesSpeech(o) && clips.length) {
       const { transcribeProject } = await import('../engine/captions');
-      const tr = await transcribeProject(p0, o.model, o.language || null, (pr) => onProgress(...speechLabel(pr)), signal);
+      const tr = await transcribeProject(p0, o.model, o.language || null, (pr) => onProgress(...speechLabel(pr)), signal, consent);
       words = tr.words;
       r.language = tr.language;
       r.detected = tr.detected;

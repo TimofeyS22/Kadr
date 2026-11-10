@@ -38,6 +38,18 @@ const savedProject = (page: Page) => page.evaluate(async () => {
   return all.sort((a, b) => b.updatedAt - a.updatedAt)[0];
 });
 
+/**
+ * Says yes to every speech model download the run asks about (audit V-181; the question has its own tests in
+ * qa-model-consent.spec.ts), until the captions are on the timeline.
+ */
+async function untilCaptions(page: Page, timeout: number) {
+  const yes = page.getByRole('button', { name: 'Download and make captions', exact: true });
+  await expect(async () => {
+    if (await yes.isVisible()) await yes.click();
+    await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 1000 });
+  }).toPass({ timeout });
+}
+
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 for (const { name, file: fileName, language } of SAMPLES) {
@@ -57,10 +69,12 @@ for (const { name, file: fileName, language } of SAMPLES) {
     await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
     await page.getByRole('button', { name: 'Close tools' }).click();
     await page.getByRole('button', { name: 'Captions', exact: true }).click();
-    await page.getByRole('button', { name: 'Settings' }).click(); // the tool starts with the defaults (v1.3)
+    // The tool starts with the defaults (v1.3), or asks first when their model is not on the device (V-181): either
+    // way, on to the settings.
+    await page.getByRole('button', { name: 'Settings' }).or(page.getByRole('button', { name: 'Not now', exact: true })).click();
     await page.getByRole('combobox', { name: 'Language' }).selectOption(language);
     await page.getByRole('button', { name: 'Create captions' }).click();
-    await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 540_000 });
+    await untilCaptions(page, 540_000);
     let words: { t0: number; t1: number; text: string }[] = [];
     await expect.poll(async () => {
       const cap = (await savedProject(page))?.tracks.flatMap((t) => t.clips).find((c) => c.kind === 'caption');

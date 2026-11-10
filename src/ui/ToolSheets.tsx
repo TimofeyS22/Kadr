@@ -13,7 +13,7 @@ import { soundEntries } from '../engine/audio';
 import { METER_IDLE, meterStep } from '../core/meter';
 import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
 import { projectScript } from '../core/script';
-import { ASR_MODELS, CAPTION_LANGUAGES, alignToScript, defaultAsrModel, fittingModel, languageLabel, transcribeProject, type AsrModel, type CaptionProgress } from '../engine/captions';
+import { ASR_MODELS, CAPTION_LANGUAGES, alignToScript, defaultAsrModel, firstDownload, fittingModel, languageLabel, transcribeProject, type AsrModel, type CaptionProgress, type DownloadConsent } from '../engine/captions';
 import { importFile } from '../engine/importer';
 import { player } from '../engine/player';
 import { VoiceRecorder } from '../engine/recorder';
@@ -21,6 +21,7 @@ import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles } from './actions';
 import { Chips, Slider, Swatches, Toggle, pct, useSheetGuard } from './controls';
+import { ModelAsk, useModelAsk } from './modelAsk';
 import { PaceBar, learnPace, speechStage, speechStages } from './pace';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
@@ -262,8 +263,11 @@ export function CaptionsBody() {
   const [source, setSource] = useState<'speech' | 'script'>('speech');
   // What the job is doing, as words; the bar itself is drawn from the pace (docs/09 Q4).
   const [progress, setProgress] = useState<string | null>(null);
+  // The question before a model download (audit V-181). While it is on screen nothing runs: the sheet closes freely.
+  const { asked, ask, answer } = useModelAsk();
+  const checking = useRef(false);
   useHoldUpdates(progress !== null);
-  useSheetGuard(progress !== null ? t('Captions are still being made. Tap again to stop.') : null);
+  useSheetGuard(progress !== null && !asked ? t('Captions are still being made. Tap again to stop.') : null);
   const pace = useRef<Pace | null>(null);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
@@ -276,14 +280,23 @@ export function CaptionsBody() {
 
   async function run() {
     const p = editor().project;
-    if (!p) return;
+    if (!p || checking.current) return;
     if (!soundEntries(p).length) { editor().toast(t('There is no sound in this project to caption')); return; }
     try { localStorage.setItem(LOOK_KEY, JSON.stringify({ preset, layout })); } catch { /* storage off */ }
     player.pause();
     const ac = new AbortController();
     abort.current = ac;
-    const started = performance.now();
     try {
+      // Before anything starts: the model this run loads first, when this device does not keep it yet. "Not now"
+      // leaves the sheet as it was, without a word.
+      checking.current = true;
+      const first = await firstDownload(model, lang || null).finally(() => { checking.current = false; });
+      if (first && !(await ask(first))) return;
+      // A model that takes over later (Whisper for speech that is not Russian, a lighter one after one that did not
+      // fit) is asked about when it is needed; the wait for that answer is not this device's pace.
+      let waited = false;
+      const consent: DownloadConsent = { agreed: first?.model, ask: (d) => { waited = true; return ask(d); } };
+      const started = performance.now();
       const seconds = projectDuration(p);
       const withScript = source === 'script' && !!script.trim();
       pace.current = startPace(speechStages(model, seconds, { script: withScript }), performance.now());
@@ -293,7 +306,7 @@ export function CaptionsBody() {
         const label = progressLabel(pr);
         setProgress((old) => (old === label ? old : label));
       };
-      const tr = await transcribeProject(p, model, lang || null, report, ac.signal);
+      const tr = await transcribeProject(p, model, lang || null, report, ac.signal, consent);
       if (withScript && pace.current) { reportPace(pace.current, 'align', null, performance.now()); setProgress(t('Matching your text…')); }
       const { language, detected } = tr;
       let words = tr.words;
@@ -304,7 +317,7 @@ export function CaptionsBody() {
         model, lang: lang || 'auto', detected: detected ? language ?? 'none' : '', layout, words: words.length, seconds: Math.round((performance.now() - started) / 1000),
         source: own ? 'script' : 'speech', ...(own && { matched: Math.round(own.matched * 100), skipped: own.skipped, adlibs: own.adlibs }),
       });
-      if (pace.current) learnPace(model, seconds, finishPace(pace.current, performance.now()));
+      if (pace.current && !waited) learnPace(model, seconds, finishPace(pace.current, performance.now()));
       addCaptions(words, preset, layout);
       if (detected && language) editor().toast(t('Speech language: {language}. Wrong? Pick it and create again.', { language: languageLabel(language) }), 'info', 6000);
       // Whisper on Russian speech gets a third of the words wrong; the Russian model, one in ten (audit V-191).
@@ -318,6 +331,7 @@ export function CaptionsBody() {
     }
   }
 
+  if (asked) return <ModelAsk d={asked} yes={t('Download and make captions')} onAnswer={answer} />;
   if (progress) {
     return (
       <div className="export-progress">

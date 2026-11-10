@@ -8,7 +8,7 @@ import { NEMO_FRAME_S, nemoFeatures } from '../core/fastconformer';
 import { ctcDecode, gigaamFeatures, parseCtcVocab, type CtcVocab } from '../core/gigaam';
 import { alignScript, type ScriptCaptions } from '../core/script';
 import type { CaptionWord } from '../core/types';
-import { absentOnSite, ensureFile, isLarge, isModelFileName, keptFile, legacySmall, mirrored, modelHosts, modelKey, probeAnswer, setModelHosts, smallFile } from './modelFiles';
+import { SPEECH_REPOS, absentOnSite, ensureFile, isLarge, isModelFileName, keptFile, legacySmall, mirrored, modelHosts, modelKey, probeAnswer, setModelHosts, smallFile } from './modelFiles';
 import { capSharedMemory, type HeapInfo } from './wasmMemory';
 
 /**
@@ -21,7 +21,7 @@ type CtcModel = Extract<AsrModel, 'ru' | 'ru-fast'>;
 export type AsrRequest =
   | { type: 'load'; id: number; model: AsrModel }
   | { type: 'transcribe'; id: number; audio: Float32Array; language: string | null; model: AsrModel }
-  | { type: 'detect'; id: number; audio: Float32Array; candidates: string[] }
+  | { type: 'detect'; id: number; audio: Float32Array; candidates: string[]; model: AsrModel }
   | { type: 'align'; id: number; script: string; words: CaptionWord[]; speech: [number, number][] }
   | { type: 'vad'; id: number; audio: Float32Array }
   | { type: 'heap'; id: number };
@@ -146,7 +146,7 @@ function load(model: AsrModel, id = 0): Promise<unknown> {
   releaseCtc(); // one big model in memory at a time: phones have little of it
   const prev = asr;
   loadedModel = model;
-  asr = pipeline('automatic-speech-recognition', `onnx-community/whisper-${model}_timestamped`, {
+  asr = pipeline('automatic-speech-recognition', SPEECH_REPOS[model], {
     device: 'wasm',
     dtype: 'q8',
     revision: WHISPER_REV[model], // pinned: the files must match their checksums in models.json
@@ -161,8 +161,8 @@ function load(model: AsrModel, id = 0): Promise<unknown> {
 // GigaAM v3 end-to-end (Sber, MIT): 225 MB, the most accurate. FastConformer Hybrid Large RU P&C (NVIDIA, CC BY 4.0):
 // 131 MB, for phones, whose memory GigaAM's ~480 MB heap does not fit (docs/12 §6.3).
 const CTC: Record<CtcModel, { repo: string; rev: string; file: string; vocab: string }> = {
-  ru: { repo: 'istupakov/gigaam-v3-onnx', rev: '322c3b29492673eb7d0b434bfa9dfb8653e34d02', file: 'v3_e2e_ctc.int8', vocab: 'v3_e2e_ctc_vocab.txt' },
-  'ru-fast': { repo: 'istupakov/stt_ru_fastconformer_hybrid_large_pc_onnx', rev: 'fb6753736c56de3259d78a26a488548c84b9dccb', file: 'model.int8', vocab: 'vocab.txt' },
+  ru: { repo: SPEECH_REPOS.ru, rev: '322c3b29492673eb7d0b434bfa9dfb8653e34d02', file: 'v3_e2e_ctc.int8', vocab: 'v3_e2e_ctc_vocab.txt' },
+  'ru-fast': { repo: SPEECH_REPOS['ru-fast'], rev: 'fb6753736c56de3259d78a26a488548c84b9dccb', file: 'model.int8', vocab: 'vocab.txt' },
 };
 type Ctc = ((inputs: Record<string, Tensor>) => Promise<Record<string, Tensor>>) & { dispose(): Promise<unknown> };
 let ctc: { model: CtcModel; ready: Promise<{ run: Ctc; vocab: CtcVocab }> } | null = null;
@@ -305,7 +305,10 @@ self.onmessage = async (e: MessageEvent<AsrRequest>) => {
       post({ type: 'result', id: msg.id, ...(await ctcTranscribe(msg.model, msg.audio)) });
       return;
     }
-    const run = await (asr ?? (load('tiny') as Promise<AutomaticSpeechRecognitionPipeline>));
+    // A worker started anew in the middle of a run (the idle release, docs/11 §3.7) has no Whisper: it loads the one the
+    // request names, which the person agreed to and this device keeps. It used to load tiny, a 41 MB download nobody
+    // was asked about, and read the speech with the weakest model (audit V-181).
+    const run = await (asr ?? (load(msg.model) as Promise<AutomaticSpeechRecognitionPipeline>));
     if (msg.type === 'detect') {
       post({ type: 'language', id: msg.id, ...(await detectLanguage(run, msg.audio, msg.candidates)) });
       return;

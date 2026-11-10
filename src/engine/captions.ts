@@ -7,7 +7,7 @@ import type { CaptionWord, Project } from '../core/types';
 import type { AsrModel, AsrRequest, AsrResponse } from './asr.worker';
 import { renderAudioWindow, soundEntries } from './audio';
 import { MediaError, MediaPool } from './media';
-import { DOWNLOAD_STOPPED, PARTS_CACHE } from './modelFiles';
+import { DOWNLOAD_STOPPED, PARTS_CACHE, SPEECH_REPOS, missingBytes } from './modelFiles';
 import type { HeapInfo } from './wasmMemory';
 import { IOS } from '../lib/device';
 import { useLocale } from '../lib/i18n';
@@ -87,6 +87,39 @@ const SURE: Record<'ru' | 'ru-fast', { confidence: number; letters: number }> = 
   ru: { confidence: 0.93, letters: 5 },
   'ru-fast': { confidence: 0.88, letters: 5 },
 };
+
+/**
+ * A speech model download, as the person is asked about it before it starts (audit V-181: the first tap on Captions
+ * took 132–225 MB without a word, on mobile data too). `mb` is what is still to come: the whole model the first
+ * time, the rest of it after a download that broke. `why`: asked in the middle of a run, because the speech turned
+ * out not to be Russian (Whisper reads it), or because the model before did not fit this device's memory.
+ */
+export interface ModelDownload { model: AsrModel; mb: number; why?: 'language' | 'memory' }
+/**
+ * The person's say over downloads in one run. `agreed`: the model they said yes to before the run started
+ * (firstDownload). `ask` is called for any other model this device does not keep, and the run waits for the answer.
+ */
+export interface DownloadConsent { agreed?: AsrModel | null; ask: (d: ModelDownload) => Promise<boolean> }
+
+/** What loading `model` would download, or null when it is on this device already. */
+async function download(model: AsrModel, why?: ModelDownload['why']): Promise<ModelDownload | null> {
+  const bytes = await missingBytes(SPEECH_REPOS[model]);
+  return bytes ? { model, mb: Math.max(1, Math.round(bytes / 1e6)), ...(why && { why }) } : null;
+}
+
+/** The model a run loads first. A Russian model reads Russian speech; speech in another language goes to Whisper base. */
+function firstEngine(model: AsrModel, language: string | null): AsrModel {
+  model = fittingModel(model);
+  return isRussian(model) && language && language !== 'russian' ? fittingModel('base') : model;
+}
+
+/**
+ * What the first tap would download for captions with `model` in `language`: the sheet asks about it before it
+ * starts anything. Null when that model is on this device: no question, one tap as before. Null offline too: there
+ * is nothing to say yes to, and the run itself says there is no internet.
+ */
+export const firstDownload = async (model: AsrModel, language: string | null): Promise<ModelDownload | null> =>
+  (navigator.onLine ? download(firstEngine(model, language)) : null);
 
 export const CAPTION_LANGUAGES: { id: string | null; code: string; label: string }[] = [
   { id: null, code: '', label: 'Auto' }, { id: 'english', code: 'en', label: 'English' }, { id: 'russian', code: 'ru', label: 'Русский' },
@@ -261,28 +294,42 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
 /**
  * Transcribes the whole timeline; returns words in timeline seconds. Without a language, it is detected once on the
  * longest stretch of speech and then used for every chunk (one language per video, no per-chunk flips).
+ * No model is downloaded without `consent`: a "no" ends the run like Cancel (AbortError), with nothing changed.
  */
 export async function transcribeProject(
-  p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal,
+  p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal, consent: DownloadConsent,
 ): Promise<Transcript> {
   model = fittingModel(model);
   try {
-    return await transcribeWith(p, model, language, onProgress, signal);
+    return await transcribeWith(p, model, language, onProgress, signal, consent);
   } finally {
     setWorking(null);
   }
 }
 
 async function transcribeWith(
-  p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal,
+  p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal, consent: DownloadConsent,
 ): Promise<Transcript> {
-  // A Russian model reads Russian speech; speech in another language goes to Whisper base.
-  let engine: AsrModel = isRussian(model) && language && language !== 'russian' ? fittingModel('base') : model;
+  let engine: AsrModel = firstEngine(model, language);
   // The Russian model of this run: the chosen one, or the lighter one that replaced it.
   let russian: AsrModel = model;
+  /**
+   * Every model of a run is loaded through here, the ones that take over later too (Whisper for speech that is not
+   * Russian, a lighter model after one that did not fit): none of them is downloaded before the person says yes.
+   */
+  const agree = async (m: AsrModel, why?: ModelDownload['why']): Promise<void> => {
+    if (m === consent.agreed) return;
+    const d = await download(m, why);
+    if (!d) return;
+    // Offline before the first download: say what to do, not ask about a download that cannot start (docs/11 QA).
+    if (!navigator.onLine) throw new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: ASR_MODELS[m].mb });
+    const yes = await consent.ask(d);
+    if (!yes || signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+  };
   /** Loads `m`, or the lighter model when `m` does not fit in memory; returns the one loaded. */
-  const load = async (m: AsrModel): Promise<AsrModel> => {
+  const load = async (m: AsrModel, why?: ModelDownload['why']): Promise<AsrModel> => {
     for (;;) {
+      await agree(m, why);
       onProgress({ phase: 'download', fraction: 0, mb: ASR_MODELS[m].mb });
       setWorking(m);
       // A worker whose engine failed was replaced (retire): each request goes to the current one.
@@ -295,6 +342,7 @@ async function transcribeWith(
       console.warn(`speech model ${m} does not fit in this device's memory; ${lighter} takes over:`, loaded.message);
       rememberTooBig(m);
       m = lighter;
+      why = 'memory';
     }
   };
   /** Moves to the lighter model after the current one ran out of memory; false if there is none. */
@@ -303,7 +351,7 @@ async function transcribeWith(
     if (!lighter) return false;
     console.warn(`speech model ${engine} ran out of memory; ${lighter} takes over:`, r.message);
     rememberTooBig(engine);
-    engine = await load(lighter);
+    engine = await load(lighter, 'memory');
     if (isRussian(engine)) russian = engine;
     segment();
     return true;
@@ -348,10 +396,10 @@ async function transcribeWith(
       const r = await transcribe(longest);
       const sure = SURE[isRussian(engine) ? engine : 'ru'];
       if (r && (r.confidence ?? 0) >= sure.confidence && (r.chars ?? 0) / (a1 - a0) >= sure.letters) { language = 'russian'; done.set(longest, r); }
-      else { engine = await load(fittingModel('base')); segment(); }
+      else { engine = await load(fittingModel('base'), 'language'); segment(); }
     }
     if (!language) {
-      const r = await request(getWorker(), { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code) }, undefined, signal);
+      const r = await request(getWorker(), { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code), model: engine }, undefined, signal);
       if (r.type === 'error') throw engineError(r.message, 'Speech detection failed ({error})');
       if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
       // The Russian model was unsure (Russian under loud music) but it is Russian: it still reads it best.

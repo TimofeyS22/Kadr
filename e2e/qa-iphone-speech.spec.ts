@@ -96,6 +96,7 @@ test('iPhone-like memory, Russian interface, one tap: Russian captions (the comp
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
   await tool(page, 'Субтитры').click();
+  await page.getByRole('button', { name: 'Скачать и сделать субтитры', exact: true }).click({ timeout: 30_000 }); // the question before the first download (audit V-181)
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
   await expect(page.locator('.toast.error')).toHaveCount(0);
   expect(errors.filter((e) => /speech engine|no available backend/i.test(e))).toEqual([]);
@@ -119,6 +120,7 @@ test('a speech engine that ran out of memory says so plainly, and the next tap s
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Закрыть инструменты' }).click();
   await tool(page, 'Субтитры').click();
+  await page.getByRole('button', { name: 'Скачать и сделать субтитры', exact: true }).click({ timeout: 30_000 }); // the question before the first download (audit V-181)
   await expect.poll(() => toasts.length, { timeout: 120_000 }).toBeGreaterThan(0);
   expect(toasts[0]).toContain('не хватило памяти для модели речи');
   expect(toasts[0]).not.toMatch(/backend|RangeError|wasm/i); // the engine's own words go to the log, not to the person

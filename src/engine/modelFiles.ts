@@ -20,6 +20,17 @@ const FILES = manifest.files as Record<string, ModelFile>;
 const SMALL = manifest.small as Record<string, SmallFile>;
 const MIRROR: string[] = manifest.mirror;
 export const PARTS_CACHE = 'kadr-model-parts';
+/**
+ * The repository each speech model comes from: the worker loads from it, and the page looks under it for what this
+ * device already keeps (missingBytes), so the two cannot name different files.
+ */
+export const SPEECH_REPOS = {
+  tiny: 'onnx-community/whisper-tiny_timestamped',
+  base: 'onnx-community/whisper-base_timestamped',
+  small: 'onnx-community/whisper-small_timestamped',
+  ru: 'istupakov/gigaam-v3-onnx',
+  'ru-fast': 'istupakov/stt_ru_fastconformer_hybrid_large_pc_onnx',
+} as const;
 /** Where transformers.js kept whole files before v1.4.17: moved into parts once, then deleted. */
 const LEGACY = 'transformers-cache';
 const HF = 'https://huggingface.co/';
@@ -100,6 +111,12 @@ async function keep(cache: Cache, key: string, i: number, bytes: Uint8Array<Arra
   await cache.put(partKey(key, i), new Response(bytes, { headers: { 'content-length': String(bytes.byteLength), 'content-type': 'application/octet-stream' } }));
 }
 
+/** Where Kadr ≤ 1.4.17 kept a file in transformers.js's cache: under its revision or under "main", on either host. */
+const legacyAddresses = (key: string): Set<string> => {
+  const main = key.replace(/\/resolve\/[^/]+\//, '/resolve/main/');
+  return new Set([HF + key, HF + main, hosts.ranges + key, hosts.ranges + main]);
+};
+
 /**
  * A whole file transformers.js kept before (Kadr ≤ 1.4.16, from Hugging Face): its parts are checked and moved
  * over, the old copy goes. Whisper was asked for by "main" before its revision was pinned: the same bytes, if the
@@ -108,8 +125,7 @@ async function keep(cache: Cache, key: string, i: number, bytes: Uint8Array<Arra
 async function migrate(cache: Cache, key: string, f: ModelFile, have: boolean[]): Promise<void> {
   const old = await caches.open(LEGACY).catch(() => null);
   if (!old) return;
-  const main = key.replace(/\/resolve\/[^/]+\//, '/resolve/main/');
-  for (const at of new Set([HF + key, HF + main, hosts.ranges + key, hosts.ranges + main])) {
+  for (const at of legacyAddresses(key)) {
     const res = await old.match(at);
     if (!res) continue;
     const blob = await res.blob();
@@ -212,6 +228,41 @@ async function streamWhole(key: string, f: ModelFile, have: boolean[], onPart: (
     }
   }, signal);
   if (i !== f.parts.length) throw new Error(`the file ended early, in part ${i + 1}`);
+}
+
+/**
+ * How many bytes of a speech model's large files this device does not keep yet: what loading it would download.
+ * 0 when the model is on the device. The page asks before a download starts (audit V-181: a model never comes
+ * without the person's yes), so this only looks: it opens no connection and moves nothing. A whole file an older
+ * Kadr kept (migrate) counts as kept, by its size: it moves into parts without the network. Where the browser has
+ * no storage for the parts, everything is still to come, every time.
+ */
+export async function missingBytes(repo: string): Promise<number> {
+  const keys = Object.keys(FILES).filter((k) => k.startsWith(`${repo}/`));
+  const cache = typeof caches === 'undefined' ? null : await caches.open(PARTS_CACHE).catch(() => null);
+  let missing = 0;
+  for (const key of keys) {
+    const f = FILES[key];
+    const have = cache ? await keptParts(cache, key, f) : f.parts.map(() => false);
+    if (have.every((x) => x) || (await keptWhole(key, f))) continue;
+    have.forEach((x, i) => { if (!x) missing += partRange(f, i)[1] - partRange(f, i)[0] + 1; });
+  }
+  return missing;
+}
+
+/** An older Kadr's whole copy of the file is in transformers.js's cache (has() first: looking must not create it). */
+async function keptWhole(key: string, f: ModelFile): Promise<boolean> {
+  if (typeof caches === 'undefined' || !(await caches.has(LEGACY).catch(() => false))) return false;
+  const old = await caches.open(LEGACY).catch(() => null);
+  if (!old) return false;
+  for (const at of legacyAddresses(key)) {
+    const hit = await old.match(at);
+    if (!hit) continue;
+    // The size the server sent, without reading 200 MB to count them; a copy kept without it is measured.
+    const length = hit.headers.get('content-length');
+    if ((length ? Number(length) : (await hit.blob()).size) === f.size) return true;
+  }
+  return false;
 }
 
 /** Failures that trying again cannot fix: they stop the download at once. */
@@ -333,8 +384,7 @@ export async function smallFile(key: string, signal?: AbortSignal): Promise<Resp
 export async function legacySmall(cache: Cache, key: string): Promise<Response | undefined> {
   const f = SMALL[key];
   if (!f) return undefined;
-  const main = key.replace(/\/resolve\/[^/]+\//, '/resolve/main/');
-  for (const at of new Set([HF + key, HF + main, hosts.ranges + key, hosts.ranges + main])) {
+  for (const at of legacyAddresses(key)) {
     const hit = await cache.match(at);
     if (!hit) continue;
     const bytes = new Uint8Array(await hit.arrayBuffer());
