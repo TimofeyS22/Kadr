@@ -248,6 +248,8 @@ const SCENARIOS = {
     m.mb = Math.round((await import('node:fs')).statSync(join(OUT, '4k60-export.mp4')).size / 1e5) / 10;
     await tap('Done').catch(() => undefined);
     if (Math.abs(m.frames - m.duration * Math.round(m.fps)) > 3 || Math.abs(m.duration - 30) > 0.2) throw new Error(`frames or time lost: ${JSON.stringify({ picked, ...m })}`);
+    // From v1.8.2 nothing picked means 1080p at the video's 60 fps (owner, 2026-11-11); 4K is a choice in the sheet.
+    if (!process.env.L5_PICK && (Math.min(m.width, m.height) !== 1080 || Math.round(m.fps) !== 60)) throw new Error(`not 1080p60 when nothing is picked: ${JSON.stringify({ picked, ...m })}`);
     return { picked, realtimeX, ...m };
   },
   // V-157: what the phone says about the delay between the sound computed and the sound heard (with headphones on, too).
