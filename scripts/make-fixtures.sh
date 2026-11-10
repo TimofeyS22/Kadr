@@ -152,6 +152,12 @@ if [ ! -f speech_pl.mp4 ] && say -v Zosia "" 2>/dev/null; then
   say -v Zosia -o speech_pl.aiff "Dzień dobry wszystkim. Dzisiaj opowiem wam o moim ulubionym mieście i o tym, dlaczego warto je odwiedzić wiosną. Jest tam piękny stary rynek i bardzo dobre jedzenie."
   ff -f lavfi -i "color=c=0x334455:s=640x360:r=30" -i speech_pl.aiff -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac speech_pl.mp4 && rm speech_pl.aiff
 fi
+# A minute and a half of Russian speech in many pieces (audits V-136, V-182): the speech engine's heap must not grow
+# from one piece of speech to the next.
+if [ -f speech_ru.mp4 ] && [ ! -f speech_ru_long.mp4 ]; then
+  for i in $(seq 1 24); do echo "file '$PWD/speech_ru.mp4'"; done > speech_ru_long.txt
+  ff -f concat -safe 0 -i speech_ru_long.txt -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a 96k speech_ru_long.mp4 && rm speech_ru_long.txt
+fi
 # HDR with known colours (docs/14, F-02): each patch must come out as the SDR colour it stands for.
 if [ ! -f hdr_hlg.mp4 ]; then
   for t in hlg pq; do
