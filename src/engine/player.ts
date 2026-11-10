@@ -89,7 +89,7 @@ export class Player {
     // Music lowered under speech cannot play until the speech is mapped. Mapped at Play, a talking video's sound was
     // decoded alongside the starting playback (seconds on Chromium) and the music came in late (QA, docs/11 §3.2).
     if (soundEntries(p).some((e) => e.duck > 0)) setTimeout(() => { if (this.project === p) void duckRanges(p).catch(() => undefined); }, 0);
-    if (this.playing) this.audio.start(p, this.audio.now(), this.pool);
+    if (this.playing) this.audio.start(p, this.audio.heard(), this.pool); // on from what was heard: no jump of the latency
     else this.requestRender();
   }
 
@@ -102,7 +102,7 @@ export class Player {
     this.audio.start(this.project, this.time, this.pool, true);
     const loop = () => {
       if (!this.playing) return;
-      const t = this.audio.now();
+      const t = this.audio.heard(); // what is heard now, not what is being computed: Bluetooth adds 150–300 ms
       if (t >= this.duration) {
         this.pause();
         this.time = this.duration;
@@ -120,7 +120,7 @@ export class Player {
 
   pause(): void {
     if (!this.playing) return;
-    this.time = Math.min(this.audio.now(), this.duration);
+    this.time = Math.min(this.audio.heard(), this.duration); // the moment the person stopped on is the one they heard
     this.playing = false;
     cancelAnimationFrame(this.raf);
     this.audio.stop();

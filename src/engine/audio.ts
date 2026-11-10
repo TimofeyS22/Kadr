@@ -196,8 +196,30 @@ export class AudioEngine {
   /** Called when the sound stops on its own: a call, Siri, the screen locked. */
   onInterrupted: (() => void) | null = null;
 
+  /** Timeline time of the sound being computed now: what scheduling paces against. */
   now(): number {
     return this.ctx ? Math.max(this.startTl, this.startTl + this.ctx.currentTime - this.startCtx) : this.startTl;
+  }
+
+  /**
+   * Timeline time of the sound coming out of the speaker or headphones now: what the picture follows. `currentTime` is
+   * ahead of it by the output latency, 10–40 ms on a phone's speaker and 150–300 ms in Bluetooth headphones, where the
+   * preview ran ahead of its sound and cuts made to the beat missed it (audit V-157). The browser's output timestamp
+   * says which context time is audible at which moment; without it, the reported latencies are taken off.
+   */
+  heard(): number {
+    const ctx = this.ctx;
+    if (!ctx) return this.startTl;
+    let audible = ctx.currentTime - (ctx.outputLatency || 0) - (ctx.baseLatency || 0);
+    const stamp = typeof ctx.getOutputTimestamp === 'function' ? ctx.getOutputTimestamp() : null;
+    // contextTime is 0 until the device has played something; performanceTime is on the page's own clock. A stamp that
+    // puts the sound more than a second behind (a stale or differently based clock) would freeze the picture: only a
+    // latency a real output can have is believed, and a few ms ahead is the render quantum's jitter, clamped below.
+    if (stamp?.contextTime && stamp.performanceTime) {
+      const stamped = stamp.contextTime + (performance.now() - stamp.performanceTime) / 1000;
+      if (ctx.currentTime - stamped > -0.05 && ctx.currentTime - stamped < 1) audible = stamped;
+    }
+    return Math.max(this.startTl, this.startTl + Math.min(audible, ctx.currentTime) - this.startCtx);
   }
 
   /**
