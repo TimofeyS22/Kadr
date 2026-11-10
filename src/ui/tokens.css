@@ -31,6 +31,7 @@
   --text-on-action: var(--ink-18);
   --action-danger: var(--red);         /* deleting, and nothing else */
   --mark-was: var(--ink-97);           /* the mark of what was: trim handles, the default on the Scale, the playhead */
+  --mark-edge: var(--ink-0);           /* the dark edge of a white mark that lies on a picture: readable on any video */
   --signal: var(--yellow);             /* the mark of what it is now, and the digit of the value */
   --text-on-signal: var(--yellow-ink);
   --tick-major: var(--ink-65);

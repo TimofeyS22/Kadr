@@ -6,7 +6,7 @@ export interface TokenPair { fg: string; bg: string; min: number; what: string }
 export const TOKEN_PAIRS: TokenPair[] = [
   { fg: '--text-primary', bg: '--surface-panel', min: 4.5, what: 'Текст на панели' },
   { fg: '--text-primary', bg: '--surface-raised', min: 4.5, what: 'Текст на листе' },
-  { fg: '--text-primary', bg: '--surface-field', min: 4.5, what: 'Текст на поле кадра' },
+  { fg: '--text-primary', bg: '--surface-field', min: 4.5, what: 'Текст на поле кадра и в поле ввода' },
   { fg: '--text-secondary', bg: '--surface-panel', min: 4.5, what: 'Второй план на панели' },
   { fg: '--text-secondary', bg: '--surface-raised', min: 4.5, what: 'Второй план на листе' },
   { fg: '--text-on-action', bg: '--action-primary', min: 4.5, what: 'Подпись главной кнопки' },

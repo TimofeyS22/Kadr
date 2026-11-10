@@ -1,7 +1,7 @@
 // Chetko components (DESIGN.md): what is pressed. Every one of them is at least 44 px to a finger, names itself to a
 // screen reader, shows the keyboard where it is, and takes every value from tokens. Texts come from the caller, so the
 // components know no language.
-import { useRef, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from 'react';
+import { useRef, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 
 type Native = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'children'>;
 
@@ -12,14 +12,21 @@ interface ButtonProps extends Native {
   size?: 'regular' | 'large';
   icon?: ReactNode;
   children: ReactNode;
+  ref?: Ref<HTMLButtonElement>;
 }
 export function Button({ variant = 'quiet', size = 'regular', icon, children, type = 'button', ...rest }: ButtonProps) {
   return <button type={type} className={`ck-btn ck-${variant}${size === 'large' ? ' ck-large' : ''}`} {...rest}>{icon}<span className="ck-btn-label">{children}</span></button>;
 }
 
-interface IconButtonProps extends Native { /** There is no text on it, so the name is required. */ label: string; children: ReactNode }
-export function IconButton({ label, children, type = 'button', ...rest }: IconButtonProps) {
-  return <button type={type} className="ck-ib" aria-label={label} {...rest}>{children}</button>;
+interface IconButtonProps extends Native {
+  /** There is no text on it, so the name is required. */
+  label: string;
+  /** It deletes: red, as everything that deletes (DESIGN.md §2.3). */
+  danger?: boolean;
+  children: ReactNode;
+}
+export function IconButton({ label, danger, children, type = 'button', ...rest }: IconButtonProps) {
+  return <button type={type} className={danger ? 'ck-ib ck-danger' : 'ck-ib'} aria-label={label} {...rest}>{children}</button>;
 }
 
 interface ToolProps extends Native {

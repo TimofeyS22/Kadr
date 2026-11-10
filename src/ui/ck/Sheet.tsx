@@ -3,6 +3,7 @@
 // swipe of its header down, like the sheets of the system (docs/09 Q2). It lives inside its host, which is `position:
 // relative` or fixed to the screen.
 import { useEffect, useRef, type PointerEvent, type ReactNode } from 'react';
+import { giveBack, opener, watchPressed } from './focus';
 
 interface Props {
   open: boolean;
@@ -16,20 +17,12 @@ interface Props {
 
 const SLOP = 6;
 
-// Safari does not move the focus to a button that is tapped or clicked, so "what had the focus before the sheet" is the
-// page itself there. The sheet then gives the focus back to what was pressed last.
-let pressed: Element | null = null;
-const notePressed = (e: Event) => { pressed = e.target instanceof Element ? e.target.closest('button, a, [tabindex]') : null; };
-
 export function Sheet({ open, title, closeLabel, closeIcon, onClose, children }: Props) {
   const panel = useRef<HTMLElement>(null);
   const back = useRef<Element | null>(null);
   const drag = useRef<{ y0: number; y: number; t: number; v: number; on: boolean } | null>(null);
 
-  useEffect(() => {
-    document.addEventListener('pointerdown', notePressed, true);
-    return () => document.removeEventListener('pointerdown', notePressed, true);
-  }, []);
+  useEffect(watchPressed, []);
 
   // While the sheet is open, everything beside it in its host is out of reach: of a finger (the scrim), of Tab and of a
   // screen reader (inert). That is what `aria-modal` promises.
@@ -46,13 +39,12 @@ export function Sheet({ open, title, closeLabel, closeIcon, onClose, children }:
     const el = panel.current;
     if (!el) return;
     if (open) {
-      back.current = document.activeElement && document.activeElement !== document.body ? document.activeElement : pressed;
+      back.current = opener();
       el.focus({ preventScroll: true });
     } else if (el.contains(document.activeElement) || document.activeElement === document.body) {
       // Back to what opened it; if that is gone (a tool was chosen and the ribbon gave way to a Scale), to what came instead.
       const host = el.parentElement?.parentElement;
-      const to = back.current instanceof HTMLElement && back.current.isConnected ? back.current : (host?.querySelector<HTMLElement>('[role="slider"]') ?? host?.querySelector<HTMLElement>('button:not(:disabled)'));
-      if (back.current) to?.focus({ preventScroll: true });
+      if (back.current) giveBack(back.current, () => host?.querySelector<HTMLElement>('[role="slider"]') ?? host?.querySelector<HTMLElement>('button:not(:disabled)'));
       back.current = null;
     }
   }, [open]);

@@ -88,7 +88,10 @@ describe('tokens: scales do not grow', () => {
 
 // ---- drift: a file that lives on tokens has no value written by hand ----
 /** Files already moved onto tokens. A screen is added here in the same commit that migrates it (stage Ч4). */
-const ON_TOKENS = ['ds.css', 'DesignSystem.tsx', 'DsComponents.tsx', 'ck/ck.css', 'ck/Scale.tsx', 'ck/Sheet.tsx', 'ck/controls.tsx'];
+const ON_TOKENS = ['ds.css', 'DesignSystem.tsx', 'DsComponents.tsx', 'DsParts.tsx', 'ck/ck.css', 'ck/Scale.tsx', 'ck/Sheet.tsx', 'ck/controls.tsx', 'ck/choice.tsx',
+  'ck/Field.tsx', 'ck/feedback.tsx', 'ck/home.tsx', 'ck/timeline.tsx'];
+/** Pictures that stand in for a person's video in the gallery: content, so their colours are free and not interface debt. */
+const CONTENT = ['dsArt.tsx'];
 const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 function drift(source: string): string[] {
@@ -145,7 +148,7 @@ describe('tokens: the old styles do not grow new debt', () => {
     expect(distinct(/z-index:\s*([^;}]+)/g)).toBeLessThanOrEqual(LEGACY.layers);
   });
   it('components', () => {
-    const files = readdirSync(import.meta.dirname).filter((f) => /\.tsx?$/.test(f) && !f.endsWith('.test.ts') && !ON_TOKENS.includes(f) && f !== 'tokenPairs.ts' && f !== 'ckFont.ts');
+    const files = readdirSync(import.meta.dirname).filter((f) => /\.tsx?$/.test(f) && !f.endsWith('.test.ts') && !ON_TOKENS.includes(f) && f !== 'tokenPairs.ts' && f !== 'ckFont.ts' && !CONTENT.includes(f));
     const hex = files.reduce((n, f) => n + [...read(f).matchAll(/#[0-9a-fA-F]{6}\b/g)].length, 0);
     expect(hex).toBeLessThanOrEqual(LEGACY.hexInComponents);
   });

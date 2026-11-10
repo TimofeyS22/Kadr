@@ -10,6 +10,8 @@ import './ck/ck.css';
 import { Button, IconButton, Progress, Ribbon, Tabs, Tool } from './ck/controls';
 import { Scale } from './ck/Scale';
 import { Sheet } from './ck/Sheet';
+import { MiniStrip } from './ck/timeline';
+import { Shot } from './dsArt';
 
 type Kind = 'speed' | 'volume' | 'colour';
 // The order of today's toolbar of a video piece (v1.7.1): nothing moves.
@@ -37,6 +39,7 @@ function Assembled() {
   const [history, setHistory] = useState<{ id: string; from: number }[]>([]);
   const [all, setAll] = useState(false);
   const [said, setSaid] = useState('Нажмите «Скорость» или «Все»');
+  const [time, setTime] = useState(2.4);
 
   const open = (k: Kind) => { setKind(k); setParam(PARAMS[k][0].id); setAll(false); setSaid(PARAMS[k][0].label); };
   const press = (name: string, k: Kind | 'danger' | null) => { if (k && k !== 'danger') open(k); else { setAll(false); setSaid(`«${name}» в галерее только показан`); } };
@@ -59,6 +62,12 @@ function Assembled() {
       <div className="ds-stage-top">
         <IconButton label="Отменить" onClick={undo}><Undo2 aria-hidden="true" /></IconButton>
         <IconButton label="Повторить" disabled><Redo2 aria-hidden="true" /></IconButton>
+        {/* While a value is set, the timeline gives way to the strip of the whole film (DESIGN.md §1). */}
+        {kind && (
+          <MiniStrip label="Положение в видео" value={time / 12} valueText={`${time.toFixed(1).replace('.', ',')} с из 12 с`} onSeek={(f) => setTime(Math.round(f * 120) / 10)}>
+            {(['mountains', 'mountains', 'food', 'food', 'night', 'night'] as const).map((scene, i) => <Shot key={i} scene={scene} />)}
+          </MiniStrip>
+        )}
         <span className="ds-said" role="status">{said}</span>
       </div>
       {kind && current ? (

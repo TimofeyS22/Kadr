@@ -1,31 +1,6 @@
 /* Chetko: the primitives of the sign and the gallery page (`?ds`). Every value here comes from tokens.css; the drift test
    (tokens.test.ts) turns red on a colour, a font size, a radius, a layer, a duration or an off-grid gap written by hand. */
 
-/* ---- the wordmark: the two dots of «ё» are the in and out marks of a cut ---- */
-.ck-wm { display: inline-block; font-family: var(--font-ui); font-weight: var(--weight-heavy); letter-spacing: -0.04em; line-height: 1; white-space: nowrap; }
-.ck-yo { position: relative; display: inline-block; }
-.ck-yo::before, .ck-yo::after { content: ''; position: absolute; top: 0.12em; width: 0.13em; height: 0.24em; background: var(--signal); }
-.ck-yo::before { left: 0.07em; }
-.ck-yo::after { right: 0.07em; }
-
-/* ---- the mark: whatever lies between two marks is held (a piece, an export, a value) ---- */
-.ck-held { position: relative; }
-.ck-held::before, .ck-held::after {
-  content: ''; position: absolute; top: calc(-1 * var(--mark-overhang)); bottom: calc(-1 * var(--mark-overhang));
-  width: var(--mark-width); background: var(--mark-was); z-index: var(--z-mark);
-}
-.ck-held::before { left: calc(var(--mark-width) / -2); }
-.ck-held::after { right: calc(var(--mark-width) / -2); }
-.ck-held.ck-now::after { background: var(--signal); }
-
-/* ---- the digit of a value: soft and pale while it moves, sharp and heavy when it rests ---- */
-.ck-digit {
-  font-size: var(--type-xl); font-weight: var(--weight-heavy); letter-spacing: -0.02em; line-height: var(--leading-tight); color: var(--signal);
-  font-variation-settings: 'SHRP' var(--sharp-rest);
-  transition: font-variation-settings var(--dur-value) var(--ease-soft), font-weight var(--dur-value) var(--ease-soft), color var(--dur-value) var(--ease-soft), opacity var(--dur-value) var(--ease-soft);
-}
-.ck-digit[data-moving='true'] { font-variation-settings: 'SHRP' var(--sharp-move); font-weight: var(--weight-regular); color: var(--text-primary); opacity: 0.6; }
-
 /* ---- the gallery ---- */
 .ds { height: 100%; overflow-y: auto; }
 .ds-in { max-width: 760px; margin: 0 auto; padding: var(--space-8) var(--space-4) calc(var(--space-8) + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: var(--space-8); }
@@ -70,6 +45,27 @@
 /* The stage is as wide as a phone: it steps out of the page's gutter. */
 .ds .ds-stage { position: relative; max-width: 375px; margin: 0 calc(-1 * var(--space-4)); height: 520px; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; background: var(--surface-field); border-radius: var(--radius-control); box-shadow: 0 0 0 var(--hairline) var(--border-subtle); }
 .ds .ds-stage-top { display: flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-1); background: var(--surface-panel); }
-.ds .ds-said { flex: 1; min-width: 0; text-align: right; padding-right: var(--space-3); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds .ds-said { flex: 1; min-width: 0; max-width: 50%; text-align: right; padding-right: var(--space-3); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ds .ds-stage-row { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2) 0 var(--space-1); background: var(--surface-panel); box-shadow: inset 0 var(--hairline) var(--border-subtle); }
 .ds .ds-stage-row .ck-tabs { flex: 1; }
+
+/* ---- the second part: choices, fields, the home screen and the editor assembled ---- */
+.ds .ds-form { display: grid; gap: var(--space-4); padding: 0 var(--space-2) var(--space-2); }
+.ds .ds-home { height: 600px; --toast-lift: 84px; }
+.ds .ds-home-head { display: flex; align-items: center; min-height: 64px; padding: 0 var(--space-4); background: var(--surface-panel); }
+.ds .ds-home-wm { font-size: var(--type-xl); }
+.ds .ds-home-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-4); background: var(--surface-panel); }
+.ds .ds-home-note { margin: 0 0 var(--space-3); font-size: var(--type-xs); }
+.ds .ds-home-count { display: flex; justify-content: space-between; margin: 0; padding: var(--space-2) 0; font-size: var(--type-md); }
+.ds .ds-home-dock { display: grid; padding: var(--space-3) var(--space-4) var(--space-4); background: var(--surface-panel); box-shadow: inset 0 var(--hairline) var(--border-subtle); }
+.ds .ds-editor { height: 640px; --toast-lift: 316px; } /* above the transport, the timeline and the ribbon: on the frame */
+.ds .ds-preview { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--surface-field); }
+.ds .ds-shot { position: absolute; top: var(--space-2); bottom: var(--space-2); left: 50%; translate: -50% 0; aspect-ratio: 9 / 16; }
+.ds .ds-shot > svg { display: block; width: 100%; height: 100%; }
+.ds .ds-caption { position: absolute; left: 10%; right: 10%; top: 38%; height: 10%; display: grid; place-items: center; text-align: center; font-size: var(--type-lg); font-weight: var(--weight-heavy); color: var(--text-primary); text-shadow: 0 1px 2px var(--mark-edge); }
+.ds .ds-tl-wrap { position: relative; padding-bottom: var(--space-2); background: var(--surface-panel); box-shadow: inset 0 var(--hairline) var(--border-subtle); }
+.ds .ds-tl { overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.ds .ds-tl::-webkit-scrollbar { display: none; }
+.ds .ds-tl-in { width: max-content; padding: 0 50%; }
+.ds .ds-frame { display: block; flex: none; width: 40px; height: 100%; }
+.ds .ds-frame > svg { display: block; width: 100%; height: 100%; }

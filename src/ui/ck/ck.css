@@ -1,5 +1,30 @@
 /* Chetko components (DESIGN.md). Every value comes from tokens.css; the drift test reads this file. */
 
+/* ---- the wordmark: the two dots of «ё» are the in and out marks of a cut ---- */
+.ck-wm { display: inline-block; font-family: var(--font-ui); font-weight: var(--weight-heavy); letter-spacing: -0.04em; line-height: 1; white-space: nowrap; }
+.ck-yo { position: relative; display: inline-block; }
+.ck-yo::before, .ck-yo::after { content: ''; position: absolute; top: 0.12em; width: 0.13em; height: 0.24em; background: var(--signal); }
+.ck-yo::before { left: 0.07em; }
+.ck-yo::after { right: 0.07em; }
+
+/* ---- the mark: whatever lies between two marks is held (a piece, an export, a value) ---- */
+.ck-held { position: relative; }
+.ck-held::before, .ck-held::after {
+  content: ''; position: absolute; top: calc(-1 * var(--mark-overhang)); bottom: calc(-1 * var(--mark-overhang));
+  width: var(--mark-width); background: var(--mark-was); z-index: var(--z-mark);
+}
+.ck-held::before { left: calc(var(--mark-width) / -2); }
+.ck-held::after { right: calc(var(--mark-width) / -2); }
+.ck-held.ck-now::after { background: var(--signal); }
+
+/* ---- the digit of a value: soft and pale while it moves, sharp and heavy when it rests ---- */
+.ck-digit {
+  font-size: var(--type-xl); font-weight: var(--weight-heavy); letter-spacing: -0.02em; line-height: var(--leading-tight); color: var(--signal);
+  font-variation-settings: 'SHRP' var(--sharp-rest);
+  transition: font-variation-settings var(--dur-value) var(--ease-soft), font-weight var(--dur-value) var(--ease-soft), color var(--dur-value) var(--ease-soft), opacity var(--dur-value) var(--ease-soft);
+}
+.ck-digit[data-moving='true'] { font-variation-settings: 'SHRP' var(--sharp-move); font-weight: var(--weight-regular); color: var(--text-primary); opacity: 0.6; }
+
 /* ---- what is pressed ---- */
 .ck-btn, .ck-ib, .ck-tool, .ck-tab {
   border: 0; background: none; color: inherit; font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
@@ -29,6 +54,8 @@
 
 .ck-ib { width: var(--touch); height: var(--touch); display: grid; place-items: center; flex: none; border-radius: var(--radius-control); transition: scale var(--dur-press) var(--ease-soft); }
 .ck-ib:active:not(:disabled), .ck-ib[data-demo='pressed'] { scale: 0.92; }
+.ck-ib.ck-danger { color: var(--action-danger); }
+.ck-ib.ck-danger:disabled { color: var(--text-disabled); }
 
 /* ---- a tool: an icon with its name under it ---- */
 .ck-tool {
@@ -108,3 +135,150 @@
 .ck-progress { height: var(--touch); }
 .ck-progress-film { position: absolute; inset: 0; display: flex; overflow: hidden; background: var(--mark-was); }
 .ck-progress-rest { position: absolute; inset: 0; background: var(--surface-panel); opacity: 0.86; transform-origin: 100% 50%; transition: transform var(--dur-undo) linear; }
+
+/* ---- a choice of one: segments for words, tiles for looks. What is chosen has a white ring or lies between two marks ---- */
+.ck-btn:focus-visible, .ck-choice-item:focus-visible, .ck-tile:focus-visible, .ck-play:focus-visible, .ck-join:focus-visible, .ck-toast-action:focus-visible,
+.ck-project-open:focus-visible, .ck-mini:focus-visible, .ck-handle:focus-visible, .ck-clip:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-choice { display: flex; gap: var(--space-2); }
+.ck-choice-item {
+  flex: 1 1 0; min-width: 0; min-height: var(--touch); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-control);
+  background: none; color: var(--text-secondary); font: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; touch-action: manipulation;
+  box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle); transition: scale var(--dur-press) var(--ease-soft);
+}
+.ck-choice-item:active:not(:disabled) { scale: 0.96; }
+.ck-choice-item[aria-checked='true'] { color: var(--text-primary); font-weight: var(--weight-strong); box-shadow: inset 0 0 0 2px var(--mark-was); }
+.ck-choice-item:disabled { color: var(--text-disabled); opacity: 1; cursor: default; }
+
+.ck-tiles { display: flex; gap: var(--space-3); padding: var(--space-2) var(--space-6) var(--space-2) var(--space-2); overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  -webkit-mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); }
+.ck-tiles::-webkit-scrollbar { display: none; }
+.ck-tile { flex: none; width: 80px; display: grid; gap: var(--space-1); padding: 0; border: 0; background: none; color: var(--text-secondary); font: inherit; font-size: var(--type-xs); cursor: pointer; touch-action: manipulation; }
+.ck-tile[aria-checked='true'] { color: var(--text-primary); font-weight: var(--weight-strong); }
+.ck-tile-art { display: block; height: 56px; }
+.ck-tile-pic { display: block; width: 100%; height: 100%; overflow: hidden; border-radius: var(--radius-clip); outline: var(--hairline) solid var(--image-outline); outline-offset: calc(-1 * var(--hairline)); }
+.ck-tile-pic > * { display: block; width: 100%; height: 100%; }
+.ck-tile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- a text field: 16 px, so Safari never zooms in ---- */
+.ck-field { display: grid; gap: var(--space-1); }
+.ck-field-label { color: var(--text-secondary); font-weight: var(--weight-strong); }
+.ck-input {
+  width: 100%; min-height: calc(var(--touch) + var(--space-1)); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-control);
+  background: var(--surface-field); color: var(--text-primary); font: inherit; font-size: var(--type-md); line-height: var(--leading-text);
+  box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle); outline: none;
+}
+textarea.ck-input { padding: var(--space-3); resize: vertical; }
+.ck-input::placeholder { color: var(--text-secondary); opacity: 1; }
+.ck-input:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-input:disabled { color: var(--text-disabled); }
+.ck-field[data-invalid] .ck-input { box-shadow: inset 0 0 0 2px var(--text-primary); }
+.ck-field-foot { display: flex; justify-content: space-between; gap: var(--space-2); font-size: var(--type-xs); color: var(--text-secondary); }
+.ck-field[data-invalid] .ck-field-note { display: flex; gap: var(--space-2); color: var(--text-primary); font-weight: var(--weight-strong); }
+.ck-field[data-invalid] .ck-field-note::before { content: '!'; flex: none; width: 16px; height: 16px; display: grid; place-items: center; border-radius: 50%; background: var(--text-primary); color: var(--surface-panel); font-weight: var(--weight-heavy); line-height: 1; }
+.ck-field-count { margin-left: auto; white-space: nowrap; }
+
+/* ---- a project on the home screen: the whole frame, the name, that it is saved, the actions in sight ---- */
+.ck-project { position: relative; display: grid; grid-template-columns: 54px minmax(0, 1fr); grid-template-areas: 'thumb title' 'thumb acts'; column-gap: var(--space-3); padding: var(--space-2) 0; box-shadow: inset 0 calc(-1 * var(--hairline)) var(--border-subtle); }
+.ck-project-thumb { grid-area: thumb; width: 54px; height: 96px; overflow: hidden; border-radius: var(--radius-clip); outline: var(--hairline) solid var(--image-outline); outline-offset: calc(-1 * var(--hairline)); }
+.ck-project-thumb > * { display: block; width: 100%; height: 100%; }
+.ck-project-open { grid-area: title; display: grid; align-content: start; gap: var(--space-1); min-height: var(--touch); padding: var(--space-2) 0 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+/* The whole row opens the project; the actions lie above that. */
+.ck-project-open::after { content: ''; position: absolute; inset: 0; }
+.ck-project-title { font-size: var(--type-md); font-weight: var(--weight-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ck-project-meta { font-size: var(--type-xs); color: var(--text-secondary); }
+.ck-project-acts { grid-area: acts; position: relative; z-index: var(--z-mark); display: flex; gap: var(--space-2); margin-left: calc(-1 * var(--space-3)); align-self: end; color: var(--text-secondary); }
+.ck-project-meta .ck-sr { position: absolute; }
+
+.ck-empty { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-8) var(--space-4); text-align: center; }
+.ck-empty-art { width: 96px; height: 170px; overflow: hidden; border-radius: var(--radius-clip); outline: var(--hairline) solid var(--image-outline); outline-offset: calc(-1 * var(--hairline)); }
+.ck-empty-art > * { display: block; width: 100%; height: 100%; }
+.ck-empty-title { margin: 0; font-size: var(--type-lg); font-weight: var(--weight-strong); letter-spacing: -0.01em; }
+.ck-empty-text { margin: 0 0 var(--space-2); max-width: 32ch; color: var(--text-secondary); }
+
+/* ---- toasts and the question before deleting ---- */
+@keyframes ck-rise { from { opacity: 0; translate: 0 var(--space-2); } }
+.ck-toasts { position: absolute; left: var(--space-4); right: var(--space-4); bottom: calc(var(--toast-lift, 0px) + var(--space-4)); z-index: var(--z-toast); pointer-events: none; display: grid; gap: var(--space-2); }
+.ck-toasts > div { display: grid; justify-items: center; gap: var(--space-2); }
+.ck-toast {
+  pointer-events: auto; display: flex; align-items: center; gap: var(--space-2); max-width: 100%; min-height: var(--touch); padding: 0 var(--space-1) 0 var(--space-4);
+  border-radius: var(--radius-control); background: var(--surface-raised); color: var(--text-primary); box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle), 0 var(--space-2) var(--space-6) var(--scrim);
+  animation: ck-rise var(--dur-sheet-in) var(--ease-out);
+}
+.ck-toast > svg { width: 18px; height: 18px; flex: none; }
+.ck-toast-text { padding: var(--space-3) var(--space-3) var(--space-3) 0; }
+.ck-toast[data-tone='error'] { box-shadow: inset 0 0 0 2px var(--text-primary), 0 var(--space-2) var(--space-6) var(--scrim); }
+.ck-toast-close { flex: none; width: var(--touch); height: var(--touch); display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--text-secondary); cursor: pointer; }
+.ck-toast-close svg { width: 18px; height: 18px; }
+.ck-toast-action { flex: none; min-height: var(--touch); padding: 0 var(--space-3); border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: var(--weight-heavy); text-decoration: underline; text-underline-offset: 0.2em; cursor: pointer; }
+.ck-toast-action:focus-visible, .ck-toast-close:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -2px; }
+
+.ck-confirm {
+  width: min(calc(100% - var(--space-8)), 400px); max-width: none; margin: auto auto calc(var(--space-4) + env(safe-area-inset-bottom, 0px)); padding: 0; border: 0;
+  border-radius: var(--radius-sheet); background: var(--surface-raised); color: var(--text-primary);
+}
+.ck-confirm[open] { animation: ck-rise var(--dur-sheet-in) var(--ease-out); }
+.ck-confirm::backdrop { background: var(--scrim); }
+.ck-confirm-in { padding: var(--space-6) var(--space-4) var(--space-4); }
+.ck-confirm h2 { margin: 0; font-size: var(--type-lg); font-weight: var(--weight-strong); letter-spacing: -0.01em; text-wrap: balance; }
+.ck-confirm p { margin: var(--space-2) 0 var(--space-6); color: var(--text-secondary); }
+.ck-confirm-acts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+
+/* ---- the transport under the frame ---- */
+.ck-transport { display: flex; align-items: center; min-height: calc(var(--touch) + var(--space-1)); padding: 0 var(--space-3) 0 var(--space-1); background: var(--surface-panel); }
+.ck-play { flex: none; width: calc(var(--touch) + var(--space-1)); height: var(--touch); display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; }
+.ck-play span { width: var(--touch); height: 36px; display: grid; place-items: center; border-radius: var(--radius-control); background: var(--action-primary); color: var(--text-on-action); transition: scale var(--dur-press) var(--ease-soft); }
+.ck-play:active span { scale: 0.92; }
+.ck-play svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+.ck-transport-mid { flex: 1; min-width: 0; display: flex; padding: 0 var(--space-2); }
+.ck-time { flex: none; color: var(--text-secondary); white-space: nowrap; }
+.ck-time b { color: var(--text-primary); font-weight: var(--weight-medium); }
+.ck-mini { position: relative; flex: 1; height: var(--touch); touch-action: none; cursor: grab; }
+.ck-mini-film { position: absolute; left: 0; right: 0; top: 10px; height: 24px; display: flex; overflow: hidden; border-radius: var(--radius-clip); opacity: 0.8; }
+.ck-mini-film > * { flex: 1; min-width: 0; height: 100%; }
+.ck-mini-head { position: absolute; top: var(--space-1); bottom: var(--space-1); width: 2px; translate: -50% 0; background: var(--mark-was); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); }
+
+/* ---- the timeline ---- */
+.ck-ruler { position: relative; height: 24px; }
+.ck-ruler-num { position: absolute; top: var(--space-1); translate: -50% 0; font-size: var(--type-xs); line-height: 1; color: var(--text-secondary); white-space: nowrap; }
+.ck-ruler-tick { position: absolute; top: 16px; width: var(--hairline); height: 4px; background: var(--tick-minor); }
+.ck-lane { position: relative; display: flex; gap: var(--space-1); height: var(--touch); }
+.ck-lane[data-main] { height: calc(var(--touch) + 2 * var(--mark-overhang)); }
+.ck-clip { position: relative; flex: none; height: 100%; display: flex; align-items: center; user-select: none; -webkit-user-select: none; }
+.ck-clip-select { position: absolute; inset: 0; padding: 0; border: 0; border-radius: var(--radius-clip); background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: pan-x; }
+.ck-clip-select:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-clip-body { position: relative; width: 100%; height: var(--space-8); pointer-events: none; }
+.ck-clip-body .ck-handle { pointer-events: auto; }
+.ck-lane[data-main] .ck-clip-body { height: var(--touch); }
+.ck-clip-fill { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; border-radius: var(--radius-clip); background: var(--surface-raised); color: var(--text-secondary); }
+.ck-clip[data-kind='video'] .ck-clip-fill, .ck-clip[data-kind='image'] .ck-clip-fill { background: var(--surface-field); }
+.ck-clip[data-selected] .ck-clip-fill { box-shadow: inset 0 0 0 2px var(--mark-was); }
+.ck-clip-label { position: relative; display: flex; align-items: center; gap: var(--space-1); min-width: 0; margin-left: var(--space-1); padding: var(--space-1) var(--space-2); border-radius: var(--radius-clip); background: var(--surface-raised); font-size: var(--type-xs); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ck-clip[data-selected] .ck-clip-label { margin-left: calc(var(--mark-width) + var(--space-1)); }
+.ck-clip-label svg { width: 14px; height: 14px; flex: none; }
+.ck-wave { position: absolute; left: 0; top: 6px; width: 100%; height: calc(100% - 12px); fill: var(--tick-minor); }
+/* The two marks of a held piece are its trim handles: 8 px to the eye, 44 px to the finger, half of it outside the piece. */
+.ck-handle {
+  position: absolute; top: calc(-1 * var(--mark-overhang)); bottom: calc(-1 * var(--mark-overhang)); z-index: var(--z-mark);
+  width: calc(var(--touch) / 2 + min(var(--touch) / 2, var(--clip-w, 44px) / 2)); touch-action: none; cursor: ew-resize; outline: none;
+}
+.ck-handle.ck-in { left: calc(var(--touch) / -2); }
+.ck-handle.ck-out { right: calc(var(--touch) / -2); }
+.ck-handle::after { content: ''; position: absolute; top: 0; bottom: 0; width: var(--mark-width); background: var(--mark-was); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); }
+.ck-handle.ck-in::after { left: calc(var(--touch) / 2 - var(--mark-width) / 2); }
+.ck-handle.ck-out::after { right: calc(var(--touch) / 2 - var(--mark-width) / 2); }
+.ck-playhead { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; translate: -50% 0; background: var(--mark-was); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); z-index: var(--z-playhead); pointer-events: none; }
+.ck-playhead::before { content: ''; position: absolute; top: 0; left: 50%; width: var(--mark-width); height: 12px; translate: -50% 0; background: var(--mark-was); }
+.ck-join { position: absolute; top: calc(var(--touch) / -2); width: var(--touch); height: var(--touch); display: grid; place-items: end center; padding: 0 0 var(--space-1); border: 0; background: none; color: var(--text-primary); cursor: pointer; z-index: var(--z-mark); translate: -50% 0; }
+.ck-join span { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--radius-control); background: var(--surface-raised); box-shadow: 0 0 0 2px var(--surface-panel); transition: scale var(--dur-press) var(--ease-soft); }
+.ck-join:active span { scale: 0.9; }
+.ck-join[data-on] span { background: var(--action-primary); color: var(--text-on-action); }
+.ck-join svg { width: 14px; height: 14px; }
+
+/* ---- on the frame: white with a dark edge, readable on any video ---- */
+.ck-frame-layer { position: absolute; inset: 0; pointer-events: none; z-index: var(--z-mark); }
+.ck-object { position: absolute; transform-origin: center; box-shadow: 0 0 0 1.5px var(--mark-was), 0 0 0 2.5px var(--mark-edge); }
+.ck-object-handle { position: absolute; right: calc(var(--touch) / -2); bottom: calc(var(--touch) / -2); width: var(--touch); height: var(--touch); display: grid; place-items: center; pointer-events: auto; touch-action: none; cursor: nwse-resize; }
+.ck-object-handle::after { content: ''; width: 20px; height: 20px; border-radius: 50%; background: var(--mark-was); box-shadow: 0 0 0 1.5px var(--mark-edge); }
+.ck-guide { position: absolute; background: var(--mark-was); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); }
+.ck-guide.ck-v { left: 50%; top: 0; bottom: 0; width: var(--hairline); }
+.ck-guide.ck-h { top: 50%; left: 0; right: 0; height: var(--hairline); }
