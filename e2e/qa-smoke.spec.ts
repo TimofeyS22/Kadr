@@ -45,14 +45,21 @@ test('smoke: Home shows this version, the sample opens, a split undoes, the vide
     await new Promise((ok, ko) => { v.onloadedmetadata = ok; v.onerror = () => ko(new Error('the file does not load')); });
     const c = Object.assign(document.createElement('canvas'), { width: 32, height: 56 });
     const g = c.getContext('2d', { willReadFrequently: true })!;
+    // A seek says "seeked" before its frame can be drawn: a fixed 150 ms read black on a busy machine (2 runs of 4 on
+    // WebKit) and on a real iPhone. The frame is read until it has a picture, for 6 s at most: a black file still fails.
     const luma = async (t: number) => {
       await new Promise((ok) => { v.onseeked = ok; v.currentTime = t; });
-      await new Promise((ok) => setTimeout(ok, 150));
-      g.drawImage(v, 0, 0, 32, 56);
-      const d = g.getImageData(0, 0, 32, 56).data;
-      let n = 0;
-      for (let i = 0; i < d.length; i += 4) n += (d[i] + d[i + 1] + d[i + 2]) / 3;
-      return n / (d.length / 4);
+      let mean = 0;
+      for (let tries = 0; tries < 30; tries++) {
+        await new Promise((ok) => setTimeout(ok, 200));
+        g.drawImage(v, 0, 0, 32, 56);
+        const d = g.getImageData(0, 0, 32, 56).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) n += (d[i] + d[i + 1] + d[i + 2]) / 3;
+        mean = n / (d.length / 4);
+        if (mean > 12) break;
+      }
+      return mean;
     };
     return { duration: v.duration, start: await luma(0.5), end: await luma(v.duration - 0.5) };
   }, base64);

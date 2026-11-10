@@ -56,6 +56,8 @@ test.afterEach(async ({ page }, info) => {
   expect(sent.map((r) => `${r.method} ${r.url} (${r.body} bytes)`), 'requests that send data').toEqual([]);
   expect(blocked.filter((u) => !KNOWN_BLOCKED.some((h) => h.test(new URL(u).hostname))), 'connections the CSP had to block').toEqual([]);
   // Console errors are collected for triage (docs/11), not failed on: some come from the browser itself.
+  // The folder is missing in a fresh checkout and when --output points elsewhere: the notes must not fail the test.
+  if (consoleErrors.length) fs.mkdirSync(path.join(import.meta.dirname, '..', 'test-results'), { recursive: true });
   if (consoleErrors.length) fs.appendFileSync(path.join(import.meta.dirname, '..', 'test-results', 'console-errors.txt'), `## ${info.project.name} › ${info.title}\n${[...new Set(consoleErrors)].join('\n')}\n\n`);
   expect(pageErrors, 'uncaught errors in the page').toEqual([]);
   expect(await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors) ?? [], 'error toasts').toEqual([]);

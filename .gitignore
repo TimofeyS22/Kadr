@@ -21,3 +21,6 @@ scripts/.model-cache/
 
 # Raw research corpus: texts of third parties, never committed (docs/15)
 research/*/data/
+
+# Worktrees the agent tooling makes for parallel fixes: other checkouts of this repo, never part of it.
+.claude/worktrees/
