@@ -22,11 +22,20 @@ test.beforeEach(async ({ page }) => {
 async function contrastAudit(page: Page): Promise<{ bad: string[]; checked: number; overPicture: number }> {
   return page.evaluate(() => {
     type RGBA = [number, number, number, number];
+    // Any colour syntax the browser reports (rgb(), oklch() of the Chetko tokens, color()) through a canvas pixel.
+    const pixel = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
     const parse = (c: string): RGBA => {
-      const m = c.match(/rgba?\(([^)]+)\)/);
-      if (!m) return [0, 0, 0, 0];
-      const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
-      return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1];
+      const m = c.match(/^rgba?\(([^)]+)\)$/);
+      if (m) {
+        const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+        return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1];
+      }
+      if (!c || c === 'transparent') return [0, 0, 0, 0];
+      pixel.clearRect(0, 0, 1, 1);
+      pixel.fillStyle = c;
+      pixel.fillRect(0, 0, 1, 1);
+      const [r, g, b, a] = pixel.getImageData(0, 0, 1, 1).data;
+      return [r, g, b, a / 255];
     };
     const over = (top: RGBA, under: RGBA): RGBA => {
       const a = top[3] + under[3] * (1 - top[3]);

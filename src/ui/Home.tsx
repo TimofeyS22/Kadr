@@ -1,4 +1,4 @@
-import { ArchiveRestore, Clapperboard, Download, Lock, Pencil, Plus, Smartphone, Sparkles, Trash2 } from 'lucide-react';
+import { ArchiveRestore, ChevronRight, Clapperboard, Download, Lock, Pencil, Plus, Smartphone, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { produce } from 'immer';
 import { ASPECTS, createProject } from '../core/defaults';
@@ -333,6 +333,7 @@ export function Home() {
         <button className="reel-card" disabled={!supported} onClick={() => void startTask('reel')}>
           <Clapperboard size={28} aria-hidden />
           <span><b>{t('Reel in 1 tap')}</b><small>{t('Pick a video of you talking: pauses and “um”s go, captions, zooms and music come.')}</small></span>
+          <ChevronRight className="reel-go" size={22} aria-hidden />
         </button>
       )}
 

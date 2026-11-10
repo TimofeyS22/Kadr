@@ -121,7 +121,7 @@ export default defineConfig({
       },
       workbox: {
         importScripts: ['share-target.js'],
-        globPatterns: ['**/*.{js,css,html,svg}', '**/inter-*.woff2'],
+        globPatterns: ['**/*.{js,css,html,svg}', '**/inter-*.woff2', '**/geologica-*.woff2'], // the face of the interface works offline from the first visit
         // On-device AI (speech model runtime, noise reduction) is large: cache it on first use instead of up front.
         globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision_bundle-*.js', '**/vision_wasm_internal-*.js', 'ru/**', 'en/**'],
         // Task pages are plain pages from the network, never the app shell.

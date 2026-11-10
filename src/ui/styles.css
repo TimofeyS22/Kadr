@@ -1,26 +1,28 @@
 :root {
-  /* Neutral graphite like a grading suite (color is judged against neutral gray), film-amber for actions,
-     cyan reserved for keyframes so animated properties never read as ordinary highlights. */
-  --bg: #161616;
-  --panel: #1f1f1f;
-  --panel-2: #2a2a2a;
-  --line: #383838;
-  --text: #f2f2f2;
-  --muted: #a6a6a6;
-  --accent: #ffc53d;
-  --on-accent: #1a1a1a;
+  /* Chetko, stage Ч4 (docs/17): the screens not rebuilt yet keep their layout and take their colours from the tokens
+     (tokens.css). The amber of v1.7.1 became the white of the system: what is chosen and what is the main action is
+     white; the signal yellow is kept for the value of a slider. Cyan stays for keyframes. */
+  --bg: var(--surface-panel);
+  --panel: var(--surface-raised);
+  --panel-2: var(--border-subtle);
+  --line: var(--text-disabled);
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  --accent: var(--action-primary);
+  --on-accent: var(--text-on-action);
   --key: #5ad1ff;
-  --danger: #ff6b6b;
-  --c-video: #34506b;
-  --c-image: #3d5a47;
-  --c-text: #634a86;
-  --c-caption: #7a5c1c;
-  --c-audio: #2e5e52;
+  --danger: var(--action-danger);
+  --c-video: var(--surface-raised);
+  --c-image: var(--surface-raised);
+  --c-text: var(--track-text);
+  --c-caption: var(--track-caption);
+  --c-audio: var(--track-audio);
   --radius: 12px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   color-scheme: dark;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: var(--font-ui);
+  font-variation-settings: 'SHRP' var(--sharp-rest);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
@@ -43,6 +45,8 @@ h1, h2, h3 { margin: 0; }
   background: var(--panel-2); font-weight: 600; font-size: 14px;
 }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+/* Ч4: a main action that is not available yet is an outline, not a grey pill like every other button. */
+.btn.primary:disabled { background: transparent; border-color: var(--panel-2); color: var(--text-disabled); opacity: 1; }
 .btn.big { min-height: 52px; padding: 0 22px; font-size: 16px; }
 .icon-btn {
   display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 999px;
@@ -184,7 +188,7 @@ h1, h2, h3 { margin: 0; }
 /* The groups of a clip's tools (audit V-165): a thin line between them, and Back always in reach. */
 .tool-group { display: flex; gap: 2px; flex: 0 0 auto; }
 .tool-group + .tool-group { margin-left: 5px; padding-left: 5px; border-left: 1px solid var(--line); }
-.tool-back { position: sticky; left: -6px; z-index: 1; background: var(--bg); }
+.tool.tool-back { position: sticky; left: -6px; z-index: 1; background: var(--bg); } /* UI-1: opaque over the scrolled tools */
 .tool {
   flex: 0 0 auto; min-width: 66px; height: 58px; display: grid; justify-items: center; align-content: center; gap: 4px;
   border: 0; border-radius: 10px; background: transparent; color: var(--text); font-size: 11px;
@@ -209,8 +213,8 @@ h1, h2, h3 { margin: 0; }
 .sheet-body h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 8px; }
 .slider { display: grid; grid-template-columns: 108px 1fr 48px 32px; align-items: center; gap: 8px; min-height: 44px; }
 .slider-label { font-size: 13px; user-select: none; }
-.slider-value { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
-.slider input[type='range'] { width: 100%; height: 28px; accent-color: var(--accent); }
+.slider-value { font-size: 12px; color: var(--signal); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; } /* Ч4: the digit of the value is the signal (DESIGN.md §2.2) */
+.slider input[type='range'] { width: 100%; height: 28px; accent-color: var(--signal); } /* the value: the signal of the system */
 .kf-btn { position: relative; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
 .kf-btn.animated { color: var(--key); }
 .kf-btn.on { color: var(--key); background: rgba(90, 209, 255, 0.15); }
@@ -221,7 +225,7 @@ h1, h2, h3 { margin: 0; }
 .chips.scroll { padding-block: 4px; }
 .kf-btn::after { inset: -6px; }
 .project-actions .icon-btn::after { inset: -4px -2px; }
-.chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.chip.on { background: var(--panel-2); border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); color: var(--text); font-weight: 600; } /* Ч4: chosen is a white ring; solid white is for actions */
 .toggle { display: flex; align-items: center; justify-content: space-between; min-height: 44px; font-size: 14px; }
 .toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
 /* Colour row (v1.6): eyedropper, any colour, recent, palette; one scrolling row of 44 px targets. */
@@ -346,7 +350,8 @@ h1, h2, h3 { margin: 0; }
 .safe-zones .z-title { inset: 5%; background: none; }
 
 /* ---------- v0.3 components ---------- */
-.tool.on { color: var(--accent); }
+.tool.on { position: relative; } /* a tool that has changed the piece carries a mark, not a colour (DESIGN.md §5) */
+.tool.on::after { content: ''; position: absolute; left: calc(50% + 14px); top: 10px; width: 2px; height: 12px; background: var(--text); }
 .sfx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .sfx { display: flex; align-items: center; border-radius: 12px; background: var(--panel-2); }
 .sfx-add { flex: 1; min-height: 48px; border: 0; background: none; text-align: left; padding: 0 12px; font-weight: 600; }
@@ -383,7 +388,7 @@ h1, h2, h3 { margin: 0; }
 .t-beforeAfter::after { background: linear-gradient(180deg, #7a5c1c 0 50%, #3d5a47 50%); }
 .t-quote::after { background: radial-gradient(circle at 50% 50%, #f2f2f2 0 8%, #2a2a2a 9%); }
 .t-intro::after { background: linear-gradient(0deg, #1f1f1f 0 40%, #ffc53d 40% 48%, #1f1f1f 48%); }
-.lang { margin-left: auto; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--panel-2); }
+.lang { margin-left: auto; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--panel); } /* Ч4: the second plan keeps 4.5:1 on it */
 .lang button { min-width: 40px; min-height: 32px; border: 0; border-radius: 999px; background: none; font-size: 12px; font-weight: 700; color: var(--muted); }
 .lang button.on { background: var(--text); color: var(--bg); }
 
@@ -412,7 +417,7 @@ h1, h2, h3 { margin: 0; }
 .sel-handle::after { content: ''; position: absolute; inset: 12px; border-radius: 999px; background: var(--text); border: 2px solid var(--bg); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
 
 /* Multi-select (v0.6) */
-.clip.picked { outline: 2px solid var(--accent); outline-offset: -2px; box-shadow: inset 0 0 0 999px rgba(255, 197, 61, 0.2); }
+.clip.picked { outline: 2px solid var(--accent); outline-offset: -2px; box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.16); }
 .toolbar.multi { align-items: center; }
 .multi-count { flex: 0 0 auto; padding: 0 8px; font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
 .tool:disabled { opacity: 0.4; }
@@ -474,8 +479,8 @@ button, [role=radio], [role=switch] { -webkit-touch-callout: none; -webkit-user-
 }
 .tile canvas { position: absolute; left: 0; top: 0; width: 100%; height: 60px; }
 .tile span { position: absolute; left: 0; right: 0; bottom: 0; height: 18px; padding: 0 6px; background: rgba(0, 0, 0, 0.62); font-size: 11px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tile.on { box-shadow: inset 0 0 0 3px var(--accent); }
-.tile.on span { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.tile.on { outline: 2px solid var(--text); outline-offset: 2px; } /* Ч4: around the whole tile, seen on a light frame too */
+.tile.on span { background: var(--panel-2); color: var(--text); font-weight: 700; }
 
 /* Trim handles: a finger-sized hit area around the 16 px grip of the selected clip */
 .clip.sel .handle::before { content: ''; position: absolute; top: -6px; bottom: -6px; left: -10px; right: -10px; }
@@ -487,9 +492,10 @@ button, [role=radio], [role=switch] { -webkit-touch-callout: none; -webkit-user-
 .reel-done .btn { margin: 0; }
 .reel-card {
   display: flex; align-items: center; gap: 14px; width: 100%; margin: 0 0 14px; padding: 14px 16px; border-radius: var(--radius);
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); color: var(--text); text-align: left; font: inherit;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text); text-align: left; font: inherit; /* Ч4: a quiet card; the amber tint is gone with the amber */
 }
 .reel-card svg { flex: none; color: var(--accent); }
+.reel-card .reel-go { margin-left: auto; color: var(--muted); } /* Ч4: the card is pressed, and says so */
 .reel-card span { display: grid; gap: 3px; }
 .reel-card b { font-size: 16px; }
 .reel-card small { color: var(--muted); font-size: 13px; line-height: 1.4; }

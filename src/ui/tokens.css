@@ -1,11 +1,12 @@
 /* Chetko design tokens (docs/17, DESIGN.md): the only place where a value of the new interface is written down.
    Three layers: primitives → meaning → (components, in their own files, refer to meaning only).
-   Scoped to `.ck`, so nothing here touches the screens that are not migrated yet (they live on the variables of styles.css).
+   The values are defined on the whole page (stage Ч4): the screens not rebuilt yet map their old variables onto them
+   (styles.css). The face, size and ground below belong to `.ck`, a screen built on the system.
    A test (tokens.test.ts) reads this file: the contrast of every pair below, the size of each scale. */
 
 /* The face, Geologica, is registered by ckFont.ts: two variable files, 19 KB (Cyrillic) and 29 KB (Latin). */
 
-.ck {
+:root, .ck {
   /* ---- primitives: neutrals on one barely cool hue, so nothing next to the frame tints it ---- */
   --ink-0: oklch(0% 0 0);              /* #000000 */
   --ink-18: oklch(18.5% 0.004 270);    /* #121214 */
@@ -99,6 +100,9 @@
   --z-scrim: 4;
   --z-sheet: 5;
 
+}
+/* What a screen built on the system gets besides the values: its own ground, face and size. */
+.ck {
   color-scheme: dark;
   background: var(--surface-panel);
   color: var(--text-primary);
@@ -111,5 +115,5 @@
   -webkit-font-smoothing: antialiased;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ck { --dur-press: 0ms; --dur-snap: 0ms; --dur-value: 0ms; --dur-undo: 0ms; --dur-mode: 0ms; --dur-sheet-in: 0ms; --dur-sheet-out: 0ms; }
+  :root, .ck { --dur-press: 0ms; --dur-snap: 0ms; --dur-value: 0ms; --dur-undo: 0ms; --dur-mode: 0ms; --dur-sheet-in: 0ms; --dur-sheet-out: 0ms; }
 }
