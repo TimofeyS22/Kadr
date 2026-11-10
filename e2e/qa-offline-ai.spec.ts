@@ -5,8 +5,8 @@ import path from 'node:path';
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 const tool = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
 
-test('offline first use of the AI tools: each one says what to do within 25 s, none waits forever', async ({ page, context, browserName }) => {
-  test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+test('offline first use of the AI tools: each one says what to do within 25 s, none waits forever', async ({ page, context }) => {
+  // Both engines: Playwright's WebKit runs the service worker (V-184), and nothing here reloads offline.
   test.setTimeout(400_000);
   await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.locale', 'en'); localStorage.setItem('kadr.hint.move', '1'); });
   await page.goto('./');

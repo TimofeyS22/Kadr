@@ -2,6 +2,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
+import { switchableNetwork } from './network';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
@@ -1280,10 +1281,12 @@ test('noise reduction processes; ducking lowers music under speech', async ({ pa
   expect(pr.streams.some((s) => s.codec_type === 'audio')).toBe(true);
 });
 
-test('works offline after the first visit (service worker)', async ({ page, context, browserName }, info) => {
-  test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+test('works offline after the first visit (service worker)', async ({ page, context, baseURL, browserName }, info) => {
   test.skip(!!process.env.E2E_URL?.includes('localhost:51'), 'dev server has no service worker');
-  await page.goto('./');
+  test.skip(!baseURL?.startsWith('http://'), 'the network is taken away through a local proxy (e2e/network.ts)');
+  // Both engines (V-184): the reload goes to the service worker because the way to the server is gone.
+  const net = await switchableNetwork(baseURL!);
+  await page.goto(net.url);
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
   await page.reload(); // now controlled by the service worker
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
@@ -1292,12 +1295,16 @@ test('works offline after the first visit (service worker)', async ({ page, cont
   await importFiles(page, 'Media', ['photo.png']);
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.waitForTimeout(1000); // autosave
-  await context.setOffline(true);
+  net.off();
   await page.reload();
+  // Chromium: and the page knows it is offline. Not WebKit: its emulation also blocks reading the page's own Blobs
+  // (createImageBitmap failed on a stored photo), which a phone without a network does not do.
+  if (browserName === 'chromium') await context.setOffline(true);
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 30_000 });
   const pr = await probe(await exportAs(page, info, 'Photo', 'Save photo'));
   expect(pr.streams[0].codec_name).toBe('mjpeg');
   await context.setOffline(false);
+  await net.close();
 });
 
 test('Russian interface: home, toolbar and sheets are translated', async ({ page }) => {
@@ -2446,12 +2453,13 @@ test('decoded frames are released: playing and two exports leave almost no Video
   expect((two.made - two.closed) - (one.made - one.closed), 'open frames grow with each export').toBeLessThanOrEqual(1);
 });
 
-test('captions work offline once the speech model is on the device (Russian interface, GigaAM)', async ({ page, context, browserName }) => {
-  test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+test('captions work offline once the speech model is on the device (Russian interface: GigaAM, the compact model on the iPhone\'s engine)', async ({ page, context, baseURL, browserName }) => {
   test.skip(!!process.env.E2E_URL?.includes('localhost:51'), 'dev server has no service worker');
+  test.skip(!baseURL?.startsWith('http://'), 'the network is taken away through a local proxy (e2e/network.ts)');
   test.setTimeout(500_000);
   await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru'));
-  await page.goto('./');
+  const net = await switchableNetwork(baseURL!); // the model comes through it too, then it goes (V-184)
+  await page.goto(net.url);
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
   await page.reload(); // controlled by the service worker from now on
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
@@ -2464,9 +2472,10 @@ test('captions work offline once the speech model is on the device (Russian inte
   await agreeToModel(page, 'Скачать и сделать субтитры');
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
   await page.waitForTimeout(1500); // autosave
-  await context.setOffline(true);
+  net.off();
   try {
     await page.reload();
+    if (browserName === 'chromium') await context.setOffline(true); // see 'works offline after the first visit'
     await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 30_000 });
     await page.locator('.clip-caption').click();
     await tool(page, 'Субтитры').click();
@@ -2477,13 +2486,17 @@ test('captions work offline once the speech model is on the device (Russian inte
     await page.getByRole('button', { name: 'Сохранить .srt' }).click();
     const srt = (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
     for (const w of ['привет', 'работает', 'телефоне']) expect(srt).toContain(w);
+    // The style tiles of the sheet ask for fonts nobody used yet, which offline have nowhere to come from (D-16).
+    // WebKit reports each failed font load as a page error; those, and only those, are not this test's errors.
+    const fontLoads = /^(Response served by service worker is an error|Cannot load \.)$/;
+    pageErrors.splice(0, pageErrors.length, ...pageErrors.filter((m) => !fontLoads.test(m)));
   } finally {
     await context.setOffline(false);
+    await net.close();
   }
 });
 
-test('captions offline before the first model download say what to do, not "Failed to fetch"', async ({ page, context, browserName }) => {
-  test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+test('captions offline before the first model download say what to do, not "Failed to fetch"', async ({ page, context }) => {
   test.skip(!!process.env.E2E_URL?.includes('localhost:51'), 'dev server has no service worker');
   test.setTimeout(240_000);
   await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru'));
@@ -2499,7 +2512,8 @@ test('captions offline before the first model download say what to do, not "Fail
   await context.setOffline(true);
   try {
     await tool(page, 'Субтитры').click();
-    await expect(page.locator('.toast.error')).toContainText('Нет интернета. Модель речи (225 МБ) скачивается один раз', { timeout: 60_000 });
+    // 225 МБ on Chromium (GigaAM), 132 МБ on the iPhone's engine (the compact model).
+    await expect(page.locator('.toast.error')).toContainText(/Нет интернета\. Модель речи \(\d+ МБ\) скачивается один раз/, { timeout: 60_000 });
     await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0)); // the expected one
     await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 30_000 });
     await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));

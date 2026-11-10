@@ -205,8 +205,7 @@ test('a lazy chunk that is gone (the home screen\'s example) reloads the page in
 test.describe('with the service worker', () => {
   test.use({ serviceWorkers: 'allow' });
 
-  test('a new version waits: the open editor is never reloaded, works on its own cached files, and the home screen takes the update', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+  test('a new version waits: the open editor is never reloaded, works on its own cached files, and the home screen takes the update', async ({ page }) => { // both engines: Playwright's WebKit runs the service worker (V-184)
     test.setTimeout(400_000);
     const site = path.join(tmp, 'site');
     copyBuild(BUILD, site);
@@ -240,8 +239,7 @@ test.describe('with the service worker', () => {
     }
   });
 
-  test('code gone under an editor the service worker controls: the reload brings the new version, not the old one again', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+  test('code gone under an editor the service worker controls: the reload brings the new version, not the old one again', async ({ page }) => {
     test.setTimeout(400_000);
     // The speech worker is not in the precache: a tab whose worker the deploy removed (no files kept) cannot start
     // speech. A plain reload would get the old page again from the old worker's cache (review 2026-10-28).
@@ -269,8 +267,7 @@ test.describe('with the service worker', () => {
     }
   });
 
-  test('another tab never lets the new version in while this one works; both take it once nothing is running', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'Playwright WebKit does not run service workers');
+  test('another tab never lets the new version in while this one works; both take it once nothing is running', async ({ page }) => {
     test.setTimeout(300_000);
     const site = path.join(tmp, 'site');
     copyBuild(BUILD, site);

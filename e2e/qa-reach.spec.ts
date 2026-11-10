@@ -43,8 +43,8 @@ test('the page may be zoomed: nothing in the viewport setting forbids it', async
   expect(await page.locator('.preview').evaluate((el) => getComputedStyle(el).touchAction)).toBe('none');
 });
 
-test('a form on another site posts a file to the share address: Kadr opens, and nothing of it is kept', async ({ page, browserName, baseURL }) => {
-  test.skip(browserName !== 'chromium', 'the share address is answered by the service worker; Playwright WebKit runs none');
+test('a form on another site posts a file to the share address: Kadr opens, and nothing of it is kept', async ({ page, baseURL }) => {
+  // The share address is answered by the service worker, on both engines (V-184: Playwright's WebKit runs it).
   await page.goto('./');
   await page.evaluate(() => navigator.serviceWorker.ready);
   await expect.poll(async () => { await page.reload(); return page.evaluate(() => !!navigator.serviceWorker.controller); }).toBe(true);
