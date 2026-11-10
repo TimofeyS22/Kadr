@@ -1,0 +1,354 @@
+// Every tool once on a real iPhone (docs/16 §4, L5-авто): a fresh project per scenario, a test file pushed into the page
+// instead of the Photos picker, taps as click() in the page (safaridriver's touches arrive as long presses). Records
+// time, page errors, error toasts and whether the tab died. Nothing of the test stays on the phone.
+//   node scripts/l5-tools.mjs [scenario ...]      Env: L5_URL (site), L5_UDID, L5_OUT (screenshots)
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { extname, join } from 'node:path';
+
+const URL_ = process.env.L5_URL ?? 'https://timofeys22.github.io/Kadr/';
+const OUT = process.env.L5_OUT ?? join(process.env.TMPDIR ?? '/tmp', 'kadr-l5-tools');
+mkdirSync(OUT, { recursive: true });
+const fx = (n) => join(import.meta.dirname, '..', 'fixtures', n);
+const PORT = 4450;
+const CHUNK = 3 * 2 ** 20;
+
+const driver = spawn('safaridriver', ['-p', String(PORT)], { stdio: 'ignore' });
+await new Promise((r) => setTimeout(r, 2000));
+async function call(method, path, body, ms = 330_000) {
+  const res = await fetch(`http://127.0.0.1:${PORT}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(ms) });
+  const json = await res.json();
+  if (json.value?.error) throw new Error(`${json.value.error}: ${json.value.message}`);
+  return json.value;
+}
+// L5_MAC: Safari on this Mac (the same engine and its back-forward cache, for a build that is not published yet).
+const caps = process.env.L5_MAC ? { browserName: 'safari' } : { browserName: 'safari', platformName: 'ios', 'safari:useSimulator': false, ...(process.env.L5_UDID ? { 'safari:deviceUDID': process.env.L5_UDID } : { 'safari:deviceType': 'iPhone' }) };
+let session;
+for (let attempt = 1; !session; attempt++) {
+  try { session = await call('POST', '/session', { capabilities: { alwaysMatch: caps } }); } catch (e) {
+    if (attempt === 5) { driver.kill(); console.error(`L5: no session: ${e.message}`); process.exit(2); }
+    await new Promise((r) => setTimeout(r, 4000));
+  }
+}
+const S = `/session/${session.sessionId}`;
+await call('POST', `${S}/timeouts`, { script: 320_000 });
+const js = (script, ...args) => call('POST', `${S}/execute/sync`, { script, args });
+const jsAsync = (script, ...args) => call('POST', `${S}/execute/async`, { script, args });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const shot = async (name) => writeFileSync(join(OUT, `${name}.png`), Buffer.from(await call('GET', `${S}/screenshot`), 'base64'));
+async function waitFor(what, fn, ms) {
+  const t = Date.now();
+  for (;;) {
+    const v = await fn().catch(() => null);
+    if (v) return v;
+    if (Date.now() - t > ms) throw new Error(`${what}: not within ${Math.round(ms / 1000)} s`);
+    await sleep(300);
+  }
+}
+/** A button, radio or switch by its accessible name (any of the names, for two languages); clicked in the page. */
+const FIND = `const names = arguments[0];
+  const named = (e) => (e.getAttribute('aria-label') || (e.getAttribute('aria-labelledby') || '').split(' ').map((id) => document.getElementById(id)?.textContent ?? '').join(' ').trim() || e.closest('label')?.textContent || e.textContent).trim();
+  return [...document.querySelectorAll('button,[role=radio],[role=switch],[role=tab]')].find((e) => e.offsetParent !== null && names.includes(named(e))) || null;`;
+const tap = async (names, ms = 30_000) => {
+  const list = [names].flat();
+  await waitFor(`"${list[0]}"`, () => js(`${FIND.replace('return [', 'const el = [')} if (!el) return false; el.scrollIntoView({ block: 'nearest' }); el.click(); return true;`, list), ms);
+};
+const checked = (names, ms) => waitFor(`"${[names].flat()[0]}" on`, () => js(`${FIND.replace('return [', 'const el = [')} return !!el && (el.getAttribute('aria-checked') === 'true' || el.checked === true);`, [names].flat()), ms);
+const count = (css) => js('return document.querySelectorAll(arguments[0]).length', css);
+const closeTools = () => js("const c = document.querySelector('[aria-label=\"Close tools\"],[aria-label=\"Закрыть инструменты\"]'); if (c) c.click();");
+const selectClip = async (n = 0) => {
+  await js(`const el = document.querySelectorAll('.tl-row.main .clip')[arguments[0]], r = el.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, pointerId: 7, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1 };
+    el.dispatchEvent(new PointerEvent('pointerdown', at)); el.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 })); el.click();`, n);
+  await waitFor('the clip selected', () => js("return !!document.querySelector('.tl-row.main .clip.sel')"), 10_000);
+};
+const idle = (ms) => waitFor('the job to end', () => js("return !document.querySelector('.busy')"), ms);
+
+/** Watches the page: errors, error toasts, a marker that a reload (a crashed tab) wipes, the file input answered with pushed files. */
+const WATCH = `if (!window.__l5) {
+  window.__l5 = { errors: [], toasts: [], files: [], parts: [] };
+  addEventListener('error', (e) => window.__l5.errors.push(String(e.message).slice(0, 200)));
+  addEventListener('unhandledrejection', (e) => window.__l5.errors.push(String(e.reason && (e.reason.message || e.reason)).slice(0, 200)));
+  new MutationObserver(() => document.querySelectorAll('.toast.error').forEach((el) => { const t = el.textContent.slice(0, 200); if (!window.__l5.toasts.includes(t)) window.__l5.toasts.push(t); })).observe(document, { subtree: true, childList: true });
+  Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true });
+  const aclick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () { if (this.download && this.href.startsWith('blob:')) { window.__l5.saved = this.download; fetch(this.href).then((r) => r.blob()).then((b) => { window.__l5.blob = b; }); return; } return aclick.call(this); };
+  const click = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function () {
+    if (this.type !== 'file' || !window.__l5.files.length) return click.call(this);
+    const dt = new DataTransfer(); for (const f of window.__l5.files) dt.items.add(f); this.files = dt.files; window.__l5.files = [];
+    this.dispatchEvent(new Event('change'));
+  };
+}`;
+async function push(name) {
+  const bytes = readFileSync(fx(name));
+  await js('window.__l5.parts = [];');
+  for (let at = 0; at < bytes.length; at += CHUNK) {
+    const ok = await jsAsync("const done = arguments[arguments.length - 1]; fetch('data:application/octet-stream;base64,' + arguments[0]).then((r) => r.arrayBuffer()).then((b) => { window.__l5.parts.push(b); done(true); }, (e) => done(String(e)));", bytes.subarray(at, at + CHUNK).toString('base64'));
+    if (ok !== true) throw new Error(`push failed: ${ok}`);
+  }
+  const type = { '.mov': 'video/quicktime', '.mp4': 'video/mp4', '.jpg': 'image/jpeg', '.png': 'image/png', '.m4a': 'audio/mp4' }[extname(name).toLowerCase()];
+  await js("window.__l5.files.push(new File(window.__l5.parts, arguments[0], { type: arguments[1] })); window.__l5.parts = [];", name, type);
+}
+const RU = { 'New project': 'Новый проект', Media: 'Медиа' };
+async function fresh(files, { ru = false, aspect = '9:16' } = {}) {
+  await call('POST', `${S}/url`, { url: URL_ });
+  await js(`localStorage.setItem('kadr.tips','99');localStorage.setItem('kadr.locale',arguments[0]);localStorage.setItem('kadr.hint.move','1');localStorage.setItem('kadr.iosVideoTip.v3','1');localStorage.setItem('kadr.iosFormatCard.v1','1');localStorage.setItem('kadr.exportPrefs',JSON.stringify({quick:false}));`, ru ? 'ru' : 'en');
+  await call('POST', `${S}/url`, { url: URL_ });
+  await tap(ru ? RU['New project'] : 'New project', 60_000);
+  // Only a card on screen: the sheet's cards can be in the page while it is closed, and a click there does nothing. When
+  // the sheet did not open (a tap that came while the page was still starting), "New project" is pressed again.
+  await waitFor('aspect', () => js(`const c = [...document.querySelectorAll('.aspect-card')].find((e) => e.offsetParent !== null && e.getBoundingClientRect().height > 0 && e.textContent.includes(arguments[0]));
+    if (c) { c.click(); return true; }
+    const again = [...document.querySelectorAll('button')].find((e) => e.offsetParent !== null && arguments[1].includes(e.textContent.trim()));
+    if (again) again.click();
+    return false;`, aspect, ['New project', RU['New project']]), 20_000);
+  await waitFor('editor', () => js("return !!document.querySelector('.preview-canvas')"), 30_000);
+  await js(WATCH);
+  for (const f of files) await push(f);
+  if (files.length) {
+    await tap(ru ? RU.Media : 'Media');
+    await waitFor('clips', async () => (await count('.tl-row.main .clip')) >= 1, 120_000);
+    await closeTools();
+    await settled();
+  }
+}
+/** The site's storage stops growing: the added files and the project are saved (so a later growth is something else). */
+async function settled() {
+  let last = -2;
+  for (let t = Date.now(); Date.now() - t < 30_000; await sleep(2000)) {
+    const now = await usage();
+    if (now === last) return;
+    last = now;
+  }
+}
+async function exportAs(format, button, preset) {
+  await tap(['Export', 'Экспорт']);
+  await tap(format);
+  if (preset) await tap(preset);
+  await tap(button);
+  const ready = await waitFor('"Ready"', () => js("const m = document.body.innerText.match(/(Ready|Готово): [^\\n]* (MB|МБ)/); return m && m[0];"), 300_000);
+  await tap(['Save / Share', 'Save', 'Сохранить / Поделиться', 'Сохранить']).catch(() => undefined);
+  await sleep(500);
+  await tap(['Done', 'Готово']).catch(() => undefined);
+  return ready;
+}
+
+/** The file the last export saved, brought to the Mac (the bytes, as the phone made them). */
+async function pull(name) {
+  await waitFor('the saved file', () => js('return !!window.__l5.blob'), 15_000);
+  const b64 = await jsAsync(`const done = arguments[arguments.length - 1];
+    const r = new FileReader(); r.onload = () => done(r.result.split(',')[1]); r.onerror = () => done(null); r.readAsDataURL(window.__l5.blob);`);
+  if (!b64) throw new Error('the file could not be read');
+  await js('window.__l5.blob = null;');
+  const file = join(OUT, name);
+  writeFileSync(file, Buffer.from(b64, 'base64'));
+  return file;
+}
+const probe = (file) => {
+  const p = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-show_entries', 'stream=codec_type,codec_name,width,height,nb_read_frames:format=duration', '-of', 'json', file], { encoding: 'utf8' }));
+  const v = p.streams.find((s) => s.codec_type === 'video');
+  const duration = Number(p.format.duration), frames = Number(v?.nb_read_frames);
+  return { codec: v?.codec_name, width: v?.width, height: v?.height, frames, duration, fps: Math.round((frames / duration) * 10) / 10, audio: p.streams.some((s) => s.codec_type === 'audio') };
+};
+/** Mean colour of four bands across the middle rows (as e2e/qa-color-601 measures them). */
+const bands = (args, input) => {
+  const raw = execFileSync('ffmpeg', ['-v', 'error', ...args, '-frames:v', '1', '-vf', 'format=rgb24,crop=iw:ih*0.5:0:ih*0.25,scale=4:1:flags=area', '-f', 'rawvideo', '-'], { input });
+  return [0, 1, 2, 3].map((i) => [...raw.subarray(i * 3, i * 3 + 3)]);
+};
+const off = (a, b) => Math.max(...a.flatMap((c, i) => c.map((v, k) => Math.abs(v - b[i][k]))));
+/** The playhead to `s` seconds (60 px a second at the default zoom). */
+const seek = (s) => js("document.querySelector('.tl-scroll').scrollLeft = arguments[0]", s * 60);
+/** The preview canvas as the phone shows it. */
+async function previewShot() {
+  const el = await call('POST', `${S}/element`, { using: 'css selector', value: '.preview-canvas' });
+  return Buffer.from(await call('GET', `${S}/element/${Object.values(el)[0]}/screenshot`), 'base64');
+}
+const usage = () => jsAsync('const done = arguments[arguments.length - 1]; navigator.storage.estimate().then((e) => done(e.usage), () => done(-1));');
+/**
+ * The question before a model download (V-181): it comes, nothing is downloaded while it waits, then it is agreed to.
+ * Returns how much the site's storage grew while the question was on screen (MB).
+ */
+async function consent(yes, required = true) {
+  const before = await usage();
+  const asked = await waitFor('the question before the download', () => js(`${FIND.replace('return [', 'const el = [')} return !!el;`, [yes].flat()), required ? 60_000 : 10_000).catch((e) => { if (required) throw e; return false; });
+  if (!asked) return 'not asked: the model is on the phone already';
+  await sleep(6000);
+  const grewMb = Math.round(((await usage()) - before) / 1e5) / 10;
+  if (grewMb > 1) throw new Error(`the model was downloading before the yes: ${grewMb} MB`);
+  await tap(yes);
+  return grewMb;
+}
+
+async function longCaptions(ru) {
+  await fresh(['speech_ru_long.mp4'], { ru });
+  await tap(ru ? 'Субтитры' : 'Captions');
+  const askedMb = await consent(ru ? 'Скачать и сделать субтитры' : 'Download and make captions');
+  await waitFor('captions', async () => (await count('.clip-caption')) >= 1, 600_000);
+  await idle(300_000);
+  // The captions cover the whole clip only if every piece was read (60 px a second at the default zoom).
+  const span = await js("const r = [...document.querySelectorAll('.clip-caption')].map((e) => e.getBoundingClientRect()); return Math.round((Math.max(...r.map((x) => x.right)) - Math.min(...r.map((x) => x.left))) / 6) / 10");
+  if (span < 95) throw new Error(`captions cover ${span} s of 101 s`);
+  return { askedMb, captionsCoverS: span };
+}
+
+const SCENARIOS = {
+  'captions-en': async () => { await fresh(['speech_en.mp4']); await tap('Captions'); const askedMb = await consent('Download and make captions'); await waitFor('captions', async () => (await count('.clip-caption')) >= 1, 300_000); return { askedMb, words: await js("return document.querySelector('.clip-caption')?.textContent.slice(0, 80)") }; },
+  'captions-ru': async () => { await fresh(['speech_ru.mp4'], { ru: true }); await tap('Субтитры'); const askedMb = await consent('Скачать и сделать субтитры'); await waitFor('captions', async () => (await count('.clip-caption')) >= 1, 300_000); return { askedMb, words: await js("return document.querySelector('.clip-caption')?.textContent.slice(0, 80)") }; },
+  // 101 s of speech in pieces (V-136, V-182): the tab lives to the end (the page's marker survives) and every piece is read.
+  // Russian interface: the phone's Russian model; English interface: Whisper, the model the leak was reported for.
+  'captions-ru-long': () => longCaptions(true),
+  'captions-en-long': () => longCaptions(false),
+  reel: async () => { await fresh(['speech_ru.mp4'], { ru: true }); await tap('Рилс в 1 тап'); await tap('Сделать рилс', 20_000).catch(() => undefined); const askedMb = await consent('Скачать и сделать рилс', false); await waitFor('the reel', () => js("return document.querySelector('.reel-done')?.textContent.slice(0, 160)"), 330_000); return { askedMb, done: await js("return document.querySelector('.reel-done')?.textContent.slice(0, 160)") }; },
+  // V-243: a BT.601 video keeps its colours on the phone, in the preview, a photo and the video (ffmpeg's decode is the truth).
+  'color-601': async () => {
+    const truth = bands(['-ss', '1', '-i', fx('bt601.mp4')]);
+    await fresh(['bt601.mp4'], { aspect: '16:9' });
+    await seek(1);
+    await sleep(1000);
+    const preview = bands(['-i', 'pipe:0'], await previewShot());
+    await exportAs('Photo', 'Save photo');
+    const photo = bands(['-i', await pull('bt601-photo.jpg')]);
+    await exportAs('Video', 'Export video');
+    const video = bands(['-ss', '1', '-i', await pull('bt601-video.mp4')]);
+    const seen = { preview: off(preview, truth), photo: off(photo, truth), video: off(video, truth) };
+    if (Math.max(...Object.values(seen)) > 6) throw new Error(`colours moved, levels: ${JSON.stringify(seen)} truth ${JSON.stringify(truth)} preview ${JSON.stringify(preview)}`);
+    return { levelsOff: seen };
+  },
+  // V-216: what the sheet starts with for a 60 fps video, and whether the phone's encoder keeps every frame.
+  'export-60fps': async () => {
+    await fresh(['fps60.mp4']);
+    await tap(['Export', 'Экспорт']);
+    await tap('Video');
+    await waitFor('the sizes', () => js(`${FIND.replace('return [', 'const el = [')} return !!el;`, ['720p']), 20_000);
+    const picked = await js("return [...document.querySelectorAll('[role=radio][aria-checked=true]')].map((e) => (e.getAttribute('aria-label') || e.textContent).trim())");
+    await tap('Export video');
+    await waitFor('"Ready"', () => js("return /Ready: [^\\n]* MB/.test(document.body.innerText)"), 300_000);
+    await tap('Save / Share');
+    const m = probe(await pull('fps60-export.mp4'));
+    await tap('Done').catch(() => undefined);
+    if (m.frames < 356 || m.frames > 364 || Math.round(m.fps) !== 60 || m.width !== 720 || m.height !== 1280) throw new Error(`not 360 frames at 60 fps, 720x1280: ${JSON.stringify({ picked, ...m })}`);
+    return { picked, ...m };
+  },
+  // The same on a real iPhone clip: 30 s of 4K at 60 fps (HEVC), with the sheet's own choice.
+  'export-4k60-phone': async () => {
+    await fresh(['phone_4k60_hevc.mov'], { aspect: '16:9' });
+    await tap(['Export', 'Экспорт']);
+    await tap('Video');
+    await waitFor('the sizes', () => js(`${FIND.replace('return [', 'const el = [')} return !!el;`, ['720p']), 20_000);
+    if (process.env.L5_PICK) await tap(process.env.L5_PICK); // a size picked by hand instead of the sheet's own (e.g. 1080p)
+    const picked = await js("return [...document.querySelectorAll('[role=radio][aria-checked=true]')].map((e) => (e.getAttribute('aria-label') || e.textContent).trim())");
+    const t = Date.now();
+    await tap('Export video');
+    await waitFor('"Ready"', () => js("return /Ready: [^\\n]* MB/.test(document.body.innerText)"), 600_000);
+    const realtimeX = Math.round((30_000 / (Date.now() - t)) * 100) / 100;
+    await tap('Save / Share');
+    const m = probe(await pull('4k60-export.mp4'));
+    m.mb = Math.round((await import('node:fs')).statSync(join(OUT, '4k60-export.mp4')).size / 1e5) / 10;
+    await tap('Done').catch(() => undefined);
+    if (Math.abs(m.frames - m.duration * Math.round(m.fps)) > 3 || Math.abs(m.duration - 30) > 0.2) throw new Error(`frames or time lost: ${JSON.stringify({ picked, ...m })}`);
+    return { picked, realtimeX, ...m };
+  },
+  // V-157: what the phone says about the delay between the sound computed and the sound heard (with headphones on, too).
+  'audio-latency': async () => {
+    await fresh(['speech_en.mp4']);
+    await js("const c = AudioNode.prototype.connect; AudioNode.prototype.connect = function (...a) { window.__l5.ctx = this.context; return c.apply(this, a); };");
+    await tap('Play');
+    await sleep(2500);
+    const r = await js(`const x = window.__l5.ctx; if (!x) return null; const s = x.getOutputTimestamp ? x.getOutputTimestamp() : null;
+      return { state: x.state, outputLatency: x.outputLatency ?? null, baseLatency: x.baseLatency ?? null, currentTime: x.currentTime,
+        stampBehind: s && s.contextTime ? x.currentTime - (s.contextTime + (performance.now() - s.performanceTime) / 1000) : null };`);
+    await tap('Pause').catch(() => undefined);
+    if (!r) throw new Error('no audio context seen');
+    return r;
+  },
+  // D-14: an edit, then at once a new page of the site (the editor goes into the back-forward cache with its save just
+  // started). Up to v1.8.0 the new page's list stayed "Loading…" and "New project" did nothing while the old page was cached.
+  'leave-after-edit': async () => {
+    await fresh(['landscape.mp4']);
+    await selectClip();
+    await tap('Speed');
+    await tap('2×');
+    await tap('Done');
+    await js("addEventListener('pagehide', (e) => localStorage.setItem('l5.pagehide', String(e.persisted)));");
+    await call('POST', `${S}/url`, { url: URL_ }); // a new document, not the app's own way home
+    await sleep(3000);
+    const seen = await js("return { cached: localStorage.getItem('l5.pagehide'), loading: document.body.innerText.includes('Loading…') || document.body.innerText.includes('Загрузка…'), rows: document.querySelectorAll('.project-open').length }");
+    if (seen.loading || seen.rows < 1) throw new Error(`the list does not load after leaving an edit: ${JSON.stringify(seen)}`);
+    await js(WATCH); // the page is a new one by design
+    return seen;
+  },
+  // The screens as the phone draws them (for the design review; the pictures stay on the Mac).
+  screens: async () => {
+    await call('POST', `${S}/url`, { url: URL_ });
+    await js("localStorage.setItem('kadr.locale','ru');");
+    await call('POST', `${S}/url`, { url: URL_ });
+    await waitFor('home', () => js(`${FIND.replace('return [', 'const el = [')} return !!el;`, ['Новый проект']), 30_000);
+    await sleep(800);
+    await shot('screen-home');
+    await fresh(['landscape.mp4'], { ru: true });
+    await sleep(800);
+    await shot('screen-editor');
+    await selectClip();
+    await sleep(500);
+    await shot('screen-clip-tools');
+    await tap(['Export', 'Экспорт']);
+    await sleep(800);
+    await shot('screen-export');
+    return { saved: OUT };
+  },
+  cutout: async () => { await fresh(['person.jpg']); await selectClip(); await tap('Cutout'); await idle(180_000); await sleep(1500); return { removeBg: await js("return document.body.innerText.includes('Cutout')") }; },
+  faces: async () => { await fresh(['walk.mp4'], { aspect: '16:9' }); await selectClip(); await tap('Hide faces'); await tap('Hide faces automatically'); await checked('Hide faces automatically', 120_000); await tap('Done'); return {}; },
+  reframe: async () => { await fresh(['walk.mp4']); await selectClip(); await tap('Auto reframe'); await waitFor('reframed', () => js("return /Reframed/.test(document.body.innerText)"), 120_000); return {}; },
+  reverse: async () => { await fresh(['landscape.mp4']); await selectClip(); await tap('Reverse'); await idle(180_000); return {}; },
+  voice: async () => { await fresh(['speech_en.mp4']); await selectClip(); await tap('Voice'); await tap('Chipmunk'); await checked('Chipmunk', 120_000); await tap('Done'); return {}; },
+  noise: async () => { await fresh(['speech_en.mp4']); await selectClip(); await tap('Volume'); await tap('Reduce background noise'); await checked('Reduce background noise', 120_000); await tap('Done'); return {}; },
+  speed: async () => { await fresh(['landscape.mp4']); await selectClip(); await tap('Speed'); await tap('2×'); await tap('Done'); return { clipWidth: await js("return Math.round(document.querySelector('.tl-row.main .clip').getBoundingClientRect().width)") }; },
+  chroma: async () => { await fresh(['landscape.mp4']); await selectClip(); await tap('Chroma key'); await tap('Remove color (green screen)'); await checked('Remove color (green screen)', 10_000); await tap('Done'); return {}; },
+  'export-video': async () => { await fresh(['phone_1080_h264.mp4']); return { ready: await exportAs('Video', 'Export video', 'TikTok, Reels, Shorts') }; },
+  'export-4k-hevc': async () => { await fresh(['phone_4k_hevc.mov']); return { ready: await exportAs('Video', 'Export video', 'TikTok, Reels, Shorts') }; },
+  'export-photo': async () => { await fresh(['landscape.mp4']); return { ready: await exportAs('Photo', 'Save photo') }; },
+  'export-gif': async () => { await fresh(['landscape.mp4']); return { ready: await exportAs('GIF', 'Export GIF') }; },
+  'export-audio': async () => { await fresh(['speech_en.mp4']); return { ready: await exportAs('Audio', 'Export audio') }; },
+};
+
+const pick = process.argv.slice(2);
+const names = pick.length ? pick : Object.keys(SCENARIOS);
+const results = [];
+try {
+  for (const name of names) {
+    const t = Date.now();
+    const row = { name };
+    try {
+      row.note = await SCENARIOS[name]();
+      row.ok = true;
+    } catch (e) {
+      row.ok = false;
+      row.error = e.message.slice(0, 220);
+      await shot(`fail-${name}`).catch(() => undefined);
+    }
+    row.s = Math.round((Date.now() - t) / 100) / 10;
+    const page = await js('return window.__l5 ? { errors: window.__l5.errors, toasts: window.__l5.toasts } : null').catch(() => null);
+    if (!page) { row.ok = false; row.crashed = 'the page lost its state: reloaded or the tab died'; }
+    else { if (page.errors.length) { row.ok = false; row.errors = page.errors; } if (page.toasts.length) { row.ok = false; row.toasts = page.toasts; } }
+    results.push(row);
+    console.log(JSON.stringify(row));
+    // Nothing of the test stays on the phone. Home the app's own way, once its save has landed: a new document here put
+    // the editor into the back-forward cache with a save in flight, and up to v1.8.0 that locked the storage (D-14).
+    await sleep(1500);
+    await js("location.hash = ''").catch(() => undefined);
+    await sleep(800);
+    for (let i = 0; i < 10 && !process.env.L5_KEEP; i++) {
+      const asked = await js("const d = [...document.querySelectorAll('button')].find((b) => /^(Delete|Удалить) /.test(b.getAttribute('aria-label') || '')); if (!d) return false; d.click(); return true;").catch(() => false);
+      if (!asked) break;
+      await sleep(400);
+      await js("const c = [...document.querySelectorAll('button')].find((b) => b.offsetParent !== null && ['Delete', 'Удалить'].includes(b.textContent.trim())); if (c) c.click();").catch(() => undefined);
+      await sleep(1200);
+    }
+  }
+} finally {
+  writeFileSync(join(OUT, 'tools.json'), JSON.stringify({ url: URL_, device: session.capabilities['safari:platformVersion'], results }, null, 2));
+  await call('DELETE', S).catch(() => undefined);
+  driver.kill();
+}
+process.exit(results.every((r) => r.ok) ? 0 : 1);

@@ -5,6 +5,7 @@ import { clearDiskFiles } from '../engine/opfs';
 import { projectDuration } from '../core/timeline';
 import type { AspectId, Project } from '../core/types';
 import { perf } from '../lib/perf';
+import { cacheGate } from './bfcache';
 import { CHUNK, ChunkCache, HELD_CHUNKS, chunkedMedia, type Chunked, type StoredMedia } from './chunks';
 
 /**
@@ -24,13 +25,25 @@ function openDb(): Promise<IDBDatabase> {
   return p;
 }
 const lost = (e: unknown) => e instanceof DOMException && (e.name === 'InvalidStateError' || e.name === 'UnknownError' || /connection|closing|lost/i.test(e.message));
+/** No transaction of this page stays open in the back-forward cache (see bfcache.ts); its connection is closed too. */
+const gate = typeof window === 'undefined' ? null : cacheGate(window, () => {
+  const db = dbp;
+  dbp = null;
+  void db?.then((d) => d.close(), () => undefined);
+});
 const store: UseStore = async (mode, callback) => {
-  for (let attempt = 0; ; attempt++) {
+  for (let attempt = 0; ; ) {
+    if (gate?.away) await gate.away;
     const db = dbp ??= openDb();
     try {
-      return await callback((await db).transaction('kv', mode).objectStore('kv'));
+      const conn = await db;
+      if (gate?.away) continue; // the page went into the cache while the store was opening
+      const tx = conn.transaction('kv', mode);
+      gate?.track(tx);
+      return await callback(tx.objectStore('kv'));
     } catch (e) {
-      if (attempt > 0 || !lost(e)) throw e;
+      if (gate?.away) continue; // aborted as the page went into the cache: done again once it is back
+      if (attempt++ > 0 || !lost(e)) throw e;
       console.warn('IndexedDB connection lost, opening it again', e);
       if (dbp === db) dbp = null;
       (await db.catch(() => null))?.close();
