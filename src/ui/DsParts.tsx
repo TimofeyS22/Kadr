@@ -123,7 +123,7 @@ const TOOLS: Record<keyof Film | 'project', ToolDef[]> = {
   project: [['Рилс в 1 тап', Clapperboard, null], ['Медиа', Film, null], ['Субтитры', Captions, null], ['Текст', Type, null], ['Музыка', Disc3, null], ['Наложение', Layers, null], ['Стикеры', Smile, null], ['Эффекты', Sparkles, null], ['Звук', Music, null], ['Камера', Video, null], ['Запись', Mic, null], ['Холст', Frame, null]],
 };
 
-function EditorStage() {
+function EditorStage({ plain }: { plain?: boolean }) {
   const [film, setFilm] = useState<Film>(FILM);
   const [past, setPast] = useState<Film[]>([]);
   const [future, setFuture] = useState<Film[]>([]);
@@ -227,7 +227,7 @@ function EditorStage() {
   const textOn = lane === 'text';
 
   return (
-    <div className="ds-stage ds-editor" data-testid="editor" lang="ru" ref={stage}>
+    <div className="ds-stage ds-editor" data-testid="editor" data-tracks={plain ? 'plain' : 'colour'} lang="ru" ref={stage}>
       <div className="ds-preview">
         <div className="ds-shot">
           <Shot scene={pieceAt(film, time)?.scene ?? 'night'} />
@@ -265,6 +265,7 @@ function EditorStage() {
 const rulerClock = (s: number) => clock(s, false);
 
 export function DsParts() {
+  const [tracks, setTracks] = useState('colour');
   const [format, setFormat] = useState('9:16');
   const [look, setLook] = useState('none');
   const [title, setTitle] = useState('Поход на Алтай');
@@ -296,7 +297,8 @@ export function DsParts() {
       <section>
         <h2>Редактор в сборе</h2>
         <p className="ds-dim">Листайте таймлайн, нажмите кусок: его держат две метки, их можно тянуть или вести стрелками. Разрежьте по белой линии, удалите и отмените из уведомления.</p>
-        <EditorStage />
+        <Segments label="Дорожки" items={[{ id: 'colour', label: 'Приглушённый цвет' }, { id: 'plain', label: 'Без цвета' }]} value={tracks} onChange={setTracks} />
+        <EditorStage plain={tracks === 'plain'} />
       </section>
     </>
   );

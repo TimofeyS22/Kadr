@@ -18,6 +18,11 @@
   --yellow: oklch(88.5% 0.181 95);     /* #ffd60a, the focus box of the iPhone camera */
   --yellow-ink: oklch(18.5% 0.04 105); /* #151300 */
   --red: oklch(68.5% 0.2 28);          /* #ff5a4d */
+  /* The hues of the tracks of v1.7.1, kept so nothing moves for the eye, at half their colour and a little darker:
+     a second cue after the icon and the drawing, quieter than the frame and never close to the signal. */
+  --violet-dim: oklch(34% 0.05 302);   /* #3f3053 */
+  --teal-dim: oklch(34% 0.03 175);     /* #233c36 */
+  --brown-dim: oklch(36% 0.045 82);    /* #4a3c20 */
 
   /* ---- meaning: colour ---- */
   --surface-field: var(--ink-0);       /* around the frame: black only */
@@ -34,6 +39,9 @@
   --mark-edge: var(--ink-0);           /* the dark edge of a white mark that lies on a picture: readable on any video */
   --signal: var(--yellow);             /* the mark of what it is now, and the digit of the value */
   --text-on-signal: var(--yellow-ink);
+  --track-text: var(--violet-dim);     /* pieces of text */
+  --track-audio: var(--teal-dim);      /* music, sounds, voice */
+  --track-caption: var(--brown-dim);   /* captions */
   --tick-major: var(--ink-65);
   --tick-minor: var(--ink-50);
   --scrim: oklch(0% 0 0 / 0.55);

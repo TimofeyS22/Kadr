@@ -69,3 +69,5 @@
 .ds .ds-tl-in { width: max-content; padding: 0 50%; }
 .ds .ds-frame { display: block; flex: none; width: 40px; height: 100%; }
 .ds .ds-frame > svg { display: block; width: 100%; height: 100%; }
+/* The comparison for the owner: the editor without the colour of the tracks. */
+.ds .ds-editor[data-tracks='plain'] .ck-clip:not([data-kind='video']):not([data-kind='image']) .ck-clip-fill { background: var(--surface-raised); }

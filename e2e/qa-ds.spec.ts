@@ -398,3 +398,25 @@ test('editor: a selected text is boxed on the frame in white with a dark edge, a
   await expect(ed.locator('.ck-object')).toHaveCount(0);
   await expect(ribbon.getByRole('button', { name: 'Медиа' })).toBeVisible();
 });
+
+test('tracks: the muted colour of each kind is a second cue — the pieces differ, the labels stay readable, and the plain variant is one tap away', async ({ page }) => {
+  const ed = await openPart(page, 'editor');
+  const fill = (name: RegExp) => ed.getByRole('group', { name }).locator('.ck-clip-fill').evaluate((e) => getComputedStyle(e).backgroundColor);
+  const text = await fill(/^Привет, Алтай/), audio = await fill(/^Orchid/), video = await fill(/^Видео, 5 с/);
+  expect(new Set([text, audio, video]).size, 'text, sound and video are told apart at a glance').toBe(3);
+  // Never the signal and never the red of deleting: the colours are dark and quiet.
+  const lightness = (c: string) => page.evaluate((colour) => {
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    ctx.fillStyle = colour; ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return (Math.max(r, g, b) + Math.min(r, g, b)) / 2 / 255;
+  }, c);
+  expect(await lightness(text)).toBeLessThan(0.35);
+  expect(await lightness(audio)).toBeLessThan(0.35);
+  // The icon and the words stay: the colour is never the only cue.
+  await expect(ed.getByRole('group', { name: /^Orchid/ }).locator('.ck-clip-label svg')).toHaveCount(1);
+
+  await page.getByRole('radiogroup', { name: 'Дорожки' }).getByRole('radio', { name: 'Без цвета' }).click();
+  await expect(ed).toHaveAttribute('data-tracks', 'plain');
+  expect(await fill(/^Привет, Алтай/)).toBe(await fill(/^Orchid/));
+});

@@ -251,11 +251,15 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
 .ck-lane[data-main] .ck-clip-body { height: var(--touch); }
 .ck-clip-fill { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; border-radius: var(--radius-clip); background: var(--surface-raised); color: var(--text-secondary); }
 .ck-clip[data-kind='video'] .ck-clip-fill, .ck-clip[data-kind='image'] .ck-clip-fill { background: var(--surface-field); }
+/* A piece without frames carries the muted colour of its kind: a second cue after its icon and its drawing. */
+.ck-clip[data-kind='text'] .ck-clip-fill { background: var(--track-text); }
+.ck-clip[data-kind='audio'] .ck-clip-fill { background: var(--track-audio); }
+.ck-clip[data-kind='caption'] .ck-clip-fill { background: var(--track-caption); }
 .ck-clip[data-selected] .ck-clip-fill { box-shadow: inset 0 0 0 2px var(--mark-was); }
-.ck-clip-label { position: relative; display: flex; align-items: center; gap: var(--space-1); min-width: 0; margin-left: var(--space-1); padding: var(--space-1) var(--space-2); border-radius: var(--radius-clip); background: var(--surface-raised); font-size: var(--type-xs); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ck-clip-label { position: relative; display: flex; align-items: center; gap: var(--space-1); min-width: 0; margin-left: var(--space-1); padding: var(--space-1) var(--space-2); border-radius: var(--radius-clip); background: inherit; font-size: var(--type-xs); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ck-clip[data-selected] .ck-clip-label { margin-left: calc(var(--mark-width) + var(--space-1)); }
 .ck-clip-label svg { width: 14px; height: 14px; flex: none; }
-.ck-wave { position: absolute; left: 0; top: 6px; width: 100%; height: calc(100% - 12px); fill: var(--tick-minor); }
+.ck-wave { position: absolute; left: 0; top: 6px; width: 100%; height: calc(100% - 12px); fill: var(--tick-major); opacity: 0.6; }
 /* The two marks of a held piece are its trim handles: 8 px to the eye, 44 px to the finger, half of it outside the piece. */
 .ck-handle {
   position: absolute; top: calc(-1 * var(--mark-overhang)); bottom: calc(-1 * var(--mark-overhang)); z-index: var(--z-mark);

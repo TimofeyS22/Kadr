@@ -16,6 +16,10 @@ export const TOKEN_PAIRS: TokenPair[] = [
   { fg: '--text-on-signal', bg: '--signal', min: 4.5, what: 'Текст на сигнальном' },
   { fg: '--mark-was', bg: '--surface-field', min: 3, what: 'Метка у кадра и на куске' },
   { fg: '--mark-was', bg: '--surface-panel', min: 3, what: 'Метка «было» на шкале' },
+  { fg: '--text-primary', bg: '--track-text', min: 4.5, what: 'Подпись на куске текста' },
+  { fg: '--text-primary', bg: '--track-audio', min: 4.5, what: 'Подпись на куске звука' },
+  { fg: '--text-primary', bg: '--track-caption', min: 4.5, what: 'Подпись на куске субтитров' },
+  { fg: '--mark-was', bg: '--track-audio', min: 3, what: 'Метки выбранного куска на дорожке' },
   { fg: '--tick-major', bg: '--surface-panel', min: 3, what: 'Крупные деления шкалы' },
   { fg: '--tick-minor', bg: '--surface-panel', min: 3, what: 'Мелкие деления шкалы' },
 ];
