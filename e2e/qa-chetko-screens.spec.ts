@@ -329,3 +329,81 @@ test('editor: at 320 px nothing scrolls sideways, the name shows 12 letters, eve
   await expect(grid).toBeVisible();
   expect(await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(3);
 });
+
+// ---- release 4: the timeline on the system ----
+test('timeline: a held piece lies between two white marks, 8 px to the eye and 44 px to a finger; every piece and the transition are 44 px (UI-9)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row.main .clip').first().click();
+  for (const name of ['Обрезать начало', 'Обрезать конец']) {
+    const handle = page.getByRole('slider', { name });
+    const box = (await handle.boundingBox())!;
+    expect(box.width, name).toBeGreaterThanOrEqual(44);
+    expect(box.height, name).toBeGreaterThanOrEqual(44);
+    const mark = await handle.evaluate((el) => { const s = getComputedStyle(el, '::after'); return { w: s.width, bg: s.backgroundColor }; });
+    expect(mark.w).toBe('8px');
+    const white = await page.evaluate((c) => { const ctx = document.createElement('canvas').getContext('2d')!; ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); return Math.min(...ctx.getImageData(0, 0, 1, 1).data.subarray(0, 3)); }, mark.bg);
+    expect(white, 'the mark is white').toBeGreaterThan(235);
+  }
+  // The edge of a held video is drawn over its frames, so it shows.
+  expect(await page.locator('.tl-row.main .clip.sel .ck-tl-fill').evaluate((el) => getComputedStyle(el, '::after').boxShadow)).toMatch(/inset/);
+  // A handle reaches into the piece no more than 12 px: the middle of a short held piece stays free to be carried (Ж5).
+  const piece = (await page.locator('.tl-row.main .clip.sel').boundingBox())!;
+  const inner = (await page.getByRole('slider', { name: 'Обрезать начало' }).boundingBox())!;
+  expect(inner.x + inner.width - piece.x).toBeLessThanOrEqual(12.5);
+  // The rows above and below the main one: 44 px to a finger (34 in 1.7.1).
+  for (const clip of await page.locator('.tl-row.overlay .clip, .tl-row.audio .clip').all()) expect((await clip.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await page.locator('.tl-scroll').click({ position: { x: 4, y: 4 } }); // nothing held: the transitions come back
+  const join = page.getByRole('button', { name: /^Переход 1–2/ });
+  await expect(join).toBeVisible();
+  const j = (await join.boundingBox())!;
+  expect(Math.min(j.width, j.height)).toBeGreaterThanOrEqual(44);
+  // Its reach stays in the main row: a tap on the text above it selects the text (Ж5).
+  expect(j.y).toBeGreaterThanOrEqual((await page.locator('.tl-row.main').boundingBox())!.y - 0.5);
+  // The number under the playhead is not covered by its head.
+  const zero = (await page.locator('.timeline .ck-ruler-num').first().boundingBox())!;
+  const head = (await page.locator('.timeline .playhead').boundingBox())!;
+  if (Math.abs(zero.x - (head.x + head.width / 2)) < 2) expect(zero.x + 4).toBeGreaterThanOrEqual(head.x + head.width / 2 + 4);
+});
+
+test('timeline: among several, a picked piece says it is picked and shows a check', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row.main .clip').first().click();
+  await page.locator('.toolbar').getByRole('button', { name: 'Все инструменты' }).click();
+  await page.getByRole('dialog', { name: 'Все инструменты' }).getByRole('button', { name: 'Выбрать несколько' }).click();
+  const picked = page.locator('.tl-row.main .clip.picked');
+  await expect(picked).toHaveCount(1);
+  await expect(picked).toHaveAttribute('aria-pressed', 'true');
+  await expect(picked.locator('.ck-tl-picked')).toBeVisible();
+  await expect(page.locator('.tl-row.main .clip:not(.picked)').first()).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('timeline: the ruler reads (12 px, numbers 64 px apart), the ground is that of the frame around it, the frame keeps its room', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  const nums = await page.locator('.timeline .ck-ruler-num').evaluateAll((els) => els.map((e) => ({ x: e.getBoundingClientRect().left + e.getBoundingClientRect().width / 2, size: getComputedStyle(e).fontSize })));
+  expect(nums.length).toBeGreaterThan(1);
+  expect(new Set(nums.map((n) => n.size))).toEqual(new Set(['12px']));
+  for (let i = 1; i < nums.length; i++) expect(nums[i].x - nums[i - 1].x).toBeGreaterThanOrEqual(63.5);
+  const ground = await page.evaluate(() => ['.timeline', '.transport', '.toolbar'].map((s) => getComputedStyle(document.querySelector(s)!).backgroundColor));
+  expect(new Set(ground).size, 'one ground: no seam between the timeline and the frame of the editor').toBe(1);
+  await expect(page.locator('.timeline .playhead')).toHaveCount(1);
+  expect((await page.locator('.preview').boundingBox())!.height).toBeGreaterThanOrEqual(511);
+});
+
+test('timeline: in an empty project the call to add a video is whole on the screen at 320 and 375 px', async ({ page }) => {
+  for (const width of [320, 375]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.goto('./');
+    await page.getByRole('button', { name: 'Новый проект' }).click();
+    await page.locator('.aspect-card', { hasText: '9:16' }).click();
+    const add = page.getByRole('button', { name: 'Добавить видео или фото' });
+    await expect(add).toBeVisible();
+    const b = (await add.boundingBox())!;
+    expect(b.x, `${width}: inside on the left`).toBeGreaterThanOrEqual(0);
+    expect(b.x + b.width, `${width}: inside on the right`).toBeLessThanOrEqual(width);
+    expect(b.height).toBeGreaterThanOrEqual(44);
+    await expect(add, 'the words on it are its name (WCAG 2.5.3)').toHaveAccessibleName('Добавить видео или фото');
+  }
+});

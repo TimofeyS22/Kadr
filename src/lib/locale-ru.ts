@@ -887,6 +887,7 @@ export const RU: Record<string, string> = {
   'Projects live in the browser they were made in. It may have been deleted, or made in another browser or on another device.': 'Проекты живут в том браузере, где их сделали. Возможно, этот удалён или сделан в другом браузере или на другом устройстве.',
   'not saved': 'не сохранено',
   'saving…': 'сохраняю…',
+  'Transition {a}–{b}': 'Переход {a}–{b}',
   '“Undo” and “Redo” are now under the frame ↓': '«Отменить» и «Повторить» теперь под кадром ↓',
   'Speech model download': 'Загрузка модели речи',
   'This does not sound like Russian speech: another speech model will read it.': 'Это не похоже на русскую речь: её прочитает другая модель.',

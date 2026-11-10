@@ -145,7 +145,9 @@
 
 /* ---- a choice of one: segments for words, tiles for looks. What is chosen has a white ring or lies between two marks ---- */
 .ck-btn:focus-visible, .ck-choice-item:focus-visible, .ck-tile:focus-visible, .ck-play:focus-visible, .ck-join:focus-visible, .ck-toast-action:focus-visible,
-.ck-project-open:focus-visible, .ck-mini:focus-visible, .ck-handle:focus-visible, .ck-clip:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-project-open:focus-visible, .ck-mini:focus-visible, .ck-clip:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+/* A handle shows the focus around its mark, not around its 44 px hit area over the piece. */
+.ck-handle:focus-visible::after { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .ck-choice { display: flex; gap: var(--space-2); }
 .ck-choice-item {
   flex: 1 1 0; min-width: 0; min-height: var(--touch); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-control);
@@ -250,7 +252,9 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
 
 /* ---- the timeline ---- */
 .ck-ruler { position: relative; height: 24px; }
-.ck-ruler-num { position: absolute; top: var(--space-1); translate: -50% 0; font-size: var(--type-xs); line-height: 1; color: var(--text-secondary); white-space: nowrap; }
+/* A number stands to the right of its own tick, as in editors on a desk: the head of the playhead never covers it. */
+.ck-ruler-num { position: absolute; top: var(--space-1); padding-left: var(--space-1); font-size: var(--type-xs); line-height: 1; color: var(--text-secondary); white-space: nowrap; }
+.ck-ruler-num::before { content: ''; position: absolute; left: 0; top: 0; width: var(--hairline); height: 20px; background: var(--tick-major); }
 .ck-ruler-tick { position: absolute; top: 16px; width: var(--hairline); height: 4px; background: var(--tick-minor); }
 .ck-lane { position: relative; display: flex; gap: var(--space-1); height: var(--touch); }
 .ck-lane[data-main] { height: calc(var(--touch) + 2 * var(--mark-overhang)); }
@@ -271,16 +275,19 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
 .ck-clip[data-selected] .ck-clip-label { margin-left: calc(var(--mark-width) + var(--space-1)); }
 .ck-clip-label svg { width: 14px; height: 14px; flex: none; }
 .ck-wave { position: absolute; left: 0; top: 6px; width: 100%; height: calc(100% - 12px); fill: var(--tick-major); opacity: 0.6; }
-/* The two marks of a held piece are its trim handles: 8 px to the eye, 44 px to the finger, half of it outside the piece. */
+/* The two marks of a held piece are its trim handles: 8 px to the eye, 44 px to a finger. A handle reaches into the piece
+   no more than 12 px (a quarter of a short piece), the rest lies outside: the middle of a short held piece is still there
+   to be pressed long and carried (Ж5; the audit of Ч4 release 4). */
 .ck-handle {
+  --inner: min(var(--space-3), var(--clip-w, 44px) / 4);
   position: absolute; top: calc(-1 * var(--mark-overhang)); bottom: calc(-1 * var(--mark-overhang)); z-index: var(--z-mark);
-  width: calc(var(--touch) / 2 + min(var(--touch) / 2, var(--clip-w, 44px) / 2)); touch-action: none; cursor: ew-resize; outline: none;
+  width: var(--touch); touch-action: none; cursor: ew-resize; outline: none;
 }
-.ck-handle.ck-in { left: calc(var(--touch) / -2); }
-.ck-handle.ck-out { right: calc(var(--touch) / -2); }
+.ck-handle.ck-in { left: calc(var(--inner) - var(--touch)); }
+.ck-handle.ck-out { right: calc(var(--inner) - var(--touch)); }
 .ck-handle::after { content: ''; position: absolute; top: 0; bottom: 0; width: var(--mark-width); background: var(--mark-was); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); }
-.ck-handle.ck-in::after { left: calc(var(--touch) / 2 - var(--mark-width) / 2); }
-.ck-handle.ck-out::after { right: calc(var(--touch) / 2 - var(--mark-width) / 2); }
+.ck-handle.ck-in::after { left: calc(var(--touch) - var(--inner) - var(--mark-width) / 2); }
+.ck-handle.ck-out::after { right: calc(var(--touch) - var(--inner) - var(--mark-width) / 2); }
 .ck-playhead { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; translate: -50% 0; background: var(--mark-was); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); z-index: var(--z-playhead); pointer-events: none; }
 .ck-playhead::before { content: ''; position: absolute; top: 0; left: 50%; width: var(--mark-width); height: 12px; translate: -50% 0; background: var(--mark-was); }
 .ck-join { position: absolute; top: calc(var(--touch) / -2); width: var(--touch); height: var(--touch); display: grid; place-items: end center; padding: 0 0 var(--space-1); border: 0; background: none; color: var(--text-primary); cursor: pointer; z-index: var(--z-mark); translate: -50% 0; }

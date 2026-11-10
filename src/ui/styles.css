@@ -33,10 +33,6 @@ body { overscroll-behavior: none; }
 button { font: inherit; color: inherit; cursor: pointer; }
 button:disabled { opacity: 0.4; cursor: default; }
 button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.clip:focus-visible, .handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* The playhead for the keyboard: out of sight, and the timeline shows the focus. */
-.tl-position { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; pointer-events: none; }
-.tl-position:focus-visible + .tl-scroll { outline: 2px solid var(--accent); outline-offset: -2px; }
 h1, h2, h3 { margin: 0; }
 
 .btn {
@@ -89,52 +85,7 @@ h1, h2, h3 { margin: 0; }
 .zoom-hint { justify-self: end; font-size: 11px; color: var(--muted); }
 
 /* ---------- Timeline ---------- */
-.timeline { position: relative; min-width: 0; background: var(--panel); border-top: 1px solid var(--line); }
-.tl-scroll {
-  max-height: 34dvh; min-height: 124px; overflow: auto; overscroll-behavior: contain;
-  scrollbar-width: none; touch-action: pan-x pan-y;
-}
-.tl-scroll::-webkit-scrollbar { display: none; }
-.tl-content { position: relative; padding-bottom: 8px; }
-.ruler { position: relative; height: 22px; font-size: 10px; color: var(--muted); }
-.ruler span { position: absolute; top: 5px; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
-.ruler span::after { content: ''; position: absolute; left: 50%; top: 13px; width: 1px; height: 4px; background: var(--line); }
-.tl-row { position: relative; margin: 3px 0; }
-.clip {
-  position: absolute; top: 0; bottom: 0; border-radius: 7px; overflow: hidden; cursor: grab;
-  background: var(--c-video); border: 1px solid rgba(255, 255, 255, 0.08); user-select: none; -webkit-user-select: none;
-  touch-action: pan-x pan-y;
-}
-.clip-image { background: var(--c-image); }
-.clip-text { background: var(--c-text); }
-.clip-audio { background: var(--c-audio); }
-.clip-caption { background: var(--c-caption); }
-/* Selected: trim handles sit outside the clip (like CapCut), so the clip body spans exactly its time on screen. */
-.clip.sel { border: 2px solid #fff; z-index: 2; overflow: visible; }
-.clip.dragging { opacity: 0.85; z-index: 5; pointer-events: none; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6); }
-.clip-canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.9; pointer-events: none; }
-.clip-label {
-  position: absolute; left: 8px; right: 8px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 600;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; pointer-events: none;
-}
-.clip-badges { position: absolute; right: 18px; bottom: 2px; display: flex; gap: 4px; align-items: center; font-size: 10px; pointer-events: none; text-shadow: 0 1px 2px #000; }
-.handle {
-  position: absolute; top: 0; bottom: 0; width: 16px; background: #fff; touch-action: none; cursor: ew-resize; z-index: 3;
-}
-.handle::after { content: ''; position: absolute; left: 7px; top: 30%; bottom: 30%; width: 2px; border-radius: 2px; background: #555; }
-.handle.l { left: -16px; border-radius: 7px 0 0 7px; }
-.handle.r { right: -16px; border-radius: 0 7px 7px 0; }
-.tr-btn {
-  position: absolute; top: 50%; z-index: 4; width: 26px; height: 26px; transform: translate(-50%, -50%);
-  display: grid; place-items: center; border-radius: 7px; border: 0; background: #e8e8ee; color: #222;
-}
-.tr-btn.on { background: var(--accent); color: var(--on-accent); }
-.add-btn {
-  position: absolute; top: 50%; transform: translateY(-50%); height: 44px; min-width: 44px; padding: 0 10px;
-  display: inline-flex; align-items: center; gap: 6px; border-radius: 10px; border: 1px dashed var(--muted); background: var(--panel-2);
-}
-.add-btn.wide { font-weight: 600; font-size: 13px; }
-.playhead { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: #fff; pointer-events: none; z-index: 6; box-shadow: 0 0 4px rgba(0, 0, 0, 0.8); }
+/* ---------- Timeline: on the Chetko system since Ч4 release 4 (timeline.css) ---------- */
 
 /* ---------- Toolbar: the Chetko ribbon since Ч4 release 3 (ck.css); «Назад» stands at its edge, opaque (UI-1) ---------- */
 
@@ -266,7 +217,6 @@ h1, h2, h3 { margin: 0; }
 }
 
 /* ---------- v0.2 components ---------- */
-.clip-caption .clip-label { font-weight: 500; }
 .select { width: 100%; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font: inherit; }
 .inline-progress { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-size: 14px; }
 .inline-progress .btn { margin: 0; }
@@ -304,7 +254,6 @@ h1, h2, h3 { margin: 0; }
 .drop-hint { position: fixed; inset: 12px; z-index: 45; display: grid; place-items: center; border: 2px dashed var(--accent); border-radius: 20px; background: rgba(22, 22, 22, 0.8); font-size: 18px; font-weight: 600; pointer-events: none; }
 
 /* ---------- v0.4 components ---------- */
-.beat { position: absolute; bottom: 0; width: 2px; height: 30%; margin-left: -1px; background: var(--accent); opacity: 0.85; pointer-events: none; }
 .beat-bpm { margin: 4px 0 0; color: var(--muted); }
 .beat-bpm b { font-size: 34px; color: var(--text); font-variant-numeric: tabular-nums; }
 .curve { width: 100%; max-width: 420px; height: auto; margin: 6px 0; touch-action: none; background: var(--panel-2); border-radius: 12px; }
@@ -340,7 +289,6 @@ h1, h2, h3 { margin: 0; }
 .sel-handle::after { content: ''; position: absolute; inset: 12px; border-radius: 999px; background: var(--text); border: 2px solid var(--bg); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
 
 /* Multi-select (v0.6) */
-.clip.picked { outline: 2px solid var(--accent); outline-offset: -2px; box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.16); }
 .privacy-area { display: grid; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); }
 
 /* Camera + teleprompter (v0.6) */
@@ -402,8 +350,6 @@ button, [role=radio], [role=switch] { -webkit-touch-callout: none; -webkit-user-
 .tile.on { outline: 2px solid var(--text); outline-offset: 2px; } /* Ч4: around the whole tile, seen on a light frame too */
 .tile.on span { background: var(--panel-2); color: var(--text); font-weight: 700; }
 
-/* Trim handles: a finger-sized hit area around the 16 px grip of the selected clip */
-.clip.sel .handle::before { content: ''; position: absolute; top: -6px; bottom: -6px; left: -10px; right: -10px; }
 
 /* Reel in one tap (v1.1) */
 .reel-done { display: grid; gap: 10px; padding: 6px 0 4px; }

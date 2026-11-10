@@ -1,19 +1,27 @@
 // Center-playhead timeline (mobile editor convention): scrolling the timeline scrubs the video.
 // Touch: tap selects, long-press drags, handles trim, pinch zooms. Mouse: drag moves, ctrl+wheel zooms.
-import { Blend, Plus, VolumeX } from 'lucide-react';
-import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent as RPointerEvent } from 'react';
+import { AudioLines, Blend, Captions, Check, Plus, Type, VolumeX } from 'lucide-react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as RPointerEvent } from 'react';
 import {
   clipBeatTimes, clipEnd, findClip, mainTrack, moveClip, moveClipsBy, projectDuration, reorderMain, soundAssetId, trimClip,
 } from '../core/timeline';
-import type { Asset, Clip, Project, Track, TrackKind } from '../core/types';
+import type { Asset, Clip, Project, Track, TrackKind, TransitionType } from '../core/types';
+import { TRANSITION_LABELS } from './transitionNames';
 import { PEAKS_PER_SEC, thumbnails, waveform, type Thumb } from '../engine/media';
 import { player } from '../engine/player';
 import { useEditor } from '../state/store';
 import { addMedia } from './actions';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
+// Chetko, stage Ч4 release 4 (docs/17): the look and the touch sizes of the system; the gestures stay as they were.
+import './ck/ck.css';
+import './timeline.css';
+import { Join, Playhead, Ruler as Scale } from './ck/timeline';
 
-const ROW_H: Record<TrackKind, number> = { main: 56, overlay: 34, audio: 34 };
+/** A row is its pieces' height to a finger: 44 px (audit UI-9: 34 before), the main row 56. A piece is drawn 6 px in from
+ *  top and bottom, where the marks of a held piece stand out (`--mark-overhang`). */
+const ROW_H: Record<TrackKind, number> = { main: 56, overlay: 44, audio: 44 };
+const INSET = 6;
 const LONG_PRESS_MS = 300;
 
 /** A tap picks the clip in multi-select mode, otherwise selects it. */
@@ -28,7 +36,7 @@ function Position({ duration, fps }: { duration: number; fps: number }) {
   const time = useEditor((s) => s.time);
   return (
     <input
-      className="tl-position" type="range" aria-label={t('Position in the video')} min={0} max={duration} step={1 / fps} value={time}
+      className="tl-position ck-tl-position" type="range" aria-label={t('Position in the video')} min={0} max={duration} step={1 / fps} value={time}
       aria-valuetext={formatTime(time, false)}
       onChange={(e) => { player.pause(); player.seek(Number(e.target.value)); useEditor.setState({ time: player.time }); }}
     />
@@ -319,81 +327,96 @@ export function Timeline() {
   const audios = project.tracks.filter((t) => t.kind === 'audio');
 
   const row = (track: Track) => (
-    <div key={track.id} className={`tl-row ${track.kind}`} style={{ height: ROW_H[track.kind] }} data-track={track.id} data-kind={track.kind}>
+    <div key={track.id} className={`tl-row ${track.kind} ck-tl-row`} style={{ height: ROW_H[track.kind] }} data-track={track.id} data-kind={track.kind}>
       {track.clips.map((c, i) => {
         const moving = drag?.mode === 'move' && drag.id === c.id;
+        // Held: one piece, with its trim handles. Among several (multi), every piece is a switch, picked or not, with no handles.
+        const held = c.id === selection && !multi;
         const shift = shifted(track, i);
         return (
           <div
             key={c.id}
-            className={`clip clip-${c.kind} ${c.id === selection && !multi ? 'sel' : ''} ${multi?.includes(c.id) ? 'picked' : ''} ${moving ? 'dragging' : ''}`}
-            style={{ left: x(c.start) + shift, width: Math.max(2, c.duration * zoom), transform: moving ? `translate(${drag.dx}px, ${drag.dy}px)` : undefined }}
+            className={`clip clip-${c.kind} ck-tl-clip ${c.id === selection && !multi ? 'sel' : ''} ${multi?.includes(c.id) ? 'picked' : ''} ${moving ? 'dragging' : ''}`}
+            data-kind={c.kind} data-selected={(c.id === selection && !multi) || undefined} data-picked={multi?.includes(c.id) || undefined} data-dragging={moving || undefined}
+            style={{ left: x(c.start) + shift, width: Math.max(2, c.duration * zoom), transform: moving ? `translate(${drag.dx}px, ${drag.dy}px)` : undefined, '--clip-w': `${Math.max(2, c.duration * zoom)}px` } as CSSProperties}
             onPointerDown={(e) => onClipDown(e, c, track)}
             data-clip={c.id}
             // A chosen clip holds its two trim handles, and a button cannot hold other controls.
-            role={c.id === selection ? 'group' : 'button'}
+            role={held ? 'group' : 'button'}
             tabIndex={0}
             aria-label={clipLabel(c, project)}
-            aria-pressed={c.id === selection ? undefined : false}
+            // Among several, a picked piece says so (its check is drawn for the eye only).
+            aria-pressed={held ? undefined : !!multi?.includes(c.id)}
             onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); tapClip(c.id); } }}
           >
-            <ClipFace clip={c} asset={'assetId' in c ? project.assets[c.kind === 'audio' ? soundAssetId(c) : c.assetId] : undefined} zoom={zoom} height={ROW_H[track.kind] - 6} />
-            {c.kind === 'audio' && clipBeatTimes(project, c).map((b, i) => <i key={i} className="beat" style={{ left: (b - c.start) * zoom }} />)}
-            {c.id === selection && !moving && (
-              <>
-                <div className="handle l" onPointerDown={(e) => onTrimDown(e, c, 'start')} {...trimHandle(c, 'start', project)} aria-label={t('Trim start')} />
-                <div className="handle r" onPointerDown={(e) => onTrimDown(e, c, 'end')} {...trimHandle(c, 'end', project)} aria-label={t('Trim end')} />
-              </>
-            )}
+            <div className="ck-tl-body">
+              <div className="ck-tl-fill">
+                <ClipFace clip={c} asset={'assetId' in c ? project.assets[c.kind === 'audio' ? soundAssetId(c) : c.assetId] : undefined} zoom={zoom} height={ROW_H[track.kind] - 2 * INSET} />
+                {c.kind === 'audio' && clipBeatTimes(project, c).map((b, i) => <i key={i} className="beat ck-tl-beat" style={{ left: (b - c.start) * zoom }} />)}
+                {multi?.includes(c.id) && <span className="ck-tl-picked" aria-hidden><Check /></span>}
+              </div>
+              {/* The two marks of the held piece are its trim handles: 8 px to the eye, 44 px to a finger, half outside. */}
+              {held && !moving && (
+                <>
+                  <div className="handle l ck-handle ck-in" onPointerDown={(e) => onTrimDown(e, c, 'start')} {...trimHandle(c, 'start', project)} aria-label={t('Trim start')} />
+                  <div className="handle r ck-handle ck-out" onPointerDown={(e) => onTrimDown(e, c, 'end')} {...trimHandle(c, 'end', project)} aria-label={t('Trim end')} />
+                </>
+              )}
+            </div>
           </div>
         );
       })}
       {/* Cut buttons sit on clip edges; while a clip is selected its edges belong to the trim handles. */}
       {track.kind === 'main' && track.clips.slice(1).map((c, i) => (selection === c.id || selection === track.clips[i].id) ? null : (
-        <button key={`tr-${c.id}`} className={`tr-btn ${'transitionIn' in c && c.transitionIn ? 'on' : ''}`}
+        <Join key={`tr-${c.id}`} label={joinName(i + 1, 'transitionIn' in c ? c.transitionIn?.type : undefined)} icon={<Blend aria-hidden />} on={'transitionIn' in c && !!c.transitionIn}
           style={{ left: x(c.start + ('transitionIn' in c && c.transitionIn ? c.transitionIn.duration / 2 : 0)) + shifted(track, i + 1) }}
-          onClick={() => useEditor.getState().openSheet('transition', c.id)} aria-label={t('Transition')}>
-          <Blend size={14} />
-        </button>
+          onClick={() => useEditor.getState().openSheet('transition', c.id)} />
       ))}
       {track.kind === 'main' && (
-        <button className={`add-btn ${track.clips.length ? '' : 'wide'}`} style={{ left: track.clips.length ? x(clipEnd(track.clips.at(-1)!)) + 8 : pad + 8 }}
-          onClick={() => void addMedia('main')} aria-label={t('Add media')}>
-          <Plus size={20} />{!track.clips.length && <span>{t('Add video or photo')}</span>}
+        <button type="button" className="add-btn ck-tl-add" data-wide={track.clips.length ? undefined : true} style={{ left: track.clips.length ? x(clipEnd(track.clips.at(-1)!)) + 8 : pad + 8 }}
+          onClick={() => void addMedia('main')} aria-label={track.clips.length ? t('Add media') : undefined /* with words on it, the words are its name */}>
+          <Plus aria-hidden />{!track.clips.length && <span>{t('Add video or photo')}</span>}
         </button>
       )}
     </div>
   );
 
   return (
-    <div className="timeline">
+    <div className="timeline ck-tl">
       <Position duration={duration} fps={project.settings.fps} />
       <div
-        className="tl-scroll" ref={scroller} onScroll={onScroll}
+        className="tl-scroll ck-tl-scroll" ref={scroller} onScroll={onScroll}
         onClick={(e) => { if (!(e.target as HTMLElement).closest('.clip, button')) useEditor.getState().select(null); }}
       >
         {/* While dragging, extra room past the end lets a clip be carried (and auto-scrolled) beyond the last one. */}
         {/* While dragging, as wide as before: a project getting shorter under the finger must not make the browser clamp the scroll (the drag would read that as auto-scroll). */}
-        <div className="tl-content" style={{ width: (drag ? Math.max(duration, projectDuration(drag.base)) : duration) * zoom + vw + (drag ? vw / 2 : 0) }}>
-          <Ruler duration={duration} zoom={zoom} pad={pad} />
+        <div className="tl-content ck-tl-content" style={{ width: (drag ? Math.max(duration, projectDuration(drag.base)) : duration) * zoom + vw + (drag ? vw / 2 : 0) }}>
+          <Ruler duration={duration} zoom={zoom} pad={pad} span={vw / Math.max(1, zoom)} />
           {overlays.map(row)}
           {row(main)}
           {audios.map(row)}
         </div>
       </div>
-      <div className="playhead" aria-hidden />
+      <Playhead hook="playhead" />
     </div>
   );
 }
 
-function Ruler({ duration, zoom, pad }: { duration: number; zoom: number; pad: number }) {
-  const step = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300].find((s) => s * zoom >= 64) ?? 600;
-  const n = Math.floor(duration / step) + 1;
+const rulerClock = (s: number) => formatTime(s, false);
+/** «Переход 1–2: Растворение»: which seam, and what is on it. */
+const joinName = (seam: number, type: TransitionType | undefined) =>
+  t('Transition {a}–{b}', { a: seam, b: seam + 1 }) + (type ? `: ${t(TRANSITION_LABELS[type])}` : '');
+/** How many seconds of film one redraw of the ruler covers around the playhead: it is drawn anew a few times a minute
+ *  while the film plays, not on every frame, and never for the thousands of marks of a long film. */
+const RULER_CHUNK = 4;
+
+/** The ruler of the system (core/ruler.ts: numbers 64 px apart, short ticks between), the part that is in sight. */
+function Ruler({ duration, zoom, pad, span }: { duration: number; zoom: number; pad: number; span: number }) {
+  const chunk = useEditor((s) => Math.floor(s.time / RULER_CHUNK));
+  const around = span + RULER_CHUNK;
   return (
-    <div className="ruler">
-      {Array.from({ length: n }, (_, i) => (
-        <span key={i} style={{ left: pad + i * step * zoom }}>{formatTime(i * step, false)}</span>
-      ))}
+    <div style={{ paddingLeft: pad }}>
+      <Scale duration={duration} pxPerSecond={zoom} format={rulerClock} visible={[chunk * RULER_CHUNK - around, chunk * RULER_CHUNK + around]} />
     </div>
   );
 }
@@ -432,14 +455,16 @@ const ClipFace = memo(function ClipFace({ clip, asset, zoom, height }: { clip: C
   const label = clip.kind === 'text' ? clip.text
     : clip.kind === 'caption' ? clip.words.slice(0, 12).map((w) => w.text).join(' ')
     : clip.kind === 'audio' ? asset?.name ?? 'Audio' : null;
+  // What kind of piece, by a sign before its words: text and captions are not told by a shade alone (WCAG 1.4.1).
+  const Sign = clip.kind === 'text' ? Type : clip.kind === 'caption' ? Captions : clip.kind === 'audio' ? AudioLines : null;
   return (
     <>
-      {clip.kind !== 'text' && clip.kind !== 'caption' && <canvas ref={ref} className="clip-canvas" aria-hidden />}
-      {label && <span className="clip-label">{label}</span>}
-      <span className="clip-badges">
+      {clip.kind !== 'text' && clip.kind !== 'caption' && <canvas ref={ref} className="clip-canvas ck-tl-canvas" aria-hidden />}
+      {label && <span className="clip-label ck-tl-label">{Sign && <Sign aria-hidden />}{label}</span>}
+      <span className="clip-badges ck-tl-badges">
         {speed !== 1 && <b>{speed}×</b>}
         {'guide' in clip && clip.guide && <b>{t('Guide')}</b>}
-        {'muted' in clip && clip.muted && <VolumeX size={12} />}
+        {'muted' in clip && clip.muted && <b><VolumeX aria-hidden /></b>}
       </span>
     </>
   );
@@ -463,7 +488,7 @@ function drawWave(cv: HTMLCanvasElement, w: number, h: number, peaks: Float32Arr
   cv.width = w;
   cv.height = h;
   const ctx = cv.getContext('2d')!;
-  ctx.fillStyle = 'rgba(160, 255, 200, 0.75)';
+  ctx.fillStyle = getComputedStyle(cv).color; // the tone of the ticks (timeline.css), not a colour of its own
   for (let px = 0; px < w; px++) {
     const b0 = Math.floor((srcIn + (px / w) * srcDur) * PEAKS_PER_SEC);
     const b1 = Math.max(b0 + 1, Math.floor((srcIn + ((px + 1) / w) * srcDur) * PEAKS_PER_SEC));

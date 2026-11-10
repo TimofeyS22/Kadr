@@ -1368,11 +1368,16 @@ test('text: trim handles sit outside the clip, spacing sliders resize the text, 
   await page.getByRole('slider', { name: 'Line spacing' }).fill('2');
   await expect.poll(async () => (await selBox(page).boundingBox())!.height).toBeGreaterThan(b0.height * 1.3);
   await page.getByRole('button', { name: 'Done' }).click();
-  // The clip body is exactly its duration on screen: handles start where the clip ends.
+  // The clip body is exactly its duration on screen, and the marks of the handles stand on its two edges (Chetko Ч4
+  // release 4: an 8 px mark on the edge, its 44 px reach mostly outside the piece).
   const clip = page.locator('.tl-row .clip-text');
-  const c = (await clip.boundingBox())!, end = (await clip.getByLabel('Trim end').boundingBox())!, start = (await clip.getByLabel('Trim start').boundingBox())!;
-  expect(end.x).toBeGreaterThanOrEqual(c.x + c.width - 3);
-  expect(start.x + start.width).toBeLessThanOrEqual(c.x + 3);
+  const c = (await clip.boundingBox())!;
+  const markAt = (name: string) => clip.getByLabel(name).evaluate((el) => {
+    const r = el.getBoundingClientRect(), s = getComputedStyle(el, '::after');
+    return el.classList.contains('ck-in') ? r.left + parseFloat(s.left) + parseFloat(s.width) / 2 : r.right - parseFloat(s.right) - parseFloat(s.width) / 2;
+  });
+  expect(Math.abs((await markAt('Trim start')) - c.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs((await markAt('Trim end')) - (c.x + c.width))).toBeLessThanOrEqual(1);
   // Rotating with the corner handle near 45° snaps to exactly 45° and shows the angle while dragging.
   const box = await stableBox(page);
   const h = (await page.locator('.sel-handle').boundingBox())!;

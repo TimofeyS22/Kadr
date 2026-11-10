@@ -152,8 +152,8 @@ export function Wave({ peaks }: { peaks: number[] }) {
 }
 
 /** Where the film is now: a white line with the head of a mark. It stands still; the timeline moves under it. */
-export function Playhead() {
-  return <i className="ck-playhead" aria-hidden="true" />;
+export function Playhead({ hook }: { hook?: string }) {
+  return <i className={hook ? `ck-playhead ${hook}` : 'ck-playhead'} aria-hidden="true" />;
 }
 
 interface JoinProps { label: string; icon: ReactNode; onClick: () => void; style?: CSSProperties; on?: boolean }

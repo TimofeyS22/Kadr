@@ -14,7 +14,7 @@ import { CurveEditor } from './CurveEditor';
 import {
   ADJUST_KEYS, TEXT_ANIM_TYPES, TEXT_LOOP_TYPES, TRANSITION_TYPES,
   type AdjustKey, type AspectId, type BlendMode, type Clip, type SoundClip, type TextAnimType, type TextClip,
-  type Transform, type Transition, type TransitionType,
+  type Transform, type Transition,
 } from '../core/types';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
@@ -35,6 +35,7 @@ import { CaptionEditBody, CaptionsBody, CropBody, StickersBody, VoiceoverBody } 
 import { BeatsBody, LayersBody, MaskBody, PausesBody, SfxBody } from './MoreSheets';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
+import { TRANSITION_LABELS } from './transitionNames';
 
 function useSelected(): Clip | null {
   return useEditor((s) => (s.project && s.selection ? findClip(s.project, s.selection)?.clip ?? null : null));
@@ -296,12 +297,6 @@ function TextBody({ clip }: { clip: TextClip }) {
   );
 }
 
-const TRANSITION_LABELS: Record<TransitionType, string> = {
-  fade: 'Dissolve', black: 'Dip to black', white: 'Dip to white', slideLeft: 'Slide ←', slideRight: 'Slide →',
-  slideUp: 'Slide ↑', slideDown: 'Slide ↓', wipeLeft: 'Wipe ←', wipeRight: 'Wipe →', zoom: 'Zoom',
-  whip: 'Whip pan', spin: 'Spin', blur: 'Blur', glitch: 'Glitch', flash: 'Flash', circle: 'Circle', doors: 'Doors',
-  pixelate: 'Pixelate', zoomOut: 'Zoom out', shake: 'Shake',
-};
 
 function TransitionBody() {
   const id = useEditor((s) => s.transitionFor);

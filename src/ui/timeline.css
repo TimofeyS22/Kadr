@@ -1,0 +1,79 @@
+/* The timeline on the Chetko system (docs/17 stage Ч4, release 4). The gestures and the order of the rows are those of
+   1.7.1 (Timeline.tsx); what changes is how a piece looks and how big it is to a finger. Every value comes from
+   tokens.css; the drift test reads this file. `timeline`, `tl-scroll`, `tl-row`, `clip`, `clip-*`, `sel`, `picked`,
+   `handle` and `playhead` stay in the markup as hooks for the tests and the iPhone scripts; the state is styled by the
+   data attributes next to them. */
+
+/* Same ground as the row under the frame and the ribbon; its own stacking, so its marks never rise over a sheet. */
+.ck-tl { position: relative; min-width: 0; background: var(--surface-panel); box-shadow: inset 0 var(--hairline) var(--border-subtle); isolation: isolate; }
+.ck-tl-scroll {
+  max-height: 34dvh; min-height: 124px; overflow: auto; overscroll-behavior: contain;
+  scrollbar-width: none; touch-action: pan-x pan-y;
+}
+.ck-tl-scroll::-webkit-scrollbar { display: none; }
+/* The playhead for the keyboard: out of sight, and the timeline shows the focus. */
+.ck-tl-position { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.ck-tl-position:focus-visible + .ck-tl-scroll { outline: 2px solid var(--text-primary); outline-offset: -2px; }
+.ck-tl-content { position: relative; padding-bottom: var(--space-1); }
+.ck-tl-row { position: relative; }
+
+/* ---- a piece: its whole row to a finger (44 px, the main row 56), drawn 6 px in from top and bottom ---- */
+.ck-tl-clip { position: absolute; top: 0; bottom: 0; cursor: grab; user-select: none; -webkit-user-select: none; touch-action: pan-x pan-y; outline: none; }
+/* The focus is dashed, around the piece's whole reach, so it is never taken for the solid edge of a held piece. */
+.ck-tl-clip:focus-visible { outline: 2px dashed var(--text-primary); outline-offset: 0; }
+.ck-tl-body { position: absolute; left: 0; right: 0; top: var(--mark-overhang); bottom: var(--mark-overhang); }
+.ck-tl-fill { position: absolute; inset: 0; overflow: hidden; border-radius: var(--radius-clip); background: var(--surface-raised); }
+/* The edge is drawn over the frames of the film, not under them: an inset shadow of the box itself hides behind its canvas. */
+.ck-tl-fill::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 var(--hairline) var(--image-outline); pointer-events: none; }
+.ck-tl-clip[data-kind='video'] .ck-tl-fill, .ck-tl-clip[data-kind='image'] .ck-tl-fill { background: var(--surface-field); }
+.ck-tl-clip[data-kind='text'] .ck-tl-fill { background: var(--track-text); }
+.ck-tl-clip[data-kind='audio'] .ck-tl-fill { background: var(--track-audio); }
+.ck-tl-clip[data-kind='caption'] .ck-tl-fill { background: var(--track-caption); }
+/* Held: a white edge and the two marks, which are the trim handles (ck.css .ck-handle: 8 px to the eye, 44 to a finger). */
+.ck-tl-clip[data-selected] { z-index: var(--z-mark); }
+/* White with a dark edge inside it: seen on a white video too. */
+.ck-tl-clip[data-selected] .ck-tl-fill::after { box-shadow: inset 0 0 0 2px var(--mark-was), inset 0 0 0 3px var(--mark-edge); }
+/* Picked among several: the same edge and a check, so it is not told by the edge alone; over its neighbours, so a
+   piece overlapping it at a transition does not hide the check. */
+.ck-tl-clip[data-picked] { z-index: var(--z-mark); }
+.ck-tl-clip[data-picked] .ck-tl-fill::after { box-shadow: inset 0 0 0 2px var(--mark-was), inset 0 0 0 3px var(--mark-edge); }
+.ck-tl-picked { position: absolute; top: var(--space-1); right: var(--space-1); width: 16px; height: 16px; display: grid; place-items: center; border-radius: var(--radius-clip); background: var(--mark-was); color: var(--text-on-action); }
+.ck-tl-picked svg { width: 12px; height: 12px; }
+/* Carried by a finger: lifted a little and see-through, so what lies under it shows; over the transitions (the playhead,
+   later in the page on the same layer, stays over it). */
+.ck-tl-clip[data-dragging] { z-index: var(--z-playhead); opacity: 0.85; pointer-events: none; }
+.ck-tl-clip[data-dragging] .ck-tl-body { scale: 1.04; }
+
+.ck-tl-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* The canvas draws the waveform in its own colour: the tone of the ticks, quieter than the sound row it lies on. */
+.ck-tl-clip[data-kind='audio'] .ck-tl-canvas { color: var(--tick-major); }
+.ck-tl-label {
+  position: absolute; left: var(--space-1); top: 50%; translate: 0 -50%; max-width: calc(100% - var(--space-2));
+  padding: 0 var(--space-1); border-radius: var(--radius-clip); background: inherit;
+  font-size: var(--type-xs); font-weight: var(--weight-strong); line-height: var(--leading-text); color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+}
+.ck-tl-clip[data-selected] .ck-tl-label { left: calc(var(--mark-width) + var(--space-1)); max-width: calc(100% - 2 * var(--mark-width) - var(--space-2)); }
+.ck-tl-label { display: flex; align-items: center; gap: var(--space-1); }
+.ck-tl-label svg { flex: none; width: 12px; height: 12px; }
+.ck-tl-badges { position: absolute; right: var(--space-1); bottom: var(--space-1); display: flex; gap: var(--space-1); align-items: center; pointer-events: none; }
+.ck-tl-badges > * { display: grid; place-items: center; min-height: 16px; padding: 0 var(--space-1); border-radius: var(--radius-clip); background: var(--surface-field); color: var(--text-primary); font-size: var(--type-xs); font-weight: var(--weight-strong); line-height: 1; }
+.ck-tl-badges svg { width: 12px; height: 12px; }
+.ck-tl-clip[data-selected] .ck-tl-badges { right: calc(var(--mark-width) + var(--space-1)); }
+/* Beats of the music: white ticks at the foot of the piece. */
+.ck-tl-beat { position: absolute; bottom: 0; width: 2px; height: 30%; translate: -50% 0; background: var(--mark-was); opacity: 0.85; pointer-events: none; }
+
+/* The transition sits on the seam inside the main row, over the pieces it joins and nothing else: its 44 px never lie on
+   the text or the captions above (the audit of Ч4 release 4). */
+.ck-tl-row .ck-join { top: var(--mark-overhang); place-items: center; padding: 0; }
+
+/* ---- the end of the film: one more video or photo ---- */
+.ck-tl-add {
+  position: absolute; top: var(--mark-overhang); bottom: var(--mark-overhang); min-width: var(--touch); display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  padding: 0 var(--space-3); border: var(--hairline) dashed var(--text-secondary); border-radius: var(--radius-control);
+  background: var(--surface-raised); color: var(--text-primary); font: inherit; font-size: var(--type-xs); font-weight: var(--weight-strong); line-height: var(--leading-tight); cursor: pointer;
+}
+.ck-tl-add svg { flex: none; width: 20px; height: 20px; }
+/* An empty project: the call starts at the playhead and stays on the screen, in two lines where one does not fit. */
+.ck-tl-add[data-wide] { max-width: calc(50vw - var(--space-6)); text-align: left; }
+.ck-tl-add:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }

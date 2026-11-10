@@ -155,7 +155,10 @@ async function focusAudit(page: Page, presses: number): Promise<{ reached: numbe
       const el = document.activeElement as HTMLElement | null;
       if (!el || el === document.body) return null;
       const s = getComputedStyle(el);
-      const ring = (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 1 && !/rgba\(.*,\s*0\)/.test(s.outlineColor)) || (s.boxShadow !== 'none' && s.boxShadow !== '');
+      const outlined = (x: CSSStyleDeclaration) => x.outlineStyle !== 'none' && parseFloat(x.outlineWidth) >= 1 && !/rgba\(.*,\s*0\)/.test(x.outlineColor);
+      // A trim handle draws its focus around its 8 px mark (a pseudo-element), not around its 44 px hit area: only an
+      // outline counts there, since a mark carries a hairline shadow when it has no focus too.
+      const ring = outlined(s) || (s.boxShadow !== 'none' && s.boxShadow !== '') || outlined(getComputedStyle(el, '::after')) || outlined(getComputedStyle(el, '::before'));
       const name = (el.getAttribute('aria-label') || el.textContent || el.getAttribute('title') || '').trim().slice(0, 30);
       return { id: `${el.tagName.toLowerCase()}${el.getAttribute('role') ? `[role=${el.getAttribute('role')}]` : ''} «${name}»`, ring };
     });
