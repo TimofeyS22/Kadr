@@ -1,7 +1,7 @@
 // Reverse: re-encodes the used part of a clip backwards (frames and sound) into a new asset.
 // Frames are decoded in short windows from the end so memory stays bounded on phones.
 import {
-  AudioBufferSource, CanvasSink, CanvasSource,
+  AudioBufferSource, CanvasSink, CanvasSource, VideoSampleSink,
   Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
   type WrappedCanvas,
 } from 'mediabunny';
@@ -16,6 +16,7 @@ import { ResilientSink, playableAudioTrack } from './sound';
 import { matchStreamRange } from './videoRange';
 import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
+import { correctPixels, decodedAs709, hdrTransfer, sdMatrix } from './hdr';
 
 export const MAX_REVERSE_S = 60;
 const WINDOW_S = 0.5;
@@ -33,6 +34,12 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
   try {
     const video = await input.getPrimaryVideoTrack();
     if (!video) throw new MediaError('No video in this clip');
+    // The reversed file is ordinary SDR video: an HDR signal or a BT.601 video the browser decoded as BT.709 is put right
+    // in the pixels, as the compositor does for the clip itself, or the reversed clip would not match it (audit V-243).
+    const hdr = await hdrTransfer(video);
+    const probe = hdr ? null : await new VideoSampleSink(video).getSample(s0);
+    const as601 = decodedAs709(await sdMatrix(video), probe?.colorSpace.matrix);
+    probe?.close();
     const audio = asset.hasAudio ? await playableAudioTrack(input) : null;
     const dw = await video.getDisplayWidth(), dh = await video.getDisplayHeight();
     const k = Math.min(1, MAX_DIM / Math.max(dw, dh));
@@ -91,6 +98,11 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
       for (const f of frames.reverse()) {
         const t = Math.max(0, s1 - Math.max(s0, f.timestamp) - frameDur);
         ctx.drawImage(f.canvas, 0, 0);
+        if (hdr || as601) {
+          const image = ctx.getImageData(0, 0, width, height);
+          correctPixels(image.data, { hdr, as601 });
+          ctx.putImageData(image, 0, 0);
+        }
         await vSource.add(t, frameDur);
       }
       onProgress((s1 - start) / (s1 - s0));

@@ -110,6 +110,12 @@ fi
 if [ ! -f fps60.mp4 ]; then
   ff -f lavfi -i testsrc2=size=720x1280:rate=60:duration=6 -f lavfi -i sine=frequency=440:duration=6 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest fps60.mp4
 fi
+# Four bands tagged BT.601 (audit V-243): WebKit decodes them with the BT.709 matrix and labels the frames bt709.
+if [ ! -f bt601.mp4 ]; then
+  ff -f lavfi -i "color=c=0xd02020:s=160x360,format=rgb24[a];color=c=0x20b040:s=160x360,format=rgb24[b];color=c=0x2040d0:s=160x360,format=rgb24[c];color=c=0xe0a080:s=160x360,format=rgb24[d];[a][b][c][d]hstack=inputs=4,trim=duration=3" \
+    -f lavfi -i "sine=frequency=440:duration=3" -vf "scale=out_color_matrix=bt601:out_range=tv,format=yuv420p" -c:v libx264 \
+    -x264-params colorprim=smpte170m:transfer=smpte170m:colormatrix=smpte170m -color_range tv -c:a aac -shortest bt601.mp4
+fi
 # An iPhone-style HDR original (v1.2.2): HEVC Main 10, HLG, BT.2020 in a .mov — what "Format: Current" hands over.
 if [ ! -f iphone_hdr.mov ] && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libx265; then
   ff -f lavfi -i "smptehdbars=s=1920x1080:r=30:d=4" -f lavfi -i "sine=f=440:sample_rate=48000:d=4" -c:v libx265 -tag:v hvc1 -pix_fmt yuv420p10le \

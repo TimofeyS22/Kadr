@@ -1,7 +1,7 @@
 // Timeline thumbnails off the main thread (docs/04, H2). Each thumbnail decodes only the keyframe nearest to its
 // time: one frame instead of up to a whole GOP per seek, so a 1-minute clip costs ~40 decodes, not ~1200.
 import { EncodedPacketSink, VideoSampleSink } from 'mediabunny';
-import { hdrTransfer, pixelsToSdr } from './hdr';
+import { correctPixels, decodedAs709, hdrTransfer, sdMatrix } from './hdr';
 import { openInput } from './source';
 import type { StoredMedia } from '../storage/chunks';
 
@@ -15,6 +15,7 @@ export async function renderThumbs(job: ThumbJob, emit: (t: number, bmp: ImageBi
     const track = await input.getPrimaryVideoTrack();
     if (!track) return;
     const hdr = await hdrTransfer(track);
+    const sd = await sdMatrix(track);
     const aspect = (await track.getDisplayWidth()) / (await track.getDisplayHeight());
     canvas.width = Math.max(2, Math.round(job.height * aspect));
     canvas.height = job.height;
@@ -31,10 +32,11 @@ export async function renderThumbs(job: ThumbJob, emit: (t: number, bmp: ImageBi
       const sample = await samples.getSample(kt);
       if (!sample) continue;
       sample.drawWithFit(ctx, { fit: 'cover' });
+      const as601 = decodedAs709(sd, sample.colorSpace.matrix);
       sample.close();
-      if (hdr) {
+      if (hdr || as601) {
         const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        pixelsToSdr(image.data, hdr);
+        correctPixels(image.data, { hdr, as601 });
         ctx.putImageData(image, 0, 0);
       }
       emit(kt, await createImageBitmap(canvas));

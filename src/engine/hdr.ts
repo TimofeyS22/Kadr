@@ -21,6 +21,46 @@ export async function hdrTransfer(track: InputVideoTrack): Promise<Hdr | undefin
   return hdr;
 }
 
+/** The matrices of standard-definition (BT.601) video. */
+const SD_MATRICES = new Set<string>(['smpte170m', 'bt470bg']);
+
+/** Whether the track says its pixels are BT.601. */
+export async function sdMatrix(track: InputVideoTrack): Promise<boolean> {
+  return SD_MATRICES.has((await track.getColorSpace()).matrix ?? '');
+}
+
+/**
+ * WebKit's decoder turns a BT.601 video into RGB with the BT.709 matrix and labels its frames bt709, though it was
+ * configured with smpte170m (Mac WebKit, 2026-11-10; on iPhones, audit V-243): saturated colours shift by up to 20
+ * levels (red 208,32,33 came out 223,49,30), in the preview and in every file made from it. A frame labelled bt709 from
+ * a track that says BT.601 is such a frame; Chromium keeps the label and needs nothing. Asked of each frame, so a
+ * WebKit that gets this right stops being corrected.
+ */
+export const decodedAs709 = (sdTrack: boolean, frameMatrix: string | null | undefined): boolean => sdTrack && frameMatrix === 'bt709';
+
+/**
+ * RGB decoded with the BT.709 matrix → RGB as BT.601 decodes the same YCbCr: A601 · A709⁻¹, row-major, on the
+ * gamma-encoded values (range scaling is the same for both and cancels). Shared by the shader and the CPU paths.
+ */
+export const BT709_AS_601 = [0.9136, 0.07848, 0.00792, -0.10504, 1.17217, -0.06713, 0.00958, 0.03222, 0.9582] as const;
+
+/** Corrects RGBA pixels decoded with the wrong matrix (see decodedAs709), in place. */
+export function pixelsAs601(data: Uint8ClampedArray): void {
+  const m = BT709_AS_601;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    data[i] = m[0] * r + m[1] * g + m[2] * b; // Uint8ClampedArray rounds and clamps
+    data[i + 1] = m[3] * r + m[4] * g + m[5] * b;
+    data[i + 2] = m[6] * r + m[7] * g + m[8] * b;
+  }
+}
+
+/** What a picture made on a 2D canvas still needs before it is shown or stored: HDR to SDR, the BT.601 matrix. */
+export function correctPixels(data: Uint8ClampedArray, fix: { hdr?: Hdr; as601?: boolean }): void {
+  if (fix.hdr) pixelsToSdr(data, fix.hdr);
+  else if (fix.as601) pixelsAs601(data);
+}
+
 const hlgToScene = (e: number) => (e <= 0.5 ? (e * e) / 3 : (Math.exp((e - 0.55991073) / 0.17883277) + 0.28466892) / 12);
 const pqToNits = (e: number) => {
   const p = Math.max(e, 0) ** (1 / 78.84375);

@@ -5,7 +5,7 @@ import { fxLod, fxScale } from '../core/fxScale';
 import { fromBase64 } from '../core/lut';
 import { ADJUST_KEYS, type BlendMode, type LutData } from '../core/types';
 import type { Drawable } from './text';
-import type { Hdr } from './hdr';
+import { BT709_AS_601, type Hdr } from './hdr';
 import { MediaError, type Turn } from './media';
 import { WEBKIT } from '../lib/device';
 
@@ -235,10 +235,13 @@ uniform int uTurn;
 uniform float uMirror;
 uniform int uTaps;
 uniform int uHdr;
+uniform int uAs601;
 out vec4 outColor;
 // HDR (BT.2100) to SDR, once, where the frame enters: everything after it sees ordinary video (preview and export alike).
 // Diffuse white is 203 nits (BT.2408); the highlights above it roll off instead of clipping.
 const mat3 BT2020_TO_709 = mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187);
+// A BT.601 video the browser decoded with the BT.709 matrix (hdr.ts, decodedAs709); GLSL takes the columns.
+const mat3 BT709_AS_601 = mat3(${[0, 3, 6, 1, 4, 7, 2, 5, 8].map((i) => BT709_AS_601[i]).join(', ')});
 float hlgToScene(float e) { return e <= 0.5 ? e * e / 3.0 : (exp((e - 0.55991073) / 0.17883277) + 0.28466892) / 12.0; }
 float pqToNits(float e) { float p = pow(max(e, 0.0), 1.0 / 78.84375); return 10000.0 * pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125); }
 vec3 toSdr(vec3 c) {
@@ -269,10 +272,11 @@ void main() {
   }
   outColor = acc / (n * n);
   if (uHdr != 0) outColor.rgb = toSdr(outColor.rgb);
+  else if (uAs601 == 1) outColor.rgb = clamp(BT709_AS_601 * outColor.rgb, 0.0, 1.0);
 }`;
 
 /** What a layer draws; with `turn`, `image` is a decoder frame (`Picture` in media.ts), drawn upright by `fromFrame`. */
-export type Source = Drawable & { turn?: Turn; hdr?: Hdr };
+export type Source = Drawable & { turn?: Turn; hdr?: Hdr; as601?: boolean };
 
 /** WebGL refused a decoder frame once (an untried format, say): from then on every video comes through a 2D canvas. */
 let framesRefused = false;
@@ -312,7 +316,7 @@ export class Compositor {
   private frameNo = 0;
   /** Decoder frames: the program that turns them upright and the target it draws to. */
   private frameProg!: WebGLProgram;
-  private frameU!: Record<'uOut' | 'uTurn' | 'uMirror' | 'uTaps' | 'uHdr', WebGLUniformLocation | null>;
+  private frameU!: Record<'uOut' | 'uTurn' | 'uMirror' | 'uTaps' | 'uHdr' | 'uAs601', WebGLUniformLocation | null>;
   private target!: WebGLFramebuffer;
   /**
    * Textures decoder frames arrive in, one per frame size: clips of one size share it (a 4K one is 33 MB), and a size
@@ -369,7 +373,7 @@ export class Compositor {
     const fp = (this.frameProg = link(VS_FRAME, FS_FRAME));
     gl.useProgram(fp);
     gl.uniform1i(gl.getUniformLocation(fp, 'uSrc'), 0);
-    this.frameU = { uOut: gl.getUniformLocation(fp, 'uOut'), uTurn: gl.getUniformLocation(fp, 'uTurn'), uMirror: gl.getUniformLocation(fp, 'uMirror'), uTaps: gl.getUniformLocation(fp, 'uTaps'), uHdr: gl.getUniformLocation(fp, 'uHdr') };
+    this.frameU = { uOut: gl.getUniformLocation(fp, 'uOut'), uTurn: gl.getUniformLocation(fp, 'uTurn'), uMirror: gl.getUniformLocation(fp, 'uMirror'), uTaps: gl.getUniformLocation(fp, 'uTaps'), uHdr: gl.getUniformLocation(fp, 'uHdr'), uAs601: gl.getUniformLocation(fp, 'uAs601') };
     const prog = link(VS, FS);
     this.prog = prog;
     gl.useProgram(prog);
@@ -431,7 +435,7 @@ export class Compositor {
     }
     gl.bindTexture(gl.TEXTURE_2D, s.tex);
     if (s.key !== d.key || (mips && !s.mips)) {
-      if (!d.turn && !d.hdr) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, d.image);
+      if (!d.turn && !d.hdr && !d.as601) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, d.image);
       else if (!this.fromFrame(s, d as Source & { image: VideoFrame | HTMLCanvasElement })) return s.key ? s : null; // keeps its last picture
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -508,6 +512,7 @@ export class Compositor {
     gl.uniform1i(u.uTurn, quarter);
     gl.uniform1f(u.uMirror, d.turn?.flip ? 1 : 0);
     gl.uniform1i(u.uHdr, d.hdr === 'hlg' ? 1 : d.hdr === 'pq' ? 2 : 0);
+    gl.uniform1i(u.uAs601, d.as601 ? 1 : 0);
     gl.uniform1i(u.uTaps, Math.min(4, Math.max(1, Math.ceil(Math.max(fw / d.w, fh / d.h) / 2 - 0.01))));
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0); // a swept slot is not kept alive

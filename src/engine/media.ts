@@ -4,7 +4,7 @@ import {
   type Input, type InputAudioTrack, type InputTrack, type InputVideoTrack, type VideoSample,
 } from 'mediabunny';
 import { openInput } from './source';
-import { hdrTransfer, type Hdr } from './hdr';
+import { correctPixels, decodedAs709, hdrTransfer, sdMatrix, type Hdr } from './hdr';
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
 import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
@@ -125,7 +125,11 @@ async function fitBitmap(bmp: ImageBitmap, maxDim: number): Promise<ImageBitmap>
  * jumps restart it at the nearest keyframe. Calls are serialized, so concurrent callers are safe.
  */
 /** A decoded frame ready to draw: a canvas in display orientation, reused by the stream. */
-export interface StreamFrame { canvas: HTMLCanvasElement; timestamp: number; /** false: a keyframe shown while scrubbing */ exact: boolean }
+export interface StreamFrame {
+  canvas: HTMLCanvasElement; timestamp: number; /** false: a keyframe shown while scrubbing */ exact: boolean;
+  /** Decoded with the BT.709 matrix though the video is BT.601 (hdr.ts, decodedAs709). */ as601?: boolean;
+  /** The HDR signal the canvas still holds (the compositor turns it into SDR). */ hdr?: Hdr;
+}
 
 /** How a decoder frame turns upright: degrees clockwise, then a mirror (Mediabunny's rotation and flip). */
 export interface Turn { rotation: 0 | 90 | 180 | 270; flip: boolean }
@@ -137,7 +141,7 @@ export interface Turn { rotation: 0 | 90 | 180 | 270; flip: boolean }
  * made an iPhone export 3× slower (2026-10-30). A keyframe while scrubbing, and a frame too big for a texture, still come
  * as an upright canvas. The decoder frame stays open until the stream reads on: draw it before the clip's next read.
  */
-export interface Picture { image: HTMLCanvasElement | VideoFrame; width: number; height: number; turn?: Turn; timestamp: number; exact: boolean; hdr?: Hdr }
+export interface Picture { image: HTMLCanvasElement | VideoFrame; width: number; height: number; turn?: Turn; timestamp: number; exact: boolean; hdr?: Hdr; as601?: boolean }
 
 /**
  * Sequential per-clip decoding (docs/04, H4). Frames the preview skips are closed without being drawn: only the
@@ -168,6 +172,8 @@ class VideoStream {
     /** Asks the pool to close the other streams nobody is drawing: a phone has few hardware decoders. */
     private starved?: () => void,
     private hdr?: Hdr,
+    /** The track says BT.601: frames labelled bt709 were decoded with the wrong matrix. */
+    private sd = false,
   ) { this.closing.catch(() => undefined); }
 
   /** A decoder's answer, or an error if it stays silent; `drop` closes what arrives after nobody is waiting. */
@@ -248,7 +254,7 @@ class VideoStream {
   }
 
   private canvasPicture(f: StreamFrame): Picture {
-    return { image: f.canvas, width: f.canvas.width, height: f.canvas.height, timestamp: f.timestamp, exact: f.exact, hdr: this.hdr };
+    return { image: f.canvas, width: f.canvas.width, height: f.canvas.height, timestamp: f.timestamp, exact: f.exact, hdr: this.hdr, as601: f.as601 };
   }
 
   private show(s: VideoSample, exact: boolean, frameMax: number): Picture {
@@ -261,7 +267,7 @@ class VideoStream {
         this.out = { sample: s, frame: s.toVideoFrame() };
       }
       this.shown = null; // a scrub that finds no keyframe must not bring back an older canvas
-      return { image: this.out.frame, width: this.width, height: this.height, turn: { rotation: s.rotation, flip: s.flip }, timestamp: s.timestamp, exact, hdr: this.hdr };
+      return { image: this.out.frame, width: this.width, height: this.height, turn: { rotation: s.rotation, flip: s.flip }, timestamp: s.timestamp, exact, hdr: this.hdr, as601: decodedAs709(this.sd, s.colorSpace.matrix) };
     }
     if (this.shown?.timestamp !== s.timestamp || this.shown.exact !== exact) {
       this.canvases ??= [0, 1].map(() => Object.assign(document.createElement('canvas'), { width: this.width, height: this.height }));
@@ -269,7 +275,7 @@ class VideoStream {
       const ctx = canvas.getContext('2d')!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       s.drawWithFit(ctx, { fit: 'contain' }); // applies the rotation of phone videos
-      this.shown = { canvas, timestamp: s.timestamp, exact };
+      this.shown = { canvas, timestamp: s.timestamp, exact, as601: decodedAs709(this.sd, s.colorSpace.matrix) };
     }
     return this.canvasPicture(this.shown);
   }
@@ -314,7 +320,7 @@ class VideoStream {
   }
 }
 
-interface Handle { input: Input; video: InputVideoTrack | null; hdr?: Hdr; audio: InputAudioTrack | null }
+interface Handle { input: Input; video: InputVideoTrack | null; hdr?: Hdr; sd: boolean; audio: InputAudioTrack | null }
 /** A photo the pool holds; `bitmap` once it is decoded. */
 interface Photo { loading: Promise<ImageBitmap>; bitmap: ImageBitmap | null; used: number }
 /** Decoded photos a pool keeps: dozens at preview size, a handful at 4K. */
@@ -340,7 +346,7 @@ export class MediaPool {
         const input = openInput(media);
         try {
           const video = await input.getPrimaryVideoTrack();
-          return { input, video, hdr: video ? await hdrTransfer(video) : undefined, audio: await playableAudioTrack(input) };
+          return { input, video, hdr: video ? await hdrTransfer(video) : undefined, sd: !!video && await sdMatrix(video), audio: await playableAudioTrack(input) };
         } catch (e) {
           input.dispose(); // a file that does not open is asked for again: no try leaves its input behind
           throw e;
@@ -392,7 +398,7 @@ export class MediaPool {
   /** The clip at `t` as an upright canvas: pixels to read (a still, finding a person). */
   async frame(clipId: string, assetId: string, t: number, fast = false): Promise<StreamFrame | null> {
     const p = await this.picture(clipId, assetId, t, fast);
-    return p && { canvas: p.image as HTMLCanvasElement, timestamp: p.timestamp, exact: p.exact }; // frameMax 0: a canvas
+    return p && { canvas: p.image as HTMLCanvasElement, timestamp: p.timestamp, exact: p.exact, as601: p.as601, hdr: p.hdr }; // frameMax 0: a canvas
   }
 
   /** The clip at `t` to draw on the GPU; `frameMax` as in `VideoStream.frameAt` (the compositor's `frameMax`). */
@@ -419,7 +425,7 @@ export class MediaPool {
         if (!h.video) return null;
         const [width, height] = fitSize(await h.video.getDisplayWidth(), await h.video.getDisplayHeight(), this.maxDim);
         if (this.disposed) return null;
-        const s = new VideoStream(assetId, new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height, () => this.sweep(new Set([clipId]), 300), h.hdr);
+        const s = new VideoStream(assetId, new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height, () => this.sweep(new Set([clipId]), 300), h.hdr, h.sd);
         s.lastUsed = performance.now();
         this.streams.get(clipId)?.close();
         this.streams.set(clipId, s);
@@ -578,7 +584,15 @@ export async function captureFrame(assetId: string, t: number): Promise<Blob> {
     const c = document.createElement('canvas');
     c.width = f.canvas.width;
     c.height = f.canvas.height;
-    c.getContext('2d')!.drawImage(f.canvas, 0, 0);
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(f.canvas, 0, 0);
+    // The canvas holds what the decoder gave: an HDR signal or a BT.601 video decoded as BT.709 is put right here, as
+    // the compositor does for the video itself, or a freeze frame would not match the clip it comes from.
+    if (f.hdr || f.as601) {
+      const image = ctx.getImageData(0, 0, c.width, c.height);
+      correctPixels(image.data, f);
+      ctx.putImageData(image, 0, 0);
+    }
     return await new Promise<Blob>((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new MediaError('Could not encode the frame'))), 'image/jpeg', 0.92));
   } finally {
     pool.dispose();
