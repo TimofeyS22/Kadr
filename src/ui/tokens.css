@@ -68,6 +68,7 @@
   --touch: 44px;          /* nothing that is pressed is smaller */
   --mark-width: 8px;      /* the mark: 8 px wide, 6 px taller than what it holds on each side */
   --mark-overhang: 6px;
+  --mark-fine: 5px;       /* the two marks of a value on the Scale: 5 × 30, the same 1 : 6 */
   --hairline: 1px;
 
   /* ---- meaning: motion. Every transition can be interrupted by a touch ---- */

@@ -88,7 +88,7 @@ describe('tokens: scales do not grow', () => {
 
 // ---- drift: a file that lives on tokens has no value written by hand ----
 /** Files already moved onto tokens. A screen is added here in the same commit that migrates it (stage Ч4). */
-const ON_TOKENS = ['ds.css', 'DesignSystem.tsx'];
+const ON_TOKENS = ['ds.css', 'DesignSystem.tsx', 'DsComponents.tsx', 'ck/ck.css', 'ck/Scale.tsx', 'ck/Sheet.tsx', 'ck/controls.tsx'];
 const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 function drift(source: string): string[] {

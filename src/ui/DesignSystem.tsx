@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import './ckFont';
 import './tokens.css';
 import './ds.css';
+import { DsComponents } from './DsComponents';
 import { TOKEN_PAIRS } from './tokenPairs';
 
 export interface DsPairRow { fg: string; bg: string; min: number; ratio: number; ok: boolean }
@@ -86,7 +87,7 @@ export function DesignSystem() {
       <div className="ds-in">
         <header>
           <h1><Wordmark /></h1>
-          <p className="ds-dim">Дизайн-система, этап Ч2: токены. {report ? (failed ? `Пар ниже порога: ${failed}.` : `Все ${report.pairs.length} пар проходят порог контраста.`) : 'Считаю контраст…'}</p>
+          <p className="ds-dim">Дизайн-система: токены и компоненты. {report ? (failed ? `Пар ниже порога: ${failed}.` : `Все ${report.pairs.length} пар проходят порог контраста.`) : 'Считаю контраст…'}</p>
         </header>
 
         <section>
@@ -107,6 +108,8 @@ export function DesignSystem() {
             <button className="ds-btn" onPointerDown={() => setMoving(true)} onPointerUp={() => setMoving(false)} onPointerLeave={() => setMoving(false)} onPointerCancel={() => setMoving(false)}>Держите: значение в движении</button>
           </div>
         </section>
+
+        <DsComponents />
 
         <section>
           <h2>Цвет</h2>

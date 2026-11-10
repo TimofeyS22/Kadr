@@ -1,0 +1,110 @@
+/* Chetko components (DESIGN.md). Every value comes from tokens.css; the drift test reads this file. */
+
+/* ---- what is pressed ---- */
+.ck-btn, .ck-ib, .ck-tool, .ck-tab {
+  border: 0; background: none; color: inherit; font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+.ck-btn:focus-visible, .ck-ib:focus-visible, .ck-tool:focus-visible, .ck-tab:focus-visible,
+.ck-btn[data-demo='focus'], .ck-ib[data-demo='focus'], .ck-tool[data-demo='focus'] { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+/* The old sheet dims every disabled <button> by its tag; here "disabled" is a colour with a checked contrast. */
+.ck-btn:disabled, .ck-ib:disabled, .ck-tool:disabled { color: var(--text-disabled); cursor: default; opacity: 1; }
+.ck-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.ck-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  min-width: 0; min-height: var(--touch); padding: 0 var(--space-4); border-radius: var(--radius-control);
+  font-weight: var(--weight-strong); white-space: nowrap; transition: scale var(--dur-press) var(--ease-soft);
+}
+.ck-btn:active:not(:disabled), .ck-btn[data-demo='pressed'] { scale: 0.96; }
+.ck-btn-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ck-btn svg, .ck-ib svg, .ck-tool svg { width: 20px; height: 20px; flex: none; }
+.ck-primary { background: var(--action-primary); color: var(--text-on-action); }
+.ck-primary:disabled { background: var(--border-subtle); color: var(--text-disabled); }
+.ck-quiet { box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle); }
+.ck-plain { color: var(--text-secondary); }
+.ck-btn.ck-danger { color: var(--action-danger); box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle); }
+.ck-btn.ck-danger:disabled { color: var(--text-disabled); }
+.ck-large { min-height: 56px; font-size: var(--type-md); }
+
+.ck-ib { width: var(--touch); height: var(--touch); display: grid; place-items: center; flex: none; border-radius: var(--radius-control); transition: scale var(--dur-press) var(--ease-soft); }
+.ck-ib:active:not(:disabled), .ck-ib[data-demo='pressed'] { scale: 0.92; }
+
+/* ---- a tool: an icon with its name under it ---- */
+.ck-tool {
+  position: relative; flex: none; min-width: 52px; min-height: 4.25rem; display: grid; justify-items: center; align-content: center; gap: var(--space-1);
+  border-radius: var(--radius-control); font-size: var(--type-xs); line-height: var(--leading-tight); letter-spacing: -0.01em; white-space: nowrap; padding: 0 var(--space-1);
+  transition: scale var(--dur-press) var(--ease-soft), background-color var(--dur-press) var(--ease-soft);
+}
+.ck-tool:active:not(:disabled), .ck-tool[data-demo='pressed'] { background: var(--surface-raised); scale: 0.96; }
+.ck-tool.ck-danger { color: var(--action-danger); }
+.ck-tool.ck-danger:disabled { color: var(--text-disabled); }
+/* A tool that has changed the piece carries a mark beside its icon, not a colour. */
+.ck-tool[data-on='true']::after { content: ''; position: absolute; left: calc(50% + 14px); top: 0.75rem; width: 2px; height: 12px; background: var(--mark-was); }
+
+/* ---- the ribbon: tools scroll, what must stay in reach stands at the edges ---- */
+.ck-ribbon { display: flex; align-items: stretch; background: var(--surface-panel); box-shadow: inset 0 var(--hairline) var(--border-subtle); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.ck-ribbon-edge { flex: none; display: grid; align-items: center; box-shadow: inset calc(-1 * var(--hairline)) 0 var(--border-subtle); }
+.ck-ribbon-edge.ck-end { box-shadow: inset var(--hairline) 0 var(--border-subtle); }
+.ck-ribbon-edge .ck-tool { min-width: 48px; }
+/* The fade at the right says the ribbon goes on. */
+.ck-ribbon-tools { flex: 1; min-width: 0; display: flex; align-items: center; padding: var(--space-2) 0;
+  -webkit-mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.ck-ribbon-tools::-webkit-scrollbar { display: none; }
+
+/* ---- parameters of a tool ---- */
+.ck-tabs { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: none; padding-right: var(--space-6);
+  -webkit-mask-image: linear-gradient(90deg, black calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, black calc(100% - 28px), transparent); }
+.ck-tabs::-webkit-scrollbar { display: none; }
+.ck-tab { position: relative; flex: none; height: 48px; padding: 0 var(--space-3); color: var(--text-secondary); white-space: nowrap; transition: color var(--dur-press) var(--ease-soft); }
+.ck-tab[aria-selected='true'] { color: var(--text-primary); font-weight: var(--weight-strong); }
+.ck-tab[aria-selected='true']::after { content: ''; position: absolute; left: var(--space-3); right: var(--space-3); bottom: 8px; height: 2px; background: var(--mark-was); }
+.ck-tab:focus-visible { outline-offset: -2px; }
+
+/* ---- the Scale ---- */
+.ck-scale { display: flex; flex-direction: column; background: var(--surface-panel); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.ck-scale[data-disabled] { opacity: 0.4; pointer-events: none; }
+.ck-scale-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; min-height: var(--touch); padding: 0 var(--space-1); }
+.ck-scale-side { display: flex; min-width: 0; overflow: hidden; }
+.ck-scale-side .ck-btn { padding: 0 var(--space-2); }
+.ck-scale-row { display: flex; align-items: stretch; }
+.ck-scale-step { height: auto; color: var(--text-secondary); }
+.ck-scale-side.ck-end { justify-content: flex-end; }
+.ck-scale-head .ck-digit { min-width: 96px; text-align: center; }
+.ck-scale-strip { position: relative; flex: 1; min-width: 0; height: 3.25rem; overflow: hidden; touch-action: pan-y; cursor: grab; outline: none; user-select: none; -webkit-user-select: none; }
+.ck-scale-strip:focus-visible { box-shadow: inset 0 0 0 2px var(--text-primary); }
+.ck-ticks { position: absolute; left: 50%; top: 0; bottom: 0; will-change: transform; transition: transform var(--dur-undo) var(--ease-out); }
+.ck-scale[data-moving='true'] .ck-ticks { transition: none; }
+.ck-tick { position: absolute; top: 9px; width: var(--hairline); height: 12px; background: var(--tick-minor); }
+.ck-tick.ck-major { top: 5px; height: 20px; background: var(--tick-major); }
+.ck-tick-label { position: absolute; bottom: 0.3rem; font-size: var(--type-xs); line-height: 1; color: var(--text-secondary); white-space: nowrap; translate: -50% 0; }
+.ck-seg { position: absolute; top: 11px; height: 8px; background: var(--signal); }
+/* The two marks of a value, 1 : 6: what it was (white, rides with the strip) and what it is (the needle, stands still). */
+.ck-was, .ck-needle { position: absolute; top: 0; width: var(--mark-fine); height: 30px; translate: -50% 0; }
+.ck-was { background: var(--mark-was); z-index: var(--z-mark); }
+.ck-needle { left: 50%; background: var(--signal); z-index: var(--z-playhead); transform-origin: 50% 0; transition: scale var(--dur-snap) var(--ease-soft); pointer-events: none; }
+.ck-scale[data-held='true'] .ck-needle { scale: 1.6 1.2; }
+
+/* ---- the sheet: for a choice ---- */
+.ck-sheet-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: var(--z-scrim); }
+.ck-sheet-layer[data-open='true'] { pointer-events: auto; }
+.ck-scrim { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity var(--dur-sheet-out) var(--ease-soft); }
+.ck-sheet-layer[data-open='true'] .ck-scrim { opacity: 1; }
+.ck-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: 86%; display: flex; flex-direction: column; outline: none;
+  background: var(--surface-raised); border-radius: var(--radius-sheet) var(--radius-sheet) 0 0; padding-bottom: env(safe-area-inset-bottom, 0px);
+  translate: 0 100%; transition: translate var(--dur-sheet-out) var(--ease-out); z-index: var(--z-sheet);
+}
+.ck-sheet-layer[data-open='true'] .ck-sheet { translate: 0 0; transition-duration: var(--dur-sheet-in); }
+.ck-sheet[data-dragging] { transition: none; }
+.ck-sheet-head { display: flex; align-items: center; min-height: 52px; padding: 0 var(--space-1) 0 var(--space-4); touch-action: none; }
+.ck-sheet-head h2 { flex: 1; margin: 0; font-size: var(--type-lg); font-weight: var(--weight-strong); letter-spacing: -0.01em; }
+.ck-sheet-body { overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-2) var(--space-4); }
+.ck-toolgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ck-toolgrid .ck-tool { min-width: 0; min-height: 4rem; white-space: normal; text-align: center; }
+.ck-toolgrid .ck-tool span { max-width: 100%; hyphens: auto; -webkit-hyphens: auto; overflow-wrap: anywhere; }
+
+/* ---- progress: the work lies between two marks ---- */
+.ck-progress { height: var(--touch); }
+.ck-progress-film { position: absolute; inset: 0; display: flex; overflow: hidden; background: var(--mark-was); }
+.ck-progress-rest { position: absolute; inset: 0; background: var(--surface-panel); opacity: 0.86; transform-origin: 100% 50%; transition: transform var(--dur-undo) linear; }
