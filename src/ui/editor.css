@@ -1,0 +1,78 @@
+/* The frame of the editor on the Chetko system (docs/17 stage Ч4, release 3): the header, the row under the frame, the
+   cards of long work and the first-run tips. The frame, the timeline and the tool sheets are not here yet (releases
+   4 and 5). Every value comes from tokens.css; the drift test reads this file. Where the editor's old layers still
+   decide what lies over what (the busy veil, the tips), the positioning stays in styles.css until the timeline and the
+   sheets move. */
+
+/* ---- the header: back, the name with whether it is saved, the one white button ---- */
+.ck-editor-top {
+  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1);
+  padding: calc(var(--space-1) + env(safe-area-inset-top, 0px)) var(--space-2) var(--space-1) var(--space-1);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) var(--border-subtle);
+}
+.ck-editor-title { position: relative; flex: 1; min-width: 0; }
+/* The field is the whole 44 px of the title: a tap on the name or on «сохранено» under it starts typing. */
+.ck-editor-name {
+  display: block; width: 100%; min-width: 0; height: var(--touch); margin: 0; padding: 0 var(--space-1) var(--space-4);
+  border: 0; border-radius: var(--radius-control); background: none; color: var(--text-primary);
+  font: inherit; font-size: var(--type-md); font-weight: var(--weight-strong); letter-spacing: -0.01em; text-overflow: ellipsis;
+}
+.ck-editor-name:focus { background: var(--surface-raised); outline: none; }
+.ck-editor-name:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -2px; }
+.ck-editor-saved {
+  position: absolute; left: var(--space-1); right: var(--space-1); bottom: var(--space-1); display: flex; align-items: center; gap: var(--space-1);
+  pointer-events: none; color: var(--text-secondary); font-size: var(--type-xs); line-height: var(--leading-tight); white-space: nowrap; overflow: hidden;
+}
+.ck-editor-saved svg { flex: none; width: 12px; height: 12px; }
+/* Not saved: said by words and weight, not by red (red is for deleting). */
+.ck-editor-saved[data-state='failed'] { color: var(--text-primary); font-weight: var(--weight-strong); }
+.ck-editor-top .ck-btn { flex: none; padding: 0 var(--space-3); }
+
+/* Said for one visit, where Undo and Redo used to be (rule Ж1): a row of the header, so it covers nothing of the frame. */
+.ck-editor-moved {
+  flex: 1 0 100%; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0 0 var(--space-3);
+}
+.ck-editor-moved p { flex: 1; margin: 0; font-size: var(--type-xs); line-height: var(--leading-tight); }
+.ck-editor-moved .ck-btn { flex: none; }
+
+/* ---- the row under the frame: Undo and Redo by the thumb, play, the time, the safe zones ---- */
+.ck-editor .ck-transport { padding-right: var(--space-1); }
+
+/* ---- the ribbon: a count while several pieces are chosen ---- */
+.ck-editor-count { flex: none; padding: 0 var(--space-2); font-size: var(--type-xs); font-weight: var(--weight-strong); white-space: nowrap; }
+
+/* ---- long work and the other-tab question: a native modal dialog over the whole editor ---- */
+.ck-editor-veil { width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: none; color: var(--text-primary); }
+.ck-editor-veil[open] { display: grid; place-items: center; }
+.ck-editor-veil::backdrop { background: var(--scrim); }
+.ck-editor-veil:focus { outline: none; }
+.ck-editor-card {
+  width: calc(100% - var(--space-8)); max-width: 360px; display: grid; gap: var(--space-3); padding: var(--space-4);
+  border-radius: var(--radius-control); background: var(--surface-raised); box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle);
+}
+.ck-editor-card p { margin: 0; line-height: var(--leading-text); }
+.ck-editor-card h2 { margin: 0; font-size: var(--type-lg); font-weight: var(--weight-strong); letter-spacing: -0.01em; line-height: var(--leading-tight); }
+.ck-editor-progress { display: flex; align-items: center; gap: var(--space-3); }
+.ck-editor-progress .ck-progress { flex: 1; height: var(--space-3); }
+.ck-editor-pct { flex: none; min-width: 4ch; text-align: right; font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+/* How far is not known yet: a piece of work that runs between the two marks, not a spinner. */
+.ck-editor-wait { height: var(--space-3); background: var(--border-subtle); }
+.ck-editor-wait i {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 25%; background: var(--mark-was);
+  animation: ck-editor-run calc(var(--dur-sheet-in) * 4) var(--ease-soft) infinite alternate;
+}
+@keyframes ck-editor-run { to { translate: 300% 0; } }
+@media (prefers-reduced-motion: reduce) { .ck-editor-wait i { animation: none; width: 100%; opacity: 0.5; } }
+
+/* ---- a first-run tip, above the ribbon ---- */
+.ck-editor-tip {
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: var(--radius-control); background: var(--surface-raised); box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle);
+}
+.ck-editor-tip span { flex: 1; line-height: var(--leading-text); }
+.ck-editor-tip .ck-btn { flex: none; }
+
+/* ---- the sheet of all tools: each group of the ribbon, in the same order, over the editor's old layers ---- */
+.ck-editor > .ck-sheet-layer { z-index: var(--z-over-old); }
+.ck-editor-all { display: grid; gap: var(--space-2); }
+.ck-editor-all .ck-toolgrid + .ck-toolgrid { padding-top: var(--space-2); box-shadow: inset 0 var(--hairline) var(--border-subtle); }

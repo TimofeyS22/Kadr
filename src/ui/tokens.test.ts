@@ -89,7 +89,7 @@ describe('tokens: scales do not grow', () => {
 // ---- drift: a file that lives on tokens has no value written by hand ----
 /** Files already moved onto tokens. A screen is added here in the same commit that migrates it (stage Ч4). */
 const ON_TOKENS = ['ds.css', 'DesignSystem.tsx', 'DsComponents.tsx', 'DsParts.tsx', 'ck/ck.css', 'ck/Scale.tsx', 'ck/Sheet.tsx', 'ck/controls.tsx', 'ck/choice.tsx',
-  'ck/Field.tsx', 'ck/feedback.tsx', 'ck/home.tsx', 'ck/timeline.tsx', 'home.css'];
+  'ck/Field.tsx', 'ck/feedback.tsx', 'ck/home.tsx', 'ck/timeline.tsx', 'home.css', 'editor.css'];
 /** Pictures that stand in for a person's video in the gallery: content, so their colours are free and not interface debt. */
 const CONTENT = ['dsArt.tsx'];
 const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');

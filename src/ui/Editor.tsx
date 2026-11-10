@@ -1,6 +1,6 @@
 import { produce } from 'immer';
-import { ChevronLeft, Pause, Play, Redo2, Smartphone, Undo2, Upload } from 'lucide-react';
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Check, ChevronLeft, Pause, Play, Redo2, Smartphone, Undo2, Upload } from 'lucide-react';
+import { Suspense, lazy, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { runStartTask } from './tasks';
 import { normalizeProject, projectDuration, withUsedAssets } from '../core/timeline';
 import type { Project } from '../core/types';
@@ -19,6 +19,13 @@ import { PerfOverlay, perfOverlayEnabled } from './PerfOverlay';
 
 const showPerf = perfOverlayEnabled();
 import { t } from '../lib/i18n';
+// Chetko, stage Ч4 release 3 (docs/17): the frame of the editor on the components of the system. The frame, the
+// timeline and the tool sheets come later; `topbar`, `transport`, `time`, `play-btn`, `busy` and `coach` stay as hooks.
+import './ck/ck.css';
+import './editor.css';
+import { Button, IconButton, Progress } from './ck/controls';
+import { Empty } from './ck/home';
+import { Transport as Row } from './ck/timeline';
 
 // Fetched as the editor mounts, not before it can be used: the editor's first load is the budget that counts (audit V-143).
 const Sheets = lazy(() => import('./sheets').then((m) => ({ default: m.Sheets })));
@@ -29,6 +36,7 @@ const snapshot = () => Promise.race([player.snapshot(), new Promise<null>((r) =>
 const SAVE_RETRY_MS = 4000;
 /** However many edits follow one another, the first of them is on disk within this long. */
 const SAVE_MAX_WAIT_MS = 2500;
+const UNDO_MOVED_KEY = 'kadr.undoMoved.v1';
 
 export async function leaveEditor(): Promise<void> {
   if (useEditor.getState().sheetGuard && !useEditor.getState().closeSheet()) return; // an export or a file not saved yet
@@ -56,6 +64,25 @@ export function Editor({ id }: { id: string }) {
   const sheetOpen = useEditor((s) => s.sheet !== null);
   const [missing, setMissing] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // Undo and Redo moved under the frame (owner, 2026-11-10): said once, where they were, to who worked here before (Ж1).
+  const [undoMovedSeen, setUndoMovedSeen] = useState(() => {
+    try {
+      if (localStorage.getItem(UNDO_MOVED_KEY) !== null) return true;
+      if (localStorage.getItem('kadr.tips') !== null) return false; // has been in the editor: knew the old place
+      localStorage.setItem(UNDO_MOVED_KEY, '1'); // the first visit never saw them at the top
+      return true;
+    } catch { return true; }
+  });
+  // Shown for one visit to the editor: leaving counts as having seen it, so it never follows the person around.
+  useEffect(() => {
+    if (undoMovedSeen) return;
+    return () => { try { localStorage.setItem(UNDO_MOVED_KEY, '1'); } catch { /* said again next time */ } };
+  }, [undoMovedSeen]);
+  const undoMovedFound = () => {
+    if (undoMovedSeen) return;
+    try { localStorage.setItem(UNDO_MOVED_KEY, '1'); } catch { /* said again next time */ }
+    setUndoMovedSeen(true);
+  };
 
   // However the editor is left (the system Back too), nothing of this project stays for the next one to write into.
   useEffect(() => () => {
@@ -125,6 +152,8 @@ export function Editor({ id }: { id: string }) {
     let failing = false;
     /** The version being written right now: if the page hides meanwhile, it may never get there. */
     let writing: { p: Project; seq: number } | null = null;
+    /** What the header says: only a change of it is set, so a write does not re-render who listens. */
+    const saying = (to: 'saved' | 'pending' | 'failed') => { if (useEditor.getState().saving !== to) useEditor.setState({ saving: to }); };
     const flush = (hiding = false) => {
       clearTimeout(timer);
       if (useEditor.getState().elsewhere) return; // changed in another tab: the person chooses first
@@ -136,21 +165,24 @@ export function Editor({ id }: { id: string }) {
       pending = null;
       const job = { p, seq: hiding ? journalProject(p) : 0 };
       writing = job;
+      if (!failing) saying('pending'); // the header counts from here: a write, not the wait before it
       saveProject(p).then(
         () => {
           if (writing === job) writing = null;
           retried = false;
           if (job.seq) clearJournal(p.id, job.seq);
           if (failing) { failing = false; useEditor.getState().toast(t('Your changes are saved.')); }
+          if (!pending) saying('saved');
         },
         (e) => {
           if (writing === job) writing = null;
           pending ??= p; // a newer edit holds this one too
-          if (e instanceof ProjectConflict) { useEditor.setState({ elsewhere: true }); return; }
+          if (e instanceof ProjectConflict) { useEditor.setState({ elsewhere: true }); saying('failed'); return; }
           if (document.visibilityState === 'hidden' && !retried) { retried = true; return; }
           retried = false;
           if (!failing) useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error');
           failing = true;
+          saying('failed');
           clearTimeout(timer);
           timer = window.setTimeout(flush, SAVE_RETRY_MS);
         },
@@ -204,8 +236,12 @@ export function Editor({ id }: { id: string }) {
   if (missing) {
     return (
       <div className="center-msg">
-        <p>{t('This project is not on this device.')}</p>
-        <button className="btn primary" onClick={() => { location.hash = ''; }}>{t('Back to projects')}</button>
+        <div className="ck">
+          <Empty title={t('This project is not on this device.')}
+            action={<Button variant="primary" size="large" onClick={() => { location.hash = ''; }}>{t('Back to projects')}</Button>}>
+            {t('Projects live in the browser they were made in. It may have been deleted, or made in another browser or on another device.')}
+          </Empty>
+        </div>
       </div>
     );
   }
@@ -213,7 +249,7 @@ export function Editor({ id }: { id: string }) {
 
   return (
     <div
-      className={`editor ${sheetOpen ? 'sheet-open' : ''}`}
+      className={`editor ck-editor ${sheetOpen ? 'sheet-open' : ''}`}
       onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => {
@@ -224,70 +260,136 @@ export function Editor({ id }: { id: string }) {
         void addFiles(files.filter((f) => !audio.includes(f)), 'main').then(() => addFiles(audio, 'audio'));
       }}
     >
-      <TopBar project={project} />
+      <TopBar project={project} moved={!undoMovedSeen && !sheetOpen} onMovedSeen={undoMovedFound} />
       <Preview />
-      <Transport />
+      <Transport onUsed={undoMovedFound} />
       <Timeline />
       {showPerf && <PerfOverlay />}
       <Toolbar />
       <Suspense fallback={null}><Sheets /></Suspense>
       <BusyOverlay />
       <ElsewhereNotice />
-      <Coach />
+      <Coach hold={!undoMovedSeen} />
       {dragging && <div className="drop-hint">{t('Drop videos, photos or music to add them')}</div>}
     </div>
   );
 }
 
-function TopBar({ project }: { project: Project }) {
-  const canUndo = useEditor((s) => s.past.length > 0 && !s.locked);
-  const canRedo = useEditor((s) => s.future.length > 0 && !s.locked);
-  const s = useEditor.getState();
+/** Whether the work is on the disk: «сохранено»; «сохраняю…» only when a write takes over a second, so it never flickers. */
+function Saved({ id }: { id: string }) {
+  const saving = useEditor((s) => s.saving);
+  const [state, setState] = useState<'saved' | 'pending' | 'failed'>('saved');
+  const since = useRef(-Infinity); // when «сохраняю…» came up: it stays long enough to be read
+  useEffect(() => {
+    if (saving === 'failed') { setState('failed'); return; }
+    const timer = saving === 'pending'
+      ? setTimeout(() => { since.current = performance.now(); setState('pending'); }, 1000)
+      : setTimeout(() => setState('saved'), Math.max(0, since.current + 600 - performance.now()));
+    return () => clearTimeout(timer);
+  }, [saving]);
   return (
-    <header className="topbar">
-      <button className="icon-btn" onClick={() => void leaveEditor()} aria-label={t('Back to projects')}><ChevronLeft size={24} /></button>
-      <input className="title-input" value={project.name} maxLength={80} aria-label={t('Project name')}
-        onChange={(e) => s.commit((d) => { d.name = e.target.value; }, 'name')} />
-      <button className="icon-btn" disabled={!canUndo} onClick={s.undo} aria-label={t('Undo')}><Undo2 size={20} /></button>
-      <button className="icon-btn" disabled={!canRedo} onClick={s.redo} aria-label={t('Redo')}><Redo2 size={20} /></button>
-      <button className="btn primary" disabled={projectDuration(project) <= 0} onClick={startExport}>
-        <Upload size={16} /> {t('Export')}
-      </button>
+    <span id={id} className="ck-editor-saved" data-state={state}>
+      {state === 'saved' && <Check aria-hidden />}
+      {state === 'failed' ? t('not saved') : state === 'pending' ? t('saving…') : t('saved')}
+    </span>
+  );
+}
+
+function TopBar({ project, moved, onMovedSeen }: { project: Project; moved: boolean; onMovedSeen: () => void }) {
+  const s = useEditor.getState();
+  const id = useId();
+  return (
+    <header className="ck ck-editor-top topbar">
+      <IconButton label={t('Back to projects')} onClick={() => void leaveEditor()}><ChevronLeft aria-hidden /></IconButton>
+      <div className="ck-editor-title">
+        <input className="ck-editor-name" value={project.name} maxLength={80} aria-label={t('Project name')} aria-describedby={`${id}-saved`}
+          enterKeyHint="done" autoComplete="off" onChange={(e) => s.commit((d) => { d.name = e.target.value; }, 'name')}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+        <Saved id={`${id}-saved`} />
+      </div>
+      <Button variant="primary" icon={<Upload aria-hidden />} disabled={projectDuration(project) <= 0} onClick={startExport}>{t('Export')}</Button>
+      {moved && (
+        <div className="ck-editor-moved" role="note">
+          <p>{t('“Undo” and “Redo” are now under the frame ↓')}</p>
+          <Button onClick={onMovedSeen}>{t('Got it')}</Button>
+        </div>
+      )}
     </header>
   );
 }
 
-function Transport() {
+/** Under the frame: Undo and Redo by the thumb (owner, 2026-11-10), play, the time, the safe zones. */
+function Transport({ onUsed }: { onUsed: () => void }) {
   const time = useEditor((s) => s.time);
   const playing = useEditor((s) => s.playing);
   const locked = useEditor((s) => s.locked);
   const duration = useEditor((s) => (s.project ? projectDuration(s.project) : 0));
   const safeZones = useEditor((s) => s.safeZones);
+  const canUndo = useEditor((s) => s.past.length > 0 && !s.locked);
+  const canRedo = useEditor((s) => s.future.length > 0 && !s.locked);
+  const s = useEditor.getState();
   return (
-    <div className="transport">
-      <span className="time"><b>{formatTime(time)}</b> / {formatTime(duration)}</span>
-      <button className="play-btn" onClick={() => player.toggle()} aria-label={playing ? t('Pause') : t('Play')} disabled={locked || duration <= 0}>
-        {playing ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" />}
-      </button>
-      <button className={`icon-btn zones-btn ${safeZones ? 'on' : ''}`} aria-pressed={safeZones} aria-label={t('Show TikTok, Reels and Shorts safe zones')}
-        onClick={() => useEditor.setState({ safeZones: !safeZones })}>
-        <Smartphone size={18} />
-      </button>
-    </div>
+    <Row hooks={{ row: 'transport', play: 'play-btn', time: 'time' }} playing={playing} onPlay={() => player.toggle()} disabled={locked || duration <= 0}
+      playLabel={t('Play')} pauseLabel={t('Pause')} playIcon={<Play aria-hidden />} pauseIcon={<Pause aria-hidden />}
+      time={formatTime(time)} total={formatTime(duration)}
+      start={<>
+        <IconButton label={t('Undo')} disabled={!canUndo} onClick={() => { onUsed(); s.undo(); }}><Undo2 aria-hidden /></IconButton>
+        <IconButton label={t('Redo')} disabled={!canRedo} onClick={() => { onUsed(); s.redo(); }}><Redo2 aria-hidden /></IconButton>
+      </>}
+      end={<IconButton label={t('Show TikTok, Reels and Shorts safe zones')} aria-pressed={safeZones} onClick={() => useEditor.setState({ safeZones: !safeZones })}><Smartphone aria-hidden /></IconButton>} />
+  );
+}
+
+/**
+ * A card the editor waits on, over all of it: a native modal dialog, so the focus is inside, Tab stays there and the
+ * editor under the veil is out of reach of a finger, the keyboard and a screen reader (audit of Ч4 release 3). The focus
+ * goes to `focus` (the way out) or to the card, and back to where it was when the card goes.
+ */
+function Veil({ label, alert, focus, onEscape, children }: { label: string; alert?: boolean; focus?: RefObject<HTMLButtonElement | null>; onEscape?: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const escape = useRef(onEscape);
+  escape.current = onEscape;
+  const first = useRef(focus); // where the focus goes when the card comes; a button that turns up later does not take it
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    const back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!d.open) d.showModal();
+    (first.current?.current ?? d).focus({ preventScroll: true });
+    return () => { if (d.open) d.close(); if (back?.isConnected) back.focus({ preventScroll: true }); };
+  }, []);
+  return (
+    <dialog ref={ref} className="ck ck-editor-veil busy" role={alert ? 'alertdialog' : undefined} aria-labelledby={label} tabIndex={-1}
+      onCancel={(e) => { e.preventDefault(); escape.current?.(); }}>
+      <div className="ck-editor-card">{children}</div>
+    </dialog>
   );
 }
 
 function BusyOverlay() {
   const busy = useEditor((s) => s.busy);
+  return busy ? <BusyCard /> : null;
+}
+
+function BusyCard() {
+  const busy = useEditor((s) => s.busy);
+  const id = useId();
+  const cancel = useRef<HTMLButtonElement>(null);
+  const hasCancel = !!busy?.cancel;
   if (!busy) return null;
   return (
-    <div className="busy" role="status" aria-live="polite">
-      <div className="busy-card">
-        <p>{busy.label}</p>
-        <div className="progress"><div style={{ width: busy.progress === null ? '15%' : `${Math.round(busy.progress * 100)}%` }} className={busy.progress === null ? 'indeterminate' : ''} /></div>
-        {busy.cancel && <button className="btn" onClick={busy.cancel}>{t('Cancel')}</button>}
-      </div>
-    </div>
+    <Veil label={id} focus={hasCancel ? cancel : undefined} onEscape={busy.cancel}>
+      {/* What is being done, said again when it changes («Добавляю 2 из 3…»). */}
+      <p id={id} aria-live="polite">{busy.label}</p>
+      {/* How far, in a number when it is known (principle 6); the bar says it to a screen reader, the number is for the eye. */}
+      {busy.progress === null ? <div className="ck-editor-wait ck-held" aria-hidden><i /></div> : (
+        <div className="ck-editor-progress">
+          <Progress label={t('Progress')} value={busy.progress} />
+          <span className="ck-editor-pct" aria-hidden>{Math.round(busy.progress * 100)}%</span>
+        </div>
+      )}
+      {busy.cancel && <Button ref={cancel} onClick={busy.cancel}>{t('Cancel')}</Button>}
+    </Veil>
   );
 }
 
@@ -297,8 +399,12 @@ function BusyOverlay() {
  */
 function ElsewhereNotice() {
   const on = useEditor((s) => s.elsewhere);
+  return on ? <ElsewhereCard /> : null;
+}
+
+function ElsewhereCard() {
   const [working, setWorking] = useState(false);
-  if (!on) return null;
+  const newer = useRef<HTMLButtonElement>(null);
   const run = (fn: () => Promise<void>) => {
     setWorking(true);
     void fn().catch((e) => useEditor.getState().toast(errorMessage(e), 'error')).finally(() => setWorking(false));
@@ -314,18 +420,16 @@ function ElsewhereNotice() {
     const p = useEditor.getState().project;
     if (!p) return;
     await saveProject(p, undefined, true);
-    useEditor.setState({ elsewhere: false });
+    useEditor.setState({ elsewhere: false, saving: 'saved' }); // this version is on the disk now
     track('tab_conflict', { choice: 'mine' });
   });
   return (
-    <div className="busy" role="alertdialog" aria-modal="true" aria-labelledby="elsewhere-title">
-      <div className="busy-card">
-        <h2 id="elsewhere-title" className="notice-title">{t('This project was changed in another tab')}</h2>
-        <p>{t('Saving here is paused, so one tab does not erase the edits of the other. Pick the version to keep working on.')}</p>
-        <button className="btn primary" disabled={working} onClick={fresh}>{t('Open the newer version')}</button>
-        <button className="btn" disabled={working} onClick={mine}>{t('Keep this version')}</button>
-      </div>
-    </div>
+    <Veil label="elsewhere-title" alert focus={newer}>
+      <h2 id="elsewhere-title">{t('This project was changed in another tab')}</h2>
+      <p>{t('Saving here is paused, so one tab does not erase the edits of the other. Pick the version to keep working on.')}</p>
+      <Button ref={newer} variant="primary" disabled={working} onClick={fresh}>{t('Open the newer version')}</Button>
+      <Button disabled={working} onClick={mine}>{t('Keep this version')}</Button>
+    </Veil>
   );
 }
 
@@ -335,17 +439,19 @@ const TIPS = [
   'Pinch the timeline to zoom. In the preview, drag text and overlays, pinch to resize and rotate.',
 ];
 
-/** First-run tips, one at a time, remembered per device. */
-function Coach() {
+/** First-run tips, one at a time, remembered per device; not while the note about the move is up (one thing at a time). */
+function Coach({ hold }: { hold: boolean }) {
   const [seen, setSeen] = useState(() => { try { return Number(localStorage.getItem('kadr.tips') ?? 0); } catch { return TIPS.length; } });
   const hasClips = useEditor((s) => !!s.project?.tracks.some((tr) => tr.clips.length));
   const sheet = useEditor((s) => s.sheet);
-  if (seen >= TIPS.length || !hasClips || sheet) return null;
+  if (seen >= TIPS.length || !hasClips || sheet || hold) return null;
   const next = () => { const n = seen + 1; setSeen(n); try { localStorage.setItem('kadr.tips', String(n)); } catch { /* ignore */ } };
   return (
     <div className="coach" role="note">
-      <span>{t(TIPS[seen])}</span>
-      <button className="btn" onClick={next}>{seen + 1 < TIPS.length ? t('Next') : t('Got it')}</button>
+      <div className="ck ck-editor-tip">
+        <span>{t(TIPS[seen])}</span>
+        <Button onClick={next}>{seen + 1 < TIPS.length ? t('Next') : t('Got it')}</Button>
+      </div>
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import {
   Activity, ArrowRightToLine, TrianglesCenterlineDashedVertical, Pipette, AudioLines, Bell, Check, Clapperboard, CopyCheck, Disc3, EyeOff, Zap, ScanFace, Captions, CircleDashed, Copy, Crop, Film, Frame, Gauge, Layers, Layers3, Mic, Move, Music, PersonStanding, Rewind, Scissors,
-  SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Video, Volume2, WandSparkles, X,
+  LayoutGrid, SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Video, Volume2, WandSparkles, X,
   type LucideIcon,
 } from 'lucide-react';
+import { useState } from 'react';
 import { findClip } from '../core/timeline';
 import { useEditor, type SheetId } from '../state/store';
 import {
@@ -10,12 +11,22 @@ import {
   splitAtPlayhead, startCaptions, toggleCutout, toggleFlip,
 } from './actions';
 import { t } from '../lib/i18n';
+// Chetko, stage Ч4 release 3 (docs/17): the ribbon of the system. The order, the names and the groups are those of 1.7.1;
+// `toolbar`, `tool` and `tool-back` stay as hooks for the tests and the iPhone scripts.
+import { Ribbon, Tool as ToolButton } from './ck/controls';
+import { Sheet } from './ck/Sheet';
 
-interface Tool { icon: LucideIcon; label: string; run: () => void; danger?: boolean; on?: boolean }
+/** `on`: the tool has changed the piece (said as «изменено»). `pressed`: the tool is itself a switch, one tap turns it on and off. */
+interface Tool { icon: LucideIcon; label: string; run: () => void; danger?: boolean; on?: boolean; pressed?: boolean }
+
+const button = (x: Tool, run = x.run, hook: string | undefined = 'tool') => (
+  <ToolButton key={x.label} hook={hook} icon={<x.icon aria-hidden />} label={x.label} danger={x.danger} on={x.on} onNote={t('changed')} pressed={x.pressed} onClick={run} />
+);
 
 const sheet = (id: SheetId) => () => useEditor.getState().openSheet(id);
 
 export function Toolbar() {
+  const [all, setAll] = useState(false);
   const clip = useEditor((s) => (s.project && s.selection ? findClip(s.project, s.selection)?.clip ?? null : null));
   const kind = clip?.kind ?? null;
   const multi = useEditor((s) => s.multi);
@@ -24,15 +35,15 @@ export function Toolbar() {
     const live = project ? multi.filter((id) => findClip(project, id)) : []; // undo may have removed some
     const off = !live.length;
     return (
-      <nav className="toolbar multi" aria-label={t('Tools')}>
-        <button className="tool on" onClick={() => useEditor.getState().setMulti(null)} aria-label={t('Finish selecting')}>
-          <Check size={22} /><span>{t('Done')}</span>
-        </button>
-        <span className="multi-count" role="status">{t('{n} selected', { n: live.length })}</span>
-        <button className="tool danger" disabled={off} onClick={deleteMulti}><Trash2 size={22} /><span>{t('Delete')}</span></button>
-        <button className="tool" disabled={off} onClick={duplicateMulti}><Copy size={22} /><span>{t('Duplicate')}</span></button>
-        <button className="tool" disabled={off} onClick={multiToPlayhead}><ArrowRightToLine size={22} /><span>{t('To playhead')}</span></button>
-      </nav>
+      <Ribbon label={t('Tools')} hook="toolbar multi"
+        start={<ToolButton hook="tool" icon={<Check aria-hidden />} label={t('Done')} aria-label={t('Done: finish selecting')} onClick={() => useEditor.getState().setMulti(null)} />}>
+        <span className="ck-editor-count" role="status">{t('{n} selected', { n: live.length })}</span>
+        <div className="ck-ribbon-group">
+          <ToolButton hook="tool" icon={<Trash2 aria-hidden />} label={t('Delete')} danger disabled={off} onClick={deleteMulti} />
+          <ToolButton hook="tool" icon={<Copy aria-hidden />} label={t('Duplicate')} disabled={off} onClick={duplicateMulti} />
+          <ToolButton hook="tool" icon={<ArrowRightToLine aria-hidden />} label={t('To playhead')} disabled={off} onClick={multiToPlayhead} />
+        </div>
+      </Ribbon>
     );
   }
   const split: Tool = { icon: Scissors, label: t('Split'), run: splitAtPlayhead };
@@ -52,8 +63,8 @@ export function Toolbar() {
   const mask: Tool = { icon: CircleDashed, label: t('Mask'), run: sheet('mask'), on: !!(clip && 'mask' in clip && clip.mask) };
   const fx: Tool = { icon: Zap, label: t('Effects'), run: sheet('effects'), on: !!(clip && 'effect' in clip && clip.effect) };
   const hide: Tool = { icon: EyeOff, label: t('Hide faces'), run: sheet('privacy'), on: !!(clip && 'privacy' in clip && clip.privacy && (clip.privacy.faces || clip.privacy.areas.length)) };
-  const cutout: Tool = { icon: PersonStanding, label: t('Cutout'), run: () => void toggleCutout(), on: !!(clip && 'removeBg' in clip && clip.removeBg) };
-  const mirror: Tool = { icon: TrianglesCenterlineDashedVertical, label: t('Mirror'), run: () => toggleFlip('x'), on: !!(clip && 'flipX' in clip && clip.flipX) };
+  const cutout: Tool = { icon: PersonStanding, label: t('Cutout'), run: () => void toggleCutout(), pressed: !!(clip && 'removeBg' in clip && clip.removeBg) };
+  const mirror: Tool = { icon: TrianglesCenterlineDashedVertical, label: t('Mirror'), run: () => toggleFlip('x'), pressed: !!(clip && 'flipX' in clip && clip.flipX) };
   // Next to Cutout, where people look for it (it used to sit at the bottom of Transform, docs/09 Q3).
   const chroma: Tool = { icon: Pipette, label: t('Chroma key'), run: sheet('chroma'), on: !!(clip && 'chroma' in clip && clip.chroma.enabled) };
   // One tap: captions for the whole timeline, every video (v1.3); existing captions open for editing.
@@ -101,22 +112,24 @@ export function Toolbar() {
     ];
   }
 
+  // «Все»: the whole panel with names, a sheet away (audit UI-5: 23 tools in one row, four of them in sight). A tool
+  // runs in the same tap that chose it, so a file picker it opens still counts as the person's own act.
+  const fromAll = (x: Tool) => () => { setAll(false); x.run(); };
   return (
-    <nav className="toolbar" aria-label={t('Tools')}>
-      {kind && (
-        <button className="tool tool-back" onClick={() => useEditor.getState().select(null)} aria-label={t('Close tools')}>
-          <X size={22} /><span>{t('Back')}</span>
-        </button>
-      )}
-      {groups.map((group, i) => (
-        <div className="tool-group" key={i}>
-          {group.map((x) => (
-            <button key={x.label} className={`tool ${x.danger ? 'danger' : ''} ${x.on ? 'on' : ''}`} aria-pressed={x.on} onClick={x.run}>
-              <x.icon size={22} /><span>{x.label}</span>
-            </button>
-          ))}
-        </div>
-      ))}
-    </nav>
+    <>
+      <Ribbon label={t('Tools')} hook="toolbar"
+        start={kind ? <ToolButton hook="tool tool-back" icon={<X aria-hidden />} label={t('Back')} aria-label={t('Back: close tools')} onClick={() => useEditor.getState().select(null)} /> : undefined}
+        end={<ToolButton icon={<LayoutGrid aria-hidden />} label={t('All')} aria-label={t('All tools')} aria-haspopup="dialog" onClick={() => setAll(true)} />}>
+        {groups.map((group, i) => <div className="ck-ribbon-group" key={i}>{group.map((x) => button(x))}</div>)}
+      </Ribbon>
+      <Sheet open={all} title={t('All tools')} closeLabel={t('Close')} closeIcon={<X aria-hidden />} onClose={() => setAll(false)}>
+        {/* Built only while open: a closed copy of every tool would answer to the same names as the ribbon. */}
+        {all && (
+          <div className="ck-editor-all">
+            {groups.map((group, i) => <div className="ck-toolgrid" key={i}>{group.map((x) => button(x, fromAll(x), undefined))}</div>)}
+          </div>
+        )}
+      </Sheet>
+    </>
   );
 }

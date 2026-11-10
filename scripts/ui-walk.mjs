@@ -210,13 +210,13 @@ try {
   if (await page.locator('.tool-back').count()) { await tools().last().click(); await snap('select several'); await page.locator('.toolbar .tool').first().click(); }
 
   await deselect();
-  await page.locator('.topbar .btn.primary').click();
+  await page.locator('.topbar .ck-primary').click();
   await page.waitForTimeout(600);
   await snap('export sheet');
   const cancel = page.getByRole('button', { name: /^(Cancel|Отмена|Отменить)$/ });
   if (await cancel.count() && await cancel.first().isVisible()) await cancel.first().click();
   await closeSheet();
-  await page.locator('.topbar .icon-btn').first().click();
+  await page.locator('.topbar .ck-ib').first().click();
   await newProject.waitFor();
   await snap('home (with a project)');
 } catch (e) {

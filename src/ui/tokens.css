@@ -99,6 +99,9 @@
   --z-toast: 3;
   --z-scrim: 4;
   --z-sheet: 5;
+  /* The editor's timeline and tool sheets still stack on the old numbers (up to 20) until they move (Ч4 releases 4–5):
+     a sheet of the system lies over them on this layer. Goes when they do. */
+  --z-over-old: 20;
 
 }
 /* What a screen built on the system gets besides the values: its own ground, face and size. */

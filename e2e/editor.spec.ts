@@ -33,6 +33,7 @@ test.beforeEach(async ({ page }) => {
   page.context().on('response', (r) => { if (r.status() >= 400) consoleErrors.push(`HTTP ${r.status()} ${r.url().slice(0, 200)}`); });
   await page.addInitScript(() => {
     localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
+    localStorage.setItem('kadr.undoMoved.v1', '1'); // the move of Undo is seen (Chetko Ч4 release 3): its row would narrow the frame
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
     // Export tests pick their settings; quick export (on by default, v1.3) has its own test.
@@ -1809,11 +1810,12 @@ test('voice effects: telephone cuts the highs, chipmunk raises the pitch in sync
   const highs = async (f: string) => (await meanDb(f, 4000)) - (await meanDb(f));
   const plain = await highs(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
   await pickVoice(page, audio, 'Telephone');
-  await expect(tool(page, 'Voice')).toHaveAttribute('aria-pressed', 'true');
+  // Voice opens a sheet, so it is not a switch: it says it has changed the piece (Chetko Ч4 release 3).
+  await expect(tool(page, 'Voice')).toHaveAccessibleDescription('changed');
   const phone = await highs(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
   expect(plain - phone, 'energy above 4 kHz, relative to the whole').toBeGreaterThan(20);
   await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(tool(page, 'Voice')).toHaveAttribute('aria-pressed', 'false');
+  await expect(tool(page, 'Voice')).toHaveAccessibleDescription('');
   expect(Math.abs((await highs(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }))) - plain), 'undo restores').toBeLessThan(1.5);
 
   // Chipmunk on a 220 Hz tone: the pitch goes up 1.4–2×.
@@ -4184,9 +4186,11 @@ test('two tabs of one project: the older one does not erase the newer one\'s edi
   await b.getByRole('textbox', { name: 'Project name' }).fill('NAME-B');
   await expect(notice(page)).toBeVisible({ timeout: 10_000 });
   await expect.poll(stored).toBe('NAME-B');
-  await page.getByRole('textbox', { name: 'Project name' }).evaluate((el) => (el as HTMLElement).blur());
+  // The question takes the focus (a modal dialog since Chetko Ч4 release 3): typing goes nowhere behind it.
+  await expect(notice(page).getByRole('button', { name: 'Open the newer version' })).toBeFocused();
   await page.getByRole('button', { name: 'Keep this version' }).click();
   await expect.poll(stored).toBe('NAME-A');
+  await expect(page.getByRole('textbox', { name: 'Project name' }), 'this version is on the disk now').toHaveAccessibleDescription('saved');
   await expect(notice(b)).toBeVisible({ timeout: 10_000 });
   await b.close();
 });
@@ -4866,7 +4870,8 @@ test('someone coming back sees their projects before the templates (audit V-187)
   await page.getByRole('button', { name: 'Back to projects' }).click();
   // Read in one step: the home screen draws again when the list arrives, and a heading can be replaced between two reads.
   await expect.poll(() => page.evaluate(() => {
-    const y = (text: string) => [...document.querySelectorAll('h2')].find((h) => h.textContent === text)?.getBoundingClientRect().y;
+    // «Your projects» carries the count after it since Chetko Ч4 release 2: the heading starts with its name.
+    const y = (text: string) => [...document.querySelectorAll('h2')].find((h) => h.textContent?.startsWith(text))?.getBoundingClientRect().y;
     const yours = y('Your projects'), templates = y('Start from a template');
     return yours !== undefined && templates !== undefined && yours < templates;
   })).toBe(true);

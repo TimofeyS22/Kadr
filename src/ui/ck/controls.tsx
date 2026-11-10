@@ -1,7 +1,7 @@
 // Chetko components (DESIGN.md): what is pressed. Every one of them is at least 44 px to a finger, names itself to a
 // screen reader, shows the keyboard where it is, and takes every value from tokens. Texts come from the caller, so the
 // components know no language.
-import { useRef, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import { useId, useRef, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 
 type Native = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'children'>;
 
@@ -34,15 +34,23 @@ interface ToolProps extends Native {
   label: string;
   danger?: boolean;
   /** The tool has changed this piece (a mask is on, the speed is not 1×): it is marked, not coloured. A tool is not a
-   *  switch, so a screen reader hears this as words (`onNote`: «изменено»), not as "pressed". */
+   *  switch, so a screen reader hears this as words (`onNote`: «изменено»), not as "pressed". The words are the tool's
+   *  description, not part of its name: the name of a tool stays the same whatever it has done. */
   on?: boolean;
   onNote?: string;
+  /** A tool that is itself a switch (Mirror, Cutout: one tap turns it on and off): it says "pressed" and carries the mark. */
+  pressed?: boolean;
+  /** Extra class names: hooks that tests and the iPhone scripts already rely on. */
+  hook?: string;
 }
 /** One tool of the ribbon or of the sheet of all tools: an icon with its name under it, always. */
-export function Tool({ icon, label, danger, on, onNote, type = 'button', ...rest }: ToolProps) {
+export function Tool({ icon, label, danger, on, onNote, pressed, hook, type = 'button', ...rest }: ToolProps) {
+  const id = useId();
+  const noted = !!(on && onNote && pressed === undefined);
   return (
-    <button type={type} className={`ck-tool${danger ? ' ck-danger' : ''}`} data-on={on || undefined} {...rest}>
-      {icon}<span>{label}</span>{on && onNote && <span className="ck-sr">, {onNote}</span>}
+    <button type={type} className={`ck-tool${danger ? ' ck-danger' : ''}${hook ? ` ${hook}` : ''}`} data-on={on || pressed || undefined}
+      aria-pressed={pressed} aria-describedby={noted ? `${id}-on` : undefined} {...rest}>
+      {icon}<span>{label}</span>{noted && <span className="ck-sr" id={`${id}-on`} aria-hidden="true">{onNote}</span>}
     </button>
   );
 }
@@ -55,11 +63,13 @@ interface RibbonProps {
   /** Stays at the right edge: «Все». */
   end?: ReactNode;
   children: ReactNode;
+  /** Extra class names: hooks that tests and the iPhone scripts already rely on. */
+  hook?: string;
 }
 /** The ribbon of tools: the same order as ever, scrolled sideways, with what must stay in reach fixed at its edges. */
-export function Ribbon({ label, start, end, children }: RibbonProps) {
+export function Ribbon({ label, start, end, children, hook }: RibbonProps) {
   return (
-    <nav className="ck-ribbon" aria-label={label}>
+    <nav className={hook ? `ck ck-ribbon ${hook}` : 'ck-ribbon'} aria-label={label}>
       {start && <div className="ck-ribbon-edge">{start}</div>}
       <div className="ck-ribbon-tools">{children}</div>
       {end && <div className="ck-ribbon-edge ck-end">{end}</div>}

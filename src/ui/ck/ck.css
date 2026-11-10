@@ -56,10 +56,12 @@
 .ck-ib:active:not(:disabled), .ck-ib[data-demo='pressed'] { scale: 0.92; }
 .ck-ib.ck-danger { color: var(--action-danger); }
 .ck-ib.ck-danger:disabled { color: var(--text-disabled); }
+/* A switch of what the screen shows (the safe zones): on, it has the white ring of a chosen thing. */
+.ck-ib[aria-pressed='true'] { background: var(--surface-raised); box-shadow: inset 0 0 0 2px var(--text-primary); }
 
 /* ---- a tool: an icon with its name under it ---- */
 .ck-tool {
-  position: relative; flex: none; min-width: 52px; min-height: 4.25rem; display: grid; justify-items: center; align-content: center; gap: var(--space-1);
+  position: relative; flex: none; min-width: 52px; min-height: 3.75rem; display: grid; justify-items: center; align-content: center; gap: var(--space-1);
   border-radius: var(--radius-control); font-size: var(--type-xs); line-height: var(--leading-tight); letter-spacing: -0.01em; white-space: nowrap; padding: 0 var(--space-1);
   transition: scale var(--dur-press) var(--ease-soft), background-color var(--dur-press) var(--ease-soft);
 }
@@ -75,9 +77,13 @@
 .ck-ribbon-edge.ck-end { box-shadow: inset var(--hairline) 0 var(--border-subtle); }
 .ck-ribbon-edge .ck-tool { min-width: 48px; }
 /* The fade at the right says the ribbon goes on. */
-.ck-ribbon-tools { flex: 1; min-width: 0; display: flex; align-items: center; padding: var(--space-2) 0;
+/* 60 px tools and 4 px above and below: the ribbon is no taller than in 1.7.1 (71 px), so the frame keeps its room (principle 1). */
+.ck-ribbon-tools { flex: 1; min-width: 0; display: flex; align-items: center; padding: var(--space-1) 0;
   -webkit-mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 .ck-ribbon-tools::-webkit-scrollbar { display: none; }
+/* Groups of tools, what is used most first: a hairline between them. */
+.ck-ribbon-group { flex: none; display: flex; align-items: center; }
+.ck-ribbon-group + .ck-ribbon-group { margin-left: var(--space-1); padding-left: var(--space-1); box-shadow: inset var(--hairline) 0 var(--border-subtle); }
 
 /* ---- parameters of a tool ---- */
 .ck-tabs { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: none; padding-right: var(--space-6);
@@ -127,9 +133,10 @@
 .ck-sheet-head { display: flex; align-items: center; min-height: 52px; padding: 0 var(--space-1) 0 var(--space-4); touch-action: none; }
 .ck-sheet-head h2 { flex: 1; margin: 0; font-size: var(--type-lg); font-weight: var(--weight-strong); letter-spacing: -0.01em; }
 .ck-sheet-body { overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-2) var(--space-4); }
-.ck-toolgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* Columns no narrower than the longest name of a tool («Трансформация»): three on a phone from 320 px, more on a wider screen. */
+.ck-toolgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 .ck-toolgrid .ck-tool { min-width: 0; min-height: 4rem; white-space: normal; text-align: center; }
-.ck-toolgrid .ck-tool span { max-width: 100%; hyphens: auto; -webkit-hyphens: auto; overflow-wrap: anywhere; }
+.ck-toolgrid .ck-tool span { max-width: 100%; hyphens: manual; -webkit-hyphens: manual; overflow-wrap: anywhere; }
 
 /* ---- progress: the work lies between two marks ---- */
 .ck-progress { height: var(--touch); }
@@ -232,7 +239,9 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
 .ck-play:active span { scale: 0.92; }
 .ck-play svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
 .ck-transport-mid { flex: 1; min-width: 0; display: flex; padding: 0 var(--space-2); }
-.ck-time { flex: none; color: var(--text-secondary); white-space: nowrap; }
+.ck-time { flex: none; color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ck-play:disabled { cursor: default; }
+.ck-play:disabled span { background: var(--border-subtle); color: var(--text-disabled); }
 .ck-time b { color: var(--text-primary); font-weight: var(--weight-medium); }
 .ck-mini { position: relative; flex: 1; height: var(--touch); touch-action: none; cursor: grab; }
 .ck-mini-film { position: absolute; left: 0; right: 0; top: 10px; height: 24px; display: flex; overflow: hidden; border-radius: var(--radius-clip); opacity: 0.8; }

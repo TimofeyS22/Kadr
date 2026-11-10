@@ -48,6 +48,9 @@ export interface EditorState {
   eyedropper: { pick: (color: string) => void; owner: object; /** the project to read colours from, if not the one on screen */ from?: () => Project | null } | null;
   /** Another tab saved this project after this one loaded it (audit V-258): saving here waits for the person's choice. */
   elsewhere: boolean;
+  /** Whether the edits on screen are on the disk, said in the header (Chetko Ч4 release 3): `pending` while an edit
+   *  waits for its write, `failed` after a write that did not get through and until one does. */
+  saving: 'saved' | 'pending' | 'failed';
   /** Counts `open` calls: a project put on screen by `open` is not an edit to save. */
   session: number;
 
@@ -110,9 +113,10 @@ export const useEditor = create<EditorState>()((set, get) => ({
   toasts: [],
   eyedropper: null,
   elsewhere: false,
+  saving: 'saved',
   session: 0,
 
-  open: (p) => set((s) => ({ project: p, past: [], future: [], histKey: null, selection: null, multi: null, sheet: null, time: 0, playing: false, eyedropper: null, elsewhere: false, session: s.session + 1 })),
+  open: (p) => set((s) => ({ project: p, past: [], future: [], histKey: null, selection: null, multi: null, sheet: null, time: 0, playing: false, eyedropper: null, elsewhere: false, saving: 'saved', session: s.session + 1 })),
   close: () => set({ project: null, past: [], future: [], selection: null, multi: null, sheet: null, playing: false, eyedropper: null, elsewhere: false }),
 
   commit(fn, key, base) {

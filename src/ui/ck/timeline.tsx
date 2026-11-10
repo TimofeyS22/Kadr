@@ -19,14 +19,22 @@ interface TransportProps {
   start?: ReactNode;
   /** Between play and the time: the strip of the whole film while a value is set. */
   middle?: ReactNode;
+  /** After the time, at the right edge: a switch of what the frame shows (safe zones). */
+  end?: ReactNode;
+  /** Nothing to play yet, or the project is locked by a long job. */
+  disabled?: boolean;
+  /** Extra class names for the row, the play button and the time: hooks that tests and the iPhone scripts rely on. */
+  hooks?: { row?: string; play?: string; time?: string };
 }
-export function Transport({ playing, onPlay, playLabel, pauseLabel, playIcon, pauseIcon, time, total, start, middle }: TransportProps) {
+export function Transport({ playing, onPlay, playLabel, pauseLabel, playIcon, pauseIcon, time, total, start, middle, end, disabled, hooks }: TransportProps) {
+  const with_ = (base: string, hook?: string) => (hook ? `${base} ${hook}` : base);
   return (
-    <div className="ck-transport">
+    <div className={hooks?.row ? `ck ck-transport ${hooks.row}` : 'ck-transport'}>
       {start}
-      <button type="button" className="ck-play" aria-label={playing ? pauseLabel : playLabel} onClick={onPlay}><span>{playing ? pauseIcon : playIcon}</span></button>
+      <button type="button" className={with_('ck-play', hooks?.play)} aria-label={playing ? pauseLabel : playLabel} onClick={onPlay} disabled={disabled}><span>{playing ? pauseIcon : playIcon}</span></button>
       <div className="ck-transport-mid">{middle}</div>
-      <span className="ck-time"><b>{time}</b> / {total}</span>
+      <span className={with_('ck-time', hooks?.time)}><b>{time}</b> / {total}</span>
+      {end}
     </div>
   );
 }
