@@ -96,6 +96,32 @@ test('a 4K video starts at 1080p, and 4K is one tap away (owner, 2026-11-11)', a
   await expect(page.getByText(LARGER), '4K is the video\'s own size').toHaveCount(0);
 });
 
+test('the export takes the codec that encodes the frame rate the sheet offered, not only the size (D-13)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  // An encoder with a ceiling of pixels a second: H.264 refuses 50 fps and more at any size, VP9 takes it. The sheet
+  // offers 60 because it asks every codec at 60; the export asked without the rate, took H.264 and was refused.
+  await page.addInitScript(() => {
+    if (typeof VideoEncoder !== 'function') return;
+    const fast = (c: VideoEncoderConfig) => c.codec.startsWith('avc1') && (c.framerate ?? 0) >= 50;
+    const real = VideoEncoder.isConfigSupported.bind(VideoEncoder);
+    VideoEncoder.isConfigSupported = (c) => (fast(c) ? Promise.resolve({ supported: false, config: c }) : real(c));
+    const configure = VideoEncoder.prototype.configure;
+    VideoEncoder.prototype.configure = function (this: VideoEncoder, c: VideoEncoderConfig) {
+      if (fast(c)) throw new DOMException('H.264 at this frame rate is not supported', 'NotSupportedError');
+      return configure.call(this, c);
+    };
+  });
+  await openWith(page, '9:16', ['fps60.mp4']);
+  await openSheet(page);
+  test.skip(!(await chip(page, '60').isChecked()), 'this engine has no other codec at 60 fps: the sheet does not offer it');
+  const file = await saveExport(page, info, 'fps60-other-codec');
+  const m = measure(file);
+  console.log(`60 fps with H.264 refusing 60 (${info.project.name}): ${path.extname(file)} ${m.frames} frames = ${m.fps.toFixed(1)} fps`);
+  expect(path.extname(file), 'another codec than H.264').toBe('.webm');
+  expect(m.frames, '360 source frames, none dropped').toBeGreaterThanOrEqual(356);
+  expect(Math.round(m.fps)).toBe(60);
+});
+
 test('a 60 fps video is exported at 60 fps and at its own size when nothing is picked', async ({ page }, info) => {
   test.setTimeout(240_000);
   await openWith(page, '9:16', ['fps60.mp4']);

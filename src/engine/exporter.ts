@@ -281,10 +281,10 @@ class BaselineWorthTrying extends Error {
 }
 
 /** The Baseline codec string to start again with after `asked` failed, or null: it was Baseline, or the device has none. */
-async function baselineFor(asked: string, width: number, height: number, quality: Quality): Promise<string | null> {
+async function baselineFor(asked: string, width: number, height: number, quality: Quality, frameRate: number): Promise<string | null> {
   const avc = avcBaseline(asked);
   if (!avc) return null;
-  const can = canEncodeVideo('avc', { width, height, quality, fullCodecString: avc }).catch(() => false);
+  const can = canEncodeVideo('avc', { width, height, quality, frameRate, fullCodecString: avc }).catch(() => false);
   return await within(can, CAPS_MS, () => false) ? avc : null;
 }
 
@@ -326,7 +326,11 @@ async function exportOnce(
   const duration = projectDuration(p);
   if (duration <= 0) throw new MediaError('The timeline is empty');
   const [width, height] = outputSize(p.settings, opts.resolution);
-  const videoCodec = await within(getFirstEncodableVideoCodec(['avc', 'vp9', 'av1'], { width, height }), CAPS_MS, noAnswer);
+  const quality = opts.quality === 'high' ? QUALITY_VERY_HIGH : QUALITY_HIGH;
+  // Asked as the encoder will be set up, frame rate included: an encoder has a ceiling of pixels a second, so one that
+  // takes this size at 30 fps may refuse it at 60 while the next codec takes it. The sheet offers 60 by asking about
+  // every codec at 60 (supportedResolutions); asked without the rate, the export took the first codec anyway (D-13).
+  const videoCodec = await within(getFirstEncodableVideoCodec(['avc', 'vp9', 'av1'], { width, height, frameRate: opts.fps, quality }), CAPS_MS, noAnswer);
   if (!videoCodec) throw new MediaError('This device cannot encode {w}×{h} video. Try a lower resolution.', { w: width, h: height });
   const mp4 = videoCodec === 'avc';
   const audioCodec = await within(getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus'], { numberOfChannels: 2, sampleRate: SAMPLE_RATE }), CAPS_MS, noAnswer);
@@ -341,7 +345,6 @@ async function exportOnce(
     target,
   });
   const frames = new FrameRenderer(p, width, height);
-  const quality = opts.quality === 'high' ? QUALITY_VERY_HIGH : QUALITY_HIGH;
   // What the video encoder was asked for, how many packets it gave, and whether the export was waiting for it when it
   // failed: together they say that the encoder never worked with this profile, and which codec string to try instead.
   const encoder = { asked: '', packets: 0, awaited: false };
@@ -401,7 +404,7 @@ async function exportOnce(
     }
     // The export was waiting for the encoder, and it never gave a packet: this profile does not work here.
     const dead = !baseline && !signal.aborted && encoder.awaited && encoder.packets === 0;
-    const avc = dead ? await baselineFor(encoder.asked, width, height, quality) : null;
+    const avc = dead ? await baselineFor(encoder.asked, width, height, quality, opts.fps) : null;
     if (avc && !signal.aborted) throw new BaselineWorthTrying(avc, guard.stalled ? 'stall' : 'refused', e);
     throw e;
   } finally {
