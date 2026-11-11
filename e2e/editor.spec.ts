@@ -5356,3 +5356,28 @@ for (const transfer of ['hlg', 'pq'] as const) {
     expect(seen.filter((s) => s.off > allowed).map((s) => `${s.name}: ${s.got}, ${s.off} away`)).toEqual([]);
   });
 }
+
+test('WYSIWYG for a font pair: reopened and exported at once, the file shows the pair the preview shows (docs/18 Ш7)', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await page.addInitScript(() => { localStorage.setItem('kadr.iosVideoTip.v3', '1'); localStorage.setItem('kadr.pairs.v1', '1'); });
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await tool(page, 'Text').click();
+  const field = page.getByRole('textbox', { name: 'Text', exact: true });
+  await field.fill('Summer in the city');
+  // «Tender»: a thin script over a spaced capital — the faces most likely to come out as a fallback in a file.
+  await sheet(page).locator('.ck-cat', { hasText: /^Pairs$/ }).click();
+  await page.getByRole('radiogroup', { name: 'Style' }).getByRole('radio', { name: 'Tender', exact: true }).click();
+  await expect(field).toHaveValue('Summer\nin the city');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.waitForTimeout(1000); // autosave
+  // Cold: the project reopened with none of the pair's faces loaded, and the video exported first (v1.4.9 drew Impact
+  // instead of a style's face in exactly this order).
+  await page.reload();
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await expectSameFrames(page, info, 'WYSIWYG font pair', [{ name: 'the pair over the video', t: 1 }], 0.8);
+});

@@ -930,4 +930,5 @@ export const RU: Record<string, string> = {
   'Line {n}': 'Строка {n}',
   'One font': 'Один шрифт',
   'Add a box': 'Добавить подложку',
+  'Whole text': 'Весь текст',
 };

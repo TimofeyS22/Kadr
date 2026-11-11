@@ -44,15 +44,28 @@ test('with ?pairs: the pairs come second, a pair sets two faces on two lines, on
   await expect(panel(page).getByRole('button', { name: 'Добавить подложку' })).toHaveCount(0);
   const lines = panel(page).getByRole('radiogroup', { name: 'Строка' });
   await expect(lines).toBeVisible();
+  await expect(lines.getByRole('radio', { name: 'Весь текст' }), 'the whole text is chosen first').toBeChecked();
   const fonts = panel(page).getByRole('radiogroup', { name: 'Шрифт' });
+  const caps = panel(page).getByRole('switch', { name: 'ВСЕ ЗАГЛАВНЫЕ' });
+  await lines.getByRole('radio', { name: 'Строка 1' }).click();
   const first = await fonts.locator('[aria-checked="true"]').getAttribute('aria-label');
+  await expect(caps, 'the accent is set in lower case').not.toBeChecked();
   await lines.getByRole('radio', { name: 'Строка 2' }).click();
   const second = await fonts.locator('[aria-checked="true"]').getAttribute('aria-label');
   expect(second, 'each line has its own face').not.toBe(first);
+  // The look below follows the chosen line (Ж5: no switch is silent): the support is in capitals.
+  await expect(caps, 'the support is set in capitals').toBeChecked();
   await fonts.getByRole('radio', { name: 'IBM Plex Mono', exact: true }).click();
   await expect(fonts.getByRole('radio', { name: 'IBM Plex Mono', exact: true })).toBeChecked();
   await lines.getByRole('radio', { name: 'Строка 1' }).click();
   await expect(fonts.locator('[aria-checked="true"]'), 'the first line kept its face').toHaveAttribute('aria-label', first!);
+  // «Весь текст» takes back what the lines set for themselves: a face picked there reaches both lines.
+  await lines.getByRole('radio', { name: 'Весь текст' }).click();
+  await fonts.getByRole('radio', { name: 'Montserrat', exact: true }).click();
+  await lines.getByRole('radio', { name: 'Строка 1' }).click();
+  await expect(fonts.locator('[aria-checked="true"]')).toHaveAttribute('aria-label', 'Montserrat');
+  await lines.getByRole('radio', { name: 'Строка 2' }).click();
+  await expect(fonts.locator('[aria-checked="true"]')).toHaveAttribute('aria-label', 'Montserrat');
   await panel(page).getByRole('button', { name: 'Один шрифт' }).click();
   await expect(lines).toHaveCount(0);
   await expect(field, 'the text stays as it is').toHaveValue('Лето\nв городе');

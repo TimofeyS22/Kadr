@@ -22,6 +22,8 @@ import { Chips, ClipScrub, Sheet, Slider, Swatches, Toggle, num, pct, secs, sign
 import { StylePicker, type TileDraw } from './picker';
 import { FontPicker } from './FontPicker';
 import { TextStyles } from './TextStyles';
+import { editLine, lineSize, lineView, setLineSize } from '../core/lineLook';
+import { useLineChoice } from './lineChoice';
 import { TextLook } from './TextLook';
 import { CameraSheet } from './CameraSheet';
 import { licenseText } from '../core/music';
@@ -272,6 +274,8 @@ const ANIMS: readonly TextAnimType[] = TEXT_ANIM_TYPES;
 function TextBody({ clip }: { clip: TextClip }) {
   const e = (fn: (c: TextClip) => void, key?: string) => editClip(clip.id, (c) => { if (c.kind === 'text') fn(c); }, key && `${key}:${clip.id}`);
   const s = clip.style;
+  // A pair: the size and the look follow «Весь текст · Строка 1 · Строка 2» of the font part (docs/18 ADR-П7).
+  const [choice] = useLineChoice(clip.id, s);
   return (
     <>
       {/* The words first: under the style grid the field was below the fold on phones shorter than 812 px (audit V-202). */}
@@ -280,9 +284,9 @@ function TextBody({ clip }: { clip: TextClip }) {
       {/* Styles, and with the pairs flag font pairs, on the black of the stage (docs/18). */}
       <TextStyles clip={clip} />
       <FontPicker clipId={clip.id} style={s} onFont={(f) => e((c) => { c.style.font = f; })} onWeight={(w) => e((c) => { c.style.weight = w; })} />
-      <Slider label={t('Size')} value={s.size} min={0.02} max={0.2} step={0.001} format={(v) => num(Math.round(v * 1000) / 10, 1)} reset={0.055}
-        onChange={(v) => e((c) => { c.style.size = v; }, 'tsize')} />
-      <TextLook style={s} change={(fn, key) => e((c) => fn(c.style), key)} />
+      <Slider label={t('Size')} value={lineSize(s, choice)} min={0.02} max={0.2} step={0.001} format={(v) => num(Math.round(v * 1000) / 10, 1)} reset={0.055}
+        onChange={(v) => e((c) => { setLineSize(c.style, choice, v); }, 'tsize')} />
+      <TextLook style={lineView(s, choice)} change={(fn, key) => e((c) => editLine(c.style, choice, fn), key)} />
       <h3>{t('Animation in')}</h3>
       <Chips options={ANIMS} value={clip.animIn.type} onChange={(t) => e((c) => { c.animIn.type = t; })} />
       <Slider label={t('Duration')} value={clip.animIn.duration} min={0.1} max={2} step={0.05} format={secs} reset={0.3} onChange={(v) => e((c) => { c.animIn.duration = v; }, 'ain')} />

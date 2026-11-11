@@ -12,6 +12,7 @@ import { fontOf, type AnyFontId, type FontGroup } from '../engine/text';
 import { t, useLocale } from '../lib/i18n';
 import { useEditor } from '../state/store';
 import { addCustomFont, editClip } from './actions';
+import { useLineChoice } from './lineChoice';
 import { Chips } from './controls';
 import { Button } from './ck/controls';
 import { StylePicker } from './picker';
@@ -46,20 +47,32 @@ export function FontPicker({ clipId, style, onFont, onWeight }: {
     const c = st.project ? findClip(st.project, clipId)?.clip : undefined;
     return c?.kind === 'text' ? c.text : c?.kind === 'caption' ? c.words.map((w) => w.text).join(' ') : '';
   });
-  // A pair (docs/18 Ф5): the font and weight of one line at a time; the tiles show that line's own words.
+  // A pair (docs/18 ADR-П7): «Весь текст · Строка 1 · Строка 2». The font and weight of one line, or of the whole text
+  // (which takes back what the lines set for themselves); the size and the look below follow the same choice. The
+  // tiles show the chosen line's own words.
   const lines = style.lines;
-  const [chosenLine, setLine] = useState(0);
-  const li = lines?.length ? Math.min(chosenLine, lines.length - 1) : -1;
+  const [choice, setChoice] = useLineChoice(clipId, style);
+  const li = lines?.length && choice !== 'all' ? choice : -1;
   const look = li >= 0 ? lines![li] : null;
   const word = usePreviewWord(li >= 0 ? text.split('\n')[li] ?? '' : text);
   const font = look?.font ?? style.font, weight = look?.weight ?? style.weight;
   const setFont = (f: AnyFontId) => {
-    if (li < 0) { onFont(f); return; }
-    editClip(clipId, (c) => { if (c.kind === 'text' && c.style.lines?.[li]) c.style.lines[li].font = f as FontId | CustomFontId; });
+    if (!lines?.length) { onFont(f); return; }
+    editClip(clipId, (c) => {
+      if (c.kind !== 'text' || !c.style.lines) return;
+      if (li >= 0) { if (c.style.lines[li]) c.style.lines[li].font = f as FontId | CustomFontId; return; }
+      c.style.font = f as FontId | CustomFontId;
+      for (const l of c.style.lines) delete l.font;
+    });
   };
   const setWeight = (w: TextStyle['weight']) => {
-    if (li < 0) { onWeight(w); return; }
-    editClip(clipId, (c) => { if (c.kind === 'text' && c.style.lines?.[li]) c.style.lines[li].weight = w; });
+    if (!lines?.length) { onWeight(w); return; }
+    editClip(clipId, (c) => {
+      if (c.kind !== 'text' || !c.style.lines) return;
+      if (li >= 0) { if (c.style.lines[li]) c.style.lines[li].weight = w; return; }
+      c.style.weight = w;
+      for (const l of c.style.lines) delete l.weight;
+    });
   };
   const items = useMemo(() => [
     ...Object.entries(fonts ?? {}).map(([id, f]) => ({ id: `custom:${id}`, name: f.name, cat: 'custom' })),
@@ -73,11 +86,13 @@ export function FontPicker({ clipId, style, onFont, onWeight }: {
         <h3>{t('Font')}</h3>
         <Button variant="plain" icon={<Plus aria-hidden="true" />} onClick={() => void addCustomFont(clipId)}>{t('Add font')}</Button>
       </div>
+      {/* The parts of a pair get the whole width (at 375 px «Весь текст» was cut beside a button); «Один шрифт» under them. */}
       {lines?.length ? (
-        <div className="ck-panel-part">
-          <Chips options={lines.map((_, i) => i)} value={li} label={t('Line')} onChange={setLine} even render={(i) => t('Line {n}', { n: i + 1 })} />
+        <>
+          <Chips options={['all' as const, ...lines.map((_, i) => i)]} value={choice} label={t('Line')} onChange={setChoice} even
+            render={(i) => (i === 'all' ? t('Whole text') : t('Line {n}', { n: i + 1 }))} />
           <Button variant="plain" onClick={() => editClip(clipId, (c) => { if (c.kind === 'text') delete c.style.lines; })}>{t('One font')}</Button>
-        </div>
+        </>
       ) : null}
       <StylePicker items={items} categories={GROUPS} value={font} label={t('Font')} kind="font" ground="stage" draw={draw}
         onChange={(id) => setFont(id as AnyFontId)} />
