@@ -7,11 +7,11 @@ import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { previewWord } from '../core/previewWord';
 import { findClip } from '../core/timeline';
-import { FONT_IDS, type FontId, type TextStyle } from '../core/types';
+import { FONT_IDS, type CustomFontId, type FontId, type TextStyle } from '../core/types';
 import { fontOf, type AnyFontId, type FontGroup } from '../engine/text';
 import { t, useLocale } from '../lib/i18n';
 import { useEditor } from '../state/store';
-import { addCustomFont } from './actions';
+import { addCustomFont, editClip } from './actions';
 import { Chips } from './controls';
 import { Button } from './ck/controls';
 import { StylePicker } from './picker';
@@ -46,12 +46,26 @@ export function FontPicker({ clipId, style, onFont, onWeight }: {
     const c = st.project ? findClip(st.project, clipId)?.clip : undefined;
     return c?.kind === 'text' ? c.text : c?.kind === 'caption' ? c.words.map((w) => w.text).join(' ') : '';
   });
-  const word = usePreviewWord(text);
+  // A pair (docs/18 Ф5): the font and weight of one line at a time; the tiles show that line's own words.
+  const lines = style.lines;
+  const [chosenLine, setLine] = useState(0);
+  const li = lines?.length ? Math.min(chosenLine, lines.length - 1) : -1;
+  const look = li >= 0 ? lines![li] : null;
+  const word = usePreviewWord(li >= 0 ? text.split('\n')[li] ?? '' : text);
+  const font = look?.font ?? style.font, weight = look?.weight ?? style.weight;
+  const setFont = (f: AnyFontId) => {
+    if (li < 0) { onFont(f); return; }
+    editClip(clipId, (c) => { if (c.kind === 'text' && c.style.lines?.[li]) c.style.lines[li].font = f as FontId | CustomFontId; });
+  };
+  const setWeight = (w: TextStyle['weight']) => {
+    if (li < 0) { onWeight(w); return; }
+    editClip(clipId, (c) => { if (c.kind === 'text' && c.style.lines?.[li]) c.style.lines[li].weight = w; });
+  };
   const items = useMemo(() => [
     ...Object.entries(fonts ?? {}).map(([id, f]) => ({ id: `custom:${id}`, name: f.name, cat: 'custom' })),
     ...BUILT_IN.map((id) => ({ id: id as string, name: fontOf(id).label, cat: fontOf(id).group as string })),
   ], [fonts]);
-  const { weight, italic, uppercase, letterSpacing } = style;
+  const italic = look?.italic ?? style.italic, uppercase = look?.uppercase ?? style.uppercase, letterSpacing = look?.letterSpacing ?? style.letterSpacing;
   const draw = useMemo(() => fontTile(word, { weight, italic, uppercase, letterSpacing }), [word, weight, italic, uppercase, letterSpacing]);
   return (
     <>
@@ -59,9 +73,15 @@ export function FontPicker({ clipId, style, onFont, onWeight }: {
         <h3>{t('Font')}</h3>
         <Button variant="plain" icon={<Plus aria-hidden="true" />} onClick={() => void addCustomFont(clipId)}>{t('Add font')}</Button>
       </div>
-      <StylePicker items={items} categories={GROUPS} value={style.font} label={t('Font')} kind="font" ground="stage" draw={draw}
-        onChange={(id) => onFont(id as AnyFontId)} />
-      <Chips options={WEIGHTS} value={style.weight} label={t('Weight')} onChange={onWeight} even
+      {lines?.length ? (
+        <div className="ck-panel-part">
+          <Chips options={lines.map((_, i) => i)} value={li} label={t('Line')} onChange={setLine} even render={(i) => t('Line {n}', { n: i + 1 })} />
+          <Button variant="plain" onClick={() => editClip(clipId, (c) => { if (c.kind === 'text') delete c.style.lines; })}>{t('One font')}</Button>
+        </div>
+      ) : null}
+      <StylePicker items={items} categories={GROUPS} value={font} label={t('Font')} kind="font" ground="stage" draw={draw}
+        onChange={(id) => setFont(id as AnyFontId)} />
+      <Chips options={WEIGHTS} value={weight} label={t('Weight')} onChange={setWeight} even
         render={(w) => (w === 400 ? t('Regular') : w === 700 ? t('Bold') : t('Black'))} />
     </>
   );

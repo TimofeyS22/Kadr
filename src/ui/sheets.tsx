@@ -2,7 +2,6 @@ import { RotateCcw, TrianglesCenterlineDashedVertical, TrianglesCenterlineDashed
 import { produce } from 'immer';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { evalAnim, hasKeys, keyIndexAt, setAnim, toggleKey } from '../core/anim';
-import { TEXT_CATEGORIES, TEXT_PRESETS } from '../core/presets';
 import { ASPECTS, defaultAdjust, defaultTransform } from '../core/defaults';
 import { FILTERS, FILTER_CATEGORIES, adjustRange } from '../core/filters';
 import { LookActions } from './LookControls';
@@ -21,9 +20,9 @@ import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
 import { Chips, ClipScrub, Sheet, Slider, Swatches, Toggle, num, pct, secs, signed, useSheetGuard } from './controls';
 import { StylePicker, type TileDraw } from './picker';
-import { FontPicker, usePreviewWord } from './FontPicker';
+import { FontPicker } from './FontPicker';
+import { TextStyles } from './TextStyles';
 import { TextLook } from './TextLook';
-import { textTile } from './tiles';
 import { CameraSheet } from './CameraSheet';
 import { licenseText } from '../core/music';
 import { VOICE_IDS, VOICE_LABEL } from '../core/voicefx';
@@ -273,17 +272,13 @@ const ANIMS: readonly TextAnimType[] = TEXT_ANIM_TYPES;
 function TextBody({ clip }: { clip: TextClip }) {
   const e = (fn: (c: TextClip) => void, key?: string) => editClip(clip.id, (c) => { if (c.kind === 'text') fn(c); }, key && `${key}:${clip.id}`);
   const s = clip.style;
-  // The styles on the black of the stage, on the person's own word, as the fonts below (docs/18; the owner, 2026-11-11:
-  // the sunrise of the frame behind them was «колхоз»).
-  const word = usePreviewWord(clip.text);
-  const drawStyle = useMemo(() => textTile(word), [word]);
   return (
     <>
       {/* The words first: under the style grid the field was below the fold on phones shorter than 812 px (audit V-202). */}
       <textarea className="ck-input ck-panel-text" value={clip.text} rows={2} maxLength={500} aria-label={t('Text')}
         onChange={(ev) => e((c) => { c.text = ev.target.value; }, 'txt')} />
-      <StylePicker items={TEXT_PRESETS} categories={TEXT_CATEGORIES} value={null} label={t('Style')} draw={drawStyle} ground="stage"
-        onChange={(id) => e((c) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; c.style = structuredClone(pr.style); if (pr.animIn) c.animIn = { ...pr.animIn }; })} />
+      {/* Styles, and with the pairs flag font pairs, on the black of the stage (docs/18). */}
+      <TextStyles clip={clip} />
       <FontPicker clipId={clip.id} style={s} onFont={(f) => e((c) => { c.style.font = f; })} onWeight={(w) => e((c) => { c.style.weight = w; })} />
       <Slider label={t('Size')} value={s.size} min={0.02} max={0.2} step={0.001} format={(v) => num(Math.round(v * 1000) / 10, 1)} reset={0.055}
         onChange={(v) => e((c) => { c.style.size = v; }, 'tsize')} />

@@ -2,9 +2,11 @@
 // layers and the TextRasterizer. A tile shows the template on a demo phrase in the interface language.
 import { createCaptionClip, createProject, createTextClip } from '../core/defaults';
 import { visualLayer } from '../core/frame';
-import type { CaptionPreset, TextPreset } from '../core/presets';
+import { splitForPair, type FontPair } from '../core/pairs';
+import type { CaptionPreset } from '../core/presets';
+import { PLACEHOLDERS } from '../core/previewWord';
 import type { CaptionClip, TextClip, TextStyle } from '../core/types';
-import { ensureFont, fontCss, TextRasterizer, type Drawable } from '../engine/text';
+import { ensureFont, fontCss, lookStyle, TextRasterizer, type Drawable } from '../engine/text';
 import { useLocale } from '../lib/i18n';
 import { DEMO_LOOP_S, type TileDraw } from './picker';
 
@@ -20,7 +22,8 @@ const project = createProject('demo', '9:16');
  */
 const fonts = new Map<string, true | Set<() => void>>();
 function fontReady(style: TextStyle, text: string, redraw: () => void): boolean {
-  const key = `${fontCss(style, 32)}|${text}`;
+  // Every face the text is set in: two pairs on one support but different accents must not share a «ready».
+  const key = [fontCss(style, 32), ...(style.lines ?? []).map((l) => fontCss(lookStyle(style, l), 32)), text].join('|');
   const f = fonts.get(key);
   if (f === true) return true;
   if (f) { f.add(redraw); return false; }
@@ -95,10 +98,41 @@ function textOn(key: string, word: string, style: TextStyle): TextClip {
 }
 
 /** A text style on the person's own word (`previewWord`), after its entrance. */
-export function textTile(word: string): TileDraw<TextPreset> {
+function textTile(word: string): TileDraw<{ id: string; style: TextStyle }> {
   return (pr, canvas, _time, redraw) => {
     if (!fontReady(pr.style, word, redraw)) { put(canvas, null, 0); return; }
     const d = raster.get(textOn(pr.id, word, structuredClone(pr.style)), Infinity, W, H);
+    if (!d) return;
+    put(canvas, d, Math.min(0.8 / d.h, (0.86 * canvas.width) / canvas.height / d.w));
+  };
+}
+
+/** A tile of the text styles' strip: a style, or with the pairs flag a font pair (docs/18 Ф4). */
+export interface LookItem { id: string; name: string; cat: string; style: TextStyle; pair?: FontPair }
+const pairTexts = new Map<string, TextClip>();
+
+/**
+ * Styles on the person's word; a pair on the person's own text broken as the pair breaks it (its first words: a long
+ * text would make a tile of dust), or on the pair's sample while the text is still the placeholder.
+ */
+export function lookTile(word: string, text: string, ru: boolean): TileDraw<LookItem> {
+  const style = textTile(word);
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const own = !PLACEHOLDERS.includes(text.trim()) && words.length > 0;
+  const short = words.reduce((a, w) => (a.length + w.length < 24 || !a ? (a ? `${a} ${w}` : w) : a), '');
+  return (it, canvas, time, redraw) => {
+    if (!it.pair) { style(it, canvas, time, redraw); return; }
+    const shown = own ? splitForPair(text.includes('\n') ? text.split('\n').slice(0, 2).join('\n') : short, it.pair.split) : ru ? it.pair.sample.ru : it.pair.sample.en;
+    if (!fontReady(it.style, shown, redraw)) { put(canvas, null, 0); return; }
+    const key = `${it.id}|${shown}`;
+    let clip = pairTexts.get(key);
+    if (!clip) {
+      if (pairTexts.size > 64) pairTexts.clear();
+      clip = createTextClip(0, shown);
+      clip.style = it.style;
+      pairTexts.set(key, clip);
+    }
+    const d = raster.get(clip, Infinity, W, H);
     if (!d) return;
     put(canvas, d, Math.min(0.8 / d.h, (0.86 * canvas.width) / canvas.height / d.w));
   };
