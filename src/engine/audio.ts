@@ -319,7 +319,8 @@ export async function renderAudioWindow(p: Project, pool: MediaPool, from: numbe
       if ((e as Error).name === 'AbortError' || e instanceof MediaError) throw e;
       if (skip) { console.warn('sound left out', p.assets[id]?.name, e); skip.add(id); continue; }
       // Name the file: a bare decoder message ("Unsupported configuration…") does not tell anyone what to do.
-      throw new MediaError('The sound of “{name}” cannot be decoded in this browser ({error})', { name: p.assets[id]?.name ?? '?', error: (e as Error).message ?? String(e) });
+      // The decoder's own words go to the details (`vars.error`), not into the sentence (S-1-7).
+      throw new MediaError('The sound of “{name}” cannot be decoded in this browser', { name: p.assets[id]?.name ?? '?', error: (e as Error).message ?? String(e) });
     }
   }
   return ctx.startRendering();

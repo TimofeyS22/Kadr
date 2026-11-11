@@ -60,7 +60,7 @@ export async function probe(file: Blob): Promise<Probe> {
     const audio = await playableAudioTrack(input, (reason) => { why = reason; });
     const hasAudio = !!audio;
     // A sound track that is there but does not decode says why (QA: "no playable audio" hid a decoder refusal).
-    if (!video && !hasAudio && why) throw new MediaError('The sound of this file cannot be decoded in this browser ({error})', { error: why });
+    if (!video && !hasAudio && why) throw new MediaError('The sound of this file cannot be decoded in this browser', { error: why });
     if (!video && !hasAudio) throw new MediaError('No playable video or audio found');
     const promised = await input.computeDuration();
     if (!(promised > 0)) throw new MediaError('The file has no duration');
