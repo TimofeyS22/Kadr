@@ -76,6 +76,30 @@ export interface TextStyle {
    * (`depth`: every step in between is drawn) or a two-colour glitch.
    */
   copies?: { color: string; x: number; y: number; depth?: boolean }[];
+  /**
+   * Optional (docs/18, font pairs): how each paragraph of a text is set. Paragraph `i` takes `lines[i]`, the ones after
+   * the last take the last; a look gives only what differs from the style above it. Outline, shadow, box, gradient and
+   * copies stay one for the whole block, their widths from the base `size`. The base `font` is the support's face, so a
+   * version that does not know `lines` draws the whole text in a readable face. Captions never take `lines`.
+   */
+  lines?: LineLook[];
+}
+
+/** How one paragraph of a text is set (docs/18 ADR-П1). */
+export interface LineLook {
+  font?: FontId | CustomFontId;
+  weight?: TextStyle['weight'];
+  italic?: boolean;
+  /** Size as a share of the style's `size`. */
+  scale?: number;
+  uppercase?: boolean;
+  letterSpacing?: number;
+  color?: string;
+  /** Space before this paragraph, in base font sizes; below zero the lines tuck into each other. */
+  gap?: number;
+  /** A shift sideways, as a share of the block's width. */
+  dx?: number;
+  align?: TextStyle['align'];
 }
 export const TEXT_ANIM_TYPES = ['none', 'fade', 'rise', 'pop', 'typewriter', 'slideLeft', 'slideRight', 'drop', 'zoom', 'spin', 'blur'] as const;
 export type TextAnimType = (typeof TEXT_ANIM_TYPES)[number];

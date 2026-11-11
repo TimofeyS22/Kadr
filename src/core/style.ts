@@ -15,6 +15,18 @@ export function saneStyle(s: TextStyle): TextStyle {
   }
   if (s.letterSpacing !== undefined) out.letterSpacing = num(s.letterSpacing, -0.5, 2, 0);
   if (s.lineHeight !== undefined) out.lineHeight = num(s.lineHeight, 0.5, 4, 1.25);
+  if (s.lines !== undefined) {
+    // A look from a file: at most four, sizes and shifts in sane ranges (a scale of 10⁴ would make a canvas of 10⁸ px).
+    out.lines = (Array.isArray(s.lines) ? s.lines : []).slice(0, 4).filter((l) => typeof l === 'object' && l !== null).map((l) => {
+      const o = { ...l };
+      if (l.scale !== undefined) o.scale = num(l.scale, 0.3, 3, 1);
+      if (l.gap !== undefined) o.gap = num(l.gap, -0.8, 2, 0);
+      if (l.dx !== undefined) o.dx = num(l.dx, -0.5, 0.5, 0);
+      if (l.letterSpacing !== undefined) o.letterSpacing = num(l.letterSpacing, -0.5, 2, 0);
+      return o;
+    });
+    if (!out.lines.length) delete out.lines;
+  }
   if (s.copies !== undefined) {
     out.copies = (Array.isArray(s.copies) ? s.copies : []).slice(0, 4)
       .map((c) => ({ ...c, x: num(c?.x, -0.5, 0.5, 0), y: num(c?.y, -0.5, 0.5, 0) }));

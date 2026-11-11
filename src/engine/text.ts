@@ -2,7 +2,7 @@ import { bigScale, motionAt, motionGrow, wordRoles, type WordRole } from '../cor
 import { readableOn } from '../core/color';
 import { saneStyle } from '../core/style';
 import type { LayerSource } from '../core/frame';
-import type { CaptionEmphasis, CaptionMotion, CustomFontId, FontId, TextClip, TextStyle } from '../core/types';
+import type { CaptionEmphasis, CaptionMotion, CustomFontId, FontId, LineLook, TextClip, TextStyle } from '../core/types';
 
 /** Single-channel alpha mask (e.g. person segmentation) aligned with the drawable's pixels. */
 export interface SegMask { data: Uint8Array; w: number; h: number; key: string }
@@ -85,6 +85,8 @@ const loaded = new Set<string>();
  * canvas drawing alone does not load web fonts, so without this the first frame would use a fallback font.
  */
 export async function ensureFont(style: TextStyle, text: string): Promise<void> {
+  // A text set in several faces (docs/18): the face of each paragraph's look too.
+  if (style.lines?.length) await Promise.all(style.lines.map((l) => ensureFont(oneLook(lookStyle(style, l)), text)));
   const css = fontCss(style, 32);
   const key = `${css}|${/[\u0400-\u04ff]/.test(text) ? 'c' : ''}${/[a-z]/i.test(text) ? 'l' : ''}`;
   if (loaded.has(key)) return;
@@ -135,6 +137,19 @@ function drawWord(ctx: CanvasRenderingContext2D, w: string, x: number, y: number
   }
 }
 
+/** The style of a paragraph set by `look`: its face, weight and slant over the base style (docs/18 ADR-П1). */
+export function lookStyle(s: TextStyle, look: LineLook): TextStyle {
+  return { ...s, font: look.font ?? s.font, weight: look.weight ?? s.weight, italic: look.italic ?? s.italic };
+}
+
+/** A style with no looks of paragraphs: captions never take them (a caption is one paragraph of timed words). */
+function oneLook(s: TextStyle): TextStyle {
+  if (!s.lines) return s;
+  const o = { ...s };
+  delete o.lines;
+  return o;
+}
+
 /** Graphemes, so a broken word never splits an emoji or a letter from its accent. */
 const graphemes = (w: string): string[] => (typeof Intl.Segmenter === 'function'
   ? Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(w), (x) => x.segment) : [...w]);
@@ -144,37 +159,41 @@ const graphemes = (w: string): string[] => (typeof Intl.Segmenter === 'function'
  * big letters, a hashtag, Chinese without spaces) is broken between letters instead of being cut off at the frame's
  * edges; `owner` maps each piece to the word it came from, counted across paragraphs (caption highlight and reveal).
  */
-function layout(ctx: CanvasRenderingContext2D, paragraphs: string[][], maxW: number, ls: number): { words: string[]; owner: number[]; lines: number[][] } {
+function layout(ctx: CanvasRenderingContext2D, paragraphs: string[][], maxW: number, face: (para: number) => number): { words: string[]; owner: number[]; lines: number[][]; wordPara: number[]; linePara: number[] } {
   const words: string[] = [];
   const owner: number[] = [];
   const lines: number[][] = [];
+  const wordPara: number[] = [];
+  const linePara: number[] = [];
   let k = 0;
-  for (const para of paragraphs) {
+  for (const [pi, para] of paragraphs.entries()) {
+    const ls = face(pi); // sets the paragraph's face on ctx, gives back its spacing between letters
     let line: number[] = [];
     let text = '';
-    const put = (w: string) => { line.push(words.length); words.push(w); owner.push(k); };
+    const put = (w: string) => { line.push(words.length); words.push(w); owner.push(k); wordPara.push(pi); };
+    const close = () => { lines.push(line); linePara.push(pi); };
     for (const w of para) {
       if (wordWidth(ctx, w, ls) > maxW) {
-        if (line.length) { lines.push(line); line = []; }
+        if (line.length) { close(); line = []; }
         let piece = '', pw = 0;
         for (const g of graphemes(w)) {
           const gw = wordWidth(ctx, g, ls) + (piece ? ls : 0);
-          if (piece && pw + gw > maxW) { put(piece); lines.push(line); line = []; piece = g; pw = gw; }
+          if (piece && pw + gw > maxW) { put(piece); close(); line = []; piece = g; pw = gw; }
           else { piece += g; pw += gw; }
         }
         put(piece);
         text = piece;
       } else {
         const next = text ? `${text} ${w}` : w;
-        if (line.length && wordWidth(ctx, next, ls) > maxW) { lines.push(line); line = []; text = w; }
+        if (line.length && wordWidth(ctx, next, ls) > maxW) { close(); line = []; text = w; }
         else text = next;
         put(w);
       }
       k++;
     }
-    lines.push(line);
+    close();
   }
-  return { words, owner, lines };
+  return { words, owner, lines, wordPara, linePara };
 }
 
 /** A caption at a moment, as the renderer needs it: the caption layer's source (core/frame). */
@@ -221,7 +240,7 @@ export class TextRasterizer {
       motion: clip.motion ?? 'none', reveal: !!clip.reveal, enter: roles.some((r) => r.enter || r.big) ? st.enter : 1,
     };
     const key = [words, roles.map((r) => [r.lit, +r.box, +r.underline, +r.big, +r.dim, +r.enter].join('')), n, look.enter, clip.style, clip.highlight, look.emphasis ?? '', look.motion, look.reveal, W, H, mask];
-    return this.cached(key, () => this.render([words], clip.style, W, H, look, n, mask));
+    return this.cached(key, () => this.render([words], oneLook(clip.style), W, H, look, n, mask));
   }
 
   private cached(keyParts: unknown[], make: () => Drawable | null): Drawable | null {
@@ -264,26 +283,44 @@ export class TextRasterizer {
     if (!paragraphs.some((p) => p.length)) return null;
     const s = saneStyle(style); // a style from a backup decides no canvas of 10⁵ px and no 10⁷ stamps
     const px = Math.max(4, s.size * H);
-    const upper = (w: string) => (s.uppercase ? w.toLocaleUpperCase() : w);
-    const paras = paragraphs.map((p) => p.map(upper));
+    // The face of each paragraph (docs/18). A text with no looks has one, and is drawn exactly as before (e2e raster archive).
+    const faces = (s.lines?.length ? s.lines : [null]).map((l) => {
+      const fpx = l ? Math.max(4, s.size * (l.scale ?? 1) * H) : px;
+      return {
+        font: l ? fontCss(lookStyle(s, l), fpx) : fontCss(s, px), px: fpx, ls: ((l ? l.letterSpacing ?? s.letterSpacing : s.letterSpacing) ?? 0) * fpx,
+        upper: l?.uppercase ?? !!s.uppercase, lineH: fpx * (s.lineHeight ?? TEXT_LINE_HEIGHT), gap: (l?.gap ?? 0) * px,
+        dx: l?.dx ?? 0, align: l?.align ?? s.align, color: l?.color ?? s.color,
+      };
+    });
+    const multi = faces.length > 1;
+    const faceOf = (para: number) => faces[Math.min(para, faces.length - 1)];
+    const paras = paragraphs.map((p, pi) => (faceOf(pi).upper ? p.map((w) => w.toLocaleUpperCase()) : p));
     const canvas = this.spare.pop() ?? document.createElement('canvas');
     let ctx = canvas.getContext('2d')!;
-    const font = fontCss(s, px);
+    const font = faces[0].font;
     ctx.font = font;
-    const ls = (s.letterSpacing ?? 0) * px;
+    const ls = faces[0].ls;
     const bg = s.background;
     const bgPad = bg ? px * (bg.padding ?? TEXT_BG_PADDING) : 0;
     // A wide background padding narrows the lines, so the block still fits the frame.
-    const { words, owner, lines } = layout(ctx, paras, Math.max(px * 2, W * 0.9 - 2 * Math.max(0, bgPad - px * TEXT_BG_PADDING)), ls);
+    const { words, owner, lines, wordPara, linePara } = layout(ctx, paras, Math.max(px * 2, W * 0.9 - 2 * Math.max(0, bgPad - px * TEXT_BG_PADDING)),
+      (pi) => { if (multi) ctx.font = faceOf(pi).font; return faceOf(pi).ls; });
+    const faceW = (i: number) => faceOf(wordPara[i]);
+    const faceL = (li: number) => faceOf(linePara[li]);
     const stroke = s.stroke ? s.stroke.width * px : 0;
     const ring = stroke + (s.outline2 ? s.outline2.width * px : 0); // outer edge of the outlines
     // Thick outlines eat a narrow space (heavy faces have 0.19–0.2 em): words keep a visible gap; the bigger spoken
     // word gets room of its own.
     const sideways = Math.max(0, ...(s.copies ?? []).map((c) => Math.abs(c.x) * px)); // solid copies to the side fill the gap too
-    const space = Math.max(ctx.measureText(' ').width + ls * 2, (ring + sideways) * 2 + px * 0.06) + (look?.emphasis === 'scale' ? px * 0.14 : 0);
-    const wordW = words.map((w) => wordWidth(ctx, w, ls));
-    const lineW = lines.map((l) => l.reduce((a, i) => a + wordW[i], 0) + space * Math.max(0, l.length - 1));
-    const lineH = px * (s.lineHeight ?? TEXT_LINE_HEIGHT);
+    const spaceIn = (f: (typeof faces)[number]) => {
+      if (multi) ctx.font = f.font;
+      return Math.max(ctx.measureText(' ').width + f.ls * 2, (ring + sideways) * 2 + px * 0.06) + (look?.emphasis === 'scale' ? px * 0.14 : 0);
+    };
+    const spaces = new Map(faces.map((f) => [f, spaceIn(f)]));
+    const wordW = words.map((w, i) => { if (multi) ctx.font = faceW(i).font; return wordWidth(ctx, w, faceW(i).ls); });
+    const lineW = lines.map((l, li) => l.reduce((a, i) => a + wordW[i], 0) + spaces.get(faceL(li))! * Math.max(0, l.length - 1));
+    const lineH = faces[0].lineH;
+    const lh = lines.map((_, li) => faceL(li).lineH);
     const reach = Math.max(0, ...(s.copies ?? []).map((c) => Math.max(Math.abs(c.x), Math.abs(c.y)) * px));
     const glow = s.shadow && !!s.shadowColor;
     const pad = (bg ? bgPad : px * 0.2) + ring + reach + (glow ? px * 0.3 : 0);
@@ -295,19 +332,35 @@ export class TextRasterizer {
     const my = px * (Math.max(grow, look?.emphasis === 'scale' ? bigScale(0) : 1) - 1) * 0.6 + (look?.reveal && look.motion === 'rise' ? px * 0.4 : 0);
     const w = Math.ceil(Math.max(1, ...lineW) + pad * 2 + mx * 2);
     const inner = w - mx * 2; // the text block's width without that room
-    const vpad = pad + Math.max(0, (px * TEXT_LINE_HEIGHT - lineH) / 2); // tight lines still fit their glyphs
-    const h = Math.ceil(lines.length * lineH + vpad * 2 + my * 2);
+    const vpad = pad + Math.max(0, ...faces.map((f) => (f.px * TEXT_LINE_HEIGHT - f.lineH) / 2)); // tight lines still fit their glyphs
+    // Where each line starts: one after another, the gap of a look before its paragraph (below zero they tuck in).
+    const tops: number[] = [];
+    let below = 0;
+    for (const [li] of lines.entries()) {
+      if (li > 0 && linePara[li] !== linePara[li - 1]) below += faceL(li).gap;
+      tops.push(below);
+      below += lh[li];
+    }
+    const lift = Math.min(0, ...tops);
+    const blockH = multi ? Math.max(1, ...tops.map((t, li) => t - lift + lh[li])) : lines.length * lineH;
+    const h = Math.ceil(blockH + vpad * 2 + my * 2);
+    const yOf = (li: number) => (multi ? my + vpad + tops[li] - lift + lh[li] / 2 : my + vpad + lineH * (li + 0.5));
     canvas.width = w;
     canvas.height = h;
     ctx = canvas.getContext('2d')!; // resizing resets context state
     const setup = (c: CanvasRenderingContext2D) => { c.font = font; c.textBaseline = 'middle'; c.textAlign = 'left'; c.lineJoin = 'round'; };
     setup(ctx);
     const positions: Pos[] = lines.flatMap((l, li) => {
-      let x = mx + (s.align === 'left' ? pad : s.align === 'right' ? inner - pad - lineW[li] : (inner - lineW[li]) / 2);
-      const y = my + vpad + lineH * (li + 0.5);
-      return l.map((i) => { const p = { i, x, y, li }; x += wordW[i] + space; return p; });
+      const f = faceL(li);
+      let x = mx + (f.align === 'left' ? pad : f.align === 'right' ? inner - pad - lineW[li] : (inner - lineW[li]) / 2);
+      if (f.dx) x += f.dx * inner;
+      const y = yOf(li);
+      const gap = spaces.get(f)!; // the space of the line's own face
+      return l.map((i) => { const p = { i, x, y, li }; x += wordW[i] + gap; return p; });
     }).filter((p) => owner[p.i] < shown);
     const role = (p: Pos): WordRole | undefined => look?.roles[owner[p.i]];
+    /** Sets the face of the word's paragraph on `c` (only when a text has several) and gives its spacing between letters. */
+    const fw = (c: CanvasRenderingContext2D, p: Pos): number => { if (!multi) return ls; const f = faceW(p.i); c.font = f.font; return f.ls; };
 
     if (bg && !mask) {
       ctx.globalAlpha = bg.opacity;
@@ -321,7 +374,7 @@ export class TextRasterizer {
           const on = positions.filter((p) => p.li === li);
           if (!on.length) continue;
           const x0 = on[0].x - ex, x1 = on[on.length - 1].x + wordW[on[on.length - 1].i] + ex, y = on[0].y;
-          ctx.roundRect(x0, y - lineH / 2 - ey, x1 - x0, lineH + ey * 2, r);
+          ctx.roundRect(x0, y - lh[li] / 2 - ey, x1 - x0, lh[li] + ey * 2, r);
         }
       } else ctx.roundRect(mx, my, inner, h - my * 2, r);
       ctx.fill();
@@ -333,16 +386,16 @@ export class TextRasterizer {
       let g = grads.get(c);
       if (!g) grads.set(c, (g = []));
       if (!g[li]) {
-        const y = my + vpad + lineH * (li + 0.5);
-        g[li] = c.createLinearGradient(0, y - px * 0.45, 0, y + px * 0.45);
-        g[li].addColorStop(0, s.color);
+        const y = yOf(li), f = faceL(li);
+        g[li] = c.createLinearGradient(0, y - f.px * 0.45, 0, y + f.px * 0.45);
+        g[li].addColorStop(0, f.color);
         g[li].addColorStop(1, s.gradient!);
       }
       return g[li];
     };
     const hl = look?.highlight ?? s.color;
     const fillOf = (c: CanvasRenderingContext2D, p: Pos, r: WordRole | undefined): string | CanvasGradient =>
-      mask ? '#ffffff' : r?.box ? readableOn(hl, s.color) : r && r.lit >= 1 ? hl : s.gradient ? gradient(c, p.li) : s.color;
+      mask ? '#ffffff' : r?.box ? readableOn(hl, s.color) : r && r.lit >= 1 ? hl : s.gradient ? gradient(c, p.li) : faceL(p.li).color;
 
     // Solid copies under the letters: their silhouette (outlines included) is drawn once and stamped at each offset.
     const copies = (c: CanvasRenderingContext2D, ps: Pos[]) => {
@@ -353,11 +406,12 @@ export class TextRasterizer {
       setup(sc);
       sc.fillStyle = sc.strokeStyle = '#000000';
       sc.lineWidth = ring * 2;
-      for (const p of at) { if (ring > 0) drawWord(sc, words[p.i], p.x, p.y, ls, true); drawWord(sc, words[p.i], p.x, p.y, ls, false); }
+      for (const p of at) { if (ring > 0) drawWord(sc, words[p.i], p.x, p.y, fw(sc, p), true); drawWord(sc, words[p.i], p.x, p.y, fw(sc, p), false); }
       // Only the letters' box is recoloured and stamped (a 3D block stamps it at every step).
       const e = ring + px * 0.1;
       const x0 = Math.max(0, Math.floor(Math.min(...at.map((p) => p.x)) - e)), x1 = Math.min(w, Math.ceil(Math.max(...at.map((p) => p.x + wordW[p.i])) + e));
-      const y0 = Math.max(0, Math.floor(Math.min(...at.map((p) => p.y)) - lineH / 2 - e)), y1 = Math.min(h, Math.ceil(Math.max(...at.map((p) => p.y)) + lineH / 2 + e));
+      const y0 = Math.max(0, Math.floor((multi ? Math.min(...at.map((p) => p.y - lh[p.li] / 2)) : Math.min(...at.map((p) => p.y)) - lineH / 2) - e));
+      const y1 = Math.min(h, Math.ceil((multi ? Math.max(...at.map((p) => p.y + lh[p.li] / 2)) : Math.max(...at.map((p) => p.y)) + lineH / 2) + e));
       if (x1 <= x0 || y1 <= y0) return;
       for (const cp of list) {
         sc.globalCompositeOperation = 'source-in';
@@ -385,19 +439,19 @@ export class TextRasterizer {
         c.shadowColor = s.shadowColor!;
         c.shadowBlur = px * 0.45;
         c.fillStyle = s.color; // only the glow shows: the letters are drawn again over it
-        for (const p of outlined) drawWord(c, words[p.i], p.x, p.y, ls, false);
+        for (const p of outlined) drawWord(c, words[p.i], p.x, p.y, fw(c, p), false);
         c.shadowColor = 'transparent';
         c.shadowBlur = 0;
       }
       if (s.outline2 && s.outline2.width > 0) {
         c.strokeStyle = s.outline2.color;
         c.lineWidth = ring * 2;
-        for (const p of outlined) drawWord(c, words[p.i], p.x, p.y, ls, true);
+        for (const p of outlined) drawWord(c, words[p.i], p.x, p.y, fw(c, p), true);
       }
       if (s.stroke && stroke > 0) {
         c.strokeStyle = s.stroke.color;
         c.lineWidth = stroke * 2;
-        for (const p of outlined) drawWord(c, words[p.i], p.x, p.y, ls, true);
+        for (const p of outlined) drawWord(c, words[p.i], p.x, p.y, fw(c, p), true);
       }
       if (s.shadow && !bg && !mask && !glowFirst) {
         c.shadowColor = s.shadowColor ?? 'rgba(0,0,0,0.55)';
@@ -411,16 +465,17 @@ export class TextRasterizer {
         const sc = this.scratch('sil', w, h);
         setup(sc);
         sc.fillStyle = '#000000';
-        for (const p of graded) drawWord(sc, words[p.i], p.x, p.y, ls, false);
+        for (const p of graded) drawWord(sc, words[p.i], p.x, p.y, fw(sc, p), false);
         sc.globalCompositeOperation = 'source-atop'; // 'source-in' would also clear the other lines' letters
         for (const li of new Set(graded.map((p) => p.li))) {
-          const top = li === 0 ? 0 : my + vpad + lineH * li, bottom = li === lines.length - 1 ? h : my + vpad + lineH * (li + 1);
+          const top = li === 0 ? 0 : multi ? yOf(li) - lh[li] / 2 : my + vpad + lineH * li;
+          const bottom = li === lines.length - 1 ? h : multi ? yOf(li) + lh[li] / 2 : my + vpad + lineH * (li + 1);
           sc.fillStyle = gradient(sc, li);
           sc.fillRect(0, top, w, bottom - top);
         }
         c.drawImage(this.sil!, 0, 0);
       }
-      for (const p of ps) { if (graded.includes(p)) continue; c.fillStyle = fillOf(c, p, role(p)); drawWord(c, words[p.i], p.x, p.y, ls, false); }
+      for (const p of ps) { if (graded.includes(p)) continue; c.fillStyle = fillOf(c, p, role(p)); drawWord(c, words[p.i], p.x, p.y, fw(c, p), false); }
       c.shadowColor = 'transparent';
       c.shadowBlur = 0;
       c.shadowOffsetY = 0;
@@ -434,7 +489,7 @@ export class TextRasterizer {
           c.rect(p.x - px, p.y - lineH, px + wordW[p.i] * r.lit, lineH * 2);
           c.clip();
           c.fillStyle = hl;
-          drawWord(c, words[p.i], p.x, p.y, ls, false);
+          drawWord(c, words[p.i], p.x, p.y, fw(c, p), false);
           c.restore();
         }
         if (r?.underline) {
