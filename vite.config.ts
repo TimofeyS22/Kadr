@@ -158,9 +158,10 @@ export default defineConfig({
           {
             // The precache answers for this version's fonts. This keeps the faces a tab of another version asks for
             // (deploy skew), once used, with room for every face: one let go would draw with a fallback face offline.
+            // 191 faces with the fonts of docs/18; src/engine/fontFiles.test.ts keeps the count under this limit.
             urlPattern: ({ url }) => /\.woff2$/.test(url.pathname),
             handler: 'CacheFirst',
-            options: { cacheName: 'kadr-fonts', expiration: { maxEntries: 200 } },
+            options: { cacheName: 'kadr-fonts', expiration: { maxEntries: 300 } },
           },
         ],
       },

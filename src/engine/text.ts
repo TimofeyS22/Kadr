@@ -59,6 +59,15 @@ export const FONTS: Record<FontId, { label: string; family: string; weights: rea
   neucha: { label: 'Neucha', family: '"Neucha", cursive', weights: [400], group: 'script' },
   badScript: { label: 'Bad Script', family: '"Bad Script", cursive', weights: [400], group: 'script' },
   mono: { label: 'Mono', family: '"Roboto Mono", ui-monospace, monospace', weights: [400, 700], group: 'mono' },
+  // docs/18 (round 1 of the art director, Ш1 checked from the files): the faces pairs are built from.
+  greatVibes: { label: 'Great Vibes', family: '"Great Vibes", cursive', weights: [400], group: 'script' },
+  notoSerif: { label: 'Noto Serif', family: '"Noto Serif Display", Georgia, serif', weights: [400, 600], group: 'serif' },
+  oranienbaum: { label: 'Oranienbaum', family: '"Oranienbaum", Georgia, serif', weights: [400], group: 'serif' },
+  tenor: { label: 'Tenor Sans', family: '"Tenor Sans", system-ui, sans-serif', weights: [400], group: 'sans' },
+  ysabeau: { label: 'Ysabeau', family: '"Ysabeau", system-ui, sans-serif', weights: [400], group: 'sans' },
+  plexMono: { label: 'IBM Plex Mono', family: '"IBM Plex Mono", ui-monospace, monospace', weights: [400], group: 'mono' },
+  forum: { label: 'Forum', family: '"Forum", Georgia, serif', weights: [400], group: 'display' },
+  poiret: { label: 'Poiret One', family: '"Poiret One", system-ui, sans-serif', weights: [400], group: 'display' },
 };
 
 export type AnyFontId = FontId | CustomFontId;

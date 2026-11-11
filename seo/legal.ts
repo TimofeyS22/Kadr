@@ -138,10 +138,10 @@ const ARTISTS = {
 
 const FONTS = [
   'Amatic SC', 'Anton', 'Bad Script', 'Bebas Neue', 'Caveat', 'Comfortaa', 'Cormorant Garamond', 'Days One', 'Dela Gothic One', 'Exo 2',
-  'Fira Sans', 'Geologica', 'Golos Text', 'Inter', 'Jost', 'Lobster', 'Lora', 'Manrope', 'Marck Script', 'Montserrat', 'Neucha', 'Nunito', 'Onest',
-  'Oswald', 'Pacifico', 'Pangolin', 'Play', 'Playfair Display', 'Press Start 2P', 'PT Serif', 'Raleway', 'Roboto Mono', 'Rubik',
-  'Rubik Bubbles', 'Rubik Glitch', 'Rubik Mono One', 'Rubik Spray Paint', 'Ruslan Display', 'Russo One', 'Tektur', 'Unbounded',
-  'Yeseva One'
+  'Fira Sans', 'Forum', 'Geologica', 'Golos Text', 'Great Vibes', 'IBM Plex Mono', 'Inter', 'Jost', 'Lobster', 'Lora', 'Manrope', 'Marck Script',
+  'Montserrat', 'Neucha', 'Noto Serif Display', 'Nunito', 'Onest', 'Oranienbaum', 'Oswald', 'Pacifico', 'Pangolin', 'Play', 'Playfair Display',
+  'Poiret One', 'Press Start 2P', 'PT Serif', 'Raleway', 'Roboto Mono', 'Rubik', 'Rubik Bubbles', 'Rubik Glitch', 'Rubik Mono One',
+  'Rubik Spray Paint', 'Ruslan Display', 'Russo One', 'Tektur', 'Tenor Sans', 'Unbounded', 'Yeseva One', 'Ysabeau'
 ];
 
 const SOVA: Record<Lang, string> = {

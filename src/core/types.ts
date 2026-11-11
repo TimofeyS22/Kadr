@@ -42,6 +42,8 @@ export interface Transition { type: TransitionType; duration: number }
 
 export const FONT_IDS = [
   'inter', 'montserrat', 'rubik', 'nunito', 'raleway', 'exo', 'comfortaa', 'unbounded', 'oswald', 'anton', 'bebas', 'russo', 'dela', 'days', 'tektur', 'rubikMono', 'glitch', 'bubbles', 'spray', 'pixel', 'playfair', 'lora', 'ptSerif', 'cormorant', 'yeseva', 'pacifico', 'lobster', 'caveat', 'pangolin', 'marck', 'amatic', 'mono', 'manrope', 'onest', 'golos', 'jost', 'fira', 'play', 'ruslan', 'neucha', 'badScript',
+  // docs/18, font pairs: faces with a Cyrillic of their own, chosen by an independent art director (round 1).
+  'greatVibes', 'notoSerif', 'oranienbaum', 'tenor', 'ysabeau', 'plexMono', 'forum', 'poiret',
 ] as const;
 export type FontId = (typeof FONT_IDS)[number];
 /** A font the user added (v0.8): `custom:<id>` keyed into `Project.fonts`. */
