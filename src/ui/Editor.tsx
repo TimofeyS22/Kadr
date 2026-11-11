@@ -36,6 +36,13 @@ const snapshot = () => Promise.race([player.snapshot(), new Promise<null>((r) =>
 const SAVE_RETRY_MS = 4000;
 /** However many edits follow one another, the first of them is on disk within this long. */
 const SAVE_MAX_WAIT_MS = 2500;
+/**
+ * Every edit is in the journal (localStorage, written at once) this soon at most (S-1-2). A tab killed in the moment
+ * after an edit — memory taken back, a crash: no pagehide comes — lost that edit, since the journal was written only
+ * when the page was hidden. An edit after a quiet moment is journaled as it is made; in a quick run of them the newest
+ * waits this long, so a slider dragged across does not serialize the project sixty times a second.
+ */
+const JOURNAL_MS = 200;
 const UNDO_MOVED_KEY = 'kadr.undoMoved.v1';
 
 export async function leaveEditor(): Promise<void> {
@@ -154,7 +161,26 @@ export function Editor({ id }: { id: string }) {
     // them, and the reload lost them (audit V-185). Said once, and again only when it does get through.
     let failing = false;
     /** The version being written right now: if the page hides meanwhile, it may never get there. */
-    let writing: { p: Project; seq: number } | null = null;
+    let writing: { p: Project } | null = null;
+    /** The newest version in the journal; it is dropped once that very version is on the disk. */
+    let journaled: { p: Project; seq: number } | null = null;
+    let journalTimer = 0;
+    let lastJournal = -Infinity;
+    const journal = (p: Project) => {
+      clearTimeout(journalTimer);
+      if (journaled?.p === p) return;
+      lastJournal = performance.now();
+      journaled = { p, seq: journalProject(p) };
+    };
+    /** The newest edit into the journal: at once after a quiet moment, else when JOURNAL_MS have passed. */
+    const keep = () => {
+      clearTimeout(journalTimer);
+      const p = pending ?? writing?.p; // the trailing write may come after the save started: that version, then
+      if (!p || journaled?.p === p) return;
+      const wait = lastJournal + JOURNAL_MS - performance.now();
+      if (wait > 0) journalTimer = window.setTimeout(keep, wait);
+      else journal(p);
+    };
     /** What the header says: only a change of it is set, so a write does not re-render who listens. */
     const saying = (to: 'saved' | 'pending' | 'failed') => { if (useEditor.getState().saving !== to) useEditor.setState({ saving: to }); };
     const flush = (hiding = false) => {
@@ -162,19 +188,24 @@ export function Editor({ id }: { id: string }) {
       if (useEditor.getState().elsewhere) return; // changed in another tab: the person chooses first
       if (useEditor.getState().gone) { pending = null; return; } // deleted in another tab: nothing to save it to
       if (!pending) {
-        if (hiding && writing) writing.seq = journalProject(writing.p);
+        if (hiding && writing) journal(writing.p);
         return;
       }
       const p = pending;
       pending = null;
-      const job = { p, seq: hiding ? journalProject(p) : 0 };
+      if (hiding) journal(p);
+      const job = { p };
       writing = job;
       if (!failing) saying('pending'); // the header counts from here: a write, not the wait before it
       saveProject(p).then(
         () => {
           if (writing === job) writing = null;
           retried = false;
-          if (job.seq) clearJournal(p.id, job.seq);
+          // On the disk now: its journal goes, unless a newer edit is already in it (that one goes with its own save).
+          if (journaled?.p === p) { if (journaled.seq) clearJournal(p.id, journaled.seq); journaled = null; }
+          // A newer edit journaled while this one was written was based on the revision before: it is written again on
+          // this one, or the next opening would take it for a journal made on an older version and drop it.
+          else if (journaled) journaled = { p: journaled.p, seq: journalProject(journaled.p) };
           if (failing) { failing = false; useEditor.getState().toast(t('Your changes are saved.')); }
           if (!pending) saying('saved');
         },
@@ -195,11 +226,12 @@ export function Editor({ id }: { id: string }) {
     };
     const onPageHide = () => flush(true);
     const unsub = useEditor.subscribe((s, prev) => {
-      if (s.session !== prev.session) { pending = null; clearTimeout(timer); return; } // opened, not edited
+      if (s.session !== prev.session) { pending = null; journaled = null; clearTimeout(timer); clearTimeout(journalTimer); return; } // opened, not edited
       if (!s.project || !prev.project || s.project === prev.project) return;
       // Edits in a row put the save off, and a crash took all of them: 78 edits over 30 s were never written (audit V-109).
       if (!pending) firstEdit = performance.now();
       pending = s.project;
+      keep(); // in the journal before the save: a tab killed now keeps this edit (S-1-2)
       clearTimeout(timer);
       timer = window.setTimeout(flush, Math.min(600, Math.max(0, firstEdit + SAVE_MAX_WAIT_MS - performance.now())));
     });
@@ -208,7 +240,7 @@ export function Editor({ id }: { id: string }) {
     const onHide = () => { if (document.visibilityState === 'hidden') flush(true); else if (pending) flush(); };
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', onPageHide);
-    return () => { unsub(); unsubTabs(); unsubGone(); flush(); document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', onPageHide); };
+    return () => { unsub(); unsubTabs(); unsubGone(); flush(); clearTimeout(journalTimer); document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', onPageHide); };
   }, []);
 
   useEffect(() => {

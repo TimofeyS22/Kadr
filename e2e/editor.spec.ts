@@ -2288,6 +2288,29 @@ test('edits survive closing the page right after them (saved on pagehide, not on
   await expect(clips).toHaveCount(2);
 });
 
+test('a tab killed a moment after an edit keeps that edit (S-1-2)', async ({ page, context, browserName }) => {
+  // A crash or the system taking the memory back sends no pagehide. The journal was written only when the page was
+  // hidden, so a split made 100 ms before the tab died was gone when the project opened again.
+  test.skip(browserName !== 'chromium', 'a killed tab is made through Chromium\'s DevTools protocol (Page.crash)');
+  await page.goto('./'); // this page's settings (language, tips) are in the site's storage now
+  const work = await context.newPage(); // the tab that dies; the test's own page opens the project again
+  await work.goto('./');
+  await work.getByRole('button', { name: 'New project' }).click();
+  await work.locator('.aspect-card', { hasText: '9:16' }).click();
+  await importFiles(work, 'Media', ['landscape.mp4']);
+  const clips = work.locator('.tl-row.main .clip');
+  await expect(clips).toHaveCount(1);
+  await work.waitForTimeout(3000); // the import is on the disk
+  await work.getByRole('slider', { name: 'Position in the video' }).fill('2');
+  const url = work.url();
+  const cdp = await context.newCDPSession(work); // ready before the edit: nothing stands between the tap and the crash
+  await tool(work, 'Split').click(); // the split is made inside the tap; the autosave waits 600 ms after it
+  void cdp.send('Page.crash').catch(() => undefined); // at once, well inside that wait; never answers: the page is gone
+  await work.waitForEvent('crash', { timeout: 10_000 }).catch(() => undefined);
+  await page.goto(url);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2, { timeout: 30_000 });
+});
+
 test('a video the device cannot play is refused for its real reason, in Kadr\'s words (S-1-7, S-1-8, S-1-9)', async ({ page, browserName }, info) => {
   test.setTimeout(240_000);
   // Made here: a 2×2 video, one 8K frame, H.264 4:4:4, and MP3 sound in a .mov. WebKit refused the 8K and 4:4:4 files
