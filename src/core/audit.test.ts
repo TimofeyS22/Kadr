@@ -210,9 +210,11 @@ describe('a hostile subtitle file (audit V-119)', () => {
     parseSubtitles(`1\n${'9'.repeat(2_000_000)}:00:01,000 --> 00:00:02,000\nhi\n`);
     expect(performance.now() - t0).toBeLessThan(500);
   });
+  // Heavy by design (2 MB of text): 13 s on a Mac shared with other sessions' runs, where the default 5 s failed the
+  // release gate twice (2026-11-11). What is checked is the stack, not the time.
   it('a cue with a million words does not overflow the stack', () => {
     expect(() => parseSubtitles(`1\n00:00:01,000 --> 00:00:02,000\n${'a '.repeat(1_000_000)}\n`)).not.toThrow();
-  });
+  }, 30_000);
   it('hours still read', () => {
     expect(parseSubtitles('1\n01:00:01,000 --> 01:00:02,000\nhi\n')[0].t0).toBeCloseTo(3601, 3);
   });

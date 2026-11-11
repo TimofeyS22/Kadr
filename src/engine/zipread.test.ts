@@ -58,11 +58,13 @@ describe('zip by its central directory (audit V-188)', () => {
     expect(got['project.json']).toEqual(json);
   });
 
+  // The bomb itself takes seconds to make (50 MB at level 9): 9.6 s on a Mac shared with other sessions' runs, where the
+  // default 5 s failed the release gate twice (2026-11-11). What is checked is the budget in bytes, not the time.
   it('a zip bomb is refused before it is unpacked', async () => {
     const file = new Blob([zipSync({ 'project.json': new Uint8Array(50 * 1024 ** 2).fill(32) }, { level: 9 }) as BlobPart]);
     const [e] = await zipEntries(file);
     await expect(zipEntryBlob(file, e, { left: file.size * 4 })).rejects.toBeInstanceOf(ZipError);
-  });
+  }, 30_000);
 
   it('garbage and a file cut short are not zips', async () => {
     await expect(zipEntries(new Blob([video(10_000) as BlobPart]))).rejects.toBeInstanceOf(ZipError);
