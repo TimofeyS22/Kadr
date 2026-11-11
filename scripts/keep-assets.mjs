@@ -32,6 +32,20 @@ export function retain(generations, now) {
 }
 
 const names = (g) => g.files.map((f) => (typeof f === 'string' ? f : f.name));
+const sameFiles = (a, b) => names(a).slice().sort().join('\n') === names(b).slice().sort().join('\n');
+
+/**
+ * A rollback deploys a site that was live before (.github/workflows/rollback.yml), and its assets folder holds the files
+ * of the generations it kept besides its own. Its own are the first generation of its manifest: taken as all the files,
+ * every older generation looked like a redeploy of it, and the roll back to 1.8.3 kept one generation of 797 files
+ * (rehearsal, 2026-11-11; no file was lost, the history was). The history is the live site's, without the generation
+ * that goes back up, then what only the earlier site still listed.
+ */
+export function rollbackGenerations(earlier, live) {
+  const [own, ...older] = earlier.generations;
+  const history = live.filter((g) => g.files?.length && !sameFiles(g, own));
+  return { own, previous: [...history, ...older.filter((g) => !history.some((h) => sameFiles(h, g)))] };
+}
 
 async function get(url, as) {
   for (let i = 1; ; i++) {
@@ -73,7 +87,9 @@ async function main(site, dist) {
   const assets = path.join(dist, 'assets');
   // A rollback deploys an earlier build: its version, not the one checked out (.github/workflows/rollback.yml).
   const version = process.env.KEEP_ASSETS_VERSION ?? JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
-  const own = fs.readdirSync(assets).filter((f) => fs.statSync(path.join(assets, f)).isFile()).sort().map((name) => {
+  const earlierPath = path.join(dist, 'assets-manifest.json');
+  const earlier = process.env.KEEP_ASSETS_VERSION && fs.existsSync(earlierPath) ? JSON.parse(fs.readFileSync(earlierPath, 'utf8')) : null;
+  let own = fs.readdirSync(assets).filter((f) => fs.statSync(path.join(assets, f)).isFile()).sort().map((name) => {
     const body = fs.readFileSync(path.join(assets, name));
     return { name, size: body.length, sha256: sha256(body) };
   });
@@ -86,7 +102,15 @@ async function main(site, dist) {
     if (!files.length && !process.env.KEEP_ASSETS_FIRST) throw new Error(`keep-assets: ${base} has neither a manifest nor a page to crawl; not deploying (KEEP_ASSETS_FIRST=1 for a brand-new site)`);
     previous = [{ version: 'live', at: new Date(now).toISOString(), files }];
   }
-  const current = { version, build: process.env.GITHUB_SHA?.slice(0, 12) ?? 'local', at: new Date(now).toISOString(), files: own };
+  let build = process.env.GITHUB_SHA?.slice(0, 12) ?? 'local';
+  if (earlier?.generations?.length) {
+    const back = rollbackGenerations(earlier, previous);
+    const mine = new Set(names(back.own));
+    own = own.filter((o) => mine.has(o.name));
+    previous = back.previous;
+    build = back.own.build ?? build;
+  }
+  const current = { version, build, at: new Date(now).toISOString(), files: own };
   const generations = retain([current, ...previous.filter((g) => g.files?.length)], now);
 
   let bytes = sizeOf(dist);

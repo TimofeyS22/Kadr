@@ -20,17 +20,20 @@ async function patient(url, init) {
 }
 const get = (p) => patient(base + p, { cache: 'no-store' });
 
-let manifest;
+// The CDN keeps each answer apart, so the new manifest can come before the new page: the roll back to 1.8.3 failed this
+// check right after its deploy with the 1.8.2 page still served, and passed a minute later (2026-11-11). Both are waited for.
+let manifest, entry;
 for (let i = 0; ; i++) {
   const res = await get('assets-manifest.json');
   manifest = res.ok ? await res.json() : null;
-  if (manifest && (!version || manifest.generations[0]?.version === version)) break;
-  if (i >= 66) throw new Error(`smoke: the live site does not serve ${version ?? 'a manifest'} after 11 minutes`);
+  if (manifest && (!version || manifest.generations[0]?.version === version)) {
+    const index = await (await get('index.html')).text();
+    entry = /src="[^"]*assets\/([^"]+\.js)"/.exec(index)?.[1];
+    if (entry && manifest.generations[0].files.some((f) => (f.name ?? f) === entry)) break;
+  }
+  if (i >= 66) throw new Error(entry ? `smoke: index.html names ${entry}, not a file of ${manifest.generations[0].version}, after 11 minutes` : `smoke: the live site does not serve ${version ?? 'a manifest'} after 11 minutes`);
   await new Promise((r) => setTimeout(r, 10_000));
 }
-const index = await (await get('index.html')).text();
-const entry = /src="[^"]*assets\/([^"]+\.js)"/.exec(index)?.[1];
-if (!entry || !manifest.generations[0].files.some((f) => (f.name ?? f) === entry)) throw new Error(`smoke: index.html names ${entry}, not a file of ${manifest.generations[0].version}`);
 const files = [...new Set(manifest.generations.flatMap((g) => g.files.map((f) => f.name ?? f)))];
 const bad = [];
 for (let i = 0; i < files.length; i += 16) {
