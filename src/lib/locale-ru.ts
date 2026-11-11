@@ -837,6 +837,7 @@ export const RU: Record<string, string> = {
   'This image is too large for this device ({mp} megapixels).': 'Картинка слишком большая для этого устройства ({mp} мегапикселей).',
   'This is Russian speech: choose the Russian model for far fewer mistakes.': 'Это русская речь: выберите русскую модель, ошибок будет намного меньше.',
   'A GIF comes in as a still picture: its first frame.': 'GIF добавляется как неподвижная картинка: его первый кадр.',
+  '“{name}” ends with the video: {kept} s of {total} s. Drag the end of the clip to make it longer.': '«{name}» заканчивается вместе с видео: {kept} с из {total} с. Чтобы удлинить, потяните край клипа.',
   'This file can no longer be read. It may have been moved or deleted. Add it again.': 'Этот файл больше не читается: возможно, его переместили или удалили. Добавьте его снова.',
   'This device could not process the video. Close other apps and try again.': 'Устройство не смогло обработать видео. Закройте другие приложения и попробуйте снова.',
   'restored': 'восстановлено',

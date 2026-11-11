@@ -1258,12 +1258,14 @@ test('canvas: aspect ratio and blurred background; safe zones overlay', async ({
 test('noise reduction processes; ducking lowers music under speech', async ({ page }, info) => {
   test.setTimeout(240_000);
   await newProject(page);
-  await importFiles(page, 'Media', ['speech_en.mp4']);
-  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Close tools' }).click();
+  // The music first, on an empty project: it keeps its 12 s and plays on after the speech (a sound added on top of a
+  // video ends with it, S-1-4).
   await importFiles(page, 'Audio', ['beat120.m4a']);
   const music = page.locator('.tl-row.audio .clip').first();
   await expect(music).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Media', ['speech_en.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   const { execFileSync } = await import('node:child_process');
   const pcm = (file: string) => { const b = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', '8000', '-f', 'f32le', '-']); return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4); };
   const plain = pcm(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
@@ -3045,12 +3047,14 @@ test('WYSIWYG for sound: what the preview plays matches the exported mix — vol
     } as typeof AudioNode.prototype.connect;
   }, TAP);
   await newProject(page);
-  await importFiles(page, 'Media', ['speech_en.mp4']); // 5.9 s of speech
-  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Close tools' }).click();
-  await importFiles(page, 'Audio', ['beat120.m4a']); // 12 s of beat, on under the speech and after it
+  // 12 s of beat, on under the speech and after it: added first, on an empty project, it keeps its length (a sound
+  // added on top of a video ends with it, S-1-4).
+  await importFiles(page, 'Audio', ['beat120.m4a']);
   const music = page.locator('.tl-row.audio .clip').first();
   await expect(music).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Media', ['speech_en.mp4']); // 5.9 s of speech
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await selectClip(page, page.locator('.tl-row.main .clip').first());
   await tool(page, 'Volume').click();
   await page.getByRole('slider', { name: 'Volume', exact: true }).fill('0.6');
@@ -4091,6 +4095,32 @@ test('export sound: no click or dip where the 2 s mixing windows meet (audit V-1
     expect.soft(jump, `click at ${b} s`).toBeLessThan(1.3);
   }
   console.log(`window joins (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('a sound or a title added on a video ends with it: no black after the video in the file (S-1-4)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await page.addInitScript(() => { (window as unknown as { __toasts: string[] }).__toasts = []; new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => { const w = window as unknown as { __toasts: string[] }; if (!w.__toasts.includes(el.textContent ?? '')) w.__toasts.push(el.textContent ?? ''); })).observe(document, { subtree: true, childList: true }); });
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']); // 6 s
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Audio', ['music.m4a']); // 10 s
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1);
+  await expect.soft.poll(() => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts.join(' | ')), { timeout: 5000 }).toContain('ends with the video: 6.0 s of 10.0 s');
+  // A title 2 s before the end ends with the video too.
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await page.getByRole('slider', { name: 'Position in the video' }).fill('4');
+  await tool(page, 'Text').click();
+  await page.getByRole('button', { name: 'Done' }).first().click();
+  const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  // Before: 10 s, of which 4 s black (the music), and a 3 s title would have made 7 s on its own.
+  expect(Number(pr.format.duration), 'as long as the video').toBeLessThan(6.15);
+  expect(Number(pr.format.duration)).toBeGreaterThan(5.9);
+  expect(pr.streams.some((x) => x.codec_type === 'audio')).toBe(true);
+  // The fitted sound can still be made longer: undo brings back the full song, as one step.
+  await page.getByRole('button', { name: 'Undo' }).click(); // the title
+  await page.getByRole('button', { name: 'Undo' }).click(); // the sound
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(0);
 });
 
 test('a backup with damaged parts inside its clips opens and draws: what is whole stays, what is not goes (S-1-3)', async ({ page }, info) => {

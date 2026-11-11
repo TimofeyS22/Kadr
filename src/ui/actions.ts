@@ -2,7 +2,7 @@
 import { parseSubtitles, setCaptionLayout, toSrt, type CaptionLayout } from '../core/captions';
 import { anim, createAudioClip, createCaptionClip, createImageClip, createTextClip, createVideoClip, uid } from '../core/defaults';
 import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
-import { fitTrack, type LibraryTrack, type MusicManifest } from '../core/music';
+import { endWithVideo, fitTrack, type LibraryTrack, type MusicManifest } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
   clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, forwardIn, insertMain, isSound, mainTrack, mirrorPrivacyKeys, placeClip, projectDuration,
@@ -64,6 +64,7 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   if (meta.script) for (const a of assets) a.script = meta.script;
   let first: string | null = null;
   const now = player.time;
+  const fitted: { name: string; kept: number; total: number }[] = [];
   editor().commit((d) => {
     let at = now;
     for (const a of assets) {
@@ -73,6 +74,8 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
       if (clip.kind === 'audio' || target !== 'main') {
         clip.start = at;
         if (clip.kind !== 'audio') clip.transform.scale = anim(0.6);
+        // A sound ends with the video, as a library track does: no black after the video in the file (S-1-4).
+        if (clip.kind === 'audio' && endWithVideo(d, clip) > 0) fitted.push({ name: a.name, kept: clip.duration, total: a.duration });
         placeClip(d, clip);
       } else {
         insertMain(d, clip, at);
@@ -82,6 +85,7 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
     }
   });
   if (first) editor().select(first);
+  for (const f of fitted) editor().toast(t('“{name}” ends with the video: {kept} s of {total} s. Drag the end of the clip to make it longer.', { name: f.name, kept: f.kept.toFixed(1), total: f.total.toFixed(1) }), 'info', 8000);
   if (assets.some((a) => a.mime === 'image/gif')) editor().toast(t('A GIF comes in as a still picture: its first frame.'), 'info', 6000); // audit V-227
   track('media_imported', { count: assets.length, target });
   slowPickTip(assets, pickMs);
@@ -132,6 +136,7 @@ export function addText(): void {
   let id = '';
   editor().commit((d) => {
     const c = createTextClip(player.time);
+    endWithVideo(d, c); // ends with the video, not 3 s past it in black (S-1-4)
     placeClip(d, c);
     id = c.id;
   });
