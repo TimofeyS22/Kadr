@@ -891,6 +891,43 @@ async function fakeCamera(page: Page) {
   });
 }
 
+test('a camera recorder that gives no video is said to within seconds, and an empty take is never "an unsupported format" (S-1-12)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await fakeCamera(page);
+  await page.addInitScript(() => {
+    // As WebKit's recorder under load (S-1-12): not one piece while it records, 0 bytes at Stop.
+    class Silent extends EventTarget {
+      state: 'inactive' | 'recording' = 'inactive';
+      mimeType = 'video/mp4';
+      ondataavailable: ((e: Event) => void) | null = null;
+      onstop: ((e: Event) => void) | null = null;
+      static isTypeSupported(m: string) { return m.includes('mp4'); }
+      private data() { const e = Object.assign(new Event('dataavailable'), { data: new Blob([], { type: 'video/mp4' }) }); this.dispatchEvent(e); this.ondataavailable?.(e); }
+      start() { this.state = 'recording'; this.dispatchEvent(new Event('start')); }
+      stop() { if (this.state === 'inactive') return; this.state = 'inactive'; this.data(); const e = new Event('stop'); this.dispatchEvent(e); this.onstop?.(e); }
+    }
+    (window as unknown as { MediaRecorder: unknown }).MediaRecorder = Silent;
+  });
+  await newProject(page);
+  const said = (text: string) => page.locator('.toast').filter({ hasText: text });
+  // Left to record: before, the person recorded a whole take into nothing. Now it is said within seconds.
+  await tool(page, 'Camera').click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
+  await expect(said('The recording did not start')).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByRole('button', { name: 'Start recording' })).toBeEnabled(); // ready for the next take
+  // Stopped before that: an empty take is said to be empty and not imported. Before: "Unsupported file format".
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(1000);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(said('The recording came out empty')).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(0);
+  await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 20_000 }); // gone, so not counted again
+  const errors = await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0)); // expected here
+  expect(errors.join('\n')).not.toMatch(/Unsupported file format/);
+});
+
 test('camera with teleprompter scrolls the script, records a mirrored clip onto the main track and releases the camera', async ({ page }, info) => {
   test.setTimeout(120_000);
   await fakeCamera(page);
@@ -3554,6 +3591,16 @@ test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a 
   const { unzipSync, zipSync, strFromU8, strToU8 } = await import('fflate');
   const { randomBytes } = await import('node:crypto');
   page.on('dialog', (d) => void (d.type() === 'prompt' ? d.accept('Mine') : d.accept()));
+  // Every restore note as it is shown: on a loaded machine the editor opened after the note had gone, and the count
+  // read 0 (a red on Chromium that had nothing to do with the restore; same on a build before any change).
+  await page.addInitScript(() => {
+    const w = window as unknown as { __notes: string[] };
+    w.__notes = [];
+    new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => {
+      const text = el.textContent ?? '';
+      if (/could not be restored/.test(text) && !w.__notes.includes(text)) w.__notes.push(text);
+    })).observe(document, { subtree: true, childList: true, characterData: true });
+  });
   await page.goto('./');
   await page.getByRole('button', { name: 'Try a sample' }).click();
   await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
@@ -3607,14 +3654,18 @@ test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a 
     // So is the last restore's note: after a fast export it is still up and would be read as this one's (WebKit, v1.6).
     await expect(page.locator('.toast').filter({ hasText: 'could not be restored' })).toHaveCount(0, { timeout: 20_000 });
     await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+    await page.evaluate(() => (window as unknown as { __notes: string[] }).__notes.splice(0));
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Restore backup' }).click();
     await (await chooser).setFiles(file);
     const opened = page.locator('.preview-canvas'), refused = page.locator('.toast.error');
     await expect(opened.or(refused).first()).toBeVisible({ timeout: 60_000 });
     if (await opened.isVisible()) {
-      const note = page.locator('.toast').filter({ hasText: 'could not be restored' });
-      const left = (await note.count()) ? ` (${await note.first().textContent()})` : '';
+      const notes = () => page.evaluate(() => (window as unknown as { __notes: string[] }).__notes);
+      // The note comes with the restore; when one is expected, it is waited for (it may come a moment after the editor).
+      if (leftOut) await expect.poll(async () => (await notes()).length, { timeout: 10_000 }).toBeGreaterThan(0).catch(() => undefined);
+      const said = (await notes())[0];
+      const left = said ? ` (${said})` : '';
       expect.soft(Number(left.match(/(\d+)\)$/)?.[1] ?? 0), `${what}: parts said to be left out`).toBe(leftOut);
       await page.waitForTimeout(1500); // let it render the first frame
       const clips = await page.locator('.tl-row .clip').count();
@@ -5016,6 +5067,16 @@ test('a camera recording cut short by a crash comes back (audit V-250)', async (
   test.setTimeout(120_000);
   test.skip(info.project.name === 'iphone-webkit', "this test's WebKit context refuses Blobs in storage");
   await fakeCamera(page);
+  // Every note as it is shown: the "cut short" one comes with the recovery, and on a loaded machine it had gone by the
+  // time the clip was drawn (a red so on a build before any change, d1828cd).
+  await page.addInitScript(() => {
+    const w = window as unknown as { __seen: string[] };
+    w.__seen = [];
+    new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => {
+      const text = el.textContent ?? '';
+      if (!w.__seen.includes(text)) w.__seen.push(text);
+    })).observe(document, { subtree: true, childList: true, characterData: true });
+  });
   await newProject(page);
   await tool(page, 'Camera').click();
   await page.getByRole('button', { name: 'Start recording' }).click();
@@ -5023,7 +5084,7 @@ test('a camera recording cut short by a crash comes back (audit V-250)', async (
   await page.waitForTimeout(9000); // past the recorder's first complete part
   await page.reload(); // no Stop: what a crash does to the page
   await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
-  await expect(page.locator('.toast').filter({ hasText: 'cut short' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __seen: string[] }).__seen.join(' | ')), { timeout: 10_000 }).toContain('cut short');
   await page.reload();
   await expect(page.locator('.tl-row.main .clip-video'), 'once, not on every open').toHaveCount(1, { timeout: 30_000 });
 });
