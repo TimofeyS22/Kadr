@@ -5067,6 +5067,16 @@ test('a camera recording cut short by a crash comes back (audit V-250)', async (
   test.setTimeout(120_000);
   test.skip(info.project.name === 'iphone-webkit', "this test's WebKit context refuses Blobs in storage");
   await fakeCamera(page);
+  // Every note as it is shown: the "cut short" one comes with the recovery, and on a loaded machine it had gone by the
+  // time the clip was drawn (a red so on a build before any change, d1828cd).
+  await page.addInitScript(() => {
+    const w = window as unknown as { __seen: string[] };
+    w.__seen = [];
+    new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => {
+      const text = el.textContent ?? '';
+      if (!w.__seen.includes(text)) w.__seen.push(text);
+    })).observe(document, { subtree: true, childList: true, characterData: true });
+  });
   await newProject(page);
   await tool(page, 'Camera').click();
   await page.getByRole('button', { name: 'Start recording' }).click();
@@ -5074,7 +5084,7 @@ test('a camera recording cut short by a crash comes back (audit V-250)', async (
   await page.waitForTimeout(9000); // past the recorder's first complete part
   await page.reload(); // no Stop: what a crash does to the page
   await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
-  await expect(page.locator('.toast').filter({ hasText: 'cut short' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __seen: string[] }).__seen.join(' | ')), { timeout: 10_000 }).toContain('cut short');
   await page.reload();
   await expect(page.locator('.tl-row.main .clip-video'), 'once, not on every open').toHaveCount(1, { timeout: 30_000 });
 });
