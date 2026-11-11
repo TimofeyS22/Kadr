@@ -2288,6 +2288,46 @@ test('edits survive closing the page right after them (saved on pagehide, not on
   await expect(clips).toHaveCount(2);
 });
 
+test('a video the device cannot play is refused for its real reason, in Kadr\'s words (S-1-7, S-1-8, S-1-9)', async ({ page, browserName }, info) => {
+  test.setTimeout(240_000);
+  // Made here: a 2×2 video, one 8K frame, H.264 4:4:4, and MP3 sound in a .mov. WebKit refused the 8K and 4:4:4 files
+  // with "cannot decode avc video, try Chrome or Safari" (it plays avc; on an iPhone every browser is Safari's engine),
+  // took the 2×2 one and then failed on every frame with "the decoder stopped, close other apps", and the .mov's
+  // message carried the library's English ("WebCodecs: This audio track cannot be decoded in this environment…").
+  const make = (name: string, args: string[]) => { const out = info.outputPath(name); execFileSync('ffmpeg', ['-v', 'error', '-y', ...args, out]); return out; };
+  const files = [
+    make('tiny_2x2.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=2x2:r=30', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']),
+    make('huge_8k.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=8192x4320:r=1', '-frames:v', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']),
+    make('yuv444.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=320x240:r=30', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv444p']),
+    make('mp3_in.mov', ['-f', 'lavfi', '-i', 'sine=f=440:d=3', '-c:a', 'libmp3lame']),
+    fx('landscape.mp4'),
+  ];
+  await newProject(page);
+  const chooser = page.waitForEvent('filechooser');
+  await tool(page, 'Media').click();
+  await (await chooser).setFiles(files);
+  await expect(page.locator('.tl-row.main .clip').first()).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.join('\n')), { timeout: 30_000 }).toContain('tiny_2x2');
+  await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 60_000 }); // shown one after another
+  const said = await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+  console.log(`refusals (${info.project.name}):\n${said.join('\n')}`);
+  const about = (n: string) => said.find((x) => x.includes(n));
+  expect(about('tiny_2x2'), 'refused before it goes in, for its size').toContain('too small to play: 2×2');
+  for (const x of said) expect(x, 'no engine words in the sentence').not.toMatch(/WebCodecs|decodability|Decoder failure|Out of memory/);
+  for (const n of ['huge_8k', 'yuv444']) {
+    const r = about(n);
+    if (!r) continue; // Chromium plays it: it goes in
+    expect(r, `${n}: no other browser to try on an iPhone`).not.toMatch(/Try Chrome or Safari/);
+    expect(r, `${n}: the size is named`).toMatch(/\d+×\d+/);
+  }
+  if (browserName === 'webkit') expect(about('huge_8k'), 'WebKit does not decode 8K H.264').toContain('8192×4320');
+  // Nothing that went in fails later with "the decoder stopped": every clip on the timeline draws in the file.
+  const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  expect(pr.streams.some((x) => x.codec_type === 'video')).toBe(true);
+  const after = await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors);
+  expect(after.filter((x) => /decoder of this device stopped/.test(x))).toEqual([]);
+});
+
 test('hostile files: each one is refused by name, nothing breaks, the good file in the same batch imports and exports', async ({ page }, info) => {
   test.setTimeout(240_000);
   await newProject(page);

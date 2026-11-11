@@ -838,6 +838,9 @@ export const RU: Record<string, string> = {
   'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.': 'Видеодекодер устройства остановился. Закройте другие приложения или перезапустите браузер и попробуйте снова.',
   // Audit 2026-11 (docs/13)
   'This browser cannot decode {codec} video. Try Chrome or Safari.': 'Этот браузер не умеет декодировать видео {codec}. Попробуйте Chrome или Safari.',
+  'This device cannot play this video: {width}×{height}, {codec}, is beyond what it decodes. Videos from a phone camera play, up to 4K.': 'Это устройство не воспроизводит это видео: {width}×{height}, {codec}, больше того, что оно умеет декодировать. Видео с камеры телефона, до 4K, воспроизводятся.',
+  'This iPhone cannot decode {codec} video.': 'Этот iPhone не умеет декодировать видео {codec}.',
+  'This video is too small to play: {width}×{height} pixels. Kadr plays videos from {min}×{min} pixels.': 'Видео слишком маленькое: {width}×{height} пикселей. Kadr воспроизводит видео от {min}×{min} пикселей.',
   'This browser cannot encode video. Try Chrome or Safari.': 'Этот браузер не умеет кодировать видео. Попробуйте Chrome или Safari.',
   'This image is too large for this device ({mp} megapixels).': 'Картинка слишком большая для этого устройства ({mp} мегапикселей).',
   'This is Russian speech: choose the Russian model for far fewer mistakes.': 'Это русская речь: выберите русскую модель, ошибок будет намного меньше.',
