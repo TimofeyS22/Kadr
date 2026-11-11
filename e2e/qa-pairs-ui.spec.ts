@@ -36,6 +36,12 @@ test('with ?pairs: the pairs come second, a pair sets two faces on two lines, on
   await expect.poll(() => styles.locator('[data-cat="pairs"] canvas[data-ready]').count(), { message: 'pair tiles drawn once their faces are in' }).toBeGreaterThanOrEqual(3);
   await pairs.first().click();
   await expect(field, 'a one-line text is broken where Russian allows it').toHaveValue('Лето\nв городе');
+  // Ш6: under the text the sample's first frame is a dark, calm sky (measured: mean luminance 0.165, spread 0.015), so
+  // the pair takes light letters and no box is pushed on it. When a box is wanted (core/pairs.ts pickVariant, unit test)
+  // one tap puts it under the text.
+  await expect(panel(page).locator('.swatch[aria-pressed="true"]').first()).toHaveAttribute('aria-label', '#ffffff');
+  await page.waitForTimeout(1500); // the frame under the text is read once the sheet opens
+  await expect(panel(page).getByRole('button', { name: 'Добавить подложку' })).toHaveCount(0);
   const lines = panel(page).getByRole('radiogroup', { name: 'Строка' });
   await expect(lines).toBeVisible();
   const fonts = panel(page).getByRole('radiogroup', { name: 'Шрифт' });

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { PAIRS, pairStyle, splitForPair, type FontPair } from './pairs';
+import { PAIRS, pairStyle, pickVariant, splitForPair, type FontPair } from './pairs';
 import { saneStyle } from './style';
 import { FONT_IDS } from './types';
 import type { TextStyle } from './types';
@@ -29,14 +29,16 @@ it('keeps what the person wrote when there is nothing to split', () => {
   expect(splitForPair('в', 'first')).toBe('в');
 });
 
-it('a pair over a style keeps the person\'s size, colour and shadow, and sets the support as the base face', () => {
+it('a pair over a style keeps the person\'s size and alignment, sets its letters and the support as the base face', () => {
   const pair: FontPair = {
     id: 't', name: { ru: 'Т', en: 'T' }, sample: { ru: 'а\nб', en: 'a\nb' }, base: { font: 'tenor', weight: 400 }, split: 'first',
     accent: { font: 'greatVibes', scale: 2.2 }, support: { font: 'tenor', scale: 0.5, uppercase: true, letterSpacing: 0.25 },
   };
   const current: TextStyle = { font: 'inter', size: 0.08, weight: 900, italic: true, color: '#ffd60a', align: 'left', stroke: null, background: null, shadow: true, uppercase: true, letterSpacing: 0.3 };
   const s = pairStyle(pair, current);
-  expect(s).toMatchObject({ font: 'tenor', weight: 400, italic: false, size: 0.08, color: '#ffd60a', shadow: true, align: 'left' });
+  expect(s).toMatchObject({ font: 'tenor', weight: 400, italic: false, size: 0.08, color: '#ffffff', shadow: true, align: 'left' });
+  expect(pairStyle(pair, current, 'dark')).toMatchObject({ color: '#141414', shadow: true, shadowColor: '#ffffff' });
+  expect(pairStyle(pair, { ...current, shadowColor: '#ff0000' }, 'light').shadowColor).toBeUndefined();
   expect(s.uppercase).toBeUndefined();
   expect(s.letterSpacing).toBeUndefined();
   expect(s.lines).toEqual([pair.accent, pair.support]);
@@ -63,4 +65,14 @@ it('the catalog: fonts bundled and whole in Russian, the base is the support, si
     expect(p.name.ru.length, p.id).toBeLessThanOrEqual(12);
   }
   expect(PAIRS.length).toBeGreaterThanOrEqual(8);
+});
+
+it('picks the letters that stand out from the picture under the text, and offers a box where neither does (Ш6)', () => {
+  expect(pickVariant(null)).toEqual({ variant: 'light', plate: false });
+  expect(pickVariant({ mean: 0.02, spread: 0.02 })).toEqual({ variant: 'light', plate: false }); // night
+  expect(pickVariant({ mean: 0.85, spread: 0.05 })).toEqual({ variant: 'dark', plate: false }); // snow, a white wall
+  expect(pickVariant({ mean: 0.19, spread: 0.05 }).plate, 'a mid grey: neither stands out enough').toBe(true);
+  expect(pickVariant({ mean: 0.05, spread: 0.3 }).plate, 'dark but busy: leaves, a crowd').toBe(true);
+  expect(pickVariant({ mean: 0.134, spread: 0.225 }).plate, 'the sample\'s sunrise: the sun under the text').toBe(true);
+  expect(pickVariant({ mean: 0.02, spread: 0.06 }).plate, 'a calm evening sky').toBe(false);
 });

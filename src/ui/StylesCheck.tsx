@@ -7,12 +7,13 @@ import { useEffect, useRef, useState } from 'react';
 import { captionLayout } from '../core/captions';
 import { createCaptionClip, createProject, createTextClip } from '../core/defaults';
 import { visualLayer } from '../core/frame';
+import { PAIRS, pairPlate, pairStyle, type PairVariant } from '../core/pairs';
 import { CAPTION_PRESETS, TEXT_PRESETS } from '../core/presets';
 import { FONT_IDS, type CaptionClip, type FontId, type TextClip, type TextStyle } from '../core/types';
 import { FONTS, TextRasterizer, ensureFont, type CaptionState } from '../engine/text';
 
 export interface StyleRow {
-  kind: 'caption' | 'text'; id: string; lang: 'ru' | 'en';
+  kind: 'caption' | 'text' | 'pair'; id: string; lang: 'ru' | 'en';
   /** Edge contrast, 10th percentile over the letters' surroundings (WCAG ratio), per background. */
   edge: Record<Background, number>;
   /** Time of one drawing, ms (its best sample; the worse of two moments: settled, and a word coming in): at 1080 × 1920 (export)
@@ -111,7 +112,7 @@ function timed(draw: Draw, h: number): number {
   return Math.round(Math.max(...worst) * 100) / 100;
 }
 
-async function checkOne(kind: 'caption' | 'text', id: string, lang: 'ru' | 'en', style: TextStyle, draw: Draw): Promise<{ row: StyleRow; thumb: HTMLCanvasElement | null }> {
+async function checkOne(kind: StyleRow['kind'], id: string, lang: 'ru' | 'en', style: TextStyle, draw: Draw): Promise<{ row: StyleRow; thumb: HTMLCanvasElement | null }> {
   await ensureFont(style, SAMPLE[lang].join(' '));
   draw(new TextRasterizer(), false, 1); // warm-up: the first drawing of a face also loads it into the canvas
   const ms = timed(draw, H), msPreview = timed(draw, H / 2);
@@ -174,9 +175,11 @@ export function StylesCheck() {
         fig.append(c, cap);
         thumbs.current.append(fig);
       };
+      // `?styles=pairs`: the font pairs alone (docs/18 Ш6), each in both its variants, on its own two-line sample.
+      const onlyPairs = new URLSearchParams(location.search).get('styles') === 'pairs';
       for (const lang of ['ru', 'en'] as const) {
         const words = SAMPLE[lang];
-        for (const pr of CAPTION_PRESETS) {
+        for (const pr of onlyPairs ? [] : CAPTION_PRESETS) {
           // Word by word shows one word: the longest makes the hardest case.
           const clip: CaptionClip = createCaptionClip(words.map((text, i) => ({ t0: i * 0.5, t1: i * 0.5 + 0.45, text })), pr);
           const one = captionLayout(clip) === 'word';
@@ -192,7 +195,7 @@ export function StylesCheck() {
           if (!live) return;
           setReport({ done: false, rows: [...rows], fonts, userAgent: navigator.userAgent });
         }
-        for (const pr of TEXT_PRESETS) {
+        for (const pr of onlyPairs ? [] : TEXT_PRESETS) {
           const clip: TextClip = createTextClip(0, words.slice(0, 2).join(' '));
           clip.style = structuredClone(pr.style);
           // A mask is the same text with only the letters' fill drawn: a caption state with no words lit.
@@ -200,6 +203,18 @@ export function StylesCheck() {
           const { row, thumb } = await checkOne('text', pr.id, lang, pr.style, draw);
           rows.push(row);
           add(thumb, `${pr.id} ${lang}: ${BACKGROUNDS.map((b) => row.edge[b].toFixed(1)).join(' / ')}, ${row.ms} / ${row.msPreview} ms`);
+        }
+        for (const pair of onlyPairs ? PAIRS : []) {
+          // Both variants bare, and the light one on the box offered where the picture is too busy for bare letters.
+          for (const variant of ['light', 'dark', 'plate'] as const) {
+            const clip: TextClip = createTextClip(0, pair.sample[lang]);
+            const v: PairVariant = variant === 'plate' ? 'light' : variant;
+            clip.style = { ...pairStyle(pair, createTextClip(0, '').style, v), ...(variant === 'plate' ? { background: pairPlate(v) } : {}) };
+            const draw: Draw = (r, mask, _moment, h = H) => r.get(clip, Infinity, (h * 9) / 16, h, mask);
+            const { row, thumb } = await checkOne('pair', `${pair.id}:${variant}`, lang, clip.style, draw);
+            rows.push(row);
+            add(thumb, `${pair.id} ${variant} ${lang}: ${BACKGROUNDS.map((b) => row.edge[b].toFixed(1)).join(' / ')}`);
+          }
         }
       }
       if (live) setReport({ done: true, rows, fonts, userAgent: navigator.userAgent });

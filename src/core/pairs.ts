@@ -56,11 +56,50 @@ export function splitForPair(text: string, split: PairSplit): string {
   return `${words.slice(0, at + 1).join(' ')}\n${words.slice(at + 1).join(' ')}`;
 }
 
-/** The text style of `pair` over `current`: its faces and looks; the size, colour, shadow and box stay the person's. */
-export function pairStyle(pair: FontPair, current: TextStyle): TextStyle {
-  const s: TextStyle = { ...current, font: pair.base.font, weight: pair.base.weight, italic: false, lines: [{ ...pair.accent }, { ...pair.support }] };
+/** Which letters a pair is set in on a frame (docs/18 Ш6): light ones for a dark picture, dark ones for a light one. */
+export type PairVariant = 'light' | 'dark';
+export const PAIR_VARIANTS: Record<PairVariant, Pick<TextStyle, 'color' | 'shadow' | 'shadowColor'>> = {
+  light: { color: '#ffffff', shadow: true },
+  dark: { color: '#141414', shadow: true, shadowColor: '#ffffff' },
+};
+
+/** WCAG relative luminance of a `#rrggbb` colour. */
+export function luminance(hex: string): number {
+  const n = parseInt(hex.slice(1, 7), 16);
+  const lin = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+}
+const contrast = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+
+/**
+ * The variant for a picture whose band under the text has mean luminance `mean` and spread `spread` (its standard
+ * deviation): the one that stands out more from the mean. `plate`: neither stands out enough, or the picture is too busy
+ * for bare letters, so a box under the text is offered (one tap, never put on by itself). The thresholds are an ОЦЕНКА:
+ * bare letters of these faces fail the ?styles busy mosaic in both variants, and the sample's sunrise, whose sun band
+ * (spread 0.225) swallows a pair's support, must get the offer; a calm sky or a wall (spread ~0.02–0.05) must not.
+ */
+export function pickVariant(tone: { mean: number; spread: number } | null): { variant: PairVariant; plate: boolean } {
+  if (!tone) return { variant: 'light', plate: false };
+  const light = contrast(luminance(PAIR_VARIANTS.light.color), tone.mean), dark = contrast(luminance(PAIR_VARIANTS.dark.color), tone.mean);
+  return { variant: dark > light ? 'dark' : 'light', plate: Math.max(light, dark) < 4.5 || tone.spread > 0.15 };
+}
+
+/** The box offered under a pair the picture would swallow: the opposite of its letters, half seen through. */
+export function pairPlate(variant: PairVariant): NonNullable<TextStyle['background']> {
+  return { color: variant === 'light' ? '#000000' : '#ffffff', opacity: 0.7, padding: 0.45, radius: 0.35 };
+}
+
+/**
+ * The text style of `pair` over `current`: its faces and looks, its letters in `variant`; the size, alignment and box
+ * stay the person's.
+ */
+export function pairStyle(pair: FontPair, current: TextStyle, variant: PairVariant = 'light'): TextStyle {
+  const s: TextStyle = { ...current, ...PAIR_VARIANTS[variant], font: pair.base.font, weight: pair.base.weight, italic: false, lines: [{ ...pair.accent }, { ...pair.support }] };
+  if (!PAIR_VARIANTS[variant].shadowColor) delete s.shadowColor;
   delete s.uppercase;
   delete s.letterSpacing;
+  delete s.gradient;
+  delete s.copies;
   return s;
 }
 
