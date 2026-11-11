@@ -3554,6 +3554,16 @@ test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a 
   const { unzipSync, zipSync, strFromU8, strToU8 } = await import('fflate');
   const { randomBytes } = await import('node:crypto');
   page.on('dialog', (d) => void (d.type() === 'prompt' ? d.accept('Mine') : d.accept()));
+  // Every restore note as it is shown: on a loaded machine the editor opened after the note had gone, and the count
+  // read 0 (a red on Chromium that had nothing to do with the restore; same on a build before any change).
+  await page.addInitScript(() => {
+    const w = window as unknown as { __notes: string[] };
+    w.__notes = [];
+    new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => {
+      const text = el.textContent ?? '';
+      if (/could not be restored/.test(text) && !w.__notes.includes(text)) w.__notes.push(text);
+    })).observe(document, { subtree: true, childList: true, characterData: true });
+  });
   await page.goto('./');
   await page.getByRole('button', { name: 'Try a sample' }).click();
   await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
@@ -3607,14 +3617,18 @@ test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a 
     // So is the last restore's note: after a fast export it is still up and would be read as this one's (WebKit, v1.6).
     await expect(page.locator('.toast').filter({ hasText: 'could not be restored' })).toHaveCount(0, { timeout: 20_000 });
     await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+    await page.evaluate(() => (window as unknown as { __notes: string[] }).__notes.splice(0));
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Restore backup' }).click();
     await (await chooser).setFiles(file);
     const opened = page.locator('.preview-canvas'), refused = page.locator('.toast.error');
     await expect(opened.or(refused).first()).toBeVisible({ timeout: 60_000 });
     if (await opened.isVisible()) {
-      const note = page.locator('.toast').filter({ hasText: 'could not be restored' });
-      const left = (await note.count()) ? ` (${await note.first().textContent()})` : '';
+      const notes = () => page.evaluate(() => (window as unknown as { __notes: string[] }).__notes);
+      // The note comes with the restore; when one is expected, it is waited for (it may come a moment after the editor).
+      if (leftOut) await expect.poll(async () => (await notes()).length, { timeout: 10_000 }).toBeGreaterThan(0).catch(() => undefined);
+      const said = (await notes())[0];
+      const left = said ? ` (${said})` : '';
       expect.soft(Number(left.match(/(\d+)\)$/)?.[1] ?? 0), `${what}: parts said to be left out`).toBe(leftOut);
       await page.waitForTimeout(1500); // let it render the first frame
       const clips = await page.locator('.tl-row .clip').count();
