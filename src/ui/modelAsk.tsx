@@ -2,9 +2,11 @@
 // without a word. Now the person sees how much comes and says yes or "not now", in the sheet they are in. A model
 // this device already keeps brings no question: one tap, as before.
 import { useEffect, useRef, useState } from 'react';
+import { Smartphone } from 'lucide-react';
 import type { ModelDownload } from '../engine/captions';
 import { t } from '../lib/i18n';
 import { track } from '../lib/telemetry';
+import { Button } from './ck/controls';
 
 /**
  * The browser says the network is a mobile one, or that the person asked to save data (Chromium on Android; Safari
@@ -51,14 +53,16 @@ export function ModelAsk({ d, yes, onAnswer }: { d: ModelDownload; yes: string; 
   // from its first word.
   useEffect(() => { ref.current?.closest('.sheet-body')?.scrollTo(0, 0); }, []);
   return (
-    <div ref={ref} className="model-ask" role="group" aria-label={t('Speech model download')}>
-      <p>
+    <div ref={ref} className="model-ask ck-work ck-ask" role="group" aria-label={t('Speech model download')}>
+      <p className="ck-work-label">
         {d.why && `${t(WHY[d.why])} `}
         {t('{mb} MB will be downloaded once; after that captions work offline.', { mb: d.mb })}
       </p>
-      {onMobileData() && <p className="model-ask-data">{t('You are on mobile data now.')}</p>}
-      <button className="btn primary big" onClick={() => onAnswer(true)}>{yes}</button>
-      <button className="btn" onClick={() => onAnswer(false)}>{t('Not now')}</button>
+      {onMobileData() && <p className="model-ask-data ck-alert"><Smartphone aria-hidden /><span>{t('You are on mobile data now.')}</span></p>}
+      <div className="ck-work-actions" data-stack>
+        <Button variant="primary" size="large" onClick={() => onAnswer(true)}>{yes}</Button>
+        <Button variant="plain" onClick={() => onAnswer(false)}>{t('Not now')}</Button>
+      </div>
     </div>
   );
 }

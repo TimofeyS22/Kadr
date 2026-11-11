@@ -124,7 +124,8 @@ test.describe('Instagram on an iPhone', () => {
     await expect(box).toBeVisible();
     await expect(box).toContainText('This is the built-in browser of Instagram: it cannot save videos. Open Kadr in Safari.');
     await expect(sheet.getByRole('button', { name: 'Export video' })).toBeVisible();
-    await expect(sheet.locator('.progress')).toHaveCount(0);
+    await expect(sheet.getByRole('progressbar')).toHaveCount(0);
+    await expect(sheet.locator('.ck-primary'), 'one white button: the way out, not a file that cannot be saved here').toHaveText('Copy link');
     await expect(box.getByRole('button', { name: 'Got it' }), 'the warning in the sheet cannot be waved away').toHaveCount(0);
     await fitsPhone(page, box);
     await box.getByRole('button', { name: 'Copy link' }).click();

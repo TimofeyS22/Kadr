@@ -4,7 +4,9 @@
 // does not shows an error page instead of Kadr.
 import { useEffect, useRef, useState } from 'react';
 import { IN_APP } from '../lib/device';
+import { Check, Copy, Globe } from 'lucide-react';
 import { t } from '../lib/i18n';
+import { Button } from './ck/controls';
 import { track } from '../lib/telemetry';
 
 const SEEN_KEY = 'kadr.inAppNotice';
@@ -47,16 +49,17 @@ export function InAppNotice({ onDismiss }: { onDismiss?: () => void }) {
     try { await navigator.clipboard.writeText(link); setCopied(true); } catch { setManual(true); }
   };
   return (
-    <div className="banner in-app" role="note">
+    <div className="banner in-app ck-note" role="note">
+      <Globe aria-hidden />
       <p>
         {IN_APP.app ? t('This is the built-in browser of {app}: it cannot save videos.', { app: IN_APP.app }) : t('This is an app’s built-in browser: it cannot save videos.')}
         {' '}{IN_APP.browser === 'Safari' ? t('Open Kadr in Safari.') : IN_APP.browser === 'Chrome' ? t('Open Kadr in Chrome.') : t('Open Kadr in your browser.')}
       </p>
-      {manual && <input ref={field} className="in-app-link" readOnly value={link} aria-label={t('Link to Kadr')} onFocus={(e) => e.currentTarget.setSelectionRange(0, link.length)} />}
-      {manual && !copied && <p className="hint">{t('Press and hold the link to copy it.')}</p>}
-      <div className="in-app-actions">
-        <button className="btn primary" aria-live="polite" onClick={() => void copy()}>{copied ? t('Link copied') : t('Copy link')}</button>
-        {onDismiss && <button className="btn" onClick={onDismiss}>{t('Got it')}</button>}
+      {manual && <input ref={field} className="in-app-link ck-input" readOnly value={link} aria-label={t('Link to Kadr')} onFocus={(e) => e.currentTarget.setSelectionRange(0, link.length)} />}
+      {manual && !copied && <p className="ck-hint">{t('Press and hold the link to copy it.')}</p>}
+      <div className="ck-note-actions">
+        <Button variant="primary" icon={copied ? <Check aria-hidden /> : <Copy aria-hidden />} aria-live="polite" onClick={() => void copy()}>{copied ? t('Link copied') : t('Copy link')}</Button>
+        {onDismiss && <Button variant="plain" onClick={onDismiss}>{t('Got it')}</Button>}
       </div>
     </div>
   );

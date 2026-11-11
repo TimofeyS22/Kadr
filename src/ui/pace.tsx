@@ -46,14 +46,16 @@ export const speechStage = (phase: 'download' | 'prepare' | 'listen' | 'transcri
 /** The bar itself: redrawn every frame from the pace, without re-rendering the sheet around it. */
 export function PaceBar({ pace }: { pace: MutableRefObject<Pace | null> }) {
   const bar = useRef<HTMLDivElement>(null);
-  const fill = useRef<HTMLDivElement>(null);
+  const rest = useRef<HTMLElement>(null);
+  const now = useRef<HTMLElement>(null);
   useEffect(() => {
     let raf = 0;
     const draw = () => {
       const p = pace.current;
-      if (p && fill.current && bar.current) {
+      if (p && rest.current && bar.current) {
         const v = paceAt(p, performance.now());
-        fill.current.style.width = `${(v * 100).toFixed(2)}%`;
+        rest.current.style.transform = `scaleX(${(1 - v).toFixed(4)})`;
+        if (now.current) now.current.style.transform = `translateX(${((v - 1) * 100).toFixed(2)}%)`;
         bar.current.setAttribute('aria-valuenow', v.toFixed(4));
       }
       raf = requestAnimationFrame(draw);
@@ -62,8 +64,12 @@ export function PaceBar({ pace }: { pace: MutableRefObject<Pace | null> }) {
     return () => cancelAnimationFrame(raf);
   }, [pace]);
   return (
-    <div ref={bar} className="progress" role="progressbar" aria-label={t('Progress')} aria-valuemin={0} aria-valuemax={1}>
-      <div ref={fill} style={{ width: 0 }} />
+    // The system's progress (DESIGN.md, Progress): the work between two marks, as far as it is done. Its rest is moved
+    // every frame here, so its own easing is off.
+    <div ref={bar} className="progress ck-progress ck-held ck-pace" data-going role="progressbar" aria-label={t('Progress')} aria-valuemin={0} aria-valuemax={1}>
+      <div className="ck-progress-film" />
+      <i ref={rest} className="ck-progress-rest" />
+      <i ref={now} className="ck-progress-now" style={{ transform: 'translateX(-100%)' }} />
     </div>
   );
 }

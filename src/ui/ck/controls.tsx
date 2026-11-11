@@ -111,13 +111,19 @@ interface ProgressProps {
   /** What lies between the marks and comes out of the dark as the work goes: frames of the film. Without it, a plain bar. */
   children?: ReactNode;
 }
-/** Honest progress: the work lies between two marks and shows as far as it is done. */
+/**
+ * Honest progress: the work lies between two marks and shows as far as it is done. While it goes, the second mark is
+ * the signal one at the edge of what is done — «now», as on the Scale; done, both marks are white: it is held.
+ */
 export function Progress({ label, value, children }: ProgressProps) {
   const done = Math.min(1, Math.max(0, value));
   return (
-    <div className="ck-progress ck-held" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(done * 100)}>
+    <div className="ck-progress ck-held" data-going={done < 1 || undefined} role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(done * 100)}>
       <div className="ck-progress-film">{children}</div>
       <i className="ck-progress-rest" style={{ transform: `scaleX(${1 - done})` }} />
+      {/* Its mark stands at its right edge and the box comes in from the left: nothing ever reaches past the end, where
+          it would make the page scroll sideways (the gallery's own check). */}
+      <i className="ck-progress-now" style={{ transform: `translateX(${(done - 1) * 100}%)` }} />
     </div>
   );
 }

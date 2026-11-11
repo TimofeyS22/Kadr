@@ -142,6 +142,11 @@
 .ck-progress { height: var(--touch); }
 .ck-progress-film { position: absolute; inset: 0; display: flex; overflow: hidden; background: var(--mark-was); }
 .ck-progress-rest { position: absolute; inset: 0; background: var(--surface-panel); opacity: 0.86; transform-origin: 100% 50%; transition: transform var(--dur-undo) linear; }
+/* While it goes, «now» is the signal mark at the edge of what is done, and the white end mark waits until it is held. */
+.ck-progress-now { position: absolute; inset: calc(-1 * var(--mark-overhang)) 0; z-index: var(--z-mark); pointer-events: none; transition: transform var(--dur-undo) linear; }
+.ck-progress-now::before { content: ''; position: absolute; top: 0; bottom: 0; right: calc(var(--mark-width) / -2); width: var(--mark-width); background: var(--signal); }
+.ck-progress:not([data-going]) .ck-progress-now, .ck-progress[data-going]::after { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) { .ck-progress-rest, .ck-progress-now { transition: none; } }
 
 /* ---- a choice of one: segments for words, tiles for looks. What is chosen has a white ring or lies between two marks ---- */
 .ck-btn:focus-visible, .ck-choice-item:focus-visible, .ck-tile:focus-visible, .ck-play:focus-visible, .ck-join:focus-visible, .ck-toast-action:focus-visible,
@@ -306,3 +311,22 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
 .ck-guide { position: absolute; background: var(--mark-was); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); }
 .ck-guide.ck-v { left: 50%; top: 0; bottom: 0; width: var(--hairline); }
 .ck-guide.ck-h { top: 50%; left: 0; right: 0; height: var(--hairline); }
+
+/* ---- a note the person must read before making something here (a built-in browser cannot save a file): a sunk plate
+   with a sign, the words and what to do. Not a banner over the screen (DESIGN.md §2.7) ---- */
+.ck-note {
+  display: grid; grid-template-columns: 20px 1fr; gap: var(--space-2) var(--space-3); align-items: start;
+  padding: var(--space-3); border-radius: var(--radius-control); background: var(--surface-panel); color: var(--text-primary);
+  font-size: var(--type-sm); line-height: var(--leading-text);
+}
+.ck-note > svg { width: 20px; height: 20px; margin-top: var(--hairline); }
+.ck-note > p { margin: 0; text-wrap: pretty; }
+.ck-note > :not(svg) { grid-column: 2; }
+.ck-note-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* ---- what support needs about an error, kept on the device: the text, and a button that copies it ---- */
+.ck-details { display: grid; gap: var(--space-2); justify-items: start; }
+.ck-details pre {
+  box-sizing: border-box; width: 100%; margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-control);
+  background: var(--surface-field); color: var(--text-secondary); font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: var(--type-xs); white-space: pre-wrap; overflow-wrap: anywhere;
+}

@@ -5,6 +5,8 @@ import type { ProjectSettings } from '../core/types';
 
 export type Resolution = 720 | 1080 | 1440 | 2160;
 export const MAX_GIF_S = 30;
+/** A GIF's frame rate: smooth enough to read as motion, small enough to share. */
+export const GIF_FPS = 12;
 const GIF_SIDE = 480;
 
 const even = (x: number) => Math.max(2, Math.round(x / 2) * 2);

@@ -31,7 +31,6 @@ import { FontPicker } from './FontPicker';
 import { TextLook } from './TextLook';
 import { useHoldUpdates } from '../lib/update';
 import { Button } from './ck/controls';
-import { useDrawnOnFrame } from './lookTiles';
 
 // ---------- Crop ----------
 
@@ -226,11 +225,11 @@ const MOTION_LABELS: Record<CaptionMotion, string> = { none: 'None', pop: 'Pop',
 
 /** Caption look: the template catalog (v1.5: categories, live previews) and layout chips. Shared by "create" and "edit". */
 function CaptionLook({ layout, preset, onLayout, onPreset }: { layout: CaptionLayout; preset: string | null; onLayout: (l: CaptionLayout) => void; onPreset: (id: string) => void }) {
-  const draw = useDrawnOnFrame(drawCaptionTile, undefined, 0.8); // on the person's frame where captions stand, not a grey stand-in
+  const draw = drawCaptionTile; // on the black of the stage, as the text styles and fonts (docs/18; the owner, 2026-11-11)
   return (
     <>
       <h3>{t('Style')}</h3>
-      <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={preset} onChange={onPreset} label={t('Style')} draw={draw} animated />
+      <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={preset} onChange={onPreset} label={t('Style')} draw={draw} animated ground="stage" />
       <h3>{t('Layout')}</h3>
       <Chips options={CAPTION_LAYOUTS} value={layout} onChange={onLayout} render={(l) => t(LAYOUT_LABELS[l])} />
     </>
@@ -337,11 +336,13 @@ export function CaptionsBody() {
   if (asked) return <ModelAsk d={asked} yes={t('Download and make captions')} onAnswer={answer} />;
   if (progress) {
     return (
-      <div className="export-progress">
+      <div className="export-progress ck-work">
         <PaceBar pace={pace} />
-        <p>{progress}</p>
-        <Button onClick={() => abort.current?.abort()}>{t('Settings')}</Button>
-        <Button onClick={() => { abort.current?.abort(); editor().openSheet(null); }}>{t('Cancel')}</Button>
+        <p className="ck-work-label">{progress}</p>
+        <div className="ck-work-actions" data-pair>
+          <Button onClick={() => abort.current?.abort()}>{t('Settings')}</Button>
+          <Button onClick={() => { abort.current?.abort(); editor().openSheet(null); }}>{t('Cancel')}</Button>
+        </div>
       </div>
     );
   }

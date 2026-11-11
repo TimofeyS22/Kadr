@@ -37,7 +37,7 @@
 .ck-panel-body > * { min-width: 0; }
 /* A part of a sheet is named in small strong words, never under 12 px (audit P3-9). */
 .ck-panel-body h3 { margin: var(--space-2) 0 calc(-1 * var(--space-1)); font-size: var(--type-xs); font-weight: var(--weight-strong); letter-spacing: 0.02em; color: var(--text-secondary); }
-.ck-hint { margin: 0; font-size: var(--type-sm); line-height: var(--leading-text); color: var(--text-secondary); }
+.ck-hint { margin: 0; font-size: var(--type-sm); line-height: var(--leading-text); color: var(--text-secondary); text-wrap: pretty; }
 .ck-hint[data-lead] { color: var(--text-primary); }
 /* An action of a sheet stands at its start; the one main action of the sheet is white and takes the whole width. */
 .ck-panel-body > .ck-btn { justify-self: start; max-width: 100%; }
@@ -167,13 +167,24 @@
 .ck-ptile[aria-checked='true'] .ck-ptile-art canvas { outline: 2px solid var(--mark-was); outline-offset: 2px; }
 .ck-ptile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: var(--leading-tight); }
 .ck-ptile:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
-/* Fonts: each one shows itself, its own letters right on the sheet, in groups like the styles. */
-.ck-strip[data-kind='font'] .ck-strip-group { grid-auto-columns: 80px; }
-.ck-strip[data-kind='font'] .ck-ptile { width: 80px; }
-.ck-strip[data-kind='font'] .ck-ptile-art { height: 52px; display: grid; place-items: center; color: var(--text-primary); }
-.ck-font-letters { font-size: var(--type-xl); line-height: 1; white-space: nowrap; }
-/* The chosen font: its letters on a sunk ground in a white ring, as every chosen option of a sheet. */
-.ck-strip[data-kind='font'] .ck-ptile[aria-checked='true'] .ck-ptile-art { border-radius: var(--radius-control); background: var(--surface-panel); box-shadow: inset 0 0 0 2px var(--mark-was); }
+/* Fonts (docs/18; the owner, 2026-11-11: «серая обложка за шрифтами выглядит ужасно старо»): the person's word in white
+   on the black of the stage round the frame, drawn by the video's renderer (ui/tiles.ts, fontTile). Columns of 96 leave
+   the edge of a fourth in view at 375 px: the strip reads as one that runs on. */
+.ck-strip[data-ground='stage'] .ck-strip-group { grid-auto-columns: 96px; column-gap: var(--space-3); }
+.ck-strip[data-ground='stage'] .ck-ptile { width: 96px; }
+.ck-strip[data-ground='stage'] .ck-ptile-art {
+  border-radius: var(--radius-clip); background: var(--surface-field);
+  outline: var(--hairline) solid var(--image-outline); outline-offset: calc(-1 * var(--hairline));
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.ck-strip[data-ground='stage'] .ck-ptile:active .ck-ptile-art { transform: scale(0.96); }
+/* The letters come in once their face is in, never in a fallback face; the ring is on the tile, so it shows at once. */
+.ck-strip[data-ground='stage'] .ck-ptile-art canvas { outline: none; opacity: 0; transition: opacity var(--dur-press) var(--ease-soft); }
+.ck-strip[data-ground='stage'] .ck-ptile-art canvas[data-ready] { opacity: 1; }
+/* The chosen font: a white ring with a gap, as every chosen thing of a sheet. */
+.ck-strip[data-ground='stage'] .ck-ptile[aria-checked='true'] .ck-ptile-art { outline: 2px solid var(--mark-was); outline-offset: 2px; }
+.ck-strip[data-ground='stage'] .ck-ptile[aria-checked='true'] .ck-ptile-art canvas { outline: none; }
+@media (prefers-reduced-motion: reduce) { .ck-strip[data-ground='stage'] .ck-ptile:active .ck-ptile-art { transform: none; } }
 
 /* The heading of a part with its own action at the end (a font of one's own). */
 .ck-panel-part { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-1); margin-bottom: calc(-1 * var(--space-2)); }
@@ -202,3 +213,64 @@ textarea.ck-panel-text, textarea.ck-panel-script { resize: none; background: var
     border-radius: var(--radius-sheet); box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle);
   }
 }
+
+/* ---- the sheet's one action, held at its bottom with what it will make: seen without scrolling (release 6: «Экспорт
+   видео» was two screens of settings down) ---- */
+.ck-panel-foot {
+  position: sticky; bottom: calc(-1 * var(--space-4)); z-index: var(--z-mark); display: grid; margin: auto calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+  padding: var(--space-2) var(--space-4) var(--space-4); background: var(--surface-raised);
+}
+/* What scrolls under it fades out rather than being cut by a line through its words. */
+.ck-panel-foot::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--space-6); background: linear-gradient(transparent, var(--surface-raised)); pointer-events: none; }
+.ck-panel-foot .ck-btn-label { display: grid; gap: var(--hairline); }
+.ck-btn-sub { font-size: var(--type-xs); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
+/* A sheet with a held action, or a question to answer, keeps them at its bottom in the thumb's reach: the sheet does not
+   shrink while open, and the button stood wherever the content ended (the art director, release 6). */
+.ck-panel-body:has(> .ck-panel-foot), .ck-panel-body:has(> .ck-ask) { display: flex; flex-direction: column; }
+.ck-panel-body:has(> .ck-panel-foot) > *, .ck-panel-body:has(> .ck-ask) > * { flex: none; }
+.ck-panel-body > .ck-ask { flex: 1 0 auto; display: flex; flex-direction: column; }
+.ck-ask > .ck-work-actions { margin-top: auto; }
+
+/* ---- what went wrong or cannot be: a sign and words on a sunk plate, never a colour (DESIGN.md §2.3) ---- */
+.ck-alert { display: flex; gap: var(--space-2); margin: 0; padding: var(--space-3); border-radius: var(--radius-control); background: var(--surface-panel); font-size: var(--type-sm); line-height: var(--leading-text); color: var(--text-primary); overflow-wrap: anywhere; text-wrap: pretty; }
+.ck-alert svg { flex: none; width: 20px; height: 20px; }
+.ck-more summary { display: flex; align-items: center; gap: var(--space-2); min-height: var(--touch); font-size: var(--type-sm); font-weight: var(--weight-medium); cursor: pointer; list-style: none; }
+.ck-more summary::-webkit-details-marker { display: none; }
+/* A chevron says it opens, and which way it is. */
+.ck-more summary::after { content: ''; width: 8px; height: 8px; border-right: 2px solid; border-bottom: 2px solid; transform: translateY(-2px) rotate(45deg); transition: transform var(--dur-press) var(--ease-out); }
+.ck-more[open] summary::after { transform: translateY(2px) rotate(225deg); }
+.ck-more summary:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+
+/* ---- work in a sheet: an export, captions, a reel. The work lies between two marks and shows as far as it is done;
+   an export's is a film of the file's own frames, painted as the encoder gets them (DESIGN.md, Progress) ---- */
+.ck-work { display: grid; gap: var(--space-3); padding-top: var(--space-2); }
+.ck-work .ck-progress { height: var(--space-3); margin-inline: var(--space-1); }
+.ck-work[data-film] .ck-progress { height: 64px; margin-block: var(--space-2); }
+.ck-work-frame { flex: 1 1 0; min-width: 0; height: 100%; background: var(--surface-field); }
+/* Frames apart, as on film; what is not made yet is closed, not a ghost of a frame painted ahead of the curtain. */
+.ck-work[data-film] .ck-progress-film { gap: calc(var(--space-1) / 2); background: var(--surface-field); }
+.ck-work[data-film] .ck-progress-rest { opacity: 1; background: var(--surface-field); }
+.ck-work-status {
+  display: grid; grid-template-columns: max-content 1fr; grid-template-areas: 'pct left' 'pct keep'; align-items: end;
+  column-gap: var(--space-3); font-size: var(--type-sm); line-height: var(--leading-text);
+}
+/* «51% — не закрывайте экран» is one paragraph for a reader and for the tests; for the eye its parts take their places. */
+.ck-work-now { display: contents; }
+.ck-work-pct { grid-area: pct; font-size: var(--type-display); font-variant-numeric: tabular-nums; }
+.ck-work-pct small { font-size: var(--type-xl); }
+.ck-work-now > span:last-child { grid-area: keep; align-self: start; color: var(--text-secondary); }
+.ck-work-left { grid-area: left; margin: 0; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.ck-work-left[data-wait] { color: var(--text-secondary); }
+.ck-work-ready { margin: 0; font-size: var(--type-lg); font-weight: var(--weight-strong); line-height: var(--leading-tight); font-variant-numeric: tabular-nums; }
+.ck-work-saved { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--type-sm); color: var(--text-primary); }
+.ck-work-saved svg { flex: none; width: 20px; height: 20px; }
+.ck-work-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.ck-work-actions[data-stack] { display: grid; }
+/* Two ways out of running work, side by side and equal: neither looks switched off. */
+.ck-work-actions[data-pair] { display: grid; grid-template-columns: 1fr 1fr; }
+/* What the work is doing now («Слушаю речь…»), and its result in a list. */
+.ck-work-label { margin: 0; font-size: var(--type-sm); line-height: var(--leading-text); color: var(--text-primary); overflow-wrap: anywhere; text-wrap: pretty; }
+.ck-switch-note { display: block; margin-top: var(--hairline); font-size: var(--type-sm); font-weight: var(--weight-regular); color: var(--text-secondary); text-wrap: pretty; }
+.ck-pace .ck-progress-rest, .ck-pace .ck-progress-now { transition: none; }
+.ck-work-list { display: grid; gap: var(--space-2); margin: 0; padding-left: var(--space-4); font-size: var(--type-sm); line-height: var(--leading-text); }
+.ck-work-field { display: grid; gap: var(--space-2); font-size: var(--type-xs); font-weight: var(--weight-strong); color: var(--text-secondary); }

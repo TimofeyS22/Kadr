@@ -222,10 +222,11 @@ export function Chips<T extends string | number>({ options, value, onChange, ren
   );
 }
 
-export function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+/** `note`: a second, quieter line that says what the switch does, so its name stays a name and not a sentence. */
+export function Toggle({ label, value, onChange, note }: { label: string; value: boolean; onChange: (v: boolean) => void; note?: string }) {
   return (
     <label className="ck-switch-row">
-      <span>{t(label)}</span>
+      <span>{t(label)}{note && <small className="ck-switch-note">{note}</small>}</span>
       <span className="ck-switch"><input type="checkbox" role="switch" checked={value} onChange={(e) => onChange(e.target.checked)} /><i aria-hidden="true" /></span>
     </label>
   );

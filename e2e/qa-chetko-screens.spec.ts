@@ -576,14 +576,24 @@ test('sheets: fonts show themselves in their own letters, text styles are drawn 
   await sampleEditor(page);
   await page.locator('.tl-row .clip-text').first().click();
   await openTool(page, 'Текст');
-  // Fonts: a strip of tiles, each in its own face (it had collapsed to nothing under «Шрифт»).
+  // Fonts: a strip of tiles, each the person's own word in its own face, white on the black of the stage (docs/18; the
+  // owner, 2026-11-11: «серая обложка за шрифтами выглядит ужасно старо»). It had collapsed to nothing under «Шрифт».
   const fonts = panel(page).getByRole('radiogroup', { name: 'Шрифт' });
   expect((await fonts.boundingBox())!.height).toBeGreaterThan(100);
-  const faces = await fonts.locator('.ck-font-letters').evaluateAll((els) => els.slice(0, 6).map((e) => getComputedStyle(e).fontFamily));
-  expect(new Set(faces).size, 'each tile is drawn in its own font').toBe(faces.length);
-  // The chosen font is ringed in white, not held between two marks: round letters with no picture they read as sticks.
+  await expect.poll(() => fonts.locator('canvas[data-ready]').count(), { message: 'the first tiles drawn once their faces are in' }).toBeGreaterThanOrEqual(6);
+  const drawn = await fonts.locator('canvas[data-ready]').evaluateAll((els) => (els as HTMLCanvasElement[]).slice(0, 6).map((c) => {
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    let ink = 0, sum = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 128) { ink++; sum = (sum * 31 + i) % 1_000_003; }
+    return `${ink}:${sum}`;
+  }));
+  expect(new Set(drawn).size, 'each tile is drawn in its own font').toBe(drawn.length);
+  expect(drawn.every((h) => Number(h.split(':')[0]) > 200), 'letters, not an empty tile').toBe(true);
+  const chosen = fonts.locator('[aria-checked="true"] .ck-ptile-art');
+  expect(await chosen.evaluate((a) => getComputedStyle(a).backgroundColor), 'the black of the stage, not a grey ground').toBe('rgb(0, 0, 0)');
+  // The chosen font is ringed in white with a gap, as every chosen thing of a sheet, not held between two marks.
   await expect(fonts.locator('.ck-held')).toHaveCount(0);
-  expect(await fonts.locator('[aria-checked="true"] .ck-ptile-art').evaluate((a) => getComputedStyle(a).boxShadow)).toMatch(/0px 0px 0px 2px inset|inset 0px 0px 0px 2px/);
+  expect(await chosen.evaluate((a) => { const s = getComputedStyle(a); return [s.outlineWidth, s.outlineOffset, s.outlineStyle]; })).toEqual(['2px', '2px', 'solid']);
   await expect(panel(page).getByRole('button', { name: 'Добавить шрифт' })).toBeVisible();
   // The weight: one even row, no word cut.
   const cut = await panel(page).getByRole('radiogroup', { name: 'Начертание' }).locator('.ck-chip').evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
@@ -596,4 +606,132 @@ test('sheets: fonts show themselves in their own letters, text styles are drawn 
   // No grey line around an option that is not chosen.
   const lined = await panel(page).locator('.ck-chip[aria-checked="false"], .ck-panel-body .ck-quiet').evaluateAll((els) => els.filter((e) => getComputedStyle(e).boxShadow !== 'none').length);
   expect(lined).toBe(0);
+});
+
+// ---- release 6: export, and the work in sheets ----
+/** How many of the film's pictures are painted (a canvas with anything on it). */
+const painted = (page: Page) => page.locator('.sheet .ck-work-frame').evaluateAll((cs) => (cs as HTMLCanvasElement[]).filter((c) => {
+  if (!c.width || !c.height) return false;
+  const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+  for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+  return false;
+}).length);
+
+test('export: the file\'s own frames come out between two marks as far as it is made; a large percent, the time left, what is made; the film stays when the file is ready', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  const iphone = info.project.name.startsWith('iphone'); // an iPhone saves to Photos only through the share sheet
+  await editorWithVideo(page);
+  // While the export runs, every 100 ms: how far it is and how many pictures the film has.
+  const samples = page.evaluate(() => new Promise<[number, number][]>((res) => {
+    const out: [number, number][] = [];
+    const id = setInterval(() => {
+      const bar = document.querySelector('.sheet .ck-work [role=progressbar]');
+      if (bar) {
+        const n = [...document.querySelectorAll<HTMLCanvasElement>('.sheet .ck-work-frame')].filter((c) => {
+          if (!c.width) return false;
+          const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+          for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+          return false;
+        }).length;
+        out.push([Number(bar.getAttribute('aria-valuenow')), n]);
+      }
+      if (document.querySelector('.sheet .ck-work-ready')) { clearInterval(id); res(out); }
+    }, 100);
+  }));
+  await page.getByRole('button', { name: 'Экспорт' }).first().click(); // quick export: it starts at once
+  const work = panel(page).locator('.ck-work');
+  await expect(work.getByRole('progressbar', { name: 'Экспорт' })).toBeVisible();
+  await expect(work.locator('.ck-work-frame')).toHaveCount(8);
+  await expect(work.locator('.ck-work-now')).toHaveText(/^\d+% — не закрывайте экран$/);
+  // While it goes, «now» is the signal mark at the edge of what is done; the white end mark waits.
+  const marks = () => work.locator('.ck-progress').evaluate((el) => [getComputedStyle(el.querySelector('.ck-progress-now')!).visibility, getComputedStyle(el, '::after').visibility]);
+  expect(await marks()).toEqual(['visible', 'hidden']);
+  expect(await work.locator('.ck-work-pct').evaluate((el) => parseFloat(getComputedStyle(el).fontSize)), 'the percent is the display size').toBe(56);
+  await expect(work.locator('.ck-hint').first()).toHaveText(/^Видео · \d+×\d+ · \d+(,\d)? с · \d+ к\/с · около \d+ МБ$/);
+  // Measured in one go: a short export may be done between two looks, and its buttons are others then.
+  for (const h of await work.getByRole('button').evaluateAll((bs) => bs.map((x) => x.getBoundingClientRect().height))) expect(h).toBeGreaterThanOrEqual(44);
+  const seen = await samples;
+  expect(seen.length, 'the export was watched while it ran').toBeGreaterThan(3);
+  // A picture is there only once the file has reached its part of the film. It is painted as the frame is drawn and the
+  // number follows at the next render, so the film may be a few frames ahead of the percent (behind the curtain).
+  for (const [pct, n] of seen) expect(n, `${n} pictures at ${pct}%`).toBeLessThanOrEqual(Math.floor(((pct + 3) / 100) * 8) + 1);
+  // Ready: the whole film, the facts of the file, «Файл готов» with a decimal comma.
+  await expect(work.locator('.ck-work-ready')).toHaveText(/^Файл готов: \d+(,\d)? МБ за \d+(,\d)? с$/);
+  await expect(work.locator('.ck-hint').first()).toHaveText(/^\d+×\d+ · \d+(,\d)? с · (MP4|WEBM)$/);
+  expect(await painted(page)).toBe(8);
+  expect(await marks(), 'done: the film is held between two white marks').toEqual(['hidden', 'visible']);
+  await expect.poll(() => work.locator('.ck-progress-rest').evaluate((el) => el.getBoundingClientRect().width), { message: 'nothing of the film is covered' }).toBeLessThan(1);
+  if (iphone) {
+    expect(await whiteFilled(page), 'one white button: save to Photos').toEqual(['Сохранить']);
+  } else {
+    await expect(work.getByText('Сохранено в «Загрузки».')).toBeVisible();
+    expect(await whiteFilled(page), 'saved already: no white button asks to save it again').toEqual([]);
+  }
+});
+
+for (const height of [812, 667]) {
+  test(`export at 375×${height}: the export button and what it makes are held at the bottom of the sheet, seen without scrolling`, async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false, quality: 'high', evenLoudness: false })));
+    await page.setViewportSize({ width: 375, height });
+    await editorWithVideo(page);
+    await page.getByRole('button', { name: 'Экспорт' }).first().click();
+    const go = panel(page).getByRole('button', { name: 'Экспортировать видео' });
+    await expect(go).toBeEnabled({ timeout: 15_000 });
+    const body = panel(page).locator('.sheet-body');
+    for (const top of [0, 10_000]) {
+      await body.evaluate((b, y) => { b.scrollTop = y; }, top);
+      await page.waitForTimeout(100);
+      const b = (await go.boundingBox())!, sheet = (await panel(page).boundingBox())!;
+      expect(b.y + b.height, `scrolled to ${top}: the button is on screen`).toBeLessThanOrEqual(height);
+      expect(b.y + b.height, 'inside the sheet').toBeLessThanOrEqual(sheet.y + sheet.height);
+      expect(b.height).toBeGreaterThanOrEqual(44);
+      await expect(go.locator('.ck-btn-sub'), 'what it makes is the second line of the button').toHaveText(/^\d+×\d+ · \d+(,\d)? с · \d+ к\/с · около \d+ МБ$/);
+    }
+    const white = await whiteFilled(page);
+    expect(white.length, 'one white button: the export').toBe(1);
+    expect(white[0]).toMatch(/^Экспортировать видео/);
+    // Format, size, rate and quality are even tracks; the ready-made sets one row.
+    for (const name of ['Видео', '720p', '30', 'Высокое']) {
+      expect(await panel(page).getByRole('radio', { name, exact: true }).evaluate((r) => r.closest('.ck-chips')!.hasAttribute('data-even')), name).toBe(true);
+    }
+    // The same place for every format: the button does not move when the sheet holds less.
+    const at = (await go.boundingBox())!.y;
+    await panel(page).getByRole('radio', { name: 'GIF', exact: true }).click();
+    expect((await panel(page).getByRole('button', { name: 'Экспортировать GIF' }).boundingBox())!.y, 'GIF: where the video button was').toBeCloseTo(at, 0);
+  });
+}
+
+test('export: what went wrong is a sign and words on a plate, never red; the details copy for support; back is one tap', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false, quality: 'high', evenLoudness: false })));
+  await editorWithVideo(page);
+  await page.evaluate(() => { AudioEncoder.prototype.encode = function () { throw new Error('this test refused the sound'); }; });
+  await page.getByRole('button', { name: 'Экспорт' }).first().click();
+  await panel(page).getByRole('radio', { name: 'Звук', exact: true }).click();
+  await panel(page).getByRole('button', { name: 'Экспортировать звук' }).click();
+  const alert = panel(page).getByRole('alert');
+  await expect(alert).toContainText('this test refused the sound', { timeout: 30_000 });
+  await expect(alert.locator('svg')).toHaveCount(1);
+  const colours = await alert.evaluate((el) => [getComputedStyle(el).color, getComputedStyle(document.querySelector('.sheet h2')!).color]);
+  expect(colours[0], 'the words are the colour of text, not red').toBe(colours[1]);
+  await panel(page).getByText('Подробнее').click();
+  await expect(panel(page).getByRole('button', { name: 'Скопировать для поддержки' })).toBeVisible();
+  await panel(page).getByRole('button', { name: 'Назад', exact: true }).click();
+  await expect(panel(page).getByRole('button', { name: 'Экспортировать звук' })).toBeVisible();
+});
+
+test('work in sheets: the question before a model download and the progress are the system\'s; no button of the old sheets is left', async ({ page }) => {
+  await editorWithVideo(page);
+  await page.locator('.toolbar .tool-back').click().catch(() => undefined);
+  await tool(page, 'Субтитры').click();
+  const make = panel(page).getByRole('button', { name: 'Создать субтитры' });
+  const ask = panel(page).getByRole('group', { name: 'Загрузка модели речи' });
+  // The sheet may ask at once (the tool starts the captions), or show its settings first.
+  await expect(make.or(ask).first()).toBeVisible();
+  if (!(await ask.isVisible())) await make.click();
+  await expect(ask).toBeVisible();
+  expect(await whiteFilled(page), 'one white button: the yes').toEqual(['Скачать и сделать субтитры']);
+  for (const b of await ask.getByRole('button').all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await expect(panel(page).locator('.btn, .progress:not(.ck-progress)')).toHaveCount(0);
+  await ask.getByRole('button', { name: 'Не сейчас' }).click();
+  await expect(panel(page).getByRole('button', { name: 'Создать субтитры' })).toBeVisible();
 });

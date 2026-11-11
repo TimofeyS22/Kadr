@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Check, CircleAlert, Share } from 'lucide-react';
 import { exportCost, exportDefaults, exportSource, isFast } from '../core/exportDefaults';
 import { projectDuration } from '../core/timeline';
-import type { ExportResult } from '../engine/exporter';
-import { MAX_GIF_S, gifSize, outputSize, supportedResolutions, type Resolution } from '../engine/exportSizes';
+import { roundLeft, timeLeft } from '../core/exportProgress';
+import type { ExportResult, Film } from '../engine/exporter';
+import { GIF_FPS, MAX_GIF_S, gifSize, outputSize, supportedResolutions, type Resolution } from '../engine/exportSizes';
 import { downloadFile, saveFile } from '../engine/save';
 import { exportPrefs, savePrefs } from './exportPrefs';
 import { releaseSpeechModel } from '../engine/captions';
@@ -12,7 +14,8 @@ import { errorMessage, track } from '../lib/telemetry';
 import { keepAwake } from '../lib/wakeLock';
 import { editor, useEditor } from '../state/store';
 import { IOS, prepareStaleSounds, staleSoundClips } from './actions';
-import { Chips, Sheet, Toggle } from './controls';
+import { Chips, Sheet, Toggle, num, secs } from './controls';
+import { Button, Progress } from './ck/controls';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
 import { useSheetGuard } from './controls';
@@ -25,7 +28,13 @@ import { InAppNotice } from './InAppNotice';
 type Format = 'video' | 'photo' | 'gif' | 'audio';
 const FORMATS: Record<Format, string> = { video: 'Video', photo: 'Photo', gif: 'GIF', audio: 'Audio' };
 
-type Phase = { kind: 'setup' } | { kind: 'running'; progress: number; label?: string } | { kind: 'done'; result: ExportResult; quick?: boolean } | { kind: 'error'; message: string; detail: ErrorEntry };
+/** What is being made, for the line under the progress and the facts of the file. */
+interface Made { format: Format; w: number; h: number; fps?: number; mb?: number }
+/** Pictures in the film an export shows while it is made (engine/exporter Film). */
+const FILM = 8;
+
+/** `left`: seconds still to go at the pace so far (core/exportProgress), once that can be said. */
+type Phase = { kind: 'setup' } | { kind: 'running'; progress: number; label?: string; left?: number } | { kind: 'done'; result: ExportResult; quick?: boolean } | { kind: 'error'; message: string; detail: ErrorEntry };
 
 /**
  * Quick export (v1.3, owner's feedback "saving should not take a dance"): on by default, the Export button renders
@@ -83,6 +92,10 @@ export function ExportSheet() {
   const abort = useRef<AbortController | null>(null);
   const done = useRef(false);
   done.current = phase.kind === 'done';
+  const [made, setMade] = useState<Made | null>(null);
+  // The film: the export paints its own frames into these as it goes, and they stay when it is done.
+  const slots = useRef<(HTMLCanvasElement | null)[]>([]);
+  const film = useMemo<Film>(() => ({ frames: FILM, take: (picture, k) => paint(slots.current[k], picture) }), []);
 
   useEffect(() => {
     // The encoder is asked about each size; a browser that never answers gets the sizes every phone encodes.
@@ -111,7 +124,9 @@ export function ExportSheet() {
 
   const duration = projectDuration(project);
   const [w, h] = outputSize(project.settings, resolution);
-  const estMb = (QUALITY_MBPS[resolution] * (quality === 'high' ? 1.5 : 1) * (fps > 30 ? 1.4 : 1) * duration) / 8;
+  /** About how many megabytes a video of this size and rate comes to (the encoder's bitrates, not a promise). */
+  const mbFor = (res: Resolution, rate: number) => (QUALITY_MBPS[res] * (quality === 'high' ? 1.5 : 1) * (rate > 30 ? 1.4 : 1) * duration) / 8;
+  const estMb = mbFor(resolution, fps);
 
   async function run(res: Resolution = resolution, rate = fps, isQuick = false) {
     // The size is remembered only when picked by hand, and forgotten when the pick is the videos' own size: tapping
@@ -123,24 +138,35 @@ export function ExportSheet() {
     abort.current = ac;
     setPhase({ kind: 'running', progress: 0 });
     setSaved(false);
+    const [rw, rh] = outputSize(project.settings, res);
+    setMade(format === 'gif' ? { format, w: gifSize(project.settings)[0], h: gifSize(project.settings)[1], fps: GIF_FPS }
+      : format === 'video' ? { format, w: rw, h: rh, fps: rate, mb: mbFor(res, rate) }
+      : { format, w: format === 'photo' ? w : 0, h: format === 'photo' ? h : 0 });
     // Keep the screen on: a phone going to sleep is the most common way long exports die. Not awaited: a lock that
     // never answers must not hold the export.
     const awake = keepAwake();
     track('export_started', { format, resolution: res, fps: rate, quality, loudness, quick: isQuick, duration: Math.round(duration) });
     releaseSpeechModel(); // an export needs the memory more than a speech model kept for later
     try {
-      let last = 0;
-      // A lower value is an export that started again (the GPU was reset, the encoder fell back to Baseline): shown at once.
-      const progress = (f: number) => { if (f < last || f - last > 0.005 || f === 1) { last = f; setPhase({ kind: 'running', progress: f }); } };
+      let last = 0, since = performance.now();
+      // A lower value is an export that started again (the GPU was reset, the encoder fell back to Baseline): shown at
+      // once, and the time left is measured from there.
+      const progress = (f: number) => {
+        if (f < last) since = performance.now();
+        if (f < last || f - last > 0.005 || f === 1) {
+          last = f;
+          setPhase({ kind: 'running', progress: f, left: timeLeft((performance.now() - since) / 1000, f) ?? undefined });
+        }
+      };
       // Sound with natural pitch (or noise reduction) that is not ready yet is made first, so the file matches the settings.
       const withSound = format === 'video' || format === 'audio';
       const p = withSound && staleSoundClips(project).length ? await prepareStaleSounds((f) => setPhase({ kind: 'running', progress: f, label: t('Preparing the sound…') }), ac.signal) : project;
       if (!p) return;
       const exporter = await import('../engine/exporter');
       const result = format === 'photo' ? await exporter.exportFrame(p, player.time, resolution)
-        : format === 'gif' ? await exporter.exportGif(p, progress, ac.signal)
+        : format === 'gif' ? await exporter.exportGif(p, progress, ac.signal, film)
         : format === 'audio' ? await exporter.exportAudio(p, loudness, progress, ac.signal)
-        : await exporter.exportProject(p, { resolution: res, fps: rate, quality, loudness }, progress, ac.signal);
+        : await exporter.exportProject(p, { resolution: res, fps: rate, quality, loudness }, progress, ac.signal, film);
       setPhase({ kind: 'done', result, quick: isQuick });
       if (isQuick && !IOS) downloadFile(result.blob, result.fileName);
       track('export_completed', { resolution: res, fps: rate, quick: isQuick, seconds: Math.round(result.seconds), mb: Math.round(result.blob.size / 1e6) });
@@ -156,37 +182,86 @@ export function ExportSheet() {
     }
   }
 
+  // In an app's built-in browser the way out is the one white button (copy the link): a file made here cannot be saved.
+  const lead = IN_APP ? 'quiet' : 'primary';
+  const filmed = phase.kind !== 'setup' && phase.kind !== 'error' && (made?.format === 'video' || made?.format === 'gif');
+  const working = phase.kind === 'running' || phase.kind === 'done';
+  const pct = phase.kind === 'running' ? Math.round(phase.progress * 100) : 100;
+  const left = phase.kind === 'running' && phase.left !== undefined ? roundLeft(phase.left) : null;
+  const leftText = left && t('about {t} left', { t: 'min' in left ? t('{n} min', { n: left.min }) : t('{n} s', { n: left.s }) });
+
   return (
     <Sheet title={t('Export')}>
       {(phase.kind === 'setup' || phase.kind === 'done') && <InAppNotice />}
+      {working && (
+        // One container from the first percent to the saved file: the film the export painted stays where it was.
+        <div className="export-progress ck-work" data-film={filmed || undefined}>
+          <Progress label={t('Export')} value={phase.kind === 'running' ? phase.progress : 1}>
+            {filmed && Array.from({ length: FILM }, (_, k) => (
+              <canvas key={k} className="ck-work-frame" aria-hidden ref={(c) => { slots.current[k] = c; }} />
+            ))}
+          </Progress>
+          {phase.kind === 'running' && (
+            <>
+              <div className="ck-work-status">
+                {/* One text for a reader and for the tests: «51% — не закрывайте экран»; the eye gets the number large. */}
+                <p className="ck-work-now"><span className="ck-digit ck-work-pct">{pct}<small>%</small></span><span className="ck-sr"> — </span><span>{t('keep this screen open')}</span></p>
+                {/* There from the first moment, so nothing jumps when the time can be said. */}
+                <p className="ck-work-left" data-wait={!leftText || undefined}>{leftText ?? t('Working out the time left…')}</p>
+              </div>
+              <p className="ck-hint">{phase.label ?? (made && `${t(FORMATS[made.format])} · ${facts(made, duration)}`)}</p>
+              <div className="ck-work-actions" data-pair>
+                <Button onClick={() => abort.current?.abort()}>{t('Settings')}</Button>
+                <Button onClick={() => { abort.current?.abort(); editor().openSheet(null); }}>{t('Cancel')}</Button>
+              </div>
+            </>
+          )}
+          {phase.kind === 'done' && (
+            <>
+              <p className="ck-work-ready">{t('Ready: {mb} MB in {s} s', { mb: num(phase.result.blob.size / 1e6, 1), s: num(phase.result.seconds, 1) })}</p>
+              {made && <p className="ck-hint">{facts(made, duration, phase.result.fileName)}</p>}
+              {phase.result.noSound && <Alert>{t('This browser cannot encode sound, so the file has no sound. Try Chrome or Safari.')}</Alert>}
+              {phase.quick && !IOS && <p className="ck-work-saved"><Check aria-hidden />{t('Saved to Downloads.')}</p>}
+              {phase.quick && IOS && <p className="ck-hint">{t('iPhone saves to Photos through the share sheet: tap Save, then “Save Video”.')}</p>}
+              <div className="ck-work-actions" data-stack>
+                {phase.quick && !IOS
+                  ? <Button icon={<Share aria-hidden />} onClick={() => save(phase.result)}>{t('Share')}</Button>
+                  : <Button variant="primary" size="large" onClick={() => save(phase.result)}>{phase.quick ? t('Save') : t('Save / Share')}</Button>}
+                <Button variant="plain" onClick={() => setPhase({ kind: 'setup' })}>{t('Export again')}</Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       {phase.kind === 'setup' && (
-        <Chips options={Object.keys(FORMATS) as Format[]} value={format} onChange={setFormat} render={(f) => t(FORMATS[f])} />
+        <Chips options={Object.keys(FORMATS) as Format[]} value={format} onChange={setFormat} render={(f) => t(FORMATS[f])} even />
       )}
       {phase.kind === 'setup' && format === 'photo' && (
         <>
           <h3>{t('Resolution')}</h3>
-          {supported && <Chips options={supported} value={resolution} onChange={pickSize} render={(r) => LABEL[r]} />}
-          <p className="hint">{t('The frame at the playhead as a {w}×{h} JPEG.', { w, h })}</p>
-          <button className="btn primary big" disabled={duration <= 0} onClick={() => void run()}>{t('Save photo')}</button>
+          {supported && <Chips options={supported} value={resolution} onChange={pickSize} render={(r) => LABEL[r]} even />}
+          <p className="ck-hint">{t('The frame at the playhead as a {w}×{h} JPEG.', { w, h })}</p>
+          <Foot lead={lead} disabled={duration <= 0} onClick={() => void run()}>{t('Save photo')}</Foot>
         </>
       )}
       {phase.kind === 'setup' && format === 'gif' && (
         <>
-          <p className="hint">{duration > MAX_GIF_S + 0.05
-            ? t('GIF works for videos up to {n} s. Trim the project or export a video.', { n: MAX_GIF_S })
-            : t('{w}×{h}, 12 fps, loops forever. No sound in GIF.', { w: gifSize(project.settings)[0], h: gifSize(project.settings)[1] })}</p>
-          <button className="btn primary big" disabled={duration <= 0 || duration > MAX_GIF_S + 0.05} onClick={() => void run()}>{t('Export GIF')}</button>
+          {duration > MAX_GIF_S + 0.05
+            ? <Alert>{t('GIF works for videos up to {n} s. Trim the project or export a video.', { n: MAX_GIF_S })}</Alert>
+            : <p className="ck-hint">{t('Loops forever. No sound in GIF.')}</p>}
+          <Foot lead={lead} sum={duration <= MAX_GIF_S + 0.05 ? facts({ format: 'gif', w: gifSize(project.settings)[0], h: gifSize(project.settings)[1], fps: GIF_FPS }, duration) : undefined}
+            disabled={duration <= 0 || duration > MAX_GIF_S + 0.05} onClick={() => void run()}>{t('Export GIF')}</Foot>
         </>
       )}
       {phase.kind === 'setup' && format === 'audio' && (
         <>
-          <Toggle label={t('Even loudness for TikTok and YouTube (−14 LUFS)')} value={loudness} onChange={setLoudness} />
-          <p className="hint">{t('The whole soundtrack, {s} s.', { s: duration.toFixed(1) })}</p>
-          <button className="btn primary big" disabled={duration <= 0} onClick={() => void run()}>{t('Export audio')}</button>
+          <Toggle label={t('Even loudness')} note={t('−14 LUFS, for TikTok and YouTube')} value={loudness} onChange={setLoudness} />
+          <Foot lead={lead} sum={facts({ format: 'audio', w: 0, h: 0 }, duration)} disabled={duration <= 0} onClick={() => void run()}>{t('Export audio')}</Foot>
         </>
       )}
       {phase.kind === 'setup' && format === 'video' && (
         <>
+          <h3>{t('Presets')}</h3>
           <Chips options={PRESETS.map((p) => p.id)} render={(id) => PRESETS.find((p) => p.id === id)!.label}
             value={PRESETS.find((p) => p.resolution === resolution && p.fps === fps && p.quality === quality)?.id ?? null}
             onChange={(id) => {
@@ -196,56 +271,76 @@ export function ExportSheet() {
               pickSize(res); pickFps(pr.fps); setQuality(pr.quality);
             }} />
           <h3>{t('Resolution')}</h3>
-          {supported?.length === 0 ? <p className="error-text">{t('This browser cannot encode video. Try Chrome or Safari.')}</p> : supported === null ? <p className="hint">{t('Checking what this device can encode…')}</p> : (
-            <Chips options={supported} value={resolution} onChange={pickSize} render={(r) => LABEL[r]} />
+          {supported?.length === 0 ? <Alert>{t('This browser cannot encode video. Try Chrome or Safari.')}</Alert> : supported === null ? <p className="ck-hint">{t('Checking what this device can encode…')}</p> : (
+            <Chips options={supported} value={resolution} onChange={pickSize} render={(r) => LABEL[r]} even />
           )}
           {/* Nothing is lost or blown up without a word (audit V-216): a choice that costs the video something says what. */}
-          {!!supported?.length && cost.larger && <p className="hint">{t('Larger than the source: the file grows, the picture does not get sharper.')}</p>}
+          {!!supported?.length && cost.larger && <p className="ck-hint">{t('Larger than the source: the file grows, the picture does not get sharper.')}</p>}
           <h3>{t('Frame rate')}</h3>
-          <Chips options={[24, 25, 30, 60] as const} value={fps} onChange={pickFps} render={(f) => `${f}`} />
+          <Chips options={[24, 25, 30, 60] as const} value={fps} onChange={pickFps} render={(f) => `${f}`} even />
           {!!supported?.length && cost.frames && (
-            <p className="hint">
+            <p className="ck-hint">
               {cost.frames.half ? t('The video is {src} fps: at {fps} every second frame is dropped.', { src: cost.frames.from, fps })
                 : t('The video is {src} fps: at {fps} some of its frames are dropped.', { src: cost.frames.from, fps })}
               {cost.no60 && ` ${t('This device cannot encode this size at 60 fps.')}`}
             </p>
           )}
           <h3>{t('Quality')}</h3>
-          <Chips options={['standard', 'high'] as const} value={quality} onChange={setQuality} render={(q) => (q === 'high' ? t('High') : t('Standard'))} />
-          <Toggle label={t('Even loudness for TikTok and YouTube (−14 LUFS)')} value={loudness} onChange={setLoudness} />
-          <Toggle label={t('Quick export: the Export button saves right away with these settings')} value={quick}
+          <Chips options={['standard', 'high'] as const} value={quality} onChange={setQuality} render={(q) => (q === 'high' ? t('High') : t('Standard'))} even />
+          <Toggle label={t('Even loudness')} note={t('−14 LUFS, for TikTok and YouTube')} value={loudness} onChange={setLoudness} />
+          <Toggle label={t('Quick export')} note={t('The Export button saves right away with these settings')} value={quick}
             onChange={(v) => { setQuick(v); savePrefs({ ...exportPrefs(), quick: v }); }} />
-          <p className="hint">{t('{w}×{h}, {s} s, about {mb} MB. Rendered on this device, nothing is uploaded.', { w, h, s: duration.toFixed(1), mb: estMb < 1 ? 1 : Math.round(estMb) })}</p>
-          <button className="btn primary big" disabled={!supported?.length || duration <= 0} onClick={() => void run()}>{t('Export video')}</button>
+          <p className="ck-hint">{t('Rendered on this device, nothing is uploaded.')}</p>
+          <Foot lead={lead} sum={facts({ format: 'video', w, h, fps, mb: estMb }, duration)} disabled={!supported?.length || duration <= 0} onClick={() => void run()}>{t('Export video')}</Foot>
         </>
       )}
-      {phase.kind === 'running' && (
-        <div className="export-progress">
-          <div className="progress"><div style={{ width: `${phase.progress * 100}%` }} /></div>
-          <p>{phase.label && `${phase.label} `}{t('{p}% — keep this screen open', { p: Math.round(phase.progress * 100) })}</p>
-          <button className="btn" onClick={() => abort.current?.abort()}>{t('Settings')}</button>
-          <button className="btn" onClick={() => { abort.current?.abort(); editor().openSheet(null); }}>{t('Cancel')}</button>
-        </div>
-      )}
-      {phase.kind === 'done' && (
-        <div className="export-progress">
-          <p>{t('Ready: {mb} MB in {s} s', { mb: (phase.result.blob.size / 1e6).toFixed(1), s: phase.result.seconds.toFixed(1) })}</p>
-          {phase.result.noSound && <p className="error-text">{t('This browser cannot encode sound, so the file has no sound. Try Chrome or Safari.')}</p>}
-          {phase.quick && !IOS && <p className="hint">{t('Saved to Downloads.')}</p>}
-          {phase.quick && IOS && <p className="hint">{t('iPhone saves to Photos through the share sheet: tap Save, then “Save Video”.')}</p>}
-          {phase.quick && !IOS
-            ? <button className="btn" onClick={() => save(phase.result)}>{t('Share')}</button>
-            : <button className="btn primary big" onClick={() => save(phase.result)}>{phase.quick ? t('Save') : t('Save / Share')}</button>}
-          <button className="btn" onClick={() => setPhase({ kind: 'setup' })}>{t('Export again')}</button>
-        </div>
-      )}
       {phase.kind === 'error' && (
-        <div className="export-progress">
-          <p className="error-text">{t('Export failed: {error}', { error: phase.message })}</p>
-          <details className="error-more"><summary>{t('Details')}</summary><ErrorDetails entry={phase.detail} /></details>
-          <button className="btn" onClick={() => setPhase({ kind: 'setup' })}>{t('Back')}</button>
+        <div className="export-progress ck-work">
+          <Alert>{t('Export failed: {error}', { error: phase.message })}</Alert>
+          <details className="error-more ck-more"><summary>{t('Details')}</summary><ErrorDetails entry={phase.detail} /></details>
+          <div className="ck-work-actions"><Button onClick={() => setPhase({ kind: 'setup' })}>{t('Back')}</Button></div>
         </div>
       )}
     </Sheet>
   );
+}
+
+/** What a file is, in a line: «1080×1920 · 7,5 с · 30 к/с · около 7 МБ», or, made, «… · MP4». */
+function facts(m: Made, duration: number, fileName?: string): string {
+  const kind = fileName?.split('.').pop()?.toUpperCase();
+  return [
+    m.format === 'audio' ? null : `${m.w}×${m.h}`,
+    m.format === 'photo' ? null : secs(duration),
+    m.fps && !fileName ? t('{n} fps', { n: m.fps }) : null,
+    m.mb !== undefined && !fileName ? t('about {mb} MB', { mb: m.mb < 1 ? 1 : Math.round(m.mb) }) : null,
+    kind ?? null,
+  ].filter(Boolean).join(' · ');
+}
+
+/** What went wrong or cannot be: a sign and words, not a colour (DESIGN.md §2.3: red is for deleting only). */
+function Alert({ children }: { children: ReactNode }) {
+  return <p className="error-text ck-alert" role="alert"><CircleAlert aria-hidden /><span>{children}</span></p>;
+}
+
+/**
+ * The sheet's one action, held at the bottom of the sheet (seen without scrolling, in the same place for every format),
+ * with what it will make as its second line.
+ */
+function Foot({ lead, sum, disabled, onClick, children }: { lead: 'primary' | 'quiet'; sum?: string; disabled: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <div className="ck-panel-foot">
+      <Button variant={lead} size="large" disabled={disabled} onClick={onClick}>{children}{sum && <small className="ck-btn-sub">{sum}</small>}</Button>
+    </div>
+  );
+}
+
+/** Copies the export's own frame into a slot of the film, filling it as the timeline's film does. */
+function paint(slot: HTMLCanvasElement | null | undefined, picture: HTMLCanvasElement): void {
+  if (!slot || !picture.width || !picture.height) return;
+  const r = slot.getBoundingClientRect();
+  const k = Math.min(2, devicePixelRatio || 1);
+  const w = Math.max(1, Math.round(r.width * k)), h = Math.max(1, Math.round(r.height * k));
+  if (slot.width !== w || slot.height !== h) { slot.width = w; slot.height = h; }
+  const s = Math.max(w / picture.width, h / picture.height);
+  slot.getContext('2d')?.drawImage(picture, (w - picture.width * s) / 2, (h - picture.height * s) / 2, picture.width * s, picture.height * s);
 }

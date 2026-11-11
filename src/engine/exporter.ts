@@ -24,8 +24,9 @@ import { warmFaces } from './faces';
 import { warmSegmenter } from './segment';
 import { TextRasterizer } from './text';
 import { matchStreamRange } from './videoRange';
-import { MAX_GIF_S, gifSize, outputSize, type Resolution } from './exportSizes';
+import { MAX_GIF_S, gifSize, outputSize, type Resolution, GIF_FPS } from './exportSizes';
 export type { Resolution } from './exportSizes';
+import { filmFrames } from '../core/exportProgress';
 import { within } from '../lib/limits';
 import { track } from '../lib/telemetry';
 
@@ -34,6 +35,13 @@ export interface ExportOptions {
   /** Normalize the mix to -14 LUFS with a -1 dBFS limiter (default on). */
   loudness?: boolean;
 }
+/**
+ * A few frames of the file as it is made, for the sheet to show between its two marks (DESIGN.md, Progress): picture
+ * `slot` of `frames`, spread over the film (core/exportProgress), handed over right after it is drawn, before the next one is.
+ * Copying `frames` pictures costs the export nothing it would notice.
+ */
+export interface Film { frames: number; take(picture: HTMLCanvasElement, slot: number): void }
+
 export interface ExportResult {
   blob: Blob; fileName: string; seconds: number;
   /** The project has sound, but this browser encodes none: the file is silent, and the person is told. */
@@ -46,7 +54,6 @@ const AUDIO_WINDOW_S = 2;
 const AUDIO_PACKETS_PER_S = 60;
 
 export const PLATFORM_LUFS = -14;
-const GIF_FPS = 12;
 
 const fileBase = (p: Project) => p.name.replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim() || 'kadr';
 
@@ -308,19 +315,19 @@ async function withBaselineRetry<T>(run: (avc?: string) => Promise<T>, onRestart
 }
 
 /** Renders and encodes the project through the preview's render path (WYSIWYG), sound mixed in sample-aligned windows. */
-export function exportProject(whole: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
+export function exportProject(whole: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal, film?: Film): Promise<ExportResult> {
   // Guide tracks are for editing only: one longer than the video wrote black and silence to the file (audit V-102).
   const p = withoutGuides(whole);
   const restart = () => onProgress(0);
   return withBaselineRetry(
-    (avc) => withGpuRetry(() => exportOnce(p, opts, onProgress, signal, avc), restart, signal),
+    (avc) => withGpuRetry(() => exportOnce(p, opts, onProgress, signal, avc, film), restart, signal),
     (reason) => { track('export_baseline_fallback', { reason, resolution: opts.resolution, fps: opts.fps }); restart(); },
   );
 }
 
 /** `baseline`: the H.264 codec string to encode with instead of Mediabunny's choice (see withBaselineRetry). */
 async function exportOnce(
-  p: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal, baseline?: string,
+  p: Project, opts: ExportOptions, onProgress: (f: number) => void, signal: AbortSignal, baseline?: string, film?: Film,
 ): Promise<ExportResult> {
   const started = performance.now();
   const duration = projectDuration(p);
@@ -370,6 +377,7 @@ async function exportOnce(
     await guard.race(output.start());
     if (pre) await guard.race(mix.normalize(signal, (f) => { guard.tick(); onProgress(f * pre); }));
     const count = Math.max(1, Math.round(duration * opts.fps));
+    const shown = film ? filmFrames(count, film.frames) : null;
     const pumpAudio = async (untilS: number) => {
       while (audio && mix.due(untilS)) { const b = await mix.read(); if (b) await audio.add(b); }
     };
@@ -378,6 +386,7 @@ async function exportOnce(
       const t = i / opts.fps;
       await guard.race(pumpAudio(t + 1));
       await guard.race(frames.draw(t));
+      for (const k of shown?.get(i) ?? []) film!.take(frames.canvas, k);
       await encoding(video.add(t, 1 / opts.fps));
       guard.tick();
       onProgress(pre + ((i + 1) / count) * (1 - pre));
@@ -470,11 +479,11 @@ async function frameOnce(p: Project, t: number, resolution: Resolution): Promise
 }
 
 /** Animated GIF (looping, 12 fps, 480 px long side) with one palette sampled across the video: no flicker. */
-export function exportGif(p: Project, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
-  return withGpuRetry(() => gifOnce(withoutGuides(p), onProgress, signal), () => onProgress(0), signal);
+export function exportGif(p: Project, onProgress: (f: number) => void, signal: AbortSignal, film?: Film): Promise<ExportResult> {
+  return withGpuRetry(() => gifOnce(withoutGuides(p), onProgress, signal, film), () => onProgress(0), signal);
 }
 
-async function gifOnce(p: Project, onProgress: (f: number) => void, signal: AbortSignal): Promise<ExportResult> {
+async function gifOnce(p: Project, onProgress: (f: number) => void, signal: AbortSignal, film?: Film): Promise<ExportResult> {
   const started = performance.now();
   const duration = projectDuration(p);
   if (duration <= 0) throw new MediaError('The timeline is empty');
@@ -493,9 +502,12 @@ async function gifOnce(p: Project, onProgress: (f: number) => void, signal: Abor
     for (let i = 0; i < samples; i++) sampled.set(await pixels(((i + 0.5) / samples) * duration), i * w * h * 4);
     const palette = quantize(sampled, 256, { format: 'rgb565' });
     const gif = GIFEncoder();
+    const shown = film ? filmFrames(count, film.frames) : null;
     for (let i = 0; i < count; i++) {
       if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
-      const index = applyPalette(await pixels(i / GIF_FPS), palette, 'rgb565');
+      const frame = await pixels(i / GIF_FPS);
+      for (const k of shown?.get(i) ?? []) film!.take(ctx.canvas, k);
+      const index = applyPalette(frame, palette, 'rgb565');
       gif.writeFrame(index, w, h, i === 0 ? { palette, delay: Math.round(1000 / GIF_FPS), repeat: 0 } : { delay: Math.round(1000 / GIF_FPS) });
       onProgress((i + 1) / count);
       if (i % 4 === 0) await yieldToUi();

@@ -19,7 +19,6 @@ import { StylePicker } from './picker';
 import { drawCaptionTile } from './tiles';
 import { useHoldUpdates } from '../lib/update';
 import { Button } from './ck/controls';
-import { useDrawnOnFrame } from './lookTiles';
 
 const KEY = 'kadr.reel';
 function loadOptions(): ReelOptions {
@@ -39,7 +38,7 @@ export function ReelBody() {
   // The question before a model download (audit V-181). While it is on screen nothing runs: the sheet closes freely.
   const { asked, ask, answer } = useModelAsk();
   const checking = useRef(false);
-  const drawCaption = useDrawnOnFrame(drawCaptionTile, undefined, 0.8); // the styles on the person's frame, where captions stand
+  const drawCaption = drawCaptionTile; // the styles on the black of the stage, as in the captions sheet (docs/18)
   useHoldUpdates(phase.kind === 'running');
   useSheetGuard(phase.kind === 'running' && !asked ? t('The reel is still being made. Tap again to stop.') : null);
   const abort = useRef<AbortController | null>(null);
@@ -93,10 +92,10 @@ export function ReelBody() {
   if (asked) return <ModelAsk d={asked} yes={t('Download and make the reel')} onAnswer={answer} />;
   if (phase.kind === 'running') {
     return (
-      <div className="export-progress">
+      <div className="export-progress ck-work">
         <PaceBar pace={pace} />
-        <p>{phase.label}</p>
-        <Button onClick={() => abort.current?.abort()}>{t('Cancel')}</Button>
+        <p className="ck-work-label">{phase.label}</p>
+        <div className="ck-work-actions"><Button onClick={() => abort.current?.abort()}>{t('Cancel')}</Button></div>
       </div>
     );
   }
@@ -104,9 +103,9 @@ export function ReelBody() {
   if (phase.kind === 'done') {
     const r = phase.report;
     return (
-      <div className="reel-done">
-        <p className="reel-length"><b>{formatTime(r.before)}</b> → <b>{formatTime(r.after)}</b></p>
-        <ul className="reel-list">
+      <div className="reel-done ck-work">
+        <p className="reel-length ck-work-ready"><b>{formatTime(r.before)}</b> → <b>{formatTime(r.after)}</b></p>
+        <ul className="reel-list ck-work-list">
           {r.noSpeech && <li>{t('No speech found: captions, fillers and the title were skipped')}</li>}
           {r.pauses > 0 && <li>{t('Pauses removed: {n}', { n: r.pauses })}</li>}
           {r.fillers > 0 && <li>{t('Fillers and repeats removed: {n}', { n: r.fillers })}</li>}
@@ -117,7 +116,7 @@ export function ReelBody() {
           {r.musicError && <li>{t('Music was not added: {error}', { error: r.musicError })}</li>}
         </ul>
         {r.language && (
-          <label className="reel-lang">
+          <label className="reel-lang ck-work-field">
             <span>{r.detected ? t('Speech language (found by Kadr)') : t('Speech language')}</span>
             <select className="ck-select" value={r.language} aria-label={t('Speech language')} onChange={(e) => {
               track('reel_language_changed', { from: r.language ?? '', to: e.target.value, detected: r.detected });
@@ -141,7 +140,7 @@ export function ReelBody() {
       <Toggle label={t('Remove “um”, “uh” and repeats')} value={o.fillers} onChange={(v) => set({ fillers: v })} />
       <Toggle label={t('Captions with the spoken word highlighted')} value={o.captions} onChange={(v) => set({ captions: v })} />
       {o.captions && (
-        <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={o.preset} onChange={(id) => set({ preset: id })} label={t('Style')} draw={drawCaption} animated />
+        <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={o.preset} onChange={(id) => set({ preset: id })} label={t('Style')} draw={drawCaption} animated ground="stage" />
       )}
       <Toggle label={t('Zoom in on cuts')} value={o.zoom} onChange={(v) => set({ zoom: v })} />
       <Toggle label={t('Title from the first phrase')} value={o.hook} onChange={(v) => set({ hook: v })} />
