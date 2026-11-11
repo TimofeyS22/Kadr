@@ -4093,6 +4093,53 @@ test('export sound: no click or dip where the 2 s mixing windows meet (audit V-1
   console.log(`window joins (${info.project.name}):\n${rows.join('\n')}`);
 });
 
+test('a backup with damaged parts inside its clips opens and draws: what is whole stays, what is not goes (S-1-3)', async ({ page }, info) => {
+  const { Zip, ZipPassThrough, strToU8 } = await import('fflate');
+  const transform = { x: { v: 0 }, y: { v: 0.18, k: [null, { t: 0, v: 0.2 }, { t: 'x', v: 1 }] }, scale: { v: 1 }, rotation: { v: 0 }, opacity: { v: 1 } };
+  const style = { font: 'inter', size: 0.05, weight: 700, italic: false, color: '#ffffff', align: 'center', stroke: 'red', background: { color: 5 }, shadow: false, copies: [null, { color: '#f00', x: 0.02, y: 0.02 }] };
+  const project = {
+    id: 'dmg', version: 1, name: 'Damaged', createdAt: 1, updatedAt: 1,
+    settings: { aspect: '9:16', width: 1080, height: 1920, fps: 30, background: { mode: 'color', color: '#000000' } },
+    assets: {},
+    tracks: [
+      { id: 'm', kind: 'main', clips: [] },
+      { id: 'o', kind: 'overlay', clips: [{
+        kind: 'caption', id: 'cap', start: 0, duration: 3, blend: 'normal', highlight: null, wordsPerPage: 4, transform, style,
+        words: [null, { t0: 0.2, t1: 0.9, text: 'WHOLE' }, { t0: 1, t1: 2, text: 5 }, { t0: 1, t1: 2 }],
+      }] },
+    ],
+  };
+  const parts: Uint8Array[] = [];
+  const zip = new Zip((err, data) => { if (err) throw err; parts.push(data); });
+  const entry = new ZipPassThrough('project.json'); zip.add(entry); entry.push(strToU8(JSON.stringify(project)), true);
+  zip.end();
+  const file = info.outputPath('damaged.kadr');
+  fs.writeFileSync(file, Buffer.concat(parts));
+  await page.goto('./');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Restore backup' }).click();
+  await (await chooser).setFiles(file);
+  // Before: the editor fell to "Something went wrong" on every opening (a null among the caption's words).
+  await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  await expect(page.locator('.tl-row .clip')).toHaveCount(1);
+  const id = decodeURIComponent(new URL(page.url()).hash.replace(/^#\/p\//, ''));
+  const kept = await page.evaluate((key) => new Promise<{ words: unknown[]; style: Record<string, unknown>; transform: { y: { k: unknown[] } } }>((ok, ko) => {
+    const r = indexedDB.open('kadr');
+    r.onerror = () => ko(r.error);
+    r.onsuccess = () => { const g = r.result.transaction('kv').objectStore('kv').get(key); g.onsuccess = () => ok((g.result as { tracks: { clips: never[] }[] }).tracks.flatMap((t) => t.clips)[0]); };
+  }), `p:${id}`);
+  expect(kept.words).toEqual([{ t0: 0.2, t1: 0.9, text: 'WHOLE' }]);
+  expect(kept.transform.y.k).toEqual([{ t: 0, v: 0.2 }]);
+  expect(kept.style.stroke).toBeNull();
+  expect(kept.style.background).toBeNull();
+  expect(kept.style.copies).toEqual([{ color: '#f00', x: 0.02, y: 0.02 }]);
+  // It draws: play past the word and back, then a file comes out.
+  await page.getByRole('button', { name: 'Play' }).click();
+  await page.waitForTimeout(1200);
+  await expect(page.getByText('Something went wrong')).toHaveCount(0);
+});
+
 test('a backup whose video holds zip signatures restores it byte for byte (audit V-188)', async ({ page }, info) => {
   test.setTimeout(240_000);
   const { unzipSync, Zip, ZipPassThrough } = await import('fflate');
