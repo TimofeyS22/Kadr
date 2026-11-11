@@ -1,4 +1,4 @@
-import { TrianglesCenterlineDashedVertical, TrianglesCenterlineDashedHorizontal } from 'lucide-react';
+import { RotateCcw, TrianglesCenterlineDashedVertical, TrianglesCenterlineDashedHorizontal } from 'lucide-react';
 import { produce } from 'immer';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { evalAnim, hasKeys, keyIndexAt, setAnim, toggleKey } from '../core/anim';
@@ -7,7 +7,7 @@ import { ASPECTS, defaultAdjust, defaultTransform } from '../core/defaults';
 import { FILTERS, FILTER_CATEGORIES, adjustRange } from '../core/filters';
 import { LookActions } from './LookControls';
 import { IosFormatBody } from './IosFormatSheet';
-import { useLookTiles, type LookClip } from './lookTiles';
+import { useDrawnOnFrame, useLookTiles, type LookClip } from './lookTiles';
 import { CURVE_PRESETS } from '../core/speed';
 import { applyTransitionToAll, expectedAudioKey, findClip, keepsPitch, setCurve, setSpeed, setTransition, isSound } from '../core/timeline';
 import { CurveEditor } from './CurveEditor';
@@ -19,7 +19,7 @@ import {
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
-import { Chips, ClipScrub, Sheet, Slider, Swatches, Toggle, pct, secs, signed, useSheetGuard } from './controls';
+import { Chips, ClipScrub, Sheet, Slider, Swatches, Toggle, num, pct, secs, signed, useSheetGuard } from './controls';
 import { StylePicker, type TileDraw } from './picker';
 import { FontPicker } from './FontPicker';
 import { TextLook } from './TextLook';
@@ -36,13 +36,15 @@ import { BeatsBody, LayersBody, MaskBody, PausesBody, SfxBody } from './MoreShee
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
 import { TRANSITION_LABELS } from './transitionNames';
+import './sheets.css';
+import { Button } from './ck/controls';
 
 function useSelected(): Clip | null {
   return useEditor((s) => (s.project && s.selection ? findClip(s.project, s.selection)?.clip ?? null : null));
 }
 
 const TITLES: Record<SheetId, string> = {
-  speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform & keyframes',
+  speed: 'Speed', volume: 'Volume', adjust: 'Adjust', filters: 'Filters', transform: 'Transform', // the ribbon's name for it (Ж4: one name, one tool)
   text: 'Text', transition: 'Transition', canvas: 'Canvas', export: 'Export',
   crop: 'Crop', captions: 'Auto captions', captionEdit: 'Captions', voiceover: 'Voice-over', stickers: 'Stickers',
   pauses: 'Remove pauses', mask: 'Mask', sfx: 'Sound effects', beats: 'Beat', effects: 'Effects', privacy: 'Hide faces', camera: 'Camera', music: 'Music', reel: 'Reel in 1 tap', chroma: 'Chroma key', voice: 'Voice', layers: 'Layers', iosFormat: 'Videos in seconds',
@@ -103,19 +105,19 @@ function SpeedBody({ clip }: { clip: Clip }) {
   const preset = clip.curve && CURVE_PRESETS.find((p) => p.points.join() === clip.curve!.join())?.id;
   return (
     <>
-      <Chips options={['normal', 'curve'] as const} value={clip.curve ? 'curve' : 'normal'} render={(m) => (m === 'normal' ? t('Normal') : t('Curve'))}
+      <Chips even options={['normal', 'curve'] as const} value={clip.curve ? 'curve' : 'normal'} render={(m) => (m === 'normal' ? t('Normal') : t('Curve'))}
         onChange={(m) => curve(m === 'curve' ? CURVE_PRESETS[0].points : null)} />
-      <Slider label={clip.curve ? t('Base speed') : t('Speed')} value={toPos(clip.speed)} min={0} max={1} step={0.001} format={() => `${clip.speed}×`} onChange={(p) => set(fromPos(p))} reset={toPos(1)} />
+      <Slider label={clip.curve ? t('Base speed') : t('Speed')} value={toPos(clip.speed)} min={0} max={1} step={0.001} format={() => `${num(clip.speed)}×`} onChange={(p) => set(fromPos(p))} reset={toPos(1)} />
       {clip.curve ? (
         <>
           <Chips options={CURVE_PRESETS.map((p) => p.id)} value={preset ?? null} render={(id) => CURVE_PRESETS.find((p) => p.id === id)!.name}
             onChange={(id) => curve(CURVE_PRESETS.find((p) => p.id === id)!.points)} />
           <CurveEditor points={clip.curve} onChange={(pts) => curve(pts, `curve:${clip.id}`)} />
-          <p className="hint">{t('Drag the points: up is faster, down is slower. The sound follows the curve like tape.')}</p>
+          <p className="ck-hint">{t('Drag the points: up is faster, down is slower. The sound follows the curve like tape.')}</p>
         </>
       ) : (
         <>
-          <Chips options={SPEEDS} value={clip.speed} onChange={set} render={(v) => `${v}×`} />
+          <Chips even options={SPEEDS} value={clip.speed} onChange={set} render={(v) => `${num(v)}×`} />
           <KeepPitchToggle clip={clip} />
         </>
       )}
@@ -143,11 +145,11 @@ function VolumeBody({ clip }: { clip: Clip }) {
             <Slider label={t('How much')} value={clip.duck ?? 0.7} min={0.2} max={0.95} format={pct} reset={0.7} onChange={(v) => e((c) => { c.duck = v; }, 'duckd')} />
           )}
           <Toggle label={t('Guide track: plays while editing, not exported')} value={!!clip.guide} onChange={(v) => e((c) => { c.guide = v; }, 'guide')} />
-          {clip.guide && <p className="hint">{t('Edit to any song, even a trending one, then add it in TikTok or Instagram: there it is licensed.')}</p>}
+          {clip.guide && <p className="ck-hint">{t('Edit to any song, even a trending one, then add it in TikTok or Instagram: there it is licensed.')}</p>}
           <LicenseButton assetId={clip.assetId} />
         </>
       )}
-      {clip.kind === 'video' && <button className="btn" onClick={detachSelectedAudio}>{t('Extract audio to its own track')}</button>}
+      {clip.kind === 'video' && <Button onClick={detachSelectedAudio}>{t('Extract audio to its own track')}</Button>}
     </>
   );
 }
@@ -178,7 +180,7 @@ function AdjustBody({ clip }: { clip: LookClip }) {
       <StylePicker items={items} categories={ADJUST_CATEGORIES} value={active} onChange={(id) => setActive(id as AdjustKey)} label={t('Adjust')} draw={draw} rows={1} />
       <Slider key={active} label={ADJUST_LABELS[active]} value={clip.adjust[active]} min={min} max={max} format={signed} reset={0}
         onChange={(v) => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust[active] = v; }, `adj:${active}:${clip.id}`)} />
-      <button className="btn" disabled={!changed} onClick={() => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust = defaultAdjust(); })}>{t('Reset all')}</button>
+      <Button icon={<RotateCcw aria-hidden="true" />} disabled={!changed} onClick={() => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust = defaultAdjust(); })}>{t('Reset all')}</Button>
     </>
   );
 }
@@ -233,16 +235,16 @@ function TransformBody({ clip }: { clip: Clip }) {
             }} />
         );
       })}
-      <p className="hint">{t('Tap ◆ to add a keyframe at the playhead. When a property has keyframes, changes create keyframes.')}</p>
+      <p className="ck-hint">{t('Tap ◆ to add a keyframe at the playhead. When a property has keyframes, changes create keyframes.')}</p>
       {(clip.kind === 'video' || clip.kind === 'image') && (
         <div className="flip-row">
-          <button className="btn" aria-pressed={!!clip.flipX} onClick={() => toggleFlip('x')}><TrianglesCenterlineDashedVertical size={18} aria-hidden /> {t('Mirror')}</button>
-          <button className="btn" aria-pressed={!!clip.flipY} onClick={() => toggleFlip('y')}><TrianglesCenterlineDashedHorizontal size={18} aria-hidden /> {t('Upside down')}</button>
+          <Button aria-pressed={!!clip.flipX} icon={<TrianglesCenterlineDashedVertical aria-hidden="true" />} onClick={() => toggleFlip('x')}>{t('Mirror')}</Button>
+          <Button aria-pressed={!!clip.flipY} icon={<TrianglesCenterlineDashedHorizontal aria-hidden="true" />} onClick={() => toggleFlip('y')}>{t('Upside down')}</Button>
         </div>
       )}
       <h3>{t('Blend')}</h3>
       <Chips options={BLENDS} value={clip.blend} onChange={(b) => editClip(clip.id, (c) => { if (c.kind !== 'audio') c.blend = b; })} />
-      <button className="btn" onClick={() => editClip(clip.id, (c) => { if (c.kind !== 'audio') c.transform = defaultTransform(); })}>{t('Reset transform')}</button>
+      <Button icon={<RotateCcw aria-hidden="true" />} onClick={() => editClip(clip.id, (c) => { if (c.kind !== 'audio') c.transform = defaultTransform(); })}>{t('Reset transform')}</Button>
     </>
   );
 }
@@ -271,15 +273,20 @@ const ANIMS: readonly TextAnimType[] = TEXT_ANIM_TYPES;
 function TextBody({ clip }: { clip: TextClip }) {
   const e = (fn: (c: TextClip) => void, key?: string) => editClip(clip.id, (c) => { if (c.kind === 'text') fn(c); }, key && `${key}:${clip.id}`);
   const s = clip.style;
+  // The styles are drawn on the frame this text lies on: at the playhead if it is on the text, else at its middle.
+  const at = useMemo(() => { const now = useEditor.getState().time; return now >= clip.start && now < clip.start + clip.duration ? now : clip.start + clip.duration / 2; }, [clip.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // …and on the band of it where the text stands (its centre, canvas fractions from the middle of the frame).
+  const focus = Math.min(1, Math.max(0, 0.5 + evalAnim(clip.transform.y, at - clip.start)));
+  const drawStyle = useDrawnOnFrame(drawTextTile, at, Math.round(focus * 20) / 20);
   return (
     <>
       {/* The words first: under the style grid the field was below the fold on phones shorter than 812 px (audit V-202). */}
-      <textarea className="text-input" value={clip.text} rows={2} maxLength={500} aria-label={t('Text')}
+      <textarea className="ck-input ck-panel-text" value={clip.text} rows={2} maxLength={500} aria-label={t('Text')}
         onChange={(ev) => e((c) => { c.text = ev.target.value; }, 'txt')} />
-      <StylePicker items={TEXT_PRESETS} categories={TEXT_CATEGORIES} value={null} label={t('Style')} draw={drawTextTile}
+      <StylePicker items={TEXT_PRESETS} categories={TEXT_CATEGORIES} value={null} label={t('Style')} draw={drawStyle}
         onChange={(id) => e((c) => { const pr = TEXT_PRESETS.find((p) => p.id === id)!; c.style = structuredClone(pr.style); if (pr.animIn) c.animIn = { ...pr.animIn }; })} />
       <FontPicker clipId={clip.id} style={s} onFont={(f) => e((c) => { c.style.font = f; })} onWeight={(w) => e((c) => { c.style.weight = w; })} />
-      <Slider label={t('Size')} value={s.size} min={0.02} max={0.2} step={0.001} format={(v) => `${Math.round(v * 1000) / 10}`} reset={0.055}
+      <Slider label={t('Size')} value={s.size} min={0.02} max={0.2} step={0.001} format={(v) => num(Math.round(v * 1000) / 10, 1)} reset={0.055}
         onChange={(v) => e((c) => { c.style.size = v; }, 'tsize')} />
       <TextLook style={s} change={(fn, key) => e((c) => fn(c.style), key)} />
       <h3>{t('Animation in')}</h3>
@@ -311,7 +318,7 @@ function TransitionBody() {
         onChange={(t) => commit(t === 'none' ? null : { type: t, duration: tr?.duration ?? 0.5 })} />
       {tr && <Slider label={t('Duration')} value={tr.duration} min={0.1} max={2} step={0.05} format={secs} reset={0.5}
         onChange={(v) => commit({ ...tr, duration: v }, `trd:${clip.id}`)} />}
-      <button className="btn" onClick={() => useEditor.getState().commit((d) => applyTransitionToAll(d, tr ?? null))}>{t('Apply to all cuts')}</button>
+      <Button onClick={() => useEditor.getState().commit((d) => applyTransitionToAll(d, tr ?? null))}>{t('Apply to all cuts')}</Button>
     </>
   );
 }
@@ -326,21 +333,22 @@ function CanvasBody() {
   return (
     <>
       <h3>{t('Aspect ratio')}</h3>
-      <Chips options={ASPECT_IDS} value={settings.aspect} onChange={(a) => commit((d) => {
+      <Chips even options={ASPECT_IDS} value={settings.aspect} onChange={(a) => commit((d) => {
         const [w, h] = ASPECTS[a];
         Object.assign(d.settings, { aspect: a, width: w, height: h });
       })} />
       <h3>{t('Background')}</h3>
-      <Chips options={['color', 'blur'] as const} value={settings.background.mode} render={(m) => (m === 'color' ? t('Color') : t('Blur'))}
+      <Chips even options={['color', 'blur'] as const} value={settings.background.mode} render={(m) => (m === 'color' ? t('Color') : t('Blur'))}
         onChange={(m) => commit((d) => { d.settings.background.mode = m; })} />
-      <div className="swatches">
+      {/* The colour behind the frame: 44 px each, apart, the chosen one ringed (audit P3-8: they stuck together, unmarked). */}
+      <div className="ck-swatches" role="group" aria-label={t('Background color')}>
         {BG.map((c) => (
-          <button key={c} className={`swatch ${c === settings.background.color ? 'on' : ''}`} style={{ background: c }} aria-label={c}
-            onClick={() => commit((d) => { d.settings.background.color = c; })} />
+          <button key={c} type="button" className="swatch ck-swatch" aria-label={c} aria-pressed={c === settings.background.color}
+            onClick={() => commit((d) => { d.settings.background.color = c; })}><i style={{ background: c }} /></button>
         ))}
       </div>
       <h3>{t('Frame rate')}</h3>
-      <Chips options={[24, 25, 30, 60] as const} value={settings.fps} render={(f) => `${f} fps`} onChange={(f) => commit((d) => { d.settings.fps = f; d.settings.fpsSet = true; })} />
+      <Chips even options={[24, 25, 30, 60] as const} value={settings.fps} render={(f) => t('{n} fps', { n: f })} onChange={(f) => commit((d) => { d.settings.fps = f; d.settings.fpsSet = true; })} />
     </>
   );
 }
@@ -368,7 +376,7 @@ function useSoundJob(clipId: string) {
   const progress = busy === null ? null : (
     <div className="inline-progress">
       <span>{t('Processing the sound on this device… {p}%', { p: Math.round(busy * 100) })}</span>
-      <button className="btn" onClick={() => abort.current?.abort()}>{t('Cancel')}</button>
+      <Button onClick={() => abort.current?.abort()}>{t('Cancel')}</Button>
     </div>
   );
   return { run, progress };
@@ -380,7 +388,7 @@ function LicenseButton({ assetId }: { assetId: string }) {
   if (!lib) return null;
   const copy = () => navigator.clipboard?.writeText(licenseText(lib))
     .then(() => editor().toast(t('License copied: paste it into a copyright dispute or the description')), () => editor().toast(licenseText(lib)));
-  return <button className="btn" onClick={() => void copy()}>{t('Copy license')}</button>;
+  return <Button onClick={() => void copy()}>{t('Copy license')}</Button>;
 }
 
 /** Voice effects (docs/09 V1): one tap, processed on the device into a sound that preview and export both play. */
@@ -395,7 +403,7 @@ function VoiceBody({ clip }: { clip: SoundClip }) {
           void run((c) => { if (v === 'none') delete c.voice; else c.voice = v; });
         }}
         render={(v) => (v === 'none' ? t('Original') : t(VOICE_LABEL[v]))} />
-      <p className="hint">{t('Processed on this device. Speed and noise settings still apply.')}</p>
+      <p className="ck-hint">{t('Processed on this device. Speed and noise settings still apply.')}</p>
     </>
   );
 }

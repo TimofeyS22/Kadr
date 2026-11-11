@@ -13,9 +13,11 @@ interface ButtonProps extends Native {
   icon?: ReactNode;
   children: ReactNode;
   ref?: Ref<HTMLButtonElement>;
+  /** Extra class names: hooks that tests and the iPhone scripts already rely on (`compare`). */
+  hook?: string;
 }
-export function Button({ variant = 'quiet', size = 'regular', icon, children, type = 'button', ...rest }: ButtonProps) {
-  return <button type={type} className={`ck-btn ck-${variant}${size === 'large' ? ' ck-large' : ''}`} {...rest}>{icon}<span className="ck-btn-label">{children}</span></button>;
+export function Button({ variant = 'quiet', size = 'regular', icon, children, type = 'button', hook, ...rest }: ButtonProps) {
+  return <button type={type} className={`ck-btn ck-${variant}${size === 'large' ? ' ck-large' : ''}${hook ? ` ${hook}` : ''}`} {...rest}>{icon}<span className="ck-btn-label">{children}</span></button>;
 }
 
 interface IconButtonProps extends Native {
@@ -24,9 +26,11 @@ interface IconButtonProps extends Native {
   /** It deletes: red, as everything that deletes (DESIGN.md §2.3). */
   danger?: boolean;
   children: ReactNode;
+  /** Extra class names: hooks that tests and the iPhone scripts already rely on (`compare`). */
+  hook?: string;
 }
-export function IconButton({ label, danger, children, type = 'button', ...rest }: IconButtonProps) {
-  return <button type={type} className={danger ? 'ck-ib ck-danger' : 'ck-ib'} aria-label={label} {...rest}>{children}</button>;
+export function IconButton({ label, danger, children, type = 'button', hook, ...rest }: IconButtonProps) {
+  return <button type={type} className={`${danger ? 'ck-ib ck-danger' : 'ck-ib'}${hook ? ` ${hook}` : ''}`} aria-label={label} {...rest}>{children}</button>;
 }
 
 interface ToolProps extends Native {

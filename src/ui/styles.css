@@ -89,45 +89,7 @@ h1, h2, h3 { margin: 0; }
 
 /* ---------- Toolbar: the Chetko ribbon since Ч4 release 3 (ck.css); «Назад» stands at its edge, opaque (UI-1) ---------- */
 
-/* ---------- Sheets ---------- */
-.sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; max-height: 52dvh; display: flex; flex-direction: column;
-  background: var(--panel); border-top-left-radius: 18px; border-top-right-radius: 18px;
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.55); padding-bottom: var(--safe-bottom);
-}
-.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 8px 0 18px; position: relative; touch-action: none; }
-/* Grab handle: the header can be swiped down to close the sheet (v1.2) */
-.sheet-head::before { content: ''; position: absolute; top: 5px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--muted); opacity: 0.45; }
-.sheet { transition: transform 160ms ease-out; }
-.sheet.dragging { transition: none; }
-@media (prefers-reduced-motion: reduce) { .sheet { transition: none; } }
-.sheet-head h2 { font-size: 16px; }
-.sheet-body { overflow-y: auto; padding: 4px 16px 18px; overscroll-behavior: contain; }
-.sheet-body h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 8px; }
-.slider { display: grid; grid-template-columns: 108px 1fr 48px 32px; align-items: center; gap: 8px; min-height: 44px; }
-.slider-label { font-size: 13px; user-select: none; }
-.slider-value { font-size: 12px; color: var(--signal); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; } /* Ч4: the digit of the value is the signal (DESIGN.md §2.2) */
-.slider input[type='range'] { width: 100%; height: 28px; accent-color: var(--signal); } /* the value: the signal of the system */
-.kf-btn { position: relative; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
-.kf-btn.animated { color: var(--key); }
-.kf-btn.on { color: var(--key); background: rgba(90, 209, 255, 0.15); }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
-.chip { position: relative; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); font-size: 13px; }
-/* A finger gets 44 px: the visible pill stays compact (audit V-114). */
-.chip::after, .kf-btn::after { content: ''; position: absolute; inset: -4px 0; }
-.chips.scroll { padding-block: 4px; }
-.kf-btn::after { inset: -6px; }
-.chip.on { background: var(--panel-2); border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); color: var(--text); font-weight: 600; } /* Ч4: chosen is a white ring; solid white is for actions */
-.toggle { display: flex; align-items: center; justify-content: space-between; min-height: 44px; font-size: 14px; }
-.toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
-/* Colour row (v1.6): eyedropper, any colour, recent, palette; one scrolling row of 44 px targets. */
-.swatches { display: flex; gap: 0; align-items: center; margin: 2px -16px; padding: 0 12px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
-.swatches::-webkit-scrollbar { display: none; }
-.swatch { position: relative; flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 999px; background: none; display: grid; place-items: center; color: var(--text); }
-.swatch i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; border: 2px solid var(--line); }
-.swatch.on i { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--text); }
-.swatch.tool-dropper i { background: var(--panel-2); }
-.swatch.tool-dropper.on i { background: var(--text); color: var(--panel); }
+/* ---------- Sheets: on the Chetko system since Ч4 release 5 (sheets.css); the export sheet's body moves in release 6 ---------- */
 .swatch.custom i { background: conic-gradient(#ff4d4f, #ffc53d, #3bd16f, #2ad4c8, #2f9bff, #a45bff, #ff4fa3, #ff4d4f); }
 /* The spectrum (v1.6.2): saturation × brightness for the hue below; every target at least 44 px; a loupe above the finger. */
 .spectrum { display: grid; gap: 6px; padding: 6px 0 2px; }
@@ -149,7 +111,6 @@ h1, h2, h3 { margin: 0; }
   border: 4px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 6px 18px rgba(0, 0, 0, 0.45); }
 .color-loupe canvas { display: block; width: 100%; height: 100%; }
 .color-loupe i { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px; border: 3px solid; border-radius: 999px; box-shadow: 0 0 0 1px #fff, 0 0 0 2px rgba(0, 0, 0, 0.6); }
-.swatch-sep { flex: none; width: 1px; height: 26px; margin: 0 4px; background: var(--line); }
 
 /* Eyedropper over the preview (v1.6). */
 .eyedrop { position: absolute; inset: 0; z-index: 5; touch-action: none; cursor: crosshair; }
@@ -161,10 +122,6 @@ h1, h2, h3 { margin: 0; }
   border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
 .eyedrop-cancel { position: absolute; right: 10px; bottom: 10px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px;
   color: #fff; background: rgba(0, 0, 0, 0.62); font-size: 14px; }
-.text-input {
-  width: 100%; resize: vertical; min-height: 56px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
-  background: var(--panel-2); color: var(--text); font: inherit; font-size: 16px; margin: 6px 0;
-}
 .sheet-body .btn { margin-top: 12px; }
 .export-progress { display: grid; gap: 12px; padding: 12px 0; text-align: center; }
 /* The question before a speech model download (audit V-181): the words, then the two answers, one under the other. */
@@ -172,7 +129,6 @@ h1, h2, h3 { margin: 0; }
 .model-ask { display: grid; gap: 12px; padding: 12px 0; text-align: center; }
 .model-ask p { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
 .model-ask-data { font-weight: 600; }
-.sheet-body .model-ask .btn { margin: 0; }
 .progress { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
 .progress div { height: 100%; background: var(--accent); transition: width 0.15s linear; }
 .error-text { color: #ffb3b3; }
@@ -188,36 +144,20 @@ h1, h2, h3 { margin: 0; }
 .error-details pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; background: rgba(0, 0, 0, 0.25); border-radius: 8px; padding: 8px; }
 .error-details .hint { margin: 0; }
 
-/* Phones: while a tool sheet is open the preview shrinks above it, so edits stay visible. */
-@media (max-width: 899px) {
-  .sheet { height: 46dvh; max-height: 46dvh; }
-  .editor.sheet-open { padding-bottom: 46dvh; }
-  .editor.sheet-open .toolbar { display: none; }
-  /* Collapsed, not display:none: removing the box would reset the timeline's scroll (and so the playhead). */
-  .editor.sheet-open .timeline { height: 0; min-height: 0; overflow: hidden; visibility: hidden; border: 0; }
-}
-
 /* A phone on its side (audit V-208): the picture on the left, the tools on the right, instead of a strip between them. */
 @media (orientation: landscape) and (max-height: 520px) {
   .editor { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; }
   .editor > .topbar { grid-column: 1 / -1; }
   .editor > .preview { grid-column: 1; grid-row: 2 / -1; }
   .editor > .transport, .editor > .timeline, .editor > .toolbar { grid-column: 2; }
-  .editor.sheet-open { padding-bottom: 0; }
-  .sheet { left: 50%; top: 0; height: auto; max-height: none; border-top-right-radius: 0; border-bottom-left-radius: 18px; }
 }
 
 /* ---------- Desktop ---------- */
 @media (min-width: 900px) {
   .tl-scroll { max-height: 40dvh; }
-  .sheet {
-    left: auto; right: 16px; bottom: auto; top: calc(64px + var(--safe-top)); width: 380px; max-height: calc(100dvh - 180px);
-    border-radius: 16px; border: 1px solid var(--line);
-  }
 }
 
 /* ---------- v0.2 components ---------- */
-.select { width: 100%; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font: inherit; }
 .inline-progress { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-size: 14px; }
 .inline-progress .btn { margin: 0; }
 .recorder { display: grid; justify-items: center; gap: 14px; padding: 8px 0 12px; }
@@ -308,10 +248,6 @@ h1, h2, h3 { margin: 0; }
 .camera-bar .rec-time { min-width: 48px; color: #fff; font-variant-numeric: tabular-nums; }
 .rec-dot { display: block; width: 26px; height: 26px; border-radius: 50%; background: #ff3b30; }
 
-/* Long option lists (fonts, text styles) scroll in one row */
-.chips.scroll { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
-.chips.scroll::-webkit-scrollbar { display: none; }
-.chips.scroll .chip { flex: 0 0 auto; }
 
 .perf-overlay { position: fixed; left: 8px; top: calc(4px + var(--safe-top)); z-index: 60; padding: 3px 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); color: #7CFC00; font: 600 11px/1.3 ui-monospace, monospace; pointer-events: none; }
 
@@ -323,44 +259,19 @@ h1, h2, h3 { margin: 0; }
 .music-meta b, .music-meta small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .music-meta small { color: var(--muted); }
 
-/* Template catalogs (v1.5): category buttons over a two-row strip of live previews, edge to edge like the chip rows */
-.pick-cats { position: relative; display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin: 0 -16px 6px; padding: 0 16px; }
-.pick-cats::-webkit-scrollbar, .pick-strip::-webkit-scrollbar { display: none; }
-.pick-cat { flex: 0 0 auto; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 13px; }
-.pick-cat.on { border-color: var(--text); color: var(--text); background: var(--panel-2); }
-.pick-strip { position: relative; display: flex; gap: 14px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin: 0 -16px; padding: 2px 16px 6px; scroll-padding-inline: 16px; }
-.pick-group { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, 78px); grid-auto-columns: 104px; gap: 8px; flex: none; }
-.pick-group.rows-1 { grid-template-rows: 78px; }
 .steps { margin: 10px 0 4px; font-size: 16px; line-height: 1.4; font-weight: 700; }
 .hint.lead { margin-top: 0; color: var(--text); }
-.look-actions { position: sticky; top: -4px; z-index: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 -16px 6px; padding: 4px 16px 8px; background: var(--panel); }
-.look-actions .btn { margin-top: 0; height: 52px; padding: 0 10px; font-size: 14px; line-height: 1.2; }
-/* The buttons above are 64 px with their padding, minus the 4 they start above the edge: nothing slides under them. */
-.sheet-body:has(.look-actions) .pick-cats { position: sticky; top: 60px; z-index: 1; margin-bottom: 0; padding-bottom: 6px; background: var(--panel); }
 /* A long press on a real iPhone selected the words on a button (L5, 2026-11-09). */
 button, [role=radio], [role=switch] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-.btn.compare { touch-action: none; }
-.tile {
-  position: relative; display: block; width: 104px; height: 78px; padding: 0; overflow: hidden; border-radius: 12px; border: 0;
-  /* a mid-tone "photo" behind every preview: light sky to dark ground, so light and dark templates both show how they read */
-  background: linear-gradient(170deg, #9fb0c2 0%, #5a6878 48%, #2c2a28 100%); color: #fff; font: inherit;
-}
-.tile canvas { position: absolute; left: 0; top: 0; width: 100%; height: 60px; }
-.tile span { position: absolute; left: 0; right: 0; bottom: 0; height: 18px; padding: 0 6px; background: rgba(0, 0, 0, 0.62); font-size: 11px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tile.on { outline: 2px solid var(--text); outline-offset: 2px; } /* Ч4: around the whole tile, seen on a light frame too */
-.tile.on span { background: var(--panel-2); color: var(--text); font-weight: 700; }
 
 
 /* Reel in one tap (v1.1) */
 .reel-done { display: grid; gap: 10px; padding: 6px 0 4px; }
 .reel-length { margin: 0; font-size: 22px; text-align: center; font-variant-numeric: tabular-nums; }
 .reel-list { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
-.reel-done .btn { margin: 0; }
 .reel-lang { display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
 .script-input { width: 100%; min-height: 110px; resize: vertical; font: inherit; line-height: 1.4; padding: 10px 12px; }
 .flip-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
-.flip-row .btn { margin: 0; }
-.btn[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
 
 /* ?styles (v1.5): every template drawn on a busy background, with its edge contrast */
 .styles-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
@@ -370,11 +281,4 @@ button, [role=radio], [role=switch] { -webkit-touch-callout: none; -webkit-user-
 
 /* Layers (v1.6) */
 .layer-moves { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.layer-moves .btn { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; margin-top: 0; }
 
-/* The playhead inside a sheet (audit V-218): stays in view while the sliders scroll. */
-.clip-scrub { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; min-height: 44px; background: var(--panel); }
-.clip-scrub-time { flex: 0 0 auto; min-width: 44px; font-size: 13px; font-variant-numeric: tabular-nums; }
-.clip-scrub-track { position: relative; flex: 1 1 auto; display: flex; align-items: center; height: 44px; }
-.clip-scrub-track input { width: 100%; margin: 0; accent-color: var(--accent); }
-.clip-scrub-key { position: absolute; bottom: 6px; width: 6px; height: 6px; margin-left: -3px; background: var(--accent); transform: rotate(45deg); pointer-events: none; }

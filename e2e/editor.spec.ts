@@ -292,9 +292,9 @@ test('captions (v1.6): fonts and weight, lines with a small first letter, no key
   await expect(page.locator('.eyedrop-loupe')).toBeVisible();
   await page.mouse.up();
   await expect(page.locator('.eyedrop')).toHaveCount(0);
-  const picked = (await colors.locator('.swatch.on').first().getAttribute('aria-label'))!;
+  const picked = (await colors.locator('.swatch[aria-pressed="true"]').first().getAttribute('aria-label'))!;
   hexRgb(picked).forEach((v, i) => expect(Math.abs(v - [247, 129, 233][i]), `picked ${picked}`).toBeLessThan(20));
-  await expect(colors.locator('.swatch.on')).toHaveCount(1); // the new colour leads the row, chosen
+  await expect(colors.locator('.swatch[aria-pressed="true"]')).toHaveCount(1); // the new colour leads the row, chosen
   // A quick tap before the frame is ready still picks. On the live site a font still downloading held the frame back,
   // and the eyedropper closed with nothing picked (v1.6.0). Here every font load takes 2.5 s more, with a caption on
   // screen in a font never drawn before (an added one: the built-in ones are loaded by the template tiles).
@@ -321,7 +321,7 @@ test('captions (v1.6): fonts and weight, lines with a small first letter, no key
   const waited = Date.now() - tappedAt;
   console.log(`eyedropper: a quick tap was answered after ${waited} ms`);
   expect(waited, 'the eyedropper waits for the frame to answer the tap (v1.6.0 closed at once, nothing picked)').toBeGreaterThan(1000);
-  const tapped = (await colors.locator('.swatch.on').first().getAttribute('aria-label'))!;
+  const tapped = (await colors.locator('.swatch[aria-pressed="true"]').first().getAttribute('aria-label'))!;
   hexRgb(tapped).forEach((v, i) => expect(Math.abs(v - [247, 129, 233][i]), `tapped ${tapped}`).toBeLessThan(20));
   // The text sheet has the same font picker, now under a heading.
   await page.getByRole('button', { name: 'Done' }).click();
@@ -348,7 +348,7 @@ test('chroma key (v1.6): the eyedropper picks the key colour from the picture, e
     await page.mouse.down();
     await page.mouse.up();
     await expect(page.locator('.eyedrop')).toHaveCount(0);
-    return hexRgb((await colors.locator('.swatch.on').first().getAttribute('aria-label'))!);
+    return hexRgb((await colors.locator('.swatch[aria-pressed="true"]').first().getAttribute('aria-label'))!);
   };
   const near = (rgb: number[]) => rgb.forEach((v, i) => expect(Math.abs(v - [1, 125, 0][i]), rgb.join()).toBeLessThan(25));
   near(await pick());
@@ -1182,7 +1182,7 @@ test('auto reframe follows a walking person in a vertical project', async ({ pag
   await tool(page, 'Auto reframe').click();
   await expect(page.getByText(/Reframed/)).toBeVisible({ timeout: 90_000 });
   await tool(page, 'Transform').click();
-  await expect(page.getByRole('button', { name: /Position X keyframe/ })).toHaveClass(/animated/);
+  await expect(page.getByRole('button', { name: /Position X keyframe/ })).toHaveAttribute('data-animated', 'true');
 });
 
 test('keyframes, chroma key and a mask change the picture', async ({ page }, info) => {
@@ -3612,7 +3612,9 @@ test('a photo, a 1D LUT or a zip picked as a LUT and a video or a cut font picke
   await page.getByRole('textbox', { name: 'Text', exact: true }).fill('Kadr');
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.locator('.tl-row .clip-text')).toHaveCount(1);
-  await expect.poll(() => savedProject(page), { timeout: 10_000 }).toContain('"kind":"text"');
+  // The words as typed are saved, not only the new text: "before" is the project after this edit (the sheet rises for
+  // 260 ms since Chetko Ч4 release 5, so the typing can land after the first save of the new text).
+  await expect.poll(() => savedProject(page), { timeout: 10_000 }).toContain('"text":"Kadr"');
   const before = await savedProject(page);
   const pick = async (button: string, file: string) => {
     await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 20_000 });
@@ -4314,7 +4316,7 @@ test('colour spectrum: every colour at once, a saturation strip, a loupe above t
   const picked = await code.inputValue();
   hexRgb(picked).forEach((v, i) => expect(Math.abs(v - [224, 102, 255][i]), `picked ${picked}`).toBeLessThan(8)); // hsl(288, 100%, 70%)
   hexRgb(picked).forEach((v, i) => expect(Math.abs(v - middle[i]), `loupe middle ${middle}`).toBeLessThan(6));
-  await expect(colors.locator('.swatch.on[aria-label^="#"]').first()).toHaveAttribute('aria-label', picked); // remembered and chosen
+  await expect(colors.locator('.swatch[aria-pressed="true"][aria-label^="#"]').first()).toHaveAttribute('aria-label', picked); // remembered and chosen
   // The whole drag is one step back.
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(code).toHaveValue('#ffffff');
@@ -4337,7 +4339,7 @@ test('colour spectrum: every colour at once, a saturation strip, a loupe above t
   await code.fill('#2F9BFF');
   await code.press('Enter');
   await expect(code).toHaveValue('#2f9bff');
-  await expect(colors.locator('.swatch.on[aria-label^="#"]').first()).toHaveAttribute('aria-label', '#2f9bff');
+  await expect(colors.locator('.swatch[aria-pressed="true"][aria-label^="#"]').first()).toHaveAttribute('aria-label', '#2f9bff');
 });
 
 // ---------- Audit 2026-11 (docs/13), second pass: confirmed findings, fixed in v1.6.3 ----------
@@ -5129,11 +5131,11 @@ test('a second keyframe without closing the sheet: the playhead is inside it (au
   const keyframe = page.getByRole('button', { name: /Scale keyframe/ });
   await scrub.fill('0.5');
   await keyframe.click();
-  await expect(page.locator('.clip-scrub-key')).toHaveCount(1);
+  await expect(page.locator('.ck-scrub-key')).toHaveCount(1);
   await scrub.fill('1.5');
   await expect(page.getByRole('button', { name: 'Add Scale keyframe' }), 'a moment without a keyframe').toBeVisible();
   await keyframe.click();
-  await expect(page.locator('.clip-scrub-key')).toHaveCount(2);
+  await expect(page.locator('.ck-scrub-key')).toHaveCount(2);
   await expect(page.getByRole('slider', { name: 'Position in the clip' }), 'the sheet stayed open').toBeVisible();
 });
 

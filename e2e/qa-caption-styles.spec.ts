@@ -251,7 +251,7 @@ test('the pickers at 375 px: categories jump, one hand, no sideways scroll, targ
     await page.locator('.pick-cat', { hasText: new RegExp(`^${c.name}$`) }).click();
     const first = CAPTION_PRESETS.find((p) => p.cat === c.id)!;
     await expect(styles(page).getByRole('radio', { name: first.name, exact: true })).toBeInViewport({ timeout: 3000 });
-    await expect(page.locator('.pick-cat.on')).toHaveText(c.name);
+    await expect(page.locator('.pick-cat[aria-current="true"]').first()).toHaveText(c.name);
   }
   // Previews are drawn (not blank) for the templates on screen.
   await expect.poll(() => page.locator('.pick-strip canvas').evaluateAll((cs) => (cs as HTMLCanvasElement[])
@@ -289,6 +289,6 @@ test('the pickers at 375 px: categories jump, one hand, no sideways scroll, targ
   await tool(page, 'Субтитры').click();
   await expect(page.getByRole('radiogroup', { name: 'Стиль' }).getByRole('radio', { name: 'Караоке-заливка' })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByRole('radiogroup', { name: 'Произносимое слово' }).getByRole('radio', { name: 'Караоке-заливка' })).toBeChecked();
-  await expect(page.locator('.pick-cat')).toHaveText(['Блогер', 'Минимализм', 'Яркие', 'Караоке', 'Игровые', 'Деловые', 'С анимацией']);
+  await expect(page.locator('.ck-picker').first().locator('.pick-cat')).toHaveText(['Блогер', 'Минимализм', 'Яркие', 'Караоке', 'Игровые', 'Деловые', 'С анимацией']);
   expect(await audit(page, 'captions, Russian')).toEqual([]);
 });

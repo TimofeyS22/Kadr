@@ -1,7 +1,7 @@
 // Template catalogs (v1.5): category buttons over a two-row strip of live previews. A preview is drawn by the same text
 // renderer as the video (ui/tiles.ts), so it shows exactly what the template gives. Made for one hand at 375 px: the
 // strip scrolls sideways under the thumb, a category tap jumps to its first template.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { t } from '../lib/i18n';
 
 export interface PickerItem { id: string; name: string; cat: string; /** Shown after the name, e.g. a value. */ note?: string }
@@ -13,9 +13,13 @@ export const DEMO_LOOP_S = 2.4;
 export const DEMO_STILL_S = 1.2;
 const TICK_MS = 80; // ~12 frames a second is enough for a 100 px preview, and cheap on a slow phone
 
-export function StylePicker<T extends PickerItem>({ items, categories, value, onChange, label, draw, animated = false, rows = 2 }: {
+export function StylePicker<T extends PickerItem>({ items, categories, value, onChange, label, draw, art, animated = false, rows = 2, kind }: {
   items: readonly T[]; categories: readonly { id: string; name: string }[]; value: string | null; onChange: (id: string) => void;
-  label: string; draw: TileDraw<T>; animated?: boolean; /** One row leaves more of the sheet for a slider. */ rows?: 1 | 2;
+  label: string; /** One row leaves more of the sheet for a slider. */ rows?: 1 | 2; animated?: boolean;
+  /** How a preview is drawn: on a canvas (`draw`), or as markup (`art`: a font's own letters). */
+  draw?: TileDraw<T>; art?: (item: T) => ReactNode;
+  /** `font`: narrower tiles of letters. */
+  kind?: 'font';
 }) {
   const strip = useRef<HTMLDivElement>(null);
   const cats = useRef<HTMLDivElement>(null);
@@ -32,7 +36,7 @@ export function StylePicker<T extends PickerItem>({ items, categories, value, on
   // Only previews on screen are drawn; with motion they redraw on one shared clock, which stops with the picker.
   useEffect(() => {
     const root = strip.current;
-    if (!root) return;
+    if (!root || !draw) return;
     const byId = new Map(items.map((it) => [it.id, it]));
     const still = !animated || matchMedia('(prefers-reduced-motion: reduce)').matches;
     const visible = new Set<HTMLCanvasElement>();
@@ -49,7 +53,7 @@ export function StylePicker<T extends PickerItem>({ items, categories, value, on
         const c = e.target as HTMLCanvasElement;
         if (e.isIntersecting) { visible.add(c); paint(c, performance.now()); } else visible.delete(c);
       }
-    }, { root, rootMargin: '0px 80px' });
+    }, { root, rootMargin: '0px 240px' }); // two tiles ahead: a tile is drawn before it slides into view
     root.querySelectorAll('canvas[data-id]').forEach((c) => io.observe(c));
     let raf = 0, last = 0;
     const tick = (now: number) => {
@@ -64,7 +68,7 @@ export function StylePicker<T extends PickerItem>({ items, categories, value, on
 
   // The lit category button stays in view as the strip scrolls past the categories.
   useEffect(() => {
-    const row = cats.current, b = row?.querySelector<HTMLElement>('.pick-cat.on');
+    const row = cats.current, b = row?.querySelector<HTMLElement>('.pick-cat[aria-current="true"]');
     if (!row || !b) return;
     if (b.offsetLeft < row.scrollLeft || b.offsetLeft + b.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = b.offsetLeft - 16;
   }, [cat]);
@@ -91,21 +95,23 @@ export function StylePicker<T extends PickerItem>({ items, categories, value, on
   };
 
   return (
-    <div className="picker">
+    <div className="picker ck-picker">
       {groups.length > 1 && (
-        <div ref={cats} className="pick-cats">
+        <div ref={cats} className="ck-cats">
           {groups.map((g) => (
-            <button key={g.id} className={`pick-cat ${g.id === cat ? 'on' : ''}`} aria-current={g.id === cat} onClick={() => jump(g.id)}>{t(g.name)}</button>
+            <button key={g.id} type="button" className="pick-cat ck-cat" aria-current={g.id === cat} onClick={() => jump(g.id)}>{t(g.name)}</button>
           ))}
         </div>
       )}
-      <div ref={strip} className="pick-strip" role="radiogroup" aria-label={label} onScroll={onScroll} onPointerDown={() => { jumped.current = null; }}>
+      <div ref={strip} className="pick-strip ck-strip" data-kind={kind} role="radiogroup" aria-label={label} onScroll={onScroll} onPointerDown={() => { jumped.current = null; }}>
         {groups.map((g) => (
-          <div key={g.id} className={`pick-group rows-${rows}`} data-cat={g.id}>
+          <div key={g.id} className="ck-strip-group" data-rows={rows} data-cat={g.id}>
             {g.items.map((it) => (
-              <button key={it.id} role="radio" aria-checked={it.id === value} aria-label={t(it.name)} className={`tile ${it.id === value ? 'on' : ''}`} onClick={() => onChange(it.id)}>
-                <canvas data-id={it.id} aria-hidden />
-                <span aria-hidden>{t(it.name)}{it.note ? ` ${it.note}` : ''}</span>
+              <button key={it.id} type="button" role="radio" aria-checked={it.id === value} aria-label={t(it.name)} className="tile ck-ptile" onClick={() => onChange(it.id)}>
+                {/* The look on the person's own frame; the chosen one is ringed in white with a gap, as every chosen thing of
+                    a sheet (the owner, 2026-11-11: two marks round a tile looked like stray sticks). */}
+                <span className="ck-ptile-art" aria-hidden="true">{art ? art(it) : <canvas data-id={it.id} />}</span>
+                <span className="ck-ptile-name" aria-hidden="true">{t(it.name)}{it.note ? ` ${it.note}` : ''}</span>
               </button>
             ))}
           </div>

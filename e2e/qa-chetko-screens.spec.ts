@@ -407,3 +407,193 @@ test('timeline: in an empty project the call to add a video is whole on the scre
     await expect(add, 'the words on it are its name (WCAG 2.5.3)').toHaveAccessibleName('Добавить видео или фото');
   }
 });
+
+// ---- release 5: the tool sheets on the system ----
+const tool = (page: Page, name: string) => page.locator('.toolbar .tool', { hasText: new RegExp(`^${name}$`) });
+const panel = (page: Page) => page.locator('.sheet');
+async function openTool(page: Page, name: string) {
+  await tool(page, name).click();
+  await expect(panel(page)).toBeVisible();
+  await page.waitForTimeout(350); // the sheet rises for --dur-sheet-in
+}
+const whiteFilled = (page: Page) => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.sheet button')].filter((b) => {
+  if (!b.getBoundingClientRect().width) return false;
+  const ctx = document.createElement('canvas').getContext('2d')!;
+  ctx.fillStyle = getComputedStyle(b).backgroundColor; ctx.fillRect(0, 0, 1, 1);
+  const [r, g, bl, a] = ctx.getImageData(0, 0, 1, 1).data;
+  return a > 200 && Math.min(r, g, bl) > 235;
+}).map((b) => b.textContent?.trim()));
+
+test('sheets: «Готово» is a word; a short sheet gives the frame what it leaves, and the frame does not jump while it is open', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row.main .clip').first().click();
+  const frame = () => page.locator('.preview').evaluate((e) => e.getBoundingClientRect().height);
+  const shut = await frame();
+  await openTool(page, 'Маска');
+  const done = panel(page).getByRole('button', { name: 'Готово' });
+  await expect(done).toHaveText('Готово'); // words, not a check (audit P3-2)
+  expect((await done.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  const sheetH = await panel(page).evaluate((e) => e.getBoundingClientRect().height);
+  expect(sheetH, 'the mask sheet is as tall as what it holds').toBeLessThan(0.46 * 812 - 40);
+  // The frame sits right above the sheet: the editor leaves the sheet exactly its height.
+  const gap = await page.evaluate(() => document.querySelector('.sheet')!.getBoundingClientRect().top - document.querySelector('.transport')!.getBoundingClientRect().bottom);
+  expect(Math.abs(gap), 'nothing is left empty between the row under the frame and the sheet').toBeLessThanOrEqual(1);
+  const withMask = await frame();
+  expect(withMask, 'a short sheet leaves the frame more room than the 46% sheet of 1.7.1').toBeGreaterThan(shut - 0.46 * 812 + 60);
+  // Speed: «Кривая» makes the sheet taller; back to «Обычная», the sheet keeps its height, so the frame does not jump.
+  await done.click();
+  await openTool(page, 'Скорость');
+  const h0 = await panel(page).evaluate((e) => e.getBoundingClientRect().height);
+  await panel(page).getByRole('radio', { name: 'Кривая' }).click();
+  await expect.poll(() => panel(page).evaluate((e) => e.getBoundingClientRect().height)).toBeGreaterThanOrEqual(h0);
+  const h1 = await panel(page).evaluate((e) => e.getBoundingClientRect().height);
+  const f1 = await frame();
+  await panel(page).getByRole('radio', { name: 'Обычная' }).click();
+  await page.waitForTimeout(200);
+  expect(await panel(page).evaluate((e) => e.getBoundingClientRect().height)).toBeCloseTo(h1, 0);
+  expect(await frame()).toBeCloseTo(f1, 0);
+  // Inside a sheet the only white button is its main action, and «Применить ко всем» is not one.
+  await panel(page).getByRole('button', { name: 'Готово' }).click();
+  await openTool(page, 'Фильтры');
+  expect(await whiteFilled(page)).toEqual([]);
+});
+
+test('sheets: the focus goes into the sheet and back to the tool that opened it; Escape closes', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'WebKit skips buttons on Tab unless the system setting says otherwise');
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row.main .clip').first().click();
+  await tool(page, 'Громкость').focus();
+  await page.keyboard.press('Enter');
+  await expect(panel(page)).toBeVisible();
+  await expect(page.locator('.sheet h2')).toBeFocused(); // its name is read first
+  await page.keyboard.press('Tab');
+  await expect(panel(page).getByRole('button', { name: 'Готово' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(panel(page)).toHaveCount(0);
+  await expect(tool(page, 'Громкость')).toBeFocused();
+  // Escape backs out of the sheet and of the piece at once (as in 1.7.1): the focus stays on the ribbon, not lost.
+  await page.keyboard.press('Enter');
+  await expect(panel(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(panel(page)).toHaveCount(0);
+  await expect(page.locator('.toolbar .tool:focus')).toHaveCount(1);
+  // Not modal: the row under the frame works while a sheet is open.
+  await page.locator('.tl-row.main .clip').first().click();
+  await openTool(page, 'Громкость');
+  await expect(page.locator('.transport')).not.toHaveAttribute('inert');
+  await page.getByRole('button', { name: 'Воспроизвести' }).click();
+  await expect(page.getByRole('button', { name: 'Пауза' })).toBeVisible();
+});
+
+test('sheets: choices are 44 px segments, switches show their state by the knob, colours are apart and the chosen one is ringed', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row.main .clip').first().click();
+  await openTool(page, 'Громкость');
+  const sw = panel(page).getByRole('switch', { name: 'Без звука' });
+  const knob = () => sw.evaluate((el) => { const k = el.nextElementSibling!; return getComputedStyle(k, '::before').translate; });
+  const off = await knob();
+  await sw.check();
+  await expect(sw).toBeChecked();
+  expect(await knob(), 'on is said by where the knob is, not by colour alone').not.toBe(off);
+  await sw.uncheck();
+  // «0,0 с», not «0.0s» (audit P3-8).
+  await expect(panel(page).locator('.ck-slider', { hasText: 'Нарастание' })).toContainText('0,0 с');
+  await panel(page).getByRole('button', { name: 'Готово' }).click();
+  await page.locator('.toolbar .tool-back').click();
+  await openTool(page, 'Холст');
+  for (const chip of await panel(page).locator('.ck-chip').all()) expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await expect(panel(page).getByRole('radio', { name: '30 к/с' })).toBeVisible();
+  const colours = panel(page).getByRole('group', { name: 'Цвет фона' }).locator('.ck-swatch');
+  await colours.nth(2).click();
+  await expect(colours.nth(2)).toHaveAttribute('aria-pressed', 'true');
+  await expect(panel(page).locator('.ck-swatch[aria-pressed="true"]')).toHaveCount(1);
+  const ring = await colours.nth(2).locator('i').evaluate((i) => getComputedStyle(i).boxShadow);
+  expect(ring, 'the chosen colour has a ring').toMatch(/0px 0px 0px 4px/);
+  const boxes = await colours.evaluateAll((els) => els.map((e) => e.querySelector('i')!.getBoundingClientRect()).map((r) => [r.left, r.right]));
+  for (let i = 1; i < boxes.length; i++) expect(boxes[i][0] - boxes[i - 1][1], 'colours do not touch').toBeGreaterThanOrEqual(8);
+});
+
+test('sheets: a value has the whole width of the sheet and 44 px to a finger; the keyframe diamond is 44 px; sections are named at 12 px or more', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row.main .clip').first().click();
+  await openTool(page, 'Трансформация');
+  const body = (await panel(page).locator('.sheet-body').boundingBox())!;
+  const x = panel(page).getByRole('slider', { name: 'Положение X' });
+  const track = (await x.boundingBox())!;
+  expect(track.width, 'the track takes the width of the sheet (UI-3: 131 of 343 px)').toBeGreaterThanOrEqual(body.width - 32 - 44 - 8 - 1);
+  expect(track.height).toBeGreaterThanOrEqual(44);
+  const kfBox = await panel(page).getByRole('button', { name: 'Добавить ключевой кадр: Положение X' }).boundingBox();
+  expect(kfBox!.width).toBeGreaterThanOrEqual(44);
+  expect(kfBox!.height).toBeGreaterThanOrEqual(44);
+  const sizes = await panel(page).locator('h3').evaluateAll((hs) => hs.map((h) => parseFloat(getComputedStyle(h).fontSize)));
+  expect(Math.min(...sizes)).toBeGreaterThanOrEqual(12);
+  // The sheet is named as the ribbon names its tool (Ж4), at the heading size, and nothing of the name is cut.
+  await expect(page.locator('.sheet h2')).toHaveText('Трансформация');
+  expect(await page.locator('.sheet h2').evaluate((h) => parseFloat(getComputedStyle(h).fontSize))).toBe(20);
+  // The playhead of the sheet tells the time as the row under the frame does.
+  await expect(panel(page).locator('.ck-scrub-time')).toHaveText(/^\d+:\d\d\.\d$/);
+});
+
+test('sheets: a look is chosen on tiles with the name under the picture, ringed in white; categories are tabs; Before / after holds in the header, «Ко всем» is a word at the end', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row.main .clip').first().click();
+  await openTool(page, 'Фильтры');
+  const chosen = panel(page).locator('.tile[aria-checked="true"]');
+  await expect(chosen).toHaveCount(1);
+  // Ringed in white with a gap, not held between two marks (the owner: the marks round a tile looked like sticks).
+  await expect(panel(page).locator('.ck-held')).toHaveCount(0);
+  expect(await chosen.locator('canvas').evaluate((c) => { const s = getComputedStyle(c); return `${s.outlineWidth} ${s.outlineOffset}`; })).toBe('2px 2px');
+  const [pic, name] = await chosen.evaluate((t) => [t.querySelector('canvas')!.getBoundingClientRect().bottom, t.querySelector('.ck-ptile-name')!.getBoundingClientRect().top]);
+  expect(name, 'the name is under the picture, not over it').toBeGreaterThanOrEqual(pic);
+  for (const cat of await panel(page).locator('.pick-cat').all()) expect((await cat.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await expect(panel(page).locator('.pick-cat[aria-current="true"]')).toHaveCount(1);
+  const compare = page.locator('.sheet-head').getByRole('button', { name: 'Удерживайте, чтобы увидеть кусок без обработки' });
+  const cb = (await compare.boundingBox())!;
+  expect(cb.width).toBeGreaterThanOrEqual(44);
+  expect(cb.height).toBeGreaterThanOrEqual(44);
+  // «Применить ко всем» is the last thing of the sheet, a word without a box, on one line.
+  const apply = panel(page).getByRole('button', { name: 'Применить ко всем кускам (2)' });
+  const last = await panel(page).locator('.sheet-body').evaluate((b) => {
+    const kids = [...b.children].filter((c) => (c as HTMLElement).offsetHeight > 0).map((c) => c.getBoundingClientRect().bottom);
+    return Math.max(...kids);
+  });
+  expect((await apply.boundingBox())!.y + (await apply.boundingBox())!.height).toBeCloseTo(last, 0);
+  expect(await apply.evaluate((b) => getComputedStyle(b).boxShadow)).toBe('none');
+  expect((await apply.boundingBox())!.height).toBeLessThan(52);
+  // At 320 px nothing scrolls sideways and the words stay whole.
+  await page.setViewportSize({ width: 320, height: 640 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  expect(await apply.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+});
+
+test('sheets: fonts show themselves in their own letters, text styles are drawn on the person\'s frame, no option is a grey outlined box (the owner, 2026-11-11)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row .clip-text').first().click();
+  await openTool(page, 'Текст');
+  // Fonts: a strip of tiles, each in its own face (it had collapsed to nothing under «Шрифт»).
+  const fonts = panel(page).getByRole('radiogroup', { name: 'Шрифт' });
+  expect((await fonts.boundingBox())!.height).toBeGreaterThan(100);
+  const faces = await fonts.locator('.ck-font-letters').evaluateAll((els) => els.slice(0, 6).map((e) => getComputedStyle(e).fontFamily));
+  expect(new Set(faces).size, 'each tile is drawn in its own font').toBe(faces.length);
+  // The chosen font is ringed in white, not held between two marks: round letters with no picture they read as sticks.
+  await expect(fonts.locator('.ck-held')).toHaveCount(0);
+  expect(await fonts.locator('[aria-checked="true"] .ck-ptile-art').evaluate((a) => getComputedStyle(a).boxShadow)).toMatch(/0px 0px 0px 2px inset|inset 0px 0px 0px 2px/);
+  await expect(panel(page).getByRole('button', { name: 'Добавить шрифт' })).toBeVisible();
+  // The weight: one even row, no word cut.
+  const cut = await panel(page).getByRole('radiogroup', { name: 'Начертание' }).locator('.ck-chip').evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
+  expect(cut).toBe(0);
+  // Styles: drawn on the sample's orange sky, not on the grey stand-in (#9fb0c2 at the top).
+  await expect.poll(() => panel(page).locator('.tile canvas').first().evaluate((c: HTMLCanvasElement) => {
+    const [r, g, b] = c.getContext('2d')!.getImageData(2, 2, 1, 1).data;
+    return Math.abs(r - g) + Math.abs(g - b);
+  }), { timeout: 30_000 }).toBeGreaterThan(40); // the frame is decoded first: WebKit under load needs longer
+  // No grey line around an option that is not chosen.
+  const lined = await panel(page).locator('.ck-chip[aria-checked="false"], .ck-panel-body .ck-quiet').evaluateAll((els) => els.filter((e) => getComputedStyle(e).boxShadow !== 'none').length);
+  expect(lined).toBe(0);
+});

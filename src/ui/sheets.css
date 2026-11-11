@@ -1,0 +1,204 @@
+/* The tool sheets on the Chetko system (docs/17 stage Ч4, release 5). A sheet is a choice and the work of a tool; its
+   values are still the sliders of 1.7.1, drawn by the system, until the Scale takes them over. Every value comes from
+   tokens.css; the drift test reads this file. `sheet`, `sheet-head`, `sheet-body`, `chip`, `swatch`, `tile`, `pick-cat`,
+   `pick-strip`, `look-actions` and `compare` stay in the markup as hooks for the tests and the iPhone scripts; what is
+   chosen is styled by its ARIA state. */
+
+/* ---- the sheet: docked at the bottom, as tall as what it holds, never over 46% of the screen (audit UI-7) ---- */
+.ck-panel {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-over-old); display: flex; flex-direction: column;
+  max-height: 46dvh; padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0; background: var(--surface-raised); color: var(--text-primary);
+  box-shadow: inset 0 var(--hairline) var(--border-subtle);
+  /* It rises from where it came: the ribbon under the frame. */
+  animation: ck-panel-in var(--dur-sheet-in) var(--ease-out);
+  transition: transform var(--dur-sheet-out) var(--ease-out);
+}
+.ck-panel[data-dragging] { transition: none; }
+@keyframes ck-panel-in { from { translate: 0 var(--space-8); } }
+@media (prefers-reduced-motion: reduce) { .ck-panel { animation: none; transition: none; } }
+
+/* The header: what the sheet is, and «Готово» in words (a check meant both "apply" and "close", audit P3-2). The whole
+   header is the handle a finger pulls down to close it. */
+.ck-panel-head { position: relative; flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: 56px; padding: var(--space-2) var(--space-2) 0 var(--space-4); touch-action: none; }
+.ck-panel-head::before { content: ''; position: absolute; top: var(--space-1); left: 50%; width: 36px; height: 4px; translate: -50% 0; border-radius: var(--radius-clip); background: var(--text-disabled); }
+/* A long name («Трансформация и ключевые кадры») takes two lines rather than losing its end. */
+.ck-panel-head h2 { flex: 1; min-width: 0; margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; font-size: var(--type-lg); font-weight: var(--weight-strong); line-height: var(--leading-tight); letter-spacing: -0.01em; outline: none; }
+.ck-panel-tools { flex: none; display: flex; }
+.ck-panel-tools:empty { display: none; }
+.ck-panel[data-scrolled] .ck-panel-head { box-shadow: inset 0 calc(-1 * var(--hairline)) var(--border-subtle); }
+/* «Готово» is a white word, not one more box: the header holds the name and the way out, nothing to weigh. */
+.ck-panel-head .ck-btn { flex: none; padding: 0 var(--space-3); background: none; box-shadow: none; color: var(--text-primary); }
+
+.ck-panel-body {
+  flex: 1 1 auto; min-height: 0; display: grid; grid-auto-rows: max-content; align-content: start; gap: var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-4); overflow-y: auto; overscroll-behavior: contain;
+}
+.ck-panel-body > * { min-width: 0; }
+/* A part of a sheet is named in small strong words, never under 12 px (audit P3-9). */
+.ck-panel-body h3 { margin: var(--space-2) 0 calc(-1 * var(--space-1)); font-size: var(--type-xs); font-weight: var(--weight-strong); letter-spacing: 0.02em; color: var(--text-secondary); }
+.ck-hint { margin: 0; font-size: var(--type-sm); line-height: var(--leading-text); color: var(--text-secondary); }
+.ck-hint[data-lead] { color: var(--text-primary); }
+/* An action of a sheet stands at its start; the one main action of the sheet is white and takes the whole width. */
+.ck-panel-body > .ck-btn { justify-self: start; max-width: 100%; }
+.ck-panel-body > .ck-primary { justify-self: stretch; }
+.ck-panel-body .ck-btn-label { white-space: normal; text-align: center; line-height: var(--leading-tight); }
+/* What a sheet does besides choosing (reset, import, apply to all) lies sunk into it like an option, without a grey line
+   around it: lines around every control made the sheet a form (the owner, 2026-11-11). The one main action stays white. */
+.ck-panel-body .ck-quiet { background: var(--surface-panel); box-shadow: none; }
+/* A button that is a switch (Mirror, Upside down): on, it has the white ring of a chosen thing. */
+.ck-panel-body .ck-btn[aria-pressed='true'] { color: var(--text-primary); box-shadow: inset 0 0 0 2px var(--mark-was); }
+
+/* ---- a choice in words, 44 px (they were 36). No grey lines around every option: an option lies sunk into the sheet,
+   and the chosen one is ringed in white (DESIGN.md §2.2: white is what is chosen; the signal is only for a value). ---- */
+.ck-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* Never a wrapped cloud: a list that does not fit runs on in one row and fades at the edge it continues past. */
+.ck-chips[data-scroll] { flex-wrap: nowrap; margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4); overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, black calc(100% - var(--space-6)), transparent); mask-image: linear-gradient(90deg, black calc(100% - var(--space-6)), transparent); }
+.ck-chips[data-scroll]::-webkit-scrollbar { display: none; }
+.ck-chip {
+  flex: none; min-height: var(--touch); padding: 0 var(--space-4); border: 0; border-radius: var(--radius-control); background: var(--surface-panel);
+  color: var(--text-primary); font: inherit; font-size: var(--type-sm); font-weight: var(--weight-medium); white-space: nowrap; cursor: pointer; touch-action: manipulation;
+  transition: scale var(--dur-press) var(--ease-soft);
+}
+.ck-chip:active:not(:disabled) { scale: 0.96; }
+.ck-chip[aria-checked='true'] { box-shadow: inset 0 0 0 2px var(--mark-was); }
+.ck-chip:disabled { color: var(--text-disabled); cursor: default; opacity: 1; }
+.ck-chip:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+/* A few short words (weight, format, frame rate): one sunk track, the options share it equally, the chosen one is lifted. */
+.ck-chips[data-even] { flex-wrap: nowrap; gap: 0; padding: var(--space-1); border-radius: var(--radius-control); background: var(--surface-panel); }
+.ck-chips[data-even] .ck-chip { flex: 1 1 0; min-width: 0; padding: 0 var(--space-1); overflow: hidden; text-overflow: ellipsis; background: none; }
+.ck-chips[data-even] .ck-chip[aria-checked='true'] { background: var(--border-subtle); box-shadow: inset 0 0 0 2px var(--mark-was); }
+/* Six or more numbers in the row (0.25× … 4×): smaller figures, so none of them is cut. */
+.ck-chips[data-even='dense'] .ck-chip { padding: 0; font-size: var(--type-xs); font-variant-numeric: tabular-nums; }
+
+/* ---- on and off: a switch of the system, not a checkbox of a web form (audit P3-8): sunk like a choice when off, white
+   when on, and said by where the knob is, not only by its colour. The box under it is the real checkbox, so a screen reader and the tests reach it as before. ---- */
+.ck-switch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--touch); font-size: var(--type-sm); cursor: pointer; }
+.ck-switch { position: relative; flex: none; width: 52px; height: 32px; }
+.ck-switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.ck-switch i { position: absolute; inset: 0; border-radius: var(--radius-control); background: var(--surface-panel); pointer-events: none; transition: background-color var(--dur-press) var(--ease-soft); }
+.ck-switch i::before { content: ''; position: absolute; top: var(--space-1); left: var(--space-1); width: 24px; height: 24px; border-radius: var(--radius-clip); background: var(--text-secondary); transition: translate var(--dur-press) var(--ease-soft); }
+.ck-switch input:checked + i { background: var(--mark-was); }
+.ck-switch input:checked + i::before { translate: 20px 0; background: var(--surface-panel); }
+.ck-switch input:focus-visible + i { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-switch input:disabled + i::before { background: var(--text-disabled); }
+@media (prefers-reduced-motion: reduce) { .ck-switch i, .ck-switch i::before { transition: none; } }
+
+/* ---- colours: 44 px each, apart; the chosen one is ringed in white with a gap (P3-8: they stuck together, unmarked) ---- */
+.ck-swatches { display: flex; align-items: center; gap: var(--space-1); margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-3); overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.ck-swatches::-webkit-scrollbar { display: none; }
+.ck-swatch { position: relative; flex: none; width: var(--touch); height: var(--touch); display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--text-primary); cursor: pointer; touch-action: manipulation; }
+.ck-swatch i { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--radius-control); box-shadow: inset 0 0 0 var(--hairline) var(--image-outline); }
+.ck-swatch[aria-pressed='true'] i { box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 4px var(--mark-was); }
+.ck-swatch[data-tool='dropper'] i { background: var(--border-subtle); }
+.ck-swatch[data-tool='dropper'][aria-pressed='true'] i { background: var(--mark-was); color: var(--surface-panel); }
+.ck-swatch[aria-expanded='true'] i { box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 4px var(--mark-was); }
+.ck-swatch:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -2px; }
+.ck-swatch-sep { flex: none; width: var(--hairline); height: 24px; margin: 0 var(--space-1); background: var(--border-subtle); }
+
+/* ---- a value, until the Scale: the name and the digit on one line, the track the whole width under them (audit UI-3:
+   it was 131 of 343 px), 44 px to a finger. The digit and the segment from where it rests are the signal (DESIGN.md §2.2). ---- */
+.ck-slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'label value' 'track track'; align-items: center; column-gap: var(--space-2); }
+/* The diamond stands at the end of the track, so a value with keys is no taller than one without. */
+.ck-slider[data-key] { grid-template-columns: minmax(0, 1fr) auto var(--touch); grid-template-areas: 'label value value' 'track track key'; }
+.ck-slider-label { grid-area: label; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-sm); color: var(--text-primary); user-select: none; -webkit-user-select: none; }
+.ck-slider-value { grid-area: value; font-size: var(--type-sm); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; text-align: right; color: var(--signal); }
+.ck-slider-track { grid-area: track; position: relative; display: block; height: var(--touch); }
+/* Where the value rests: the white mark, fixed (DESIGN.md §1). The input's thumb is the signal mark of where it is now. */
+.ck-slider-was { position: absolute; top: 50%; left: calc(var(--mark-fine) / 2 + (100% - var(--mark-fine)) * var(--rest)); width: var(--mark-fine); height: 28px; translate: -50% -50%; border-radius: var(--radius-clip); background: var(--mark-was); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); pointer-events: none; }
+.ck-slider-input { position: relative; display: block; width: 100%; height: 100%; margin: 0; background: none; cursor: pointer; appearance: none; -webkit-appearance: none; touch-action: pan-y; }
+.ck-slider-input::-webkit-slider-runnable-track { height: 4px; background: linear-gradient(90deg, var(--tick-minor) var(--from), var(--signal) var(--from), var(--signal) var(--to), var(--tick-minor) var(--to)); }
+.ck-slider-input::-moz-range-track { height: 4px; background: linear-gradient(90deg, var(--tick-minor) var(--from), var(--signal) var(--from), var(--signal) var(--to), var(--tick-minor) var(--to)); }
+.ck-slider-input::-webkit-slider-thumb { width: var(--mark-fine); height: 28px; margin-top: -12px; border: 0; border-radius: var(--radius-clip); background: var(--signal); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); -webkit-appearance: none; appearance: none; }
+.ck-slider-input::-moz-range-thumb { width: var(--mark-fine); height: 28px; border: 0; border-radius: var(--radius-clip); background: var(--signal); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); }
+.ck-slider-input:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -2px; }
+/* The keyframe diamond: 44 px (UI-9: it was 32). A key at the playhead is a filled diamond in a white ring; a value that
+   is animated somewhere is in full white. */
+.ck-kf { grid-area: key; width: var(--touch); height: var(--touch); display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-control); background: none; color: var(--text-secondary); cursor: pointer; }
+.ck-kf[data-animated] { color: var(--text-primary); }
+.ck-kf[data-active] { color: var(--text-primary); box-shadow: inset 0 0 0 2px var(--mark-was); }
+.ck-kf:disabled { color: var(--text-disabled); cursor: default; opacity: 1; }
+.ck-kf:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+
+/* The playhead inside a sheet that covers the timeline (audit V-218): it stays in view while the sheet scrolls. */
+.ck-scrub {
+  position: sticky; top: calc(-1 * var(--space-2)); z-index: var(--z-mark); display: flex; align-items: center; gap: var(--space-3);
+  min-height: var(--touch); margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-4)) 0; padding: 0 var(--space-4); background: var(--surface-raised);
+}
+.ck-scrub-time { flex: none; min-width: var(--touch); font-size: var(--type-sm); font-variant-numeric: tabular-nums; }
+.ck-scrub-track { position: relative; flex: 1 1 auto; display: flex; align-items: center; height: var(--touch); }
+.ck-scrub-track input { width: 100%; height: var(--touch); margin: 0; background: none; cursor: pointer; appearance: none; -webkit-appearance: none; }
+.ck-scrub-track input::-webkit-slider-runnable-track { height: 4px; background: var(--tick-minor); }
+.ck-scrub-track input::-moz-range-track { height: 4px; background: var(--tick-minor); }
+.ck-scrub-track input::-webkit-slider-thumb { width: var(--mark-width); height: 28px; margin-top: -12px; border: 0; -webkit-appearance: none; appearance: none;
+  background: linear-gradient(var(--mark-was), var(--mark-was)) top / 100% 12px no-repeat, linear-gradient(var(--mark-was), var(--mark-was)) center / 2px 100% no-repeat; }
+.ck-scrub-track input::-moz-range-thumb { width: var(--mark-width); height: 28px; border: 0; border-radius: 0;
+  background: linear-gradient(var(--mark-was), var(--mark-was)) top / 100% 12px no-repeat, linear-gradient(var(--mark-was), var(--mark-was)) center / 2px 100% no-repeat; }
+.ck-scrub-track input:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -2px; }
+.ck-scrub-key { position: absolute; bottom: var(--space-1); width: 8px; height: 8px; translate: -50% 0; rotate: 45deg; background: var(--mark-was); pointer-events: none; }
+
+/* ---- a look: «Применить ко всем» is a word at the end of the sheet; Before / after holds in the header ---- */
+.ck-look-actions { order: 1; display: flex; }
+.ck-look-actions:empty { display: none; }
+
+/* ---- styles, filters, settings: categories over a strip of previews on the person's own frame ---- */
+.ck-picker { display: grid; gap: var(--space-1); min-width: 0; }
+.ck-cats { display: flex; margin: 0 calc(-1 * var(--space-4)); padding: 0 var(--space-1); overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.ck-cats::-webkit-scrollbar, .ck-strip::-webkit-scrollbar { display: none; }
+.ck-cat {
+  position: relative; flex: none; min-height: var(--touch); padding: 0 var(--space-3); border: 0; background: none;
+  color: var(--text-secondary); font: inherit; font-size: var(--type-sm); white-space: nowrap; cursor: pointer; touch-action: manipulation;
+}
+.ck-cat[aria-current='true'] { color: var(--text-primary); font-weight: var(--weight-strong); }
+.ck-cat[aria-current='true']::after { content: ''; position: absolute; left: var(--space-3); right: var(--space-3); bottom: var(--space-1); height: 2px; background: var(--mark-was); }
+.ck-cat:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -2px; }
+.ck-strip { display: flex; gap: var(--space-6); margin: 0 calc(-1 * var(--space-4)); padding: var(--space-1) var(--space-4) var(--space-2); overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-padding-inline: var(--space-4); }
+.ck-strip-group { flex: none; display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, auto); grid-auto-columns: 104px; gap: var(--space-3) var(--space-4); }
+/* Where a group ends: a seam, so a short column reads as the end of the group, not as a tile gone missing. */
+.ck-strip-group + .ck-strip-group { padding-left: var(--space-6); box-shadow: inset var(--hairline) 0 var(--border-subtle); }
+.ck-strip-group[data-rows='1'] { grid-template-rows: auto; }
+/* A preview: the picture, then its name under it, never over it; the chosen one is ringed in white. */
+.ck-ptile { display: grid; gap: var(--space-2); width: 104px; padding: 0; border: 0; background: none; color: var(--text-secondary); font: inherit; font-size: var(--type-xs); text-align: left; cursor: pointer; touch-action: manipulation; }
+.ck-ptile[aria-checked='true'] { color: var(--text-primary); font-weight: var(--weight-strong); }
+.ck-ptile-art { display: block; height: 60px; }
+.ck-ptile-art canvas { display: block; width: 100%; height: 100%; border-radius: var(--radius-clip); outline: var(--hairline) solid var(--image-outline); outline-offset: calc(-1 * var(--hairline)); }
+/* The chosen preview: a white ring with a gap round the picture, as every chosen thing of a sheet. */
+.ck-ptile[aria-checked='true'] .ck-ptile-art canvas { outline: 2px solid var(--mark-was); outline-offset: 2px; }
+.ck-ptile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: var(--leading-tight); }
+.ck-ptile:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+/* Fonts: each one shows itself, its own letters right on the sheet, in groups like the styles. */
+.ck-strip[data-kind='font'] .ck-strip-group { grid-auto-columns: 80px; }
+.ck-strip[data-kind='font'] .ck-ptile { width: 80px; }
+.ck-strip[data-kind='font'] .ck-ptile-art { height: 52px; display: grid; place-items: center; color: var(--text-primary); }
+.ck-font-letters { font-size: var(--type-xl); line-height: 1; white-space: nowrap; }
+/* The chosen font: its letters on a sunk ground in a white ring, as every chosen option of a sheet. */
+.ck-strip[data-kind='font'] .ck-ptile[aria-checked='true'] .ck-ptile-art { border-radius: var(--radius-control); background: var(--surface-panel); box-shadow: inset 0 0 0 2px var(--mark-was); }
+
+/* The heading of a part with its own action at the end (a font of one's own). */
+.ck-panel-part { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-1); margin-bottom: calc(-1 * var(--space-2)); }
+.ck-panel-part h3 { margin: 0; }
+.ck-panel-part .ck-btn { padding: 0 var(--space-2); font-size: var(--type-sm); }
+
+/* ---- fields of a sheet ---- */
+textarea.ck-panel-text, textarea.ck-panel-script { resize: none; background: var(--surface-panel); box-shadow: none; }
+.ck-panel-text:focus, .ck-panel-script:focus { box-shadow: inset 0 0 0 2px var(--mark-was); }
+.ck-panel-text { min-height: 56px; }
+.ck-panel-script { min-height: 112px; line-height: var(--leading-text); }
+.ck-select {
+  width: 100%; min-height: var(--touch); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-control);
+  background: var(--surface-panel); color: var(--text-primary); font: inherit; font-size: var(--type-md); box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle);
+}
+.ck-select:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+
+/* ---- a phone on its side (audit V-208): the sheet stands right of the picture, the whole height ---- */
+@media (orientation: landscape) and (max-height: 520px) {
+  .ck-panel { left: 50%; top: 0; max-height: none; border-radius: 0; border-bottom-left-radius: var(--radius-sheet); }
+}
+/* ---- a desktop: a card at the right, under the header ---- */
+@media (min-width: 900px) {
+  .ck-panel {
+    left: auto; right: var(--space-4); bottom: auto; top: calc(64px + env(safe-area-inset-top, 0px)); width: 380px; max-height: calc(100dvh - 180px);
+    border-radius: var(--radius-sheet); box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle);
+  }
+}

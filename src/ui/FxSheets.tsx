@@ -11,6 +11,7 @@ import { Chips, ClipScrub, Slider, Toggle, pct } from './controls';
 import { LookActions } from './LookControls';
 import { useLookTiles } from './lookTiles';
 import { StylePicker, type TileDraw } from './picker';
+import { Button } from './ck/controls';
 
 type MediaVisual = VideoClip | ImageClip;
 const MAX_AREAS = 6;
@@ -21,14 +22,16 @@ const LUT_CATEGORY = [{ id: 'lut', name: 'LUT' }];
 
 export function EffectsBody({ clip }: { clip: MediaVisual }) {
   const paint = useLookTiles(clip);
-  const draw = useMemo<TileDraw<(typeof EFFECT_ITEMS)[number]>>(() => (item, canvas) => paint(canvas, (c) => {
+  // Each tile plays its effect (Ч4 release 5): shake, glitch and a zoom punch are motions, and on a still frame every tile
+  // looked like «Нет».
+  const draw = useMemo<TileDraw<(typeof EFFECT_ITEMS)[number]>>(() => (item, canvas, time) => paint(canvas, (c) => {
     if (item.id === 'none') delete c.effect;
     else c.effect = { id: item.id as EffectId, amount: c.effect?.amount ?? 0.6 };
-  }), [paint]);
+  }, time), [paint]);
   return (
     <>
       <LookActions clip={clip} parts={['effect']} />
-      <StylePicker items={EFFECT_ITEMS} categories={ONE_CATEGORY} value={clip.effect?.id ?? 'none'} label={t('Effects')} draw={draw} rows={1}
+      <StylePicker items={EFFECT_ITEMS} categories={ONE_CATEGORY} value={clip.effect?.id ?? 'none'} label={t('Effects')} draw={draw} rows={1} animated
         onChange={(id) => editClip(clip.id, (c) => {
           if (c.kind !== 'video' && c.kind !== 'image') return;
           if (id === 'none') delete c.effect;
@@ -38,7 +41,7 @@ export function EffectsBody({ clip }: { clip: MediaVisual }) {
         <Slider label={t('Strength')} value={clip.effect.amount} min={0} max={1} format={pct} reset={0.6}
           onChange={(v) => editClip(clip.id, (c) => { if ((c.kind === 'video' || c.kind === 'image') && c.effect) c.effect.amount = v; }, `fx:${clip.id}`)} />
       )}
-      <p className="hint">{t('Effects look the same in the preview and in the exported video.')}</p>
+      <p className="ck-hint">{t('Effects look the same in the preview and in the exported video.')}</p>
     </>
   );
 }
@@ -57,7 +60,7 @@ export function PrivacyBody({ clip }: { clip: MediaVisual }) {
     <>
       {pv.areas.length > 0 && <ClipScrub clip={clip} keys={pv.areas.flatMap((a) => [...(a.x.k ?? []), ...(a.y.k ?? [])].map((x) => x.t))} />}
       <Toggle label={t('Hide faces automatically')} value={pv.faces} onChange={(v) => void setHideFaces(clip.id, v)} />
-      <Chips options={['blur', 'pixelate'] as const} value={pv.style} render={(s) => (s === 'blur' ? t('Blur') : t('Pixelate'))}
+      <Chips even options={['blur', 'pixelate'] as const} value={pv.style} render={(s) => (s === 'blur' ? t('Blur') : t('Pixelate'))}
         onChange={(s) => set((p) => { p.style = s; })} />
       {pv.areas.map((a, i) => (
         <div key={i} className="privacy-area">
@@ -69,12 +72,12 @@ export function PrivacyBody({ clip }: { clip: MediaVisual }) {
           ))}
           <Slider label={t('Width')} value={a.w} min={0.03} max={1} format={pct} reset={0.3} onChange={(v) => set((p) => { p.areas[i].w = v; }, `pv:w:${i}:${clip.id}`)} />
           <Slider label={t('Height')} value={a.h} min={0.03} max={1} format={pct} reset={0.15} onChange={(v) => set((p) => { p.areas[i].h = v; }, `pv:h:${i}:${clip.id}`)} />
-          <button className="btn" onClick={() => set((p) => { p.areas.splice(i, 1); })}>{t('Remove area')}</button>
+          <Button onClick={() => set((p) => { p.areas.splice(i, 1); })}>{t('Remove area')}</Button>
         </div>
       ))}
-      <button className="btn" disabled={pv.areas.length >= MAX_AREAS}
-        onClick={() => set((p) => { p.areas.push({ x: anim(0.5), y: anim(0.5), w: 0.3, h: 0.15 }); })}>{t('Add area')}</button>
-      <p className="hint">{t('Faces are found on this device in every frame, best when they look at the camera. Add an area for number plates or anything else; ◆ makes it follow a moving object.')}</p>
+      <Button disabled={pv.areas.length >= MAX_AREAS}
+        onClick={() => set((p) => { p.areas.push({ x: anim(0.5), y: anim(0.5), w: 0.3, h: 0.15 }); })}>{t('Add area')}</Button>
+      <p className="ck-hint">{t('Faces are found on this device in every frame, best when they look at the camera. Add an area for number plates or anything else; ◆ makes it follow a moving object.')}</p>
     </>
   );
 }
@@ -101,7 +104,7 @@ export function LutSection({ clip, paint }: { clip: MediaVisual; paint: ReturnTy
         <Slider label={t('Intensity')} value={clip.lut.intensity} min={0} max={1} format={pct} reset={1}
           onChange={(v) => editClip(clip.id, (c) => { if ((c.kind === 'video' || c.kind === 'image') && c.lut) c.lut.intensity = v; }, `lut:${clip.id}`)} />
       )}
-      <button className="btn" onClick={() => void importLut(clip.id)}>{t('Import LUT (.cube)')}</button>
+      <Button onClick={() => void importLut(clip.id)}>{t('Import LUT (.cube)')}</Button>
     </>
   );
 }

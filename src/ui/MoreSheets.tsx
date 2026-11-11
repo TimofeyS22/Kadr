@@ -12,6 +12,7 @@ import { addSfx, editClip } from './actions';
 import { Chips, Slider, Toggle, pct, secs, useSheetGuard } from './controls';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
+import { Button } from './ck/controls';
 
 // ---------- Remove pauses ----------
 
@@ -38,18 +39,18 @@ export function PausesBody({ clip }: { clip: SoundClip }) {
     track('pauses_removed', { pauses: Math.max(0, keep.length - 1), seconds: Math.round(removed) });
   }
 
-  if (!peaks) return <p className="hint">{t('Listening to the clip…')}</p>;
+  if (!peaks) return <p className="ck-hint">{t('Listening to the clip…')}</p>;
   return (
     <>
       <Slider label={t('Silence level')} value={toDb(o.threshold)} min={-60} max={-20} step={1} format={(v) => `${Math.round(v)} dB`} reset={toDb(DEFAULT_PAUSES.threshold)}
         onChange={(v) => setO({ ...o, threshold: fromDb(v) })} />
       <Slider label={t('Shortest pause')} value={o.minPause} min={0.2} max={2} step={0.05} format={secs} reset={DEFAULT_PAUSES.minPause} onChange={(v) => setO({ ...o, minPause: v })} />
       <Slider label={t('Keep around words')} value={o.pad} min={0} max={0.4} step={0.01} format={secs} reset={DEFAULT_PAUSES.pad} onChange={(v) => setO({ ...o, pad: v })} />
-      <p className="hint">
+      <p className="ck-hint">
         {removed < 0.05 ? t('No pauses found with these settings. Raise the silence level if the background is noisy.')
           : t('Cuts {n} pauses and makes the clip {s} s shorter. You can undo it.', { n: Math.max(0, keep.length - 1), s: removed.toFixed(1) })}
       </p>
-      <button className="btn primary big" disabled={removed < 0.05} onClick={apply}>{t('Remove pauses')}</button>
+      <Button variant="primary" disabled={removed < 0.05} onClick={apply}>{t('Remove pauses')}</Button>
     </>
   );
 }
@@ -93,7 +94,7 @@ export function MaskBody({ clip }: { clip: VideoClip | ImageClip }) {
           <Toggle label={t('Invert (keep the outside)')} value={m.invert} onChange={(v) => set({ invert: v })} />
         </>
       )}
-      <p className="hint">{t('A circle mask on an overlay makes a classic round picture-in-picture.')}</p>
+      <p className="ck-hint">{t('A circle mask on an overlay makes a classic round picture-in-picture.')}</p>
     </>
   );
 }
@@ -121,7 +122,7 @@ export function SfxBody() {
           </div>
         ))}
       </div>
-      <p className="hint">{t('Tap a sound to add it at the playhead. These sounds are generated on your device, free to use anywhere.')}</p>
+      <p className="ck-hint">{t('Tap a sound to add it at the playhead. These sounds are generated on your device, free to use anywhere.')}</p>
     </>
   );
 }
@@ -167,15 +168,15 @@ export function BeatsBody({ clip }: { clip: AudioClip }) {
     return (
       <div className="inline-progress">
         <span>{t('Listening for the beat… {p}%', { p: Math.round(busy * 100) })}</span>
-        <button className="btn" onClick={() => abort.current?.abort()}>{t('Cancel')}</button>
+        <Button onClick={() => abort.current?.abort()}>{t('Cancel')}</Button>
       </div>
     );
   }
   if (!grid) {
     return (
       <>
-        <p className="hint">{t('Find the beat of this music to see beat marks on the timeline, snap edits to them and cut your clips in rhythm.')}</p>
-        <button className="btn primary big" onClick={() => void detect()}>{t('Find the beat')}</button>
+        <p className="ck-hint">{t('Find the beat of this music to see beat marks on the timeline, snap edits to them and cut your clips in rhythm.')}</p>
+        <Button variant="primary" onClick={() => void detect()}>{t('Find the beat')}</Button>
       </>
     );
   }
@@ -184,8 +185,8 @@ export function BeatsBody({ clip }: { clip: AudioClip }) {
       <p className="beat-bpm"><b>{Math.round(grid.bpm)}</b> {t('BPM')}</p>
       <h3>{t('Cut the main track on')}</h3>
       <Chips options={[1, 2, 4] as const} value={null} render={(n) => (n === 1 ? t('every beat') : t('every {n} beats', { n }))} onChange={cut} />
-      <p className="hint">{t('Edges of clips also snap to the beat marks when you trim or move them.')}</p>
-      <button className="btn" onClick={() => void detect()}>{t('Detect again')}</button>
+      <p className="ck-hint">{t('Edges of clips also snap to the beat marks when you trim or move them.')}</p>
+      <Button onClick={() => void detect()}>{t('Detect again')}</Button>
     </>
   );
 }
@@ -204,7 +205,7 @@ const LAYER_MOVES: { dir: LayerMove; label: string; icon: typeof ArrowUp }[] = [
 export function LayersBody({ clip }: { clip: Clip }) {
   const project = useEditor((s) => s.project); // a selector must not build a new object per call (zustand loops)
   const place = useMemo(() => (project ? layerPlace(project, clip.id) : null), [project, clip.id]);
-  if (!place) return <p className="hint">{t('The main video is the bottom layer. Overlays, text and captions go over it.')}</p>;
+  if (!place) return <p className="ck-hint">{t('The main video is the bottom layer. Overlays, text and captions go over it.')}</p>;
   const move = (dir: LayerMove) => {
     let moved = false;
     editor().commit((d) => { moved = moveLayer(d, clip.id, dir); });
@@ -213,17 +214,17 @@ export function LayersBody({ clip }: { clip: Clip }) {
   const alone = place.above + place.below === 0;
   return (
     <>
-      <p className="hint" role="status">
+      <p className="ck-hint" role="status">
         {alone ? t('Nothing else is on screen with this clip.') : t('Over it: {above}. Under it: {below}.', { above: place.above, below: place.below })}
       </p>
       <div className="layer-moves">
         {LAYER_MOVES.map(({ dir, label, icon: Icon }) => (
-          <button key={dir} className="btn" disabled={dir === 'front' || dir === 'up' ? !place.above : !place.below} onClick={() => move(dir)}>
-            <Icon size={18} aria-hidden /> {t(label)}
-          </button>
+          <Button key={dir} icon={<Icon aria-hidden="true" />} disabled={dir === 'front' || dir === 'up' ? !place.above : !place.below} onClick={() => move(dir)}>
+            {t(label)}
+          </Button>
         ))}
       </div>
-      <p className="hint">{t('Layers count only what is on screen at the same time. A new overlay goes under captions and text.')}</p>
+      <p className="ck-hint">{t('Layers count only what is on screen at the same time. A new overlay goes under captions and text.')}</p>
     </>
   );
 }

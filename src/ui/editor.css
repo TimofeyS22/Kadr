@@ -1,6 +1,6 @@
 /* The frame of the editor on the Chetko system (docs/17 stage Ч4, release 3): the header, the row under the frame, the
-   cards of long work and the first-run tips. The frame, the timeline and the tool sheets are not here yet (releases
-   4 and 5). Every value comes from tokens.css; the drift test reads this file. Where the editor's old layers still
+   cards of long work and the first-run tips; the timeline is in timeline.css (release 4), the tool sheets in sheets.css
+   (release 5). Every value comes from tokens.css; the drift test reads this file. Where the editor's old layers still
    decide what lies over what (the busy veil, the tips), the positioning stays in styles.css until the timeline and the
    sheets move. */
 
@@ -76,3 +76,14 @@
 .ck-editor > .ck-sheet-layer { z-index: var(--z-over-old); }
 .ck-editor-all { display: grid; gap: var(--space-2); }
 .ck-editor-all .ck-toolgrid + .ck-toolgrid { padding-top: var(--space-2); box-shadow: inset 0 var(--hairline) var(--border-subtle); }
+
+/* ---- a phone with a tool sheet open: the frame keeps what the sheet leaves (sheets.css sets --sheet-h to its height) ---- */
+@media (max-width: 899px) {
+  .ck-editor[data-sheet] { padding-bottom: var(--sheet-h, 46dvh); }
+  .ck-editor[data-sheet] .ck-ribbon { display: none; }
+  /* Folded, not removed: removing the box would reset the timeline's scroll, and so the playhead. */
+  .ck-editor[data-sheet] .ck-tl { height: 0; min-height: 0; overflow: hidden; visibility: hidden; box-shadow: none; }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .ck-editor[data-sheet] { padding-bottom: 0; }
+}

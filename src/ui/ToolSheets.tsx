@@ -30,6 +30,8 @@ import { drawCaptionTile } from './tiles';
 import { FontPicker } from './FontPicker';
 import { TextLook } from './TextLook';
 import { useHoldUpdates } from '../lib/update';
+import { Button } from './ck/controls';
+import { useDrawnOnFrame } from './lookTiles';
 
 // ---------- Crop ----------
 
@@ -89,8 +91,8 @@ export function CropBody({ clip }: { clip: VideoClip | ImageClip }) {
           <Slider label={t('Height')} value={rect.h} min={0.05} max={1 - rect.y} format={pct} reset={1 - rect.y} onChange={(v) => set({ ...rect, h: v })} />
         </>
       )}
-      <p className="hint">{t('Crop to 9:16 to turn a horizontal video into a full-screen vertical one.')}</p>
-      <button className="btn" onClick={() => { setAspect('original'); editClip(clip.id, (c) => { if (c.kind === 'video' || c.kind === 'image') delete c.crop; }); }}>{t('Reset crop')}</button>
+      <p className="ck-hint">{t('Crop to 9:16 to turn a horizontal video into a full-screen vertical one.')}</p>
+      <Button onClick={() => { setAspect('original'); editClip(clip.id, (c) => { if (c.kind === 'video' || c.kind === 'image') delete c.crop; }); }}>{t('Reset crop')}</Button>
     </>
   );
 }
@@ -174,7 +176,7 @@ export function VoiceoverBody() {
 
   return (
     <div className="recorder">
-      <p className="hint">{t('Recording starts at the playhead. The video plays without sound so you can talk over it.')}</p>
+      <p className="ck-hint">{t('Recording starts at the playhead. The video plays without sound so you can talk over it.')}</p>
       <div className={`meter ${meter.clip ? 'clip' : ''}`} aria-hidden>
         <div style={{ width: `${Math.round(level * 100)}%` }} />
         <i className="hold" style={{ left: `${Math.round(Math.min(1, meter.hold * 1.5) * 100)}%` }} />
@@ -224,10 +226,11 @@ const MOTION_LABELS: Record<CaptionMotion, string> = { none: 'None', pop: 'Pop',
 
 /** Caption look: the template catalog (v1.5: categories, live previews) and layout chips. Shared by "create" and "edit". */
 function CaptionLook({ layout, preset, onLayout, onPreset }: { layout: CaptionLayout; preset: string | null; onLayout: (l: CaptionLayout) => void; onPreset: (id: string) => void }) {
+  const draw = useDrawnOnFrame(drawCaptionTile, undefined, 0.8); // on the person's frame where captions stand, not a grey stand-in
   return (
     <>
       <h3>{t('Style')}</h3>
-      <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={preset} onChange={onPreset} label={t('Style')} draw={drawCaptionTile} animated />
+      <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={preset} onChange={onPreset} label={t('Style')} draw={draw} animated />
       <h3>{t('Layout')}</h3>
       <Chips options={CAPTION_LAYOUTS} value={layout} onChange={onLayout} render={(l) => t(LAYOUT_LABELS[l])} />
     </>
@@ -337,39 +340,39 @@ export function CaptionsBody() {
       <div className="export-progress">
         <PaceBar pace={pace} />
         <p>{progress}</p>
-        <button className="btn" onClick={() => abort.current?.abort()}>{t('Settings')}</button>
-        <button className="btn" onClick={() => { abort.current?.abort(); editor().openSheet(null); }}>{t('Cancel')}</button>
+        <Button onClick={() => abort.current?.abort()}>{t('Settings')}</Button>
+        <Button onClick={() => { abort.current?.abort(); editor().openSheet(null); }}>{t('Cancel')}</Button>
       </div>
     );
   }
   return (
     <>
       <h3>{t('Words')}</h3>
-      <Chips options={['speech', 'script'] as const} value={source} onChange={setSource} label={t('Words')}
+      <Chips even options={['speech', 'script'] as const} value={source} onChange={setSource} label={t('Words')}
         render={(s) => (s === 'speech' ? t('Recognize speech') : t('From my text'))} />
       {source === 'script' && (
         <>
-          <textarea className="select script-input" value={script} onChange={(e) => setScript(e.target.value)} rows={5}
+          <textarea className="ck-input ck-panel-script" value={script} onChange={(e) => setScript(e.target.value)} rows={5}
             aria-label={t('Your text')} placeholder={t('Paste the text you read')} />
-          <p className="hint">{t('Words come from your text, timing from the recording. The speech model still runs to place each word.')}</p>
+          <p className="ck-hint">{t('Words come from your text, timing from the recording. The speech model still runs to place each word.')}</p>
         </>
       )}
       <h3>{t('Language')}</h3>
-      <select className="select" value={lang} onChange={(e) => setLang(e.target.value)} aria-label={t('Language')}>
+      <select className="ck-select" value={lang} onChange={(e) => setLang(e.target.value)} aria-label={t('Language')}>
         {CAPTION_LANGUAGES.map((l) => <option key={l.label} value={l.id ?? ''}>{t(l.label)}</option>)}
       </select>
-      <p className="hint">{t('Pick the language if the video mixes languages or the result looks wrong.')}</p>
+      <p className="ck-hint">{t('Pick the language if the video mixes languages or the result looks wrong.')}</p>
       <h3>{t('Recognition')}</h3>
       <Chips options={models} value={model} onChange={setModel} render={(m) => `${t(ASR_MODELS[m].label)}, ${ASR_MODELS[m].mb} MB`} />
       {fittingModel(model) !== model
-        ? <p className="hint">{t('This device ran out of memory for it before: captions are made by “{name}”.', { name: t(ASR_MODELS[fittingModel(model)].label) })}</p>
-        : model === 'ru' ? <p className="hint">{t('GigaAM reads Russian speech best. Speech in other languages is recognized by “Accurate”.')}</p>
-        : model === 'ru-fast' && <p className="hint">{t('Reads Russian speech with punctuation, made for phones. Speech in other languages is recognized by “Accurate”.')}</p>}
+        ? <p className="ck-hint">{t('This device ran out of memory for it before: captions are made by “{name}”.', { name: t(ASR_MODELS[fittingModel(model)].label) })}</p>
+        : model === 'ru' ? <p className="ck-hint">{t('GigaAM reads Russian speech best. Speech in other languages is recognized by “Accurate”.')}</p>
+        : model === 'ru-fast' && <p className="ck-hint">{t('Reads Russian speech with punctuation, made for phones. Speech in other languages is recognized by “Accurate”.')}</p>}
       <CaptionLook layout={layout} preset={preset} onLayout={setLayout}
         onPreset={(id) => { setPreset(id); setLayout(CAPTION_PRESETS.find((x) => x.id === id)?.layout ?? layout); }} />
-      <p className="hint">{t('Speech is recognized on this device and your audio is never uploaded. The model downloads once and is kept in this browser.')}</p>
-      <button className="btn primary big" disabled={source === 'script' && !script.trim()} onClick={() => void run()}>{t('Create captions')}</button>
-      <button className="btn" onClick={() => void importSubtitles()}>{t('Import .srt or .vtt')}</button>
+      <p className="ck-hint">{t('Speech is recognized on this device and your audio is never uploaded. The model downloads once and is kept in this browser.')}</p>
+      <Button variant="primary" disabled={source === 'script' && !script.trim()} onClick={() => void run()}>{t('Create captions')}</Button>
+      <Button onClick={() => void importSubtitles()}>{t('Import .srt or .vtt')}</Button>
     </>
   );
 }
@@ -434,8 +437,8 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
         })}
       </div>
       <CutByText clip={clip} />
-      <button className="btn" onClick={() => void exportSubtitles()}>{t('Save as .srt')}</button>
-      <button className="btn" onClick={() => editor().openSheet('captions')}>{t('Create again…')}</button>
+      <Button onClick={() => void exportSubtitles()}>{t('Save as .srt')}</Button>
+      <Button onClick={() => editor().openSheet('captions')}>{t('Create again…')}</Button>
     </>
   );
 }
@@ -468,7 +471,7 @@ function CutByText({ clip }: { clip: CaptionClip }) {
     setOn(false);
   }
 
-  if (!on) return <button className="btn" onClick={() => setOn(true)}>{t('Edit video by text')}</button>;
+  if (!on) return <Button onClick={() => setOn(true)}>{t('Edit video by text')}</Button>;
   return (
     <div className="cut-text">
       <h3>{t('Tap words to cut them from the video')}</h3>
@@ -478,10 +481,10 @@ function CutByText({ clip }: { clip: CaptionClip }) {
         ))}
       </div>
       <div className="row">
-        <button className="btn" onClick={() => setMarked(new Set(fillerIndices(clip.words)))}>{t('Mark fillers and repeats')}</button>
-        <button className="btn primary" disabled={!marked.size} onClick={() => void cut()}>{t('Cut {n} words ({s} s)', { n: marked.size, s: seconds.toFixed(1) })}</button>
+        <Button onClick={() => setMarked(new Set(fillerIndices(clip.words)))}>{t('Mark fillers and repeats')}</Button>
+        <Button variant="primary" disabled={!marked.size} onClick={() => void cut()}>{t('Cut {n} words ({s} s)', { n: marked.size, s: seconds.toFixed(1) })}</Button>
       </div>
-      <p className="hint">{t('Only the main track is cut; captions move with it. You can undo it.')}</p>
+      <p className="ck-hint">{t('Only the main track is cut; captions move with it. You can undo it.')}</p>
     </div>
   );
 }

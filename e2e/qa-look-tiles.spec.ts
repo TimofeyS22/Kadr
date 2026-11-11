@@ -216,17 +216,20 @@ test('nothing in the sheet rides over anything else, however it is scrolled, on 
         const body = document.querySelector('.sheet-body')!;
         body.scrollTop = (body.scrollHeight - body.clientHeight) * f;
         const box = (e: Element) => e.getBoundingClientRect();
-        const actions = box(document.querySelector('.look-actions')!);
+        // Before / after holds in the header (Chetko Ч4 release 5): the header, not a sticky row, stays over the tiles.
+        const head = box(document.querySelector('.sheet-head')!);
         const firstCat = document.querySelector('.pick-cat');
         const tiles = [...document.querySelectorAll('.tile')].map(box);
         let crossed = 0;
         for (let i = 0; i < tiles.length; i++) for (let j = i + 1; j < tiles.length; j++) {
           if (Math.min(tiles[i].right, tiles[j].right) - Math.max(tiles[i].left, tiles[j].left) > 0.5 && Math.min(tiles[i].bottom, tiles[j].bottom) - Math.max(tiles[i].top, tiles[j].top) > 0.5) crossed++;
         }
-        return { crossed, actionsBottom: actions.bottom, catTop: firstCat ? box(firstCat).top : null, scrolls: body.scrollHeight - body.clientHeight };
+        const visible = firstCat ? box(firstCat).bottom > box(body).top : false;
+        return { crossed, headBottom: head.bottom, catTop: firstCat && visible ? box(firstCat).top : null, scrolls: body.scrollHeight - body.clientHeight, compare: !!document.querySelector('.sheet-head .compare') };
       }, part);
       expect(seen.crossed, `${name} at ${part}: tiles do not cross`).toBe(0);
-      if (seen.catTop !== null) expect(seen.catTop, `${name} at ${part}: categories stay below the buttons (scrolls ${seen.scrolls} px)`).toBeGreaterThanOrEqual(seen.actionsBottom - 0.5);
+      expect(seen.compare, `${name}: Before / after is in the header`).toBe(true);
+      if (seen.catTop !== null && part === 0) expect(seen.catTop, `${name}: the categories start below the header (scrolls ${seen.scrolls} px)`).toBeGreaterThanOrEqual(seen.headBottom - 0.5);
     }
     await page.screenshot({ path: info.outputPath(`${name}-small.png`) });
     await page.getByRole('button', { name: 'Done' }).click();
@@ -280,7 +283,7 @@ test('at 375 px: nothing scrolls sideways, every control is big enough, the pict
     await expect(sheet(page)).toBeVisible();
     await tilePainted(page, name === 'Adjust' ? 'Exposure' : 'None');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name}: no sideways scroll`).toBe(true);
-    for (const el of await sheet(page).locator('.look-actions button').all()) expect((await el.boundingBox())!.height, `${name}: ${await el.textContent()}`).toBeGreaterThanOrEqual(44);
+    for (const el of await sheet(page).locator('.look-actions button, .sheet-head .compare').all()) expect((await el.boundingBox())!.height, `${name}: ${await el.textContent()}`).toBeGreaterThanOrEqual(44);
     const pic = (await page.locator('.preview-canvas').boundingBox())!;
     expect(pic.height, `${name}: the picture is in view`).toBeGreaterThan(150);
     await page.screenshot({ path: info.outputPath(`${name}.png`) });

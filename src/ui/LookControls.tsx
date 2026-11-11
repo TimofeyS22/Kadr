@@ -1,10 +1,14 @@
 // What the colour and effect sheets share: hold to see the clip without its look, and give the look to every piece.
-import { useEffect } from 'react';
+import { Contrast, CopyPlus } from 'lucide-react';
+import { useContext, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { applyLookToTrack, findClip, type LookPart } from '../core/timeline';
 import { player } from '../engine/player';
 import { t } from '../lib/i18n';
 import { useEditor } from '../state/store';
 import type { LookClip } from './lookTiles';
+import { Button, IconButton } from './ck/controls';
+import { SheetHead } from './controls';
 
 function BeforeAfter({ clip }: { clip: LookClip }) {
   const hold = (on: boolean) => player.showOriginal(on ? clip.id : null);
@@ -21,12 +25,12 @@ function BeforeAfter({ clip }: { clip: LookClip }) {
     addEventListener('pointercancel', release);
   };
   return (
-    <button className="btn compare" aria-label={t('Hold to see the clip without this look')}
+    <IconButton hook="compare" label={t('Hold to see the clip without this look')}
       onPointerDown={press}
       onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); hold(true); } }}
       onKeyUp={() => hold(false)} onBlur={() => hold(false)} onContextMenu={(e) => e.preventDefault()}>
-      {t('Before / after')}
-    </button>
+      <Contrast aria-hidden="true" />
+    </IconButton>
   );
 }
 
@@ -39,15 +43,20 @@ function ApplyToAll({ clip, parts }: { clip: LookClip; parts: readonly LookPart[
     commit((d) => { changed = applyLookToTrack(d, clip.id, parts); });
     toast(t('Applied to all pieces: {n}', { n: changed + 1 }), 'info');
   };
-  return <button className="btn primary" onClick={apply}>{t('Apply to all pieces ({n})', { n: pieces })}</button>;
+  return <Button variant="plain" icon={<CopyPlus aria-hidden="true" />} onClick={apply}>{t('Apply to all pieces ({n})', { n: pieces })}</Button>;
 }
 
-/** Top of the sheet, so both stay in reach above the tiles. */
+/**
+ * Before / after is a control of the picture, so it stands in the sheet's header next to «Готово» (held, it shows the
+ * piece without its look); giving the look to every piece is a word at the end of the sheet. Together they took 60 px
+ * of a 373 px sheet as two boxes over the tiles (the art director of Ч4 release 5).
+ */
 export function LookActions({ clip, parts }: { clip: LookClip; parts: readonly LookPart[] }) {
+  const head = useContext(SheetHead);
   return (
-    <div className="look-actions">
-      <BeforeAfter clip={clip} />
-      <ApplyToAll clip={clip} parts={parts} />
-    </div>
+    <>
+      {head && createPortal(<BeforeAfter clip={clip} />, head)}
+      <div className="look-actions ck-look-actions"><ApplyToAll clip={clip} parts={parts} /></div>
+    </>
   );
 }

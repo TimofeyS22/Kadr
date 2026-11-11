@@ -1,5 +1,5 @@
 // Built-in music library (docs/05 M1): public-domain tracks by mood, one-tap preview, add under the video.
-import { Play, Square } from 'lucide-react';
+import { Play, Plus, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { MOODS, type LibraryTrack, type Mood } from '../core/music';
 import { player } from '../engine/player';
@@ -8,6 +8,7 @@ import { errorMessage } from '../lib/telemetry';
 import { addLibraryTrack, loadManifest, musicUrl } from './actions';
 import { Chips } from './controls';
 import { formatTime } from './format';
+import { IconButton } from './ck/controls';
 
 export const MOOD_LABEL: Record<Mood | 'all', string> = {
   all: 'All', lofi: 'Lo-fi', energetic: 'Energetic', phonk: 'Phonk', cinematic: 'Cinematic',
@@ -38,8 +39,8 @@ export function MusicBody() {
     setPlaying(tr.id);
   };
 
-  if (error) return <p className="hint">{error}</p>;
-  if (!tracks) return <p className="hint">{t('Loading…')}</p>;
+  if (error) return <p className="ck-hint">{error}</p>;
+  if (!tracks) return <p className="ck-hint">{t('Loading…')}</p>;
   const list = mood === 'all' ? tracks : tracks.filter((x) => x.mood === mood);
   return (
     <>
@@ -55,11 +56,12 @@ export function MusicBody() {
               <b>{tr.title}</b>
               <small>{tr.artist} · {formatTime(tr.duration, false)}{tr.bpm ? ` · ${Math.round(tr.bpm)} ${t('BPM')}` : ''}</small>
             </div>
-            <button className="btn" onClick={() => { stop(); void addLibraryTrack(tr); }} aria-label={t('Add {name} at the playhead', { name: tr.title })}>{t('Add track')}</button>
+            {/* «+», not a column of «Добавить» boxes that cut the names short (the art director of Ч4 release 5). */}
+            <IconButton label={t('Add {name} at the playhead', { name: tr.title })} onClick={() => { stop(); void addLibraryTrack(tr); }}><Plus aria-hidden="true" /></IconButton>
           </li>
         ))}
       </ul>
-      <p className="hint">{t('All tracks are public domain (CC0): use them anywhere, even in ads, with no credit. Added tracks work offline.')}</p>
+      <p className="ck-hint">{t('All tracks are public domain (CC0): use them anywhere, even in ads, with no credit. Added tracks work offline.')}</p>
     </>
   );
 }

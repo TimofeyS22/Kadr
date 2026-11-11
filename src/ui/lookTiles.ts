@@ -3,11 +3,12 @@
 // the sheet is open; it and the copied frame go when the sheet closes.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { visualLayer, type Layer } from '../core/frame';
-import { clipEnd } from '../core/timeline';
+import { clipEnd, mainTrack } from '../core/timeline';
 import type { ImageClip, Project, VideoClip } from '../core/types';
 import { Compositor, slotOf, type Source } from '../engine/compositor';
 import { player } from '../engine/player';
 import { useEditor } from '../state/store';
+import type { TileDraw } from './picker';
 
 export type LookClip = VideoClip | ImageClip;
 
@@ -45,7 +46,7 @@ const tileLayer = (l: Layer): Layer => ({
 });
 
 /** Paints `canvas` with the clip after `edit`. Identity changes when the tiles have to be repainted. */
-export function useLookTiles(clip: LookClip): (canvas: HTMLCanvasElement, edit: (c: LookClip) => void) => void {
+export function useLookTiles(clip: LookClip): (canvas: HTMLCanvasElement, edit: (c: LookClip) => void, play?: number) => void {
   const project = useEditor((s) => s.project);
   const at = useMemo(() => posterTime(clip, useEditor.getState().time), [clip.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [poster, setPoster] = useState<Source | null>(null);
@@ -73,7 +74,7 @@ export function useLookTiles(clip: LookClip): (canvas: HTMLCanvasElement, edit: 
     if (poster?.image instanceof HTMLCanvasElement) poster.image.width = 0; // the memory goes now, not at the next collection
   }, [poster]);
 
-  return useCallback((canvas, edit) => {
+  return useCallback((canvas, edit, play) => {
     if (!poster || !comp || !project) return;
     if (comp.canvas.width !== canvas.width || comp.canvas.height !== canvas.height) {
       comp.canvas.width = canvas.width;
@@ -81,11 +82,69 @@ export function useLookTiles(clip: LookClip): (canvas: HTMLCanvasElement, edit: 
     }
     const candidate = structuredClone(clip);
     edit(candidate);
-    const layer = tileLayer(visualLayer(project, candidate, at));
+    // An effect that moves the picture (shake, zoom punch) is that move: the tile keeps it, measured from the piece without
+    // the effect, at the moment the effect is at its height (a punch lands every half second). They looked like «Нет».
+    // `play`: seconds into the tile's own loop, for an effect that is a motion (shake, glitch): a still frame cannot show it.
+    const when = play === undefined ? at : clip.start + ((at - clip.start + play) % Math.max(clip.duration, 1e-3));
+    const plain = { ...candidate, effect: undefined };
+    const moved = visualLayer(project, candidate, when), still = visualLayer(project, plain, when);
+    const layer = { ...tileLayer(moved), x: moved.x - still.x, y: moved.y - still.y, scale: moved.scale / (still.scale || 1), rotation: moved.rotation - still.rotation };
     const slot = slotOf(layer);
     if (!slot) return;
-    comp.draw({ t: at, background: '#000', layers: [layer] }, new Map([[slot, poster]]));
+    comp.draw({ t: when, background: '#000', layers: [layer] }, new Map([[slot, poster]]));
     // In the same task as the draw: the context does not keep its picture afterwards.
     canvas.getContext('2d')?.drawImage(comp.canvas, 0, 0);
   }, [clip, project, poster, comp, at]);
+}
+
+/**
+ * The person's own frame under a text or a caption at `at` (the picture of the main track there), for the style tiles to
+ * be drawn on, as the filters are (DESIGN.md, Tiles): a template is judged on the video it will lie on, not on a grey
+ * stand-in. Null while it is read, and where nothing lies under the text.
+ */
+export function useFrameUnder(at: number): HTMLCanvasElement | null {
+  const [frame, setFrame] = useState<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    let gone = false;
+    const p = useEditor.getState().project;
+    const c = p && mainTrack(p).clips.find((x): x is LookClip => (x.kind === 'video' || x.kind === 'image') && at >= x.start && at < clipEnd(x));
+    if (p && c) {
+      void readPoster(p, c, at).then((s) => { if (!gone && s?.image instanceof HTMLCanvasElement) setFrame(s.image); }, (e: unknown) => console.warn('style tiles: no frame', e));
+    }
+    return () => { gone = true; };
+  }, [at]);
+  useEffect(() => () => { if (frame) frame.width = 0; }, [frame]);
+  return frame;
+}
+
+/** `draw`, with the frame (or, where there is none, the colour behind the frame of the project) behind what it drew;
+ *  `focus` (0 top … 1 bottom) is where on the frame the text stands, so the tile shows that band of it. */
+export function onFrame<T>(draw: TileDraw<T>, frame: HTMLCanvasElement | null, ground: string, focus = 0.5): TileDraw<T> {
+  return (item, canvas, time, redraw) => {
+    draw(item, canvas, time, redraw);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // the tile's own drawing may leave its scale behind
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'destination-over';
+    if (frame && frame.width) {
+      const k = Math.max(canvas.width / frame.width, canvas.height / frame.height); // cover, as the frame fills the screen
+      const w = frame.width * k, h = frame.height * k;
+      const y = Math.min(0, Math.max(canvas.height - h, canvas.height / 2 - focus * h));
+      ctx.drawImage(frame, (canvas.width - w) / 2, y, w, h);
+    } else {
+      ctx.fillStyle = ground;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    ctx.restore();
+  };
+}
+
+/** A style tile's `draw` on the frame at `at` (the playhead when it opened, if not given). */
+export function useDrawnOnFrame<T>(draw: TileDraw<T>, at?: number, focus = 0.5): TileDraw<T> {
+  const when = useMemo(() => at ?? useEditor.getState().time, [at]);
+  const frame = useFrameUnder(when);
+  const ground = useEditor((st) => st.project?.settings.background.color ?? 'black');
+  return useMemo(() => onFrame(draw, frame, ground, focus), [draw, frame, ground, focus]);
 }

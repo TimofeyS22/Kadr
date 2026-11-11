@@ -102,7 +102,7 @@ async function snap(name, extra = {}) {
 const tools = () => page.locator('.toolbar .tool:not(.tool-back)');
 const toolLabels = async () => (await tools().allInnerTexts()).map((s) => s.trim());
 const closeSheet = async () => {
-  const done = page.locator('.sheet .sheet-head .icon-btn, .camera .camera-bar .icon-btn');
+  const done = page.locator('.sheet .sheet-head .ck-btn, .camera .camera-bar .icon-btn');
   if (await done.count()) await done.first().click().catch(() => {});
   await page.locator('.sheet, .camera').first().waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(200);

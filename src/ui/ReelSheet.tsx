@@ -18,6 +18,8 @@ import { MOOD_LABEL } from './MusicSheet';
 import { StylePicker } from './picker';
 import { drawCaptionTile } from './tiles';
 import { useHoldUpdates } from '../lib/update';
+import { Button } from './ck/controls';
+import { useDrawnOnFrame } from './lookTiles';
 
 const KEY = 'kadr.reel';
 function loadOptions(): ReelOptions {
@@ -37,6 +39,7 @@ export function ReelBody() {
   // The question before a model download (audit V-181). While it is on screen nothing runs: the sheet closes freely.
   const { asked, ask, answer } = useModelAsk();
   const checking = useRef(false);
+  const drawCaption = useDrawnOnFrame(drawCaptionTile, undefined, 0.8); // the styles on the person's frame, where captions stand
   useHoldUpdates(phase.kind === 'running');
   useSheetGuard(phase.kind === 'running' && !asked ? t('The reel is still being made. Tap again to stop.') : null);
   const abort = useRef<AbortController | null>(null);
@@ -93,7 +96,7 @@ export function ReelBody() {
       <div className="export-progress">
         <PaceBar pace={pace} />
         <p>{phase.label}</p>
-        <button className="btn" onClick={() => abort.current?.abort()}>{t('Cancel')}</button>
+        <Button onClick={() => abort.current?.abort()}>{t('Cancel')}</Button>
       </div>
     );
   }
@@ -116,7 +119,7 @@ export function ReelBody() {
         {r.language && (
           <label className="reel-lang">
             <span>{r.detected ? t('Speech language (found by Kadr)') : t('Speech language')}</span>
-            <select className="select" value={r.language} aria-label={t('Speech language')} onChange={(e) => {
+            <select className="ck-select" value={r.language} aria-label={t('Speech language')} onChange={(e) => {
               track('reel_language_changed', { from: r.language ?? '', to: e.target.value, detected: r.detected });
               void run({ ...o, language: e.target.value }, r.steps);
             }}>
@@ -124,21 +127,21 @@ export function ReelBody() {
             </select>
           </label>
         )}
-        <p className="hint">{t('Everything is on the timeline: tap any part to change it.')}</p>
-        <button className="btn primary big" onClick={() => { editor().openSheet(null); player.seek(0); player.play(); }}>{t('Watch the reel')}</button>
-        <button className="btn" onClick={() => { undoSteps(r.steps); track('reel_undo_all', { steps: r.steps }); setPhase({ kind: 'setup' }); }}>{t('Undo all')}</button>
+        <p className="ck-hint">{t('Everything is on the timeline: tap any part to change it.')}</p>
+        <Button variant="primary" onClick={() => { editor().openSheet(null); player.seek(0); player.play(); }}>{t('Watch the reel')}</Button>
+        <Button onClick={() => { undoSteps(r.steps); track('reel_undo_all', { steps: r.steps }); setPhase({ kind: 'setup' }); }}>{t('Undo all')}</Button>
       </div>
     );
   }
 
   return (
     <>
-      <p className="hint">{t('Turns a recording of you talking into a ready reel. Each step is on the timeline and can be undone.')}</p>
+      <p className="ck-hint">{t('Turns a recording of you talking into a ready reel. Each step is on the timeline and can be undone.')}</p>
       <Toggle label={t('Remove pauses')} value={o.pauses} onChange={(v) => set({ pauses: v })} />
       <Toggle label={t('Remove “um”, “uh” and repeats')} value={o.fillers} onChange={(v) => set({ fillers: v })} />
       <Toggle label={t('Captions with the spoken word highlighted')} value={o.captions} onChange={(v) => set({ captions: v })} />
       {o.captions && (
-        <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={o.preset} onChange={(id) => set({ preset: id })} label={t('Style')} draw={drawCaptionTile} animated />
+        <StylePicker items={CAPTION_PRESETS} categories={CAPTION_CATEGORIES} value={o.preset} onChange={(id) => set({ preset: id })} label={t('Style')} draw={drawCaption} animated />
       )}
       <Toggle label={t('Zoom in on cuts')} value={o.zoom} onChange={(v) => set({ zoom: v })} />
       <Toggle label={t('Title from the first phrase')} value={o.hook} onChange={(v) => set({ hook: v })} />
@@ -148,13 +151,13 @@ export function ReelBody() {
       {(o.captions || o.fillers || o.hook) && (
         <>
           <h3>{t('Language')}</h3>
-          <select className="select" value={o.language} onChange={(e) => set({ language: e.target.value })} aria-label={t('Language')}>
+          <select className="ck-select" value={o.language} onChange={(e) => set({ language: e.target.value })} aria-label={t('Language')}>
             {CAPTION_LANGUAGES.map((l) => <option key={l.label} value={l.id ?? ''}>{t(l.label)}</option>)}
           </select>
         </>
       )}
-      <button className="btn primary big" onClick={() => void run()}>{t('Make the reel')}</button>
-      <p className="hint">{t('Speech is recognized on this device; your video never leaves it.')}</p>
+      <Button variant="primary" onClick={() => void run()}>{t('Make the reel')}</Button>
+      <p className="ck-hint">{t('Speech is recognized on this device; your video never leaves it.')}</p>
     </>
   );
 }

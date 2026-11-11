@@ -38,7 +38,7 @@ export function TextLook({ style: s, change }: { style: TextStyle; change: Chang
       <Toggle label={t('Gradient')} value={!!s.gradient} onChange={(v) => change((x) => { if (v) x.gradient = '#ff2d92'; else delete x.gradient; })} />
       {s.gradient && <Swatches label={t('Gradient color')} value={s.gradient} onChange={(col) => change((x) => { x.gradient = col; })} />}
 
-      <h3>{t('Outline')}</h3>
+      {/* The switch names the part: no heading «Обводка» over a switch «Обводка». */}
       <Toggle label={t('Outline')} value={!!s.stroke} onChange={(v) => change((x) => { x.stroke = v ? { color: '#000000', width: 0.08 } : null; if (!v) delete x.outline2; })} />
       {s.stroke && (
         <>
@@ -68,7 +68,7 @@ export function TextLook({ style: s, change }: { style: TextStyle; change: Chang
           onChange={(v) => change((x) => { for (const c of x.copies ?? []) { c.x = Math.sign(c.x || 1) * v; c.y = Math.sign(c.y || 1) * v; } }, 'sd')} />
       )}
 
-      <h3>{t('Background')}</h3>
+      {/* The switch names the part itself: a heading «Фон» over a switch «Фон» said it twice. */}
       <Toggle label={t('Background')} value={!!s.background} onChange={(v) => change((x) => { x.background = v ? { color: '#000000', opacity: 0.6 } : null; })} />
       {s.background && (
         <>
@@ -89,7 +89,7 @@ export function TextLook({ style: s, change }: { style: TextStyle; change: Chang
       <Slider label={t('Line spacing')} value={s.lineHeight ?? TEXT_LINE_HEIGHT} min={0.8} max={2.5} step={0.05} format={(v) => `${v.toFixed(2)}×`} reset={TEXT_LINE_HEIGHT}
         onChange={(v) => change((x) => { x.lineHeight = v; }, 'tlh')} />
       <h3>{t('Alignment')}</h3>
-      <Chips options={['left', 'center', 'right'] as const} value={s.align} label={t('Alignment')} render={(a) => t(a === 'left' ? 'Left' : a === 'right' ? 'Right' : 'Center')}
+      <Chips even options={['left', 'center', 'right'] as const} value={s.align} label={t('Alignment')} render={(a) => t(a === 'left' ? 'Left' : a === 'right' ? 'Right' : 'Center')}
         onChange={(a) => change((x) => { x.align = a; })} />
     </>
   );

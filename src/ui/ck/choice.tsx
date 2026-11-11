@@ -45,7 +45,7 @@ export function Tiles({ label, items, value, onChange }: TilesProps) {
     <div className="ck-tiles" role="radiogroup" aria-label={label} ref={root} onKeyDown={onKeyDown}>
       {items.map((i) => (
         <button key={i.id} type="button" role="radio" className="ck-tile" data-id={i.id} aria-checked={i.id === value} tabIndex={tabIndex(i.id)} onClick={() => onChange(i.id)}>
-          <span className={i.id === value ? 'ck-tile-art ck-held' : 'ck-tile-art'} aria-hidden="true"><span className="ck-tile-pic">{i.art}</span></span>
+          <span className="ck-tile-art" aria-hidden="true"><span className="ck-tile-pic">{i.art}</span></span>
           <span className="ck-tile-name">{i.label}</span>
         </button>
       ))}

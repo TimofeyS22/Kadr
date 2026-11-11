@@ -163,6 +163,8 @@
 .ck-tiles::-webkit-scrollbar { display: none; }
 .ck-tile { flex: none; width: 80px; display: grid; gap: var(--space-1); padding: 0; border: 0; background: none; color: var(--text-secondary); font: inherit; font-size: var(--type-xs); cursor: pointer; touch-action: manipulation; }
 .ck-tile[aria-checked='true'] { color: var(--text-primary); font-weight: var(--weight-strong); }
+/* The chosen picture is ringed in white with a gap, as a chosen colour is (the owner, 2026-11-11: two marks round a tile read as stray sticks). */
+.ck-tile[aria-checked='true'] .ck-tile-pic { outline: 2px solid var(--mark-was); outline-offset: 2px; }
 .ck-tile-art { display: block; height: 56px; }
 .ck-tile-pic { display: block; width: 100%; height: 100%; overflow: hidden; border-radius: var(--radius-clip); outline: var(--hairline) solid var(--image-outline); outline-offset: calc(-1 * var(--hairline)); }
 .ck-tile-pic > * { display: block; width: 100%; height: 100%; }

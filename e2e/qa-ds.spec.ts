@@ -252,7 +252,7 @@ test('choices are radio groups: arrows move the choice and the focus, one tab st
   const looks = page.getByRole('radiogroup', { name: 'Фильтр' });
   await looks.getByRole('radio', { name: 'Нуар' }).click();
   await expect(looks.getByRole('radio', { name: 'Нуар' })).toHaveAttribute('aria-checked', 'true');
-  expect(await looks.locator('.ck-held').count(), 'the chosen look lies between two marks').toBe(1);
+  expect(await looks.locator('[aria-checked="true"] .ck-tile-pic').evaluate((p) => getComputedStyle(p).outlineWidth), 'the chosen look is ringed in white').toBe('2px');
 
   const title = page.getByRole('textbox', { name: 'Название проекта' });
   await expect(title).toHaveValue('Поход на Алтай');

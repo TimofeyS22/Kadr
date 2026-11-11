@@ -162,7 +162,7 @@ try {
     await shot('filters');
     await tap('Noir');
     await sleep(500);
-    await js(`const b = document.querySelector('.btn.compare'), r = b.getBoundingClientRect();
+    await js(`const b = document.querySelector('.compare'), r = b.getBoundingClientRect();
       b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.left + 9, clientY: r.top + 9, pointerId: 8, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1 }));`);
     await sleep(900);
     await shot('held-before');
