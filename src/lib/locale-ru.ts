@@ -488,6 +488,10 @@ export const RU: Record<string, string> = {
   'Share': 'Поделиться',
   'Export again': 'Экспортировать снова',
   'Export failed: {error}': 'Экспорт не удался: {error}',
+  'A {min}-minute video: the file will be about {size}, and the export takes a while. Keep the screen on.': 'Видео на {min} мин: файл будет около {size}, экспорт займёт время. Держите экран включённым.',
+  'The file will be about {size}, and this device has {free} free: it may not fit. Free up space or pick a smaller size.': 'Файл будет около {size}, а на устройстве свободно {free}: он может не поместиться. Освободите место или выберите размер поменьше.',
+  '{n} GB': '{n} ГБ',
+  '{n} MB': '{n} МБ',
   // v0.5
   'Auto reframe': 'Авто-рефрейм',
   'Auto reframe is for horizontal videos in vertical or square projects': 'Авто-рефрейм — для горизонтальных видео в вертикальном или квадратном проекте',

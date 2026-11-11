@@ -1,7 +1,7 @@
 // What an export starts with (audit V-216): the video's own frame rate and size, as far as the encoder goes.
 import { describe, expect, it } from 'vitest';
 import { createImageClip, createProject, createVideoClip } from './defaults';
-import { exportCost, exportDefaults, exportSource, isFast } from './exportDefaults';
+import { LONG_EXPORT_S, estimateMb, exportCost, exportDefaults, exportNotes, exportSource, isFast } from './exportDefaults';
 import { mainTrack } from './timeline';
 import type { Asset, AspectId, Project } from './types';
 
@@ -191,5 +191,21 @@ describe('a size picked at an earlier export', () => {
     expect(exportDefaults(p, ALL, [720, 1080], 1080)).toEqual({ resolution: 1080, fps: 60 });
     expect(exportDefaults(p, ALL, [720, 1080]), 'nothing picked: 1080p keeps every frame').toEqual({ resolution: 1080, fps: 60 });
     expect(exportDefaults(p, ALL, [720, 1080], 2160), '4K picked: the sheet says frames are dropped').toEqual({ resolution: 2160, fps: 30 });
+  });
+});
+
+
+describe('what is said before an export (S-1-5)', () => {
+  it('the size estimate follows size, quality, frame rate and length', () => {
+    expect(estimateMb(1080, 30, 'standard', 8)).toBeCloseTo(10, 6); // 10 Mbit/s × 8 s
+    expect(estimateMb(1080, 60, 'high', 60)).toBeCloseTo(10 * 1.5 * 1.4 * 60 / 8, 6);
+    expect(estimateMb(2160, 30, 'standard', 3600)).toBeCloseTo(35 * 3600 / 8, 6);
+  });
+  it('a ten-hour video is long, and its file does not fit in 2 GB; a short one is neither', () => {
+    const mb = estimateMb(1080, 30, 'high', 36000);
+    expect(exportNotes(36000, mb, 2000)).toEqual({ long: true, room: true });
+    expect(exportNotes(30, estimateMb(1080, 30, 'high', 30), 2000)).toEqual({ long: false, room: false });
+    expect(exportNotes(LONG_EXPORT_S, 1, null)).toEqual({ long: false, room: false });
+    expect(exportNotes(LONG_EXPORT_S + 1, 1, null).long).toBe(true);
   });
 });

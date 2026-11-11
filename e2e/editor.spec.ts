@@ -4097,6 +4097,28 @@ test('export sound: no click or dip where the 2 s mixing windows meet (audit V-1
   console.log(`window joins (${info.project.name}):\n${rows.join('\n')}`);
 });
 
+test('an hour-long video: the time reads in hours, and one tap on Export first says how big and how long, and whether it fits (S-1-5)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  // The browser says 200 MB are free: room to add the video, not for an hour of export.
+  await page.addInitScript(() => { StorageManager.prototype.estimate = async () => ({ usage: 0, quota: 200e6 }); });
+  const long = info.outputPath('hour.mp4');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=32x32:r=1', '-t', '3600', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-g', '600', long]);
+  await newProject(page);
+  const chooser = page.waitForEvent('filechooser');
+  await tool(page, 'Media').click();
+  await (await chooser).setFiles(long);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
+  // Before: "600:00.0" for ten hours, "60:00.0" for one.
+  await expect(page.locator('body')).toContainText('1:00:00.0');
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  // Before: one tap started an hour of export with no word of its size, time or room.
+  await expect(page.getByText(/A 60-minute video: the file will be about [\d.]+ GB, and the export takes a while/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/this device has 200 MB free: it may not fit/)).toBeVisible();
+  await expect(page.getByText(/% — keep this screen open/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Export video' })).toBeEnabled(); // the person decides: nothing is refused on an estimate
+  await page.screenshot({ path: info.outputPath('hour-export.png') });
+});
+
 test('a sound or a title added on a video ends with it: no black after the video in the file (S-1-4)', async ({ page }, info) => {
   test.setTimeout(240_000);
   await page.addInitScript(() => { (window as unknown as { __toasts: string[] }).__toasts = []; new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => { const w = window as unknown as { __toasts: string[] }; if (!w.__toasts.includes(el.textContent ?? '')) w.__toasts.push(el.textContent ?? ''); })).observe(document, { subtree: true, childList: true }); });
