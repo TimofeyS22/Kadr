@@ -1,5 +1,6 @@
-// Font faces: Latin and Cyrillic subsets only. A page loads a face on first use (unicode-range + ensureFont); the
-// service worker has every face from the first visit, so offline they all draw as themselves (D-16).
+// Font faces: Latin and Cyrillic subsets only. These CSS files carry no unicode-range, so the two files of a face act as
+// one font and ensureFont loads both on first use; the service worker has every face from the first visit, so offline
+// they all draw as themselves (D-16).
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-ext-400.css';
 import '@fontsource/inter/cyrillic-400.css';
