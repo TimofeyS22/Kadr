@@ -6,6 +6,7 @@ import { TEMPLATES, buildTemplate, type TemplateSpec } from '../core/templates';
 import type { AspectId } from '../core/types';
 import { IN_APP, IOS, standalone } from '../lib/device';
 import { errorMessage, track } from '../lib/telemetry';
+import { within } from '../lib/limits';
 import { pickFiles } from '../lib/pickFiles';
 import { holdUpdates, othersWorking, updatesHeld, useHoldUpdates } from '../lib/update';
 import { useEditor } from '../state/store';
@@ -84,6 +85,12 @@ const frame = (a: AspectId | undefined) => { const [w, h] = (a && ASPECTS[a]) ||
 const KEEP_TIP_KEY = 'kadr.keepTip';
 /** The buttons moved to the bottom (release 2 of Ч4): said once, where they were, to someone who knew them there (rule Ж1). */
 const MOVED_KEY = 'kadr.homeMoved.v1';
+/**
+ * How long the list and a new project wait for the browser's storage before the person hears why nothing happens
+ * (D-15). It can stop answering: a Kadr page frozen in Safari's cache with a write open held it (D-14, fixed). The
+ * list still comes in if the storage answers later.
+ */
+const STORAGE_WAIT_MS = 10_000;
 const seenKey = (key: string) => { try { return localStorage.getItem(key) !== null; } catch { return true; } };
 const setKey = (key: string) => { try { localStorage.setItem(key, '1'); } catch { /* said again next time */ } };
 
@@ -139,6 +146,11 @@ export function Home() {
   const install = IN_APP ? null : offered; // a built-in browser installs nothing, whatever it announces (audit V-203)
   const refresh = () => listProjects().then(setProjects).catch((e) => toast(errorMessage(e), 'error'));
   useEffect(() => { void refresh(); void requestPersistence(); }, []);
+  useEffect(() => {
+    if (projects !== null) return;
+    const timer = setTimeout(() => toast(t('Your projects are not loading: the browser’s storage does not answer. Close other Kadr tabs and reload the page.'), 'error'), STORAGE_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [projects]);
   useEffect(() => { if (isTask(route ?? undefined)) track('deeplink_task', { task: route! }); }, [route]);
 
   /** Media in → a vertical project → the task's tool (shared by the reel card, task links and the share target). */
@@ -184,7 +196,12 @@ export function Home() {
 
   async function create(aspect: AspectId) {
     const p = createProject(t('Project {n}', { n: (projects?.length ?? 0) + 1 }), aspect);
-    await saveProject(p);
+    try {
+      await within(saveProject(p), STORAGE_WAIT_MS, () => { throw new Error(t('the browser’s storage does not answer')); });
+    } catch (e) {
+      toast(t('Could not create the project: {error}', { error: errorMessage(e) }), 'error');
+      return;
+    }
     track('project_created', { aspect });
     open(p.id);
   }
