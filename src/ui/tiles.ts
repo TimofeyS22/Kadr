@@ -5,7 +5,7 @@ import { visualLayer } from '../core/frame';
 import type { CaptionPreset, TextPreset } from '../core/presets';
 import type { CaptionClip, TextClip, TextStyle } from '../core/types';
 import { ensureFont, fontCss, TextRasterizer, type Drawable } from '../engine/text';
-import { t, useLocale } from '../lib/i18n';
+import { useLocale } from '../lib/i18n';
 import { DEMO_LOOP_S, type TileDraw } from './picker';
 
 /** The demo frame a template is drawn for (9:16, a third of 1080p: sharp enough for a 104 px tile). */
@@ -13,13 +13,20 @@ const W = 360, H = 640;
 const raster = new TextRasterizer(160);
 const project = createProject('demo', '9:16');
 
-/** Fonts in use: a template draws only once its own font is in, never with a fallback face. */
-const fonts = new Map<string, true | Promise<void>>();
+/**
+ * Fonts in use: a template draws only once its own font is in, never with a fallback face. Every tile that asked while
+ * the face was loading is drawn again (before, only the first: the style «Love» stayed empty while the font tile of
+ * Lobster, on the same word, waited for the same face).
+ */
+const fonts = new Map<string, true | Set<() => void>>();
 function fontReady(style: TextStyle, text: string, redraw: () => void): boolean {
   const key = `${fontCss(style, 32)}|${text}`;
   const f = fonts.get(key);
   if (f === true) return true;
-  if (!f) fonts.set(key, ensureFont(style, text).then(() => { fonts.set(key, true); redraw(); }));
+  if (f) { f.add(redraw); return false; }
+  const waiting = new Set([redraw]);
+  fonts.set(key, waiting);
+  void ensureFont(style, text).then(() => { fonts.set(key, true); for (const again of waiting) again(); });
   return false;
 }
 
@@ -28,7 +35,8 @@ function put(canvas: HTMLCanvasElement, d: Drawable | null, fit: number, layer?:
   const ctx = canvas.getContext('2d')!;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!d || !fit) return;
+  if (!d || !fit) { delete canvas.dataset.ready; return; }
+  canvas.dataset.ready = '1';
   const s = fit * canvas.height;
   ctx.globalAlpha = Math.max(0, Math.min(1, layer?.opacity ?? 1));
   ctx.translate(canvas.width / 2 + ((layer?.x ?? 0) - (base?.x ?? 0)) * W * s, canvas.height / 2 + ((layer?.y ?? 0) - (base?.y ?? 0)) * H * s);
@@ -76,15 +84,61 @@ export const drawCaptionTile: TileDraw<CaptionPreset> = (pr, canvas, time, redra
 
 // ---------- Text ----------
 
+let textsWord = '';
 const texts = new Map<string, TextClip>();
-/** A text style on a short word, after its entrance. */
-export const drawTextTile: TileDraw<TextPreset> = (pr, canvas, _time, redraw) => {
-  const word = t('Hello');
-  if (!fontReady(pr.style, word, redraw)) { put(canvas, null, 0); return; }
-  const key = `${pr.id}|${word}`;
+/** A text clip of `style` on `word`, kept while the word stays (the tiles redraw it on every frame of their loop). */
+function textOn(key: string, word: string, style: TextStyle): TextClip {
+  if (word !== textsWord) { texts.clear(); textsWord = word; } // the person typed: the clips of the last word go
   let clip = texts.get(key);
-  if (!clip) { clip = createTextClip(0, word); clip.style = structuredClone(pr.style); texts.set(key, clip); }
-  const d = raster.get(clip, Infinity, W, H);
-  if (!d) return;
-  put(canvas, d, Math.min(0.8 / d.h, (0.86 * canvas.width) / canvas.height / d.w));
-};
+  if (!clip) { clip = createTextClip(0, word); clip.style = style; texts.set(key, clip); }
+  return clip;
+}
+
+/** A text style on the person's own word (`previewWord`), after its entrance. */
+export function textTile(word: string): TileDraw<TextPreset> {
+  return (pr, canvas, _time, redraw) => {
+    if (!fontReady(pr.style, word, redraw)) { put(canvas, null, 0); return; }
+    const d = raster.get(textOn(pr.id, word, structuredClone(pr.style)), Infinity, W, H);
+    if (!d) return;
+    put(canvas, d, Math.min(0.8 / d.h, (0.86 * canvas.width) / canvas.height / d.w));
+  };
+}
+
+// ---------- Fonts ----------
+
+/** What a font tile takes from the text's style: only how its letters are set, never its colours or outlines. */
+export type FontTileLook = Pick<TextStyle, 'weight' | 'italic' | 'uppercase' | 'letterSpacing'>;
+/** The word's size on a font tile, CSS px: from a cap height of ~13 px (a long word) to ~24 px (a short one). */
+const FONT_TILE_PX = [18, 34] as const;
+const FONT_TILE_PAD = 10;
+/** The letters of a new text: white, as the word will stand on the video by default. */
+const NEW_TEXT = createTextClip(0, '').style;
+
+/**
+ * A font on the person's word in white, on the black of the stage round the frame (the tile's own ground, in CSS),
+ * drawn by the video's renderer (docs/18; the owner, 2026-11-11: «серая обложка за шрифтами выглядит ужасно старо»).
+ * Nothing until the face is in: a fallback face would lie about the font. A word too long at the smallest size starts at
+ * the left and runs off the edge, without an ellipsis.
+ */
+export function fontTile(word: string, look: FontTileLook): TileDraw<{ id: string }> {
+  return (it, canvas, _time, redraw) => {
+    const style: TextStyle = {
+      font: it.id as TextStyle['font'], size: 0.1, weight: look.weight, italic: look.italic, color: NEW_TEXT.color, align: 'left',
+      stroke: null, background: null, shadow: false, uppercase: look.uppercase, letterSpacing: look.letterSpacing,
+    };
+    const ctx = canvas.getContext('2d')!;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!fontReady(style, word, redraw)) { delete canvas.dataset.ready; return; }
+    const d = raster.get(textOn(`font|${it.id}|${look.weight}|${+look.italic}|${+!!look.uppercase}|${look.letterSpacing ?? 0}`, word, style), Infinity, W, H);
+    if (!d) return;
+    const px = style.size * H, edge = px * 0.2; // the renderer's room round letters with no outline or box
+    const dpr = canvas.width / Math.max(1, canvas.clientWidth);
+    const room = canvas.width - 2 * FONT_TILE_PAD * dpr;
+    const k = Math.max((FONT_TILE_PX[0] * dpr) / px, Math.min((FONT_TILE_PX[1] * dpr) / px, room / Math.max(1, d.w - 2 * edge)));
+    const wide = (d.w - 2 * edge) * k > room;
+    const x = wide ? FONT_TILE_PAD * dpr - edge * k : (canvas.width - d.w * k) / 2;
+    ctx.drawImage(d.image as CanvasImageSource, x, (canvas.height - d.h * k) / 2, d.w * k, d.h * k);
+    canvas.dataset.ready = '1';
+  };
+}

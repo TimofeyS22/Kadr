@@ -296,13 +296,16 @@ test('captions (v1.6): fonts and weight, lines with a small first letter, no key
   hexRgb(picked).forEach((v, i) => expect(Math.abs(v - [247, 129, 233][i]), `picked ${picked}`).toBeLessThan(20));
   await expect(colors.locator('.swatch[aria-pressed="true"]')).toHaveCount(1); // the new colour leads the row, chosen
   // A quick tap before the frame is ready still picks. On the live site a font still downloading held the frame back,
-  // and the eyedropper closed with nothing picked (v1.6.0). Here every font load takes 2.5 s more, with a caption on
-  // screen in a font never drawn before (an added one: the built-in ones are loaded by the template tiles).
+  // and the eyedropper closed with nothing picked (v1.6.0). Here every font load is held until the test lets it go, with
+  // a caption on screen in a font never drawn before (an added one). A 2.5 s timer was used before: once the font tiles
+  // drew the person's word (docs/18) they asked for the added face at once, and the font could be in before the tap.
   await page.locator('.caption-row input').first().focus(); // the playhead on the first line
   await page.evaluate(() => {
+    const w = window as unknown as { __releaseFonts?: () => void };
+    const held = new Promise<void>((ok) => { w.__releaseFonts = ok; });
     const load = FontFaceSet.prototype.load;
     FontFaceSet.prototype.load = function (this: FontFaceSet, ...a: Parameters<FontFaceSet['load']>) {
-      return new Promise<void>((ok) => setTimeout(ok, 2500)).then(() => load.apply(this, a));
+      return held.then(() => load.apply(this, a));
     };
   });
   const fontChooser = page.waitForEvent('filechooser');
@@ -317,10 +320,11 @@ test('captions (v1.6): fonts and weight, lines with a small first letter, no key
   await expect(page.getByText('Touch the video and lift your finger on the color you want')).toBeVisible();
   const tappedAt = Date.now();
   await page.mouse.click(at.x, at.y);
+  await page.waitForTimeout(1200);
+  await expect(page.locator('.eyedrop'), 'the eyedropper waits for the frame to answer the tap (v1.6.0 closed at once, nothing picked)').toHaveCount(1);
+  await page.evaluate(() => (window as unknown as { __releaseFonts: () => void }).__releaseFonts());
   await expect(page.locator('.eyedrop')).toHaveCount(0);
-  const waited = Date.now() - tappedAt;
-  console.log(`eyedropper: a quick tap was answered after ${waited} ms`);
-  expect(waited, 'the eyedropper waits for the frame to answer the tap (v1.6.0 closed at once, nothing picked)').toBeGreaterThan(1000);
+  console.log(`eyedropper: a quick tap was answered after ${Date.now() - tappedAt} ms (the fonts let go after 1.2 s)`);
   const tapped = (await colors.locator('.swatch[aria-pressed="true"]').first().getAttribute('aria-label'))!;
   hexRgb(tapped).forEach((v, i) => expect(Math.abs(v - [247, 129, 233][i]), `tapped ${tapped}`).toBeLessThan(20));
   // The text sheet has the same font picker, now under a heading.

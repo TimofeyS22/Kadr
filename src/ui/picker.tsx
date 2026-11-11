@@ -1,7 +1,7 @@
 // Template catalogs (v1.5): category buttons over a two-row strip of live previews. A preview is drawn by the same text
 // renderer as the video (ui/tiles.ts), so it shows exactly what the template gives. Made for one hand at 375 px: the
 // strip scrolls sideways under the thumb, a category tap jumps to its first template.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { t } from '../lib/i18n';
 
 export interface PickerItem { id: string; name: string; cat: string; /** Shown after the name, e.g. a value. */ note?: string }
@@ -13,13 +13,16 @@ export const DEMO_LOOP_S = 2.4;
 export const DEMO_STILL_S = 1.2;
 const TICK_MS = 80; // ~12 frames a second is enough for a 100 px preview, and cheap on a slow phone
 
-export function StylePicker<T extends PickerItem>({ items, categories, value, onChange, label, draw, art, animated = false, rows = 2, kind }: {
+export function StylePicker<T extends PickerItem>({ items, categories, value, onChange, label, draw, animated = false, rows = 2, kind, ground }: {
   items: readonly T[]; categories: readonly { id: string; name: string }[]; value: string | null; onChange: (id: string) => void;
   label: string; /** One row leaves more of the sheet for a slider. */ rows?: 1 | 2; animated?: boolean;
-  /** How a preview is drawn: on a canvas (`draw`), or as markup (`art`: a font's own letters). */
-  draw?: TileDraw<T>; art?: (item: T) => ReactNode;
-  /** `font`: narrower tiles of letters. */
+  /** How a preview is drawn on its canvas. */
+  draw?: TileDraw<T>;
+  /** `font`: the person's word in each face (ui/tiles.ts, fontTile). */
   kind?: 'font';
+  /** `stage`: the look on the black round the frame, not on a picture (docs/18; the owner, 2026-11-11: a grey tile looked
+   *  «ужасно старо», the sunrise of the frame behind a text look «колхоз»). Filters stay on the person's frame. */
+  ground?: 'stage';
 }) {
   const strip = useRef<HTMLDivElement>(null);
   const cats = useRef<HTMLDivElement>(null);
@@ -103,14 +106,14 @@ export function StylePicker<T extends PickerItem>({ items, categories, value, on
           ))}
         </div>
       )}
-      <div ref={strip} className="pick-strip ck-strip" data-kind={kind} role="radiogroup" aria-label={label} onScroll={onScroll} onPointerDown={() => { jumped.current = null; }}>
+      <div ref={strip} className="pick-strip ck-strip" data-kind={kind} data-ground={ground} role="radiogroup" aria-label={label} onScroll={onScroll} onPointerDown={() => { jumped.current = null; }}>
         {groups.map((g) => (
           <div key={g.id} className="ck-strip-group" data-rows={rows} data-cat={g.id}>
             {g.items.map((it) => (
               <button key={it.id} type="button" role="radio" aria-checked={it.id === value} aria-label={t(it.name)} className="tile ck-ptile" onClick={() => onChange(it.id)}>
                 {/* The look on the person's own frame; the chosen one is ringed in white with a gap, as every chosen thing of
                     a sheet (the owner, 2026-11-11: two marks round a tile looked like stray sticks). */}
-                <span className="ck-ptile-art" aria-hidden="true">{art ? art(it) : <canvas data-id={it.id} />}</span>
+                <span className="ck-ptile-art" aria-hidden="true"><canvas data-id={it.id} /></span>
                 <span className="ck-ptile-name" aria-hidden="true">{t(it.name)}{it.note ? ` ${it.note}` : ''}</span>
               </button>
             ))}

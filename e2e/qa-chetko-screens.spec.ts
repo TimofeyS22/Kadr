@@ -571,7 +571,8 @@ test('sheets: a look is chosen on tiles with the name under the picture, ringed 
   expect(await apply.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
 });
 
-test('sheets: fonts show themselves in their own letters, text styles are drawn on the person\'s frame, no option is a grey outlined box (the owner, 2026-11-11)', async ({ page }) => {
+const BLACK = /^(rgb\(0, 0, 0\)|oklch\(0 0 0\))$/;
+test('sheets: fonts and text styles show the person\'s word on the black of the stage, no option is a grey outlined box (the owner, 2026-11-11)', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
   await sampleEditor(page);
   await page.locator('.tl-row .clip-text').first().click();
@@ -590,7 +591,8 @@ test('sheets: fonts show themselves in their own letters, text styles are drawn 
   expect(new Set(drawn).size, 'each tile is drawn in its own font').toBe(drawn.length);
   expect(drawn.every((h) => Number(h.split(':')[0]) > 200), 'letters, not an empty tile').toBe(true);
   const chosen = fonts.locator('[aria-checked="true"] .ck-ptile-art');
-  expect(await chosen.evaluate((a) => getComputedStyle(a).backgroundColor), 'the black of the stage, not a grey ground').toBe('rgb(0, 0, 0)');
+  // Pure black, however the engine writes it out (the token is in OKLCH).
+  expect(await chosen.evaluate((a) => getComputedStyle(a).backgroundColor), 'the black of the stage, not a grey ground').toMatch(BLACK);
   // The chosen font is ringed in white with a gap, as every chosen thing of a sheet, not held between two marks.
   await expect(fonts.locator('.ck-held')).toHaveCount(0);
   expect(await chosen.evaluate((a) => { const s = getComputedStyle(a); return [s.outlineWidth, s.outlineOffset, s.outlineStyle]; })).toEqual(['2px', '2px', 'solid']);
@@ -598,11 +600,19 @@ test('sheets: fonts show themselves in their own letters, text styles are drawn 
   // The weight: one even row, no word cut.
   const cut = await panel(page).getByRole('radiogroup', { name: 'Начертание' }).locator('.ck-chip').evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
   expect(cut).toBe(0);
-  // Styles: drawn on the sample's orange sky, not on the grey stand-in (#9fb0c2 at the top).
-  await expect.poll(() => panel(page).locator('.tile canvas').first().evaluate((c: HTMLCanvasElement) => {
-    const [r, g, b] = c.getContext('2d')!.getImageData(2, 2, 1, 1).data;
-    return Math.abs(r - g) + Math.abs(g - b);
-  }), { timeout: 30_000 }).toBeGreaterThan(40); // the frame is decoded first: WebKit under load needs longer
+  // Styles: the look on the black of the stage, neither on a grey stand-in nor on the frame behind it (the owner, 2026-11-11:
+  // the sample's sunrise behind them was «колхоз»). The corner of a tile is the stage itself, its middle has the letters.
+  const styles = panel(page).getByRole('radiogroup', { name: 'Стиль' });
+  await expect.poll(() => styles.locator('canvas[data-ready]').count(), { timeout: 30_000 }).toBeGreaterThanOrEqual(4);
+  const style = await styles.locator('canvas[data-ready]').first().evaluate((c: HTMLCanvasElement) => {
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    let ink = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 128) ink++;
+    return { corner: d[3], ink, ground: getComputedStyle(c.parentElement!).backgroundColor };
+  });
+  expect(style.corner, 'nothing drawn under the look: the ground is the stage').toBe(0);
+  expect(style.ink, 'the look itself is drawn').toBeGreaterThan(200);
+  expect(style.ground).toMatch(BLACK);
   // No grey line around an option that is not chosen.
   const lined = await panel(page).locator('.ck-chip[aria-checked="false"], .ck-panel-body .ck-quiet').evaluateAll((els) => els.filter((e) => getComputedStyle(e).boxShadow !== 'none').length);
   expect(lined).toBe(0);
