@@ -1258,12 +1258,14 @@ test('canvas: aspect ratio and blurred background; safe zones overlay', async ({
 test('noise reduction processes; ducking lowers music under speech', async ({ page }, info) => {
   test.setTimeout(240_000);
   await newProject(page);
-  await importFiles(page, 'Media', ['speech_en.mp4']);
-  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Close tools' }).click();
+  // The music first, on an empty project: it keeps its 12 s and plays on after the speech (a sound added on top of a
+  // video ends with it, S-1-4).
   await importFiles(page, 'Audio', ['beat120.m4a']);
   const music = page.locator('.tl-row.audio .clip').first();
   await expect(music).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Media', ['speech_en.mp4']);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   const { execFileSync } = await import('node:child_process');
   const pcm = (file: string) => { const b = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', '8000', '-f', 'f32le', '-']); return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4); };
   const plain = pcm(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }));
@@ -2286,6 +2288,46 @@ test('edits survive closing the page right after them (saved on pagehide, not on
   await expect(clips).toHaveCount(2);
 });
 
+test('a video the device cannot play is refused for its real reason, in Kadr\'s words (S-1-7, S-1-8, S-1-9)', async ({ page, browserName }, info) => {
+  test.setTimeout(240_000);
+  // Made here: a 2×2 video, one 8K frame, H.264 4:4:4, and MP3 sound in a .mov. WebKit refused the 8K and 4:4:4 files
+  // with "cannot decode avc video, try Chrome or Safari" (it plays avc; on an iPhone every browser is Safari's engine),
+  // took the 2×2 one and then failed on every frame with "the decoder stopped, close other apps", and the .mov's
+  // message carried the library's English ("WebCodecs: This audio track cannot be decoded in this environment…").
+  const make = (name: string, args: string[]) => { const out = info.outputPath(name); execFileSync('ffmpeg', ['-v', 'error', '-y', ...args, out]); return out; };
+  const files = [
+    make('tiny_2x2.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=2x2:r=30', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']),
+    make('huge_8k.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=8192x4320:r=1', '-frames:v', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']),
+    make('yuv444.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=320x240:r=30', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv444p']),
+    make('mp3_in.mov', ['-f', 'lavfi', '-i', 'sine=f=440:d=3', '-c:a', 'libmp3lame']),
+    fx('landscape.mp4'),
+  ];
+  await newProject(page);
+  const chooser = page.waitForEvent('filechooser');
+  await tool(page, 'Media').click();
+  await (await chooser).setFiles(files);
+  await expect(page.locator('.tl-row.main .clip').first()).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.join('\n')), { timeout: 30_000 }).toContain('tiny_2x2');
+  await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 60_000 }); // shown one after another
+  const said = await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
+  console.log(`refusals (${info.project.name}):\n${said.join('\n')}`);
+  const about = (n: string) => said.find((x) => x.includes(n));
+  expect(about('tiny_2x2'), 'refused before it goes in, for its size').toContain('too small to play: 2×2');
+  for (const x of said) expect(x, 'no engine words in the sentence').not.toMatch(/WebCodecs|decodability|Decoder failure|Out of memory/);
+  for (const n of ['huge_8k', 'yuv444']) {
+    const r = about(n);
+    if (!r) continue; // Chromium plays it: it goes in
+    expect(r, `${n}: no other browser to try on an iPhone`).not.toMatch(/Try Chrome or Safari/);
+    expect(r, `${n}: the size is named`).toMatch(/\d+×\d+/);
+  }
+  if (browserName === 'webkit') expect(about('huge_8k'), 'WebKit does not decode 8K H.264').toContain('8192×4320');
+  // Nothing that went in fails later with "the decoder stopped": every clip on the timeline draws in the file.
+  const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  expect(pr.streams.some((x) => x.codec_type === 'video')).toBe(true);
+  const after = await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors);
+  expect(after.filter((x) => /decoder of this device stopped/.test(x))).toEqual([]);
+});
+
 test('hostile files: each one is refused by name, nothing breaks, the good file in the same batch imports and exports', async ({ page }, info) => {
   test.setTimeout(240_000);
   await newProject(page);
@@ -3045,12 +3087,14 @@ test('WYSIWYG for sound: what the preview plays matches the exported mix — vol
     } as typeof AudioNode.prototype.connect;
   }, TAP);
   await newProject(page);
-  await importFiles(page, 'Media', ['speech_en.mp4']); // 5.9 s of speech
-  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Close tools' }).click();
-  await importFiles(page, 'Audio', ['beat120.m4a']); // 12 s of beat, on under the speech and after it
+  // 12 s of beat, on under the speech and after it: added first, on an empty project, it keeps its length (a sound
+  // added on top of a video ends with it, S-1-4).
+  await importFiles(page, 'Audio', ['beat120.m4a']);
   const music = page.locator('.tl-row.audio .clip').first();
   await expect(music).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Media', ['speech_en.mp4']); // 5.9 s of speech
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await selectClip(page, page.locator('.tl-row.main .clip').first());
   await tool(page, 'Volume').click();
   await page.getByRole('slider', { name: 'Volume', exact: true }).fill('0.6');
@@ -4091,6 +4135,101 @@ test('export sound: no click or dip where the 2 s mixing windows meet (audit V-1
     expect.soft(jump, `click at ${b} s`).toBeLessThan(1.3);
   }
   console.log(`window joins (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('an hour-long video: the time reads in hours, and one tap on Export first says how big and how long, and whether it fits (S-1-5)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  // The browser says 200 MB are free: room to add the video, not for an hour of export.
+  await page.addInitScript(() => { StorageManager.prototype.estimate = async () => ({ usage: 0, quota: 200e6 }); });
+  const long = info.outputPath('hour.mp4');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=32x32:r=1', '-t', '3600', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-g', '600', long]);
+  await newProject(page);
+  const chooser = page.waitForEvent('filechooser');
+  await tool(page, 'Media').click();
+  await (await chooser).setFiles(long);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
+  // Before: "600:00.0" for ten hours, "60:00.0" for one.
+  await expect(page.locator('body')).toContainText('1:00:00.0');
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  // Before: one tap started an hour of export with no word of its size, time or room.
+  await expect(page.getByText(/A 60-minute video: the file will be about [\d.]+ GB, and the export takes a while/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/this device has 200 MB free: it may not fit/)).toBeVisible();
+  await expect(page.getByText(/% — keep this screen open/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Export video' })).toBeEnabled(); // the person decides: nothing is refused on an estimate
+  await page.screenshot({ path: info.outputPath('hour-export.png') });
+});
+
+test('a sound or a title added on a video ends with it: no black after the video in the file (S-1-4)', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await page.addInitScript(() => { (window as unknown as { __toasts: string[] }).__toasts = []; new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => { const w = window as unknown as { __toasts: string[] }; if (!w.__toasts.includes(el.textContent ?? '')) w.__toasts.push(el.textContent ?? ''); })).observe(document, { subtree: true, childList: true }); });
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4']); // 6 s
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Audio', ['music.m4a']); // 10 s
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1);
+  await expect.soft.poll(() => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts.join(' | ')), { timeout: 5000 }).toContain('ends with the video: 6.0 s of 10.0 s');
+  // A title 2 s before the end ends with the video too.
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await page.getByRole('slider', { name: 'Position in the video' }).fill('4');
+  await tool(page, 'Text').click();
+  await page.getByRole('button', { name: 'Done' }).first().click();
+  const pr = await probe(await exportAs(page, info, 'Video', 'Export video'));
+  // Before: 10 s, of which 4 s black (the music), and a 3 s title would have made 7 s on its own.
+  expect(Number(pr.format.duration), 'as long as the video').toBeLessThan(6.15);
+  expect(Number(pr.format.duration)).toBeGreaterThan(5.9);
+  expect(pr.streams.some((x) => x.codec_type === 'audio')).toBe(true);
+  // The fitted sound can still be made longer: undo brings back the full song, as one step.
+  await page.getByRole('button', { name: 'Undo' }).click(); // the title
+  await page.getByRole('button', { name: 'Undo' }).click(); // the sound
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(0);
+});
+
+test('a backup with damaged parts inside its clips opens and draws: what is whole stays, what is not goes (S-1-3)', async ({ page }, info) => {
+  const { Zip, ZipPassThrough, strToU8 } = await import('fflate');
+  const transform = { x: { v: 0 }, y: { v: 0.18, k: [null, { t: 0, v: 0.2 }, { t: 'x', v: 1 }] }, scale: { v: 1 }, rotation: { v: 0 }, opacity: { v: 1 } };
+  const style = { font: 'inter', size: 0.05, weight: 700, italic: false, color: '#ffffff', align: 'center', stroke: 'red', background: { color: 5 }, shadow: false, copies: [null, { color: '#f00', x: 0.02, y: 0.02 }] };
+  const project = {
+    id: 'dmg', version: 1, name: 'Damaged', createdAt: 1, updatedAt: 1,
+    settings: { aspect: '9:16', width: 1080, height: 1920, fps: 30, background: { mode: 'color', color: '#000000' } },
+    assets: {},
+    tracks: [
+      { id: 'm', kind: 'main', clips: [] },
+      { id: 'o', kind: 'overlay', clips: [{
+        kind: 'caption', id: 'cap', start: 0, duration: 3, blend: 'normal', highlight: null, wordsPerPage: 4, transform, style,
+        words: [null, { t0: 0.2, t1: 0.9, text: 'WHOLE' }, { t0: 1, t1: 2, text: 5 }, { t0: 1, t1: 2 }],
+      }] },
+    ],
+  };
+  const parts: Uint8Array[] = [];
+  const zip = new Zip((err, data) => { if (err) throw err; parts.push(data); });
+  const entry = new ZipPassThrough('project.json'); zip.add(entry); entry.push(strToU8(JSON.stringify(project)), true);
+  zip.end();
+  const file = info.outputPath('damaged.kadr');
+  fs.writeFileSync(file, Buffer.concat(parts));
+  await page.goto('./');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Restore backup' }).click();
+  await (await chooser).setFiles(file);
+  // Before: the editor fell to "Something went wrong" on every opening (a null among the caption's words).
+  await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  await expect(page.locator('.tl-row .clip')).toHaveCount(1);
+  const id = decodeURIComponent(new URL(page.url()).hash.replace(/^#\/p\//, ''));
+  const kept = await page.evaluate((key) => new Promise<{ words: unknown[]; style: Record<string, unknown>; transform: { y: { k: unknown[] } } }>((ok, ko) => {
+    const r = indexedDB.open('kadr');
+    r.onerror = () => ko(r.error);
+    r.onsuccess = () => { const g = r.result.transaction('kv').objectStore('kv').get(key); g.onsuccess = () => ok((g.result as { tracks: { clips: never[] }[] }).tracks.flatMap((t) => t.clips)[0]); };
+  }), `p:${id}`);
+  expect(kept.words).toEqual([{ t0: 0.2, t1: 0.9, text: 'WHOLE' }]);
+  expect(kept.transform.y.k).toEqual([{ t: 0, v: 0.2 }]);
+  expect(kept.style.stroke).toBeNull();
+  expect(kept.style.background).toBeNull();
+  expect(kept.style.copies).toEqual([{ color: '#f00', x: 0.02, y: 0.02 }]);
+  // It draws: play past the word and back, then a file comes out.
+  await page.getByRole('button', { name: 'Play' }).click();
+  await page.waitForTimeout(1200);
+  await expect(page.getByText('Something went wrong')).toHaveCount(0);
 });
 
 test('a backup whose video holds zip signatures restores it byte for byte (audit V-188)', async ({ page }, info) => {

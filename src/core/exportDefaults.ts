@@ -95,3 +95,24 @@ export function exportCost(source: ExportSource | null, resolution: number, fps:
     larger: !!source && resolution > source.side,
   };
 }
+
+/** Megabits a second of a video file at each size, standard quality; high quality ×1.5, more than 30 fps ×1.4. */
+export const QUALITY_MBPS: Record<number, number> = { 720: 5, 1080: 10, 1440: 18, 2160: 35 };
+
+/** The file's size in MB, as the sheet says it before the export. */
+export function estimateMb(resolution: number, fps: number, quality: 'standard' | 'high', durationS: number): number {
+  return ((QUALITY_MBPS[resolution] ?? QUALITY_MBPS[1080]) * (quality === 'high' ? 1.5 : 1) * (fps > 30 ? 1.4 : 1) * durationS) / 8;
+}
+
+/** Longer than this, one tap does not start the export: the sheet first says how big the file is and how long it takes (S-1-5). */
+export const LONG_EXPORT_S = 20 * 60;
+
+/**
+ * Before an export: what the person is told first (S-1-5). A ten-hour video started by one tap with no word of its size
+ * or time; on a phone it would end with no file. `long`: past LONG_EXPORT_S. `room`: the file may not fit in what the
+ * browser says is free (`freeMb` null: it does not say). Either way the export waits for the person's tap; nothing is
+ * refused on an estimate.
+ */
+export function exportNotes(durationS: number, mb: number, freeMb: number | null): { long: boolean; room: boolean } {
+  return { long: durationS > LONG_EXPORT_S, room: freeMb !== null && mb > freeMb };
+}

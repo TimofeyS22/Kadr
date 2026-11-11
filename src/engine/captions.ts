@@ -264,7 +264,8 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
       cancellable();
       void newerVersionDeployed().then((updated) => reject(updated && reloadIntoUpdate(true)
         ? new Error(updatingMessage())
-        : new MediaError('Could not load the speech model ({error})', { error: e.message || 'worker' })));
+        // Online, and no newer version: the site did not answer the worker's script (S-1-10). Its own words go to the details.
+        : new MediaError('The speech model did not load: the site did not answer. Try again in a minute, or on another network.', { error: e.message || 'the worker script did not load' })));
     };
     const onMessage = (e: MessageEvent<AsrResponse>) => {
       const r = e.data;
@@ -369,7 +370,7 @@ async function transcribeWith(
   // Whisper invents text over music and silence, so only speech found by the VAD is transcribed.
   onProgress({ phase: 'listen' });
   const vad = await request(getWorker(), { type: 'vad', id: 0, audio: audio.slice() }, undefined, signal);
-  if (vad.type === 'error') throw engineError(vad.message, 'Speech detection failed ({error})');
+  if (vad.type === 'error') throw engineError(vad.message, 'Speech detection failed. Try again; the details are under “Details”.');
   // Speech segments for the engine at work: lenient for the Russian CTC models, strict for Whisper (it invents text
   // over music; CTC models do not).
   let speech: [number, number][] = [], windows: [number, number][] = [];
@@ -383,7 +384,7 @@ async function transcribeWith(
     const r = await request(getWorker(), { type: 'transcribe', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), language: isRussian(engine) ? null : language, model: engine }, undefined, signal);
     if (r.type === 'error') {
       if (await lighten(r)) return transcribe(i);
-      throw engineError(r.message, 'Transcription failed ({error})');
+      throw engineError(r.message, 'Speech recognition failed. Try again; the details are under “Details”.');
     }
     return r.type === 'result' ? r : null;
   };
@@ -400,7 +401,7 @@ async function transcribeWith(
     }
     if (!language) {
       const r = await request(getWorker(), { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code), model: engine }, undefined, signal);
-      if (r.type === 'error') throw engineError(r.message, 'Speech detection failed ({error})');
+      if (r.type === 'error') throw engineError(r.message, 'Speech detection failed. Try again; the details are under “Details”.');
       if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
       // The Russian model was unsure (Russian under loud music) but it is Russian: it still reads it best.
       if (isRussian(model) && language === 'russian') { engine = await load(russian); segment(); }

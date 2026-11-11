@@ -6,6 +6,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { APP_TITLE, DEFAULT_SITE, appMeta, buildSite } from './seo/render.ts';
 import { noReservePlugin } from './scripts/no-reserve.ts';
+import { oneCopyPlugin } from './scripts/one-copy.ts';
 
 // Dev-only e2e hook: lets browser tests save an exported file into fixtures/ for ffprobe checks.
 const e2eUpload: Plugin = {
@@ -83,6 +84,9 @@ const thirdPartyLicenses: Plugin = {
 
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
+  // One React however node_modules is reached: in a session's git worktree it is a symlink into the main checkout, and
+  // React came in by both paths, two copies and a blank page (S-1-11; scripts/one-copy.ts fails the build on that).
+  resolve: { dedupe: ['react', 'react-dom'] },
   // GitHub Pages serves the app from /<repo>/; CI sets KADR_BASE=/Kadr/.
   base: process.env.KADR_BASE ?? '/',
   // A chunk named after a dot-folder (@soundtouchjs/core's "dist" → ".dist-*.js") is skipped by the precache glob:
@@ -97,6 +101,7 @@ export default defineConfig({
   plugins: [
     react(),
     thirdPartyLicenses,
+    oneCopyPlugin, // one copy of each package: two Reacts are a blank page (S-1-11)
     noReservePlugin, // mediabunny reserves no 4 GiB of address space per output (docs/12 §1.3 item 14)
     e2eUpload,
     dropUnusedOrt,

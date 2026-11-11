@@ -11,6 +11,8 @@ import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
 import { getBlob, getPeaks, openMedia, putPeaks } from '../storage/db';
 import { ResilientSink, playableAudioTrack, type SoundSink } from './sound';
 import { within } from '../lib/limits';
+import { IOS } from '../lib/device';
+import { PLAIN_CONFIG, cannotDecode, tooSmall } from '../core/decodeRefusal';
 
 /** Error with a user-facing English message (a translation key); `vars` fill its {placeholders}. */
 export class MediaError extends Error {
@@ -51,16 +53,25 @@ export async function probe(file: Blob): Promise<Probe> {
   try {
     if (!(await input.canRead())) throw new MediaError('Unsupported file format');
     const video = await input.getPrimaryVideoTrack();
-    if (video && !(await video.canDecode())) {
-      const codec = (await video.getCodec()) ?? '?';
-      // The advice is about HEVC: for a file that is already H.264 it sent people to a setting that changes nothing (audit V-199).
-      throw new MediaError(codec === 'hevc' ? 'This browser cannot decode {codec} video. On iPhone, set Camera → Formats → Most Compatible.' : 'This browser cannot decode {codec} video. Try Chrome or Safari.', { codec });
+    if (video) {
+      // Why a video does not go in, said truthfully (core/decodeRefusal.ts, S-1-8, S-1-9).
+      const width = await video.getDisplayWidth(), height = await video.getDisplayHeight();
+      const small = tooSmall(width, height);
+      if (small) throw new MediaError(small.message, small.vars);
+      if (!(await video.canDecode())) {
+        const codec = (await video.getCodec()) ?? '?';
+        const plain = PLAIN_CONFIG[codec];
+        const codecWorks = !!plain && typeof VideoDecoder === 'function'
+          && await VideoDecoder.isConfigSupported({ codec: plain, codedWidth: 1280, codedHeight: 720 }).then((r) => !!r.supported, () => false);
+        const r = cannotDecode({ codec, width, height, codecWorks, ios: IOS });
+        throw new MediaError(r.message, r.vars);
+      }
     }
     let why = '';
     const audio = await playableAudioTrack(input, (reason) => { why = reason; });
     const hasAudio = !!audio;
     // A sound track that is there but does not decode says why (QA: "no playable audio" hid a decoder refusal).
-    if (!video && !hasAudio && why) throw new MediaError('The sound of this file cannot be decoded in this browser ({error})', { error: why });
+    if (!video && !hasAudio && why) throw new MediaError('The sound of this file cannot be decoded in this browser', { error: why });
     if (!video && !hasAudio) throw new MediaError('No playable video or audio found');
     const promised = await input.computeDuration();
     if (!(promised > 0)) throw new MediaError('The file has no duration');

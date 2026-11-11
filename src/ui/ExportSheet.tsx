@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Check, CircleAlert, Share } from 'lucide-react';
-import { exportCost, exportDefaults, exportSource, isFast } from '../core/exportDefaults';
+import { estimateMb, exportCost, exportDefaults, exportNotes, exportSource, isFast } from '../core/exportDefaults';
 import { projectDuration } from '../core/timeline';
 import { roundLeft, timeLeft } from '../core/exportProgress';
 import type { ExportResult, Film } from '../engine/exporter';
@@ -46,13 +46,21 @@ const RESOLUTIONS_MS = 8000;
 /** What the encoder said: the sizes it takes, and those of them it takes at 60 fps (null: not asked, or no answer). */
 interface Encodable { sizes: Resolution[]; sizes60: Resolution[] | null }
 const NO_ANSWER: Encodable = { sizes: [720, 1080], sizes60: null };
-const QUALITY_MBPS: Record<Resolution, number> = { 720: 5, 1080: 10, 1440: 18, 2160: 35 };
 const LABEL: Record<Resolution, string> = { 720: '720p', 1080: '1080p', 1440: '2K', 2160: '4K' };
 const PRESETS = [
   { id: 'social', label: t('TikTok, Reels, Shorts'), resolution: 1080, fps: 30, quality: 'high' },
   { id: 'best', label: t('Best quality'), resolution: 2160, fps: 30, quality: 'high' },
   { id: 'small', label: t('Small file'), resolution: 720, fps: 30, quality: 'standard' },
 ] as const;
+
+/** What the browser says is free for this site, in MB; null when it does not say in 2 s. */
+function freeSpace(): Promise<number | null> {
+  const ask = navigator.storage?.estimate?.() ?? Promise.resolve(undefined);
+  return within(ask, 2000, () => undefined).then((e) => (e?.quota ? (e.quota - (e.usage ?? 0)) / 1e6 : null), () => null);
+}
+
+/** A size in MB or GB, as people read it. */
+const formatSize = (mb: number): string => (mb >= 1000 ? t('{n} GB', { n: (mb / 1000).toFixed(1) }) : t('{n} MB', { n: Math.max(1, Math.round(mb)) }));
 
 export function ExportSheet() {
   const project = useEditor((s) => s.project)!;
@@ -113,8 +121,18 @@ export function ExportSheet() {
       // A preset tapped before the answer keeps its size where the encoder takes it, else the largest below it.
       else if (picked.current.size) setResolution((r) => (e.sizes.includes(r) ? r : e.sizes.filter((x) => x <= r).at(-1) ?? e.sizes[0] ?? r));
       if (!picked.current.fps) setFps(start.fps);
-      // Quick export (nobody sees the sheet) starts with the same size and frame rate the sheet would show.
-      if (auto) { if (start.resolution) void run(start.resolution, start.fps, true); else setPhase({ kind: 'setup' }); }
+      // Quick export (nobody sees the sheet) starts with the same size and frame rate the sheet would show; a very long
+      // video, or a file that may not fit, waits for a tap on the sheet that says so (S-1-5).
+      if (auto) {
+        if (!start.resolution) { setPhase({ kind: 'setup' }); return; }
+        const res = start.resolution;
+        void freeSpace().then((free) => {
+          if (!alive) return;
+          setFreeMb(free);
+          const d = projectDuration(project), notes = exportNotes(d, estimateMb(res, start.fps, prefs.quality, d), free);
+          if (notes.long || notes.room) setPhase({ kind: 'setup' }); else void run(res, start.fps, true);
+        });
+      }
     });
     return () => { alive = false; abort.current?.abort(); };
   }, [project.settings]);
@@ -125,8 +143,11 @@ export function ExportSheet() {
   const duration = projectDuration(project);
   const [w, h] = outputSize(project.settings, resolution);
   /** About how many megabytes a video of this size and rate comes to (the encoder's bitrates, not a promise). */
-  const mbFor = (res: Resolution, rate: number) => (QUALITY_MBPS[res] * (quality === 'high' ? 1.5 : 1) * (rate > 30 ? 1.4 : 1) * duration) / 8;
+  const mbFor = (res: Resolution, rate: number) => estimateMb(res, rate, quality, duration);
   const estMb = mbFor(resolution, fps);
+  const [freeMb, setFreeMb] = useState<number | null>(null);
+  useEffect(() => { void freeSpace().then(setFreeMb); }, []);
+  const notes = exportNotes(duration, estMb, freeMb);
 
   async function run(res: Resolution = resolution, rate = fps, isQuick = false) {
     // The size is remembered only when picked by hand, and forgotten when the pick is the videos' own size: tapping
@@ -291,6 +312,9 @@ export function ExportSheet() {
           <Toggle label={t('Quick export')} note={t('The Export button saves right away with these settings')} value={quick}
             onChange={(v) => { setQuick(v); savePrefs({ ...exportPrefs(), quick: v }); }} />
           <p className="ck-hint">{t('Rendered on this device, nothing is uploaded.')}</p>
+          {/* Said before the export, not found out after an hour of it (S-1-5). */}
+          {notes.long && <p className="ck-hint">{t('A {min}-minute video: the file will be about {size}, and the export takes a while. Keep the screen on.', { min: Math.round(duration / 60), size: formatSize(estMb) })}</p>}
+          {notes.room && <Alert>{t('The file will be about {size}, and this device has {free} free: it may not fit. Free up space or pick a smaller size.', { size: formatSize(estMb), free: formatSize(freeMb ?? 0) })}</Alert>}
           <Foot lead={lead} sum={facts({ format: 'video', w, h, fps, mb: estMb }, duration)} disabled={!supported?.length || duration <= 0} onClick={() => void run()}>{t('Export video')}</Foot>
         </>
       )}
