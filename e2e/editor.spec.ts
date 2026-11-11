@@ -891,6 +891,43 @@ async function fakeCamera(page: Page) {
   });
 }
 
+test('a camera recorder that gives no video is said to within seconds, and an empty take is never "an unsupported format" (S-1-12)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await fakeCamera(page);
+  await page.addInitScript(() => {
+    // As WebKit's recorder under load (S-1-12): not one piece while it records, 0 bytes at Stop.
+    class Silent extends EventTarget {
+      state: 'inactive' | 'recording' = 'inactive';
+      mimeType = 'video/mp4';
+      ondataavailable: ((e: Event) => void) | null = null;
+      onstop: ((e: Event) => void) | null = null;
+      static isTypeSupported(m: string) { return m.includes('mp4'); }
+      private data() { const e = Object.assign(new Event('dataavailable'), { data: new Blob([], { type: 'video/mp4' }) }); this.dispatchEvent(e); this.ondataavailable?.(e); }
+      start() { this.state = 'recording'; this.dispatchEvent(new Event('start')); }
+      stop() { if (this.state === 'inactive') return; this.state = 'inactive'; this.data(); const e = new Event('stop'); this.dispatchEvent(e); this.onstop?.(e); }
+    }
+    (window as unknown as { MediaRecorder: unknown }).MediaRecorder = Silent;
+  });
+  await newProject(page);
+  const said = (text: string) => page.locator('.toast').filter({ hasText: text });
+  // Left to record: before, the person recorded a whole take into nothing. Now it is said within seconds.
+  await tool(page, 'Camera').click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
+  await expect(said('The recording did not start')).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByRole('button', { name: 'Start recording' })).toBeEnabled(); // ready for the next take
+  // Stopped before that: an empty take is said to be empty and not imported. Before: "Unsupported file format".
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(1000);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(said('The recording came out empty')).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(0);
+  await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 20_000 }); // gone, so not counted again
+  const errors = await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0)); // expected here
+  expect(errors.join('\n')).not.toMatch(/Unsupported file format/);
+});
+
 test('camera with teleprompter scrolls the script, records a mirrored clip onto the main track and releases the camera', async ({ page }, info) => {
   test.setTimeout(120_000);
   await fakeCamera(page);

@@ -604,6 +604,8 @@ export const RU: Record<string, string> = {
   'Camera is not available: {error}': 'Камера недоступна: {error}',
   'Teleprompter': 'Телесуфлёр',
   'Saving the recording…': 'Сохраняем запись…',
+  'The recording did not start: the browser gave no video. Record again.': 'Запись не пошла: браузер не отдал видео. Запишите ещё раз.',
+  'The recording came out empty: the browser gave no video. Record again.': 'Запись получилась пустой: браузер не отдал видео. Запишите ещё раз.',
   'Paste or type what you want to say': 'Вставьте или напишите, что хотите сказать',
   'Scroll speed': 'Скорость прокрутки',
   'Text size': 'Размер текста',

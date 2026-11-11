@@ -19,6 +19,13 @@ type State = 'starting' | 'ready' | 'countdown' | 'recording' | 'saving' | 'erro
 type WakeLock = { release(): Promise<void> };
 /** The recorder gets this long to hand over its last chunk after stop (docs/12 G2). */
 const STOP_MS = 3000;
+/**
+ * A recorder that gives nothing (S-1-12): under load WebKit's MediaRecorder ran a whole take without one piece and
+ * handed 0 bytes at Stop, and the person learned it afterwards as "Unsupported file format". It cuts a piece every
+ * second (measured: the first comes 1.1–2.3 s after the start on a loaded Mac); with nothing by SILENT_MS the take is
+ * stopped and said not to have started, while the person can still record again.
+ */
+const SILENT_MS = 5000;
 
 const load = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
 const save = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* storage blocked */ } };
@@ -56,7 +63,7 @@ export function CameraSheet() {
   const video = useRef<HTMLVideoElement>(null);
   const prompter = useRef<HTMLDivElement>(null);
   const stream = useRef<MediaStream | null>(null);
-  const rec = useRef<{ recorder: MediaRecorder; take: TakeWriter; lock: WakeLock | null; mirror: { stop: () => void } | null } | null>(null);
+  const rec = useRef<{ recorder: MediaRecorder; take: TakeWriter; lock: WakeLock | null; mirror: { stop: () => void } | null; watch: number[] } | null>(null);
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
   const [state, setState] = useState<State>('starting');
   useHoldUpdates(state === 'countdown' || state === 'recording' || state === 'saving');
@@ -97,7 +104,7 @@ export function CameraSheet() {
   // Leaving the screen mid-recording discards the take and frees everything.
   useEffect(() => () => {
     const r = rec.current;
-    if (r) { r.recorder.ondataavailable = null; if (r.recorder.state !== 'inactive') r.recorder.stop(); r.mirror?.stop(); void r.take.discard(); void r.lock?.release().catch(() => undefined); }
+    if (r) { r.watch.forEach(clearTimeout); r.recorder.ondataavailable = null; if (r.recorder.state !== 'inactive') r.recorder.stop(); r.mirror?.stop(); void r.take.discard(); void r.lock?.release().catch(() => undefined); }
   }, []);
 
   // Countdown → recording.
@@ -161,9 +168,11 @@ export function CameraSheet() {
       const mirror = facing === 'user' && video.current ? mirrored(s, video.current) : null;
       const recorder = new MediaRecorder(mirror?.stream ?? s, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
       const take = new TakeWriter(editor().project!.id);
-      recorder.ondataavailable = (e) => { if (e.data.size) take.add(e.data); };
+      let got = false;
+      recorder.ondataavailable = (e) => { if (e.data.size) { got = true; take.add(e.data); } };
       recorder.start(1000); // 1 s pieces, each to storage: memory stays flat and a crash loses at most a second
-      rec.current = { recorder, take, lock: null, mirror };
+      const watch = [window.setTimeout(() => { if (!got && rec.current?.recorder === recorder) gaveNothing(); }, SILENT_MS)];
+      rec.current = { recorder, take, lock: null, mirror, watch };
       const wl = (navigator as Navigator & { wakeLock?: { request(t: 'screen'): Promise<WakeLock> } }).wakeLock;
       void wl?.request('screen').then((l) => { if (rec.current) rec.current.lock = l; else void l.release(); }, () => undefined);
       setElapsed(0);
@@ -175,9 +184,29 @@ export function CameraSheet() {
     }
   }
 
+  /** Ends a take that holds nothing: the person hears it now, and the camera stays ready for the next one (S-1-12). */
+  function dropEmpty(r: NonNullable<typeof rec.current>, said: string) {
+    r.watch.forEach(clearTimeout);
+    r.recorder.ondataavailable = null;
+    if (r.recorder.state !== 'inactive') r.recorder.stop();
+    r.mirror?.stop();
+    void r.lock?.release().catch(() => undefined);
+    void r.take.discard();
+    rec.current = null;
+    track('camera_recording_empty', { seconds: Math.round(elapsed) });
+    editor().toast(said, 'error');
+    setState('ready');
+  }
+
+  function gaveNothing() {
+    const r = rec.current;
+    if (r) dropEmpty(r, t('The recording did not start: the browser gave no video. Record again.'));
+  }
+
   async function stop() {
     const r = rec.current;
     if (!r) return;
+    r.watch.forEach(clearTimeout);
     setState('saving');
     // A recorder that never reports its stop (seen in WebKit) keeps what it has: the 1 s pieces are already stored.
     await within(new Promise<void>((res) => {
@@ -191,6 +220,8 @@ export function CameraSheet() {
     const ext = type.includes('mp4') ? 'mp4' : 'webm';
     const stamp = new Date().toTimeString().slice(0, 5).replace(':', '-');
     const file = await r.take.file(`${t('Camera')} ${stamp}.${ext}`, type.split(';')[0]);
+    // Nothing came out of the recorder: said as it is, not as a file "in an unsupported format" (S-1-12).
+    if (!file.size) { rec.current = r; dropEmpty(r, t('The recording came out empty: the browser gave no video. Record again.')); return; }
     track('camera_recording_saved', { seconds: Math.round(elapsed), mb: Math.round(file.size / 1e6) });
     editor().openSheet(null); // closes this screen (stops the camera) before the import overlay
     // Only once it is in the project does the take leave storage: a full disk at this moment no longer loses the recording.
