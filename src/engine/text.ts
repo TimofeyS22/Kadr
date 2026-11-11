@@ -211,6 +211,8 @@ export type CaptionState = Pick<Extract<LayerSource, { kind: 'caption' }>, 'clip
 /** How a caption's words look right now (v1.5): roles from core/captions, plus what the roles are drawn with. */
 interface Look { roles: WordRole[]; highlight: string; emphasis?: CaptionEmphasis; motion: CaptionMotion; reveal: boolean; enter: number }
 interface Pos { i: number; x: number; y: number; li: number }
+/** How the words of one paragraph are set, in output pixels (docs/18 ADR-П2). */
+interface Face { font: string; px: number; ls: number; upper: boolean; lineH: number; gap: number; dx: number; align: TextStyle['align']; color: string }
 
 /**
  * Renders text and captions to canvases sized in output pixels, LRU-cached by content and size.
@@ -226,6 +228,8 @@ export class TextRasterizer {
   /** Scratch canvases: the letters' silhouette (solid copies) and one word drawn on its own (a word that moves or fades). */
   private sil: HTMLCanvasElement | null = null;
   private stamp: HTMLCanvasElement | null = null;
+  /** Measures a text in several faces before it is laid out (fitOf). */
+  private measure: CanvasRenderingContext2D | null = null;
 
   constructor(private readonly limit = 96) {}
 
@@ -233,9 +237,13 @@ export class TextRasterizer {
 
   /** `mask`: only the letters' fill, in white, laid out exactly as the text (the readability check on ?styles). */
   get(clip: TextClip, chars: number, W: number, H: number, mask = false): Drawable | null {
-    const text = Number.isFinite(chars) ? [...clip.text].slice(0, chars).join('') : clip.text;
-    const paragraphs = text.split('\n').map((p) => p.split(/\s+/).filter(Boolean));
-    return this.cached(mask ? [text, clip.style, W, H, mask] : [text, clip.style, W, H], () => this.render(paragraphs, clip.style, W, H, null, Infinity, mask));
+    const typing = Number.isFinite(chars);
+    const text = typing ? [...clip.text].slice(0, chars).join('') : clip.text;
+    const words = (t: string) => t.split('\n').map((p) => p.split(/\s+/).filter(Boolean));
+    // A text in several faces fits by its whole text: typed out letter by letter, the block keeps its size (docs/18).
+    const key: unknown[] = mask ? [text, clip.style, W, H, mask] : [text, clip.style, W, H];
+    if (typing && clip.style.lines) key.push(clip.text);
+    return this.cached(key, () => this.render(words(text), clip.style, W, H, null, Infinity, mask, words(clip.text)));
   }
 
   /** `mask`: only the letters' fill, in white, laid out exactly as the caption (the readability check on ?styles). */
@@ -284,23 +292,39 @@ export class TextRasterizer {
     return ctx;
   }
 
+  /** How much a text in several faces is set smaller so that its first paragraph fits the frame on one line. */
+  private fitOf(paras: string[][], f: Face, W: number): number {
+    const words = (paras[0] ?? []).map((w) => (f.upper ? w.toLocaleUpperCase() : w));
+    if (!words.length) return 1;
+    const c = (this.measure ??= document.createElement('canvas').getContext('2d')!);
+    c.font = f.font;
+    const width = words.reduce((a, w) => a + wordWidth(c, w, f.ls), 0) + (words.length - 1) * (c.measureText(' ').width + f.ls * 2);
+    const room = W * 0.9 - f.px * 0.4; // the frame's width less the block's own margins
+    return width > room ? Math.max(0.2, room / width) : 1;
+  }
+
   /**
    * `shown`: only the first words are drawn (the rest keep their place in the layout, so the line never jumps).
    * Every size is a fraction of the font size, so the preview and the export (other pixel sizes) draw the same picture.
    */
-  private render(paragraphs: string[][], style: TextStyle, W: number, H: number, look: Look | null, shown = Infinity, mask = false): Drawable | null {
+  private render(paragraphs: string[][], style: TextStyle, W: number, H: number, look: Look | null, shown = Infinity, mask = false, whole?: string[][]): Drawable | null {
     if (!paragraphs.some((p) => p.length)) return null;
     const s = saneStyle(style); // a style from a backup decides no canvas of 10⁵ px and no 10⁷ stamps
-    const px = Math.max(4, s.size * H);
     // The face of each paragraph (docs/18). A text with no looks has one, and is drawn exactly as before (e2e raster archive).
-    const faces = (s.lines?.length ? s.lines : [null]).map((l) => {
-      const fpx = l ? Math.max(4, s.size * (l.scale ?? 1) * H) : px;
+    const looks = s.lines?.length ? s.lines : [null];
+    const facesAt = (h: number): Face[] => looks.map((l) => {
+      const bpx = Math.max(4, s.size * h), fpx = l ? Math.max(4, s.size * (l.scale ?? 1) * h) : bpx;
       return {
-        font: l ? fontCss(lookStyle(s, l), fpx) : fontCss(s, px), px: fpx, ls: ((l ? l.letterSpacing ?? s.letterSpacing : s.letterSpacing) ?? 0) * fpx,
-        upper: l?.uppercase ?? !!s.uppercase, lineH: fpx * (s.lineHeight ?? TEXT_LINE_HEIGHT), gap: (l?.gap ?? 0) * px,
+        font: l ? fontCss(lookStyle(s, l), fpx) : fontCss(s, bpx), px: fpx, ls: ((l ? l.letterSpacing ?? s.letterSpacing : s.letterSpacing) ?? 0) * fpx,
+        upper: l?.uppercase ?? !!s.uppercase, lineH: fpx * (s.lineHeight ?? TEXT_LINE_HEIGHT), gap: (l?.gap ?? 0) * bpx,
         dx: l?.dx ?? 0, align: l?.align ?? s.align, color: l?.color ?? s.color,
       };
     });
+    // The first paragraph of a text in several faces (the accent) is never broken between words: if it is wider than the
+    // frame, the whole block is set smaller (docs/18 ADR-П2).
+    const fit = looks.length > 1 ? this.fitOf(whole ?? paragraphs, facesAt(H)[0], W) : 1;
+    const px = Math.max(4, s.size * H * fit);
+    const faces = facesAt(H * fit);
     const multi = faces.length > 1;
     const faceOf = (para: number) => faces[Math.min(para, faces.length - 1)];
     const paras = paragraphs.map((p, pi) => (faceOf(pi).upper ? p.map((w) => w.toLocaleUpperCase()) : p));

@@ -103,3 +103,46 @@ test('a pair: each paragraph in its own face, tucked by its gap; captions ignore
   expect(r.lobster, 'the accent face was loaded before drawing').toContain('loaded');
   expect(r.mono, 'the support face was loaded before drawing').toContain('loaded');
 });
+
+test('a long accent is set smaller, never broken between words; typed out letter by letter it keeps its size', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('./');
+  const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
+  test.skip(!dev, 'needs the dev server: the renderer is imported from its source');
+  const r = await page.evaluate(async () => {
+    const imp = (p: string) => import(/* @vite-ignore */ p);
+    const [{ TextRasterizer, ensureFont }, { createTextClip }] = await Promise.all([imp('/src/engine/text.ts'), imp('/src/core/defaults.ts')]);
+    const raster = new TextRasterizer(64);
+    const text = 'С днём рождения\nАня · 25';
+    const style = {
+      font: 'tenor', size: 0.05, weight: 400, italic: false, color: '#ffffff', align: 'center', stroke: null, background: null, shadow: false,
+      lines: [{ font: 'yeseva', scale: 2.4 }, { font: 'tenor', scale: 0.6, uppercase: true, letterSpacing: 0.15 }],
+    };
+    const clip = createTextClip(0, text);
+    clip.style = style;
+    await ensureFont(style, text);
+    type D = { image: HTMLCanvasElement; w: number; h: number };
+    /** Runs of rows with letters in them, top to bottom: one per line of text. */
+    const bands = (d: D) => {
+      const px = d.image.getContext('2d')!.getImageData(0, 0, d.w, d.h).data;
+      const out: [number, number][] = [];
+      let start = -1;
+      for (let y = 0; y < d.h; y++) {
+        let ink = false;
+        for (let x = 0; x < d.w && !ink; x++) ink = px[(y * d.w + x) * 4 + 3] > 128;
+        if (ink && start < 0) start = y;
+        if (!ink && start >= 0) { out.push([start, y]); start = -1; }
+      }
+      if (start >= 0) out.push([start, d.h]);
+      return out.filter(([a, b]) => b - a > 2);
+    };
+    const full = raster.get(clip, Infinity, 1080, 1920) as D;
+    const typed = raster.get(clip, 9, 1080, 1920) as D; // «С днём ро»
+    return { w: full.w, full: bands(full), typed: bands(typed) };
+  });
+  console.log(JSON.stringify(r));
+  expect(r.full.length, 'the accent on one line and the support under it').toBe(2);
+  expect(r.w, 'the block fits the frame').toBeLessThanOrEqual(1080);
+  const height = ([a, b]: [number, number]) => b - a;
+  expect(Math.abs(height(r.typed[0]) - height(r.full[0])), 'half typed, the accent keeps the size of the whole text').toBeLessThanOrEqual(2);
+});
