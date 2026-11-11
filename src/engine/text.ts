@@ -91,13 +91,22 @@ export async function ensureFont(style: TextStyle, text: string): Promise<void> 
   await document.fonts.load(css, text || 'Aa').catch(() => undefined);
   // WebKit resolves load() before the font is whole on canvas (v1.4.9, QA: right after it the text measured a mix of
   // fallback and font, the font itself 0.5 s later), so an export after reopening a project drew Impact instead of
-  // Rubik Mono. The family's faces for this weight and style are loaded directly and awaited.
-  const family = fontOf(style.font).family.split(',')[0].replace(/["']/g, '').trim();
+  // Rubik Mono. The faces are loaded directly and awaited: those of every web family in the stack (Anton and Bebas Neue
+  // take their Cyrillic from Oswald), in the style asked for or, where the author drew no italic (Unbounded, Russo One,
+  // Days One), the upright face the browser slants. Before (D-19) only the first family in the asked style was: on
+  // WebKit those texts could be drawn, and cached, with a fallback face (e2e/qa-text-raster.spec.ts).
   const weight = fontWeight(style.font, style.weight), italic = style.italic ? 'italic' : 'normal';
-  const fits = (w: string) => { const [a, b = a] = w.split(' ').map(Number); return weight >= a && weight <= b; };
-  await Promise.all([...document.fonts]
-    .filter((f) => f.family.replace(/["']/g, '') === family && f.style === italic && fits(f.weight))
-    .map((f) => f.load().catch(() => undefined)));
+  const range = (f: FontFace) => { const [a, b = a] = f.weight.split(' ').map(Number); return [a, b] as const; };
+  const off = (f: FontFace) => { const [a, b] = range(f); return weight < a ? a - weight : weight > b ? weight - b : 0; };
+  const faces = [...document.fonts];
+  const wanted = fontOf(style.font).family.split(',').flatMap((name) => {
+    const family = name.replace(/["']/g, '').trim();
+    const own = faces.filter((f) => f.family.replace(/["']/g, '') === family);
+    const styled = own.some((f) => f.style === italic) ? own.filter((f) => f.style === italic) : own.filter((f) => f.style === 'normal');
+    const nearest = Math.min(...styled.map(off));
+    return styled.filter((f) => off(f) === nearest);
+  });
+  await Promise.all(wanted.map((f) => f.load().catch(() => undefined)));
   loaded.add(key);
 }
 
