@@ -1,6 +1,6 @@
 // Local persistence. Projects are small JSON documents; media are Blobs stored as-is
 // (IndexedDB keeps them on disk and Mediabunny reads them in slices).
-import { del, get, keys, promisifyRequest, set, update, type UseStore } from 'idb-keyval';
+import { del, get, keys, promisifyRequest, set, type UseStore } from 'idb-keyval';
 import { clearDiskFiles } from '../engine/opfs';
 import { projectDuration } from '../core/timeline';
 import type { AspectId, Project } from '../core/types';
@@ -63,16 +63,35 @@ export class ProjectConflict extends Error {
   constructor(readonly id: string) { super('The project was changed in another tab'); this.name = 'ProjectConflict'; }
 }
 
-// Tabs tell each other what they saved, so a tab showing an older version knows before it saves over it.
+/**
+ * The project this tab has is no longer stored: it was deleted, with its media, in another tab or window (search S-1-1).
+ * Before, the next edit here wrote it back: the confirmed delete was undone without a word, the project came back to
+ * the list with no media, and its export failed.
+ */
+export class ProjectDeleted extends Error {
+  constructor(readonly id: string) { super('The project was deleted in another tab'); this.name = 'ProjectDeleted'; }
+}
+
+// Tabs tell each other what they saved or deleted, so a tab showing an older version knows before it saves over it.
+type TabNews = { id: string; writer: string } & ({ rev: number } | { deleted: true });
 const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('kadr-projects') : null;
 const elsewhere = new Set<(id: string) => void>();
-channel?.addEventListener('message', (e: MessageEvent<{ id: string; rev: number; writer: string }>) => {
-  if (e.data?.writer !== TAB && seen.has(e.data.id) && seen.get(e.data.id) !== e.data.rev) for (const fn of elsewhere) fn(e.data.id);
+const deletedElsewhere = new Set<(id: string) => void>();
+channel?.addEventListener('message', (e: MessageEvent<TabNews>) => {
+  const news = e.data;
+  if (!news || news.writer === TAB || !seen.has(news.id)) return;
+  if ('deleted' in news) for (const fn of deletedElsewhere) fn(news.id);
+  else if (seen.get(news.id) !== news.rev) for (const fn of elsewhere) fn(news.id);
 });
 /** Calls `fn(id)` when another tab saves a project this tab has open; returns the unsubscribe. */
 export function onSavedElsewhere(fn: (id: string) => void): () => void {
   elsewhere.add(fn);
   return () => elsewhere.delete(fn);
+}
+/** Calls `fn(id)` when another tab deletes a project this tab has open; returns the unsubscribe. */
+export function onDeletedElsewhere(fn: (id: string) => void): () => void {
+  deletedElsewhere.add(fn);
+  return () => deletedElsewhere.delete(fn);
 }
 
 export interface ProjectMeta { id: string; name: string; updatedAt: number; duration: number; aspect: AspectId; thumb?: string }
@@ -89,8 +108,10 @@ function withIndex(fn: (index: ProjectMeta[]) => ProjectMeta[]): Promise<void> {
 }
 
 export async function listProjects(): Promise<ProjectMeta[]> {
-  const [index, all] = await Promise.all([get<ProjectMeta[]>('index', store).then((x) => x ?? []), keys(store)]);
-  // The list is a cache of the projects, written apart from them: one it lost is still a project (audit V-256).
+  const [cached, all] = await Promise.all([get<ProjectMeta[]>('index', store).then((x) => x ?? []), keys(store)]);
+  // The list is a cache of the projects, written apart from them: one it lost is still a project (audit V-256), and
+  // one it still names after the project was deleted is not (tabs write it each on their own, S-1-1).
+  const index = cached.filter((m) => all.includes(`p:${m.id}`));
   const known = new Set(index.map((m) => m.id));
   for (const k of all) {
     if (typeof k !== 'string' || !k.startsWith('p:') || known.has(k.slice(2))) continue;
@@ -133,9 +154,10 @@ export async function loadProject(id: string): Promise<Project | undefined> {
   if (j) {
     // The page went away before these edits reached IndexedDB. Only if nothing was saved after them: a journal left by
     // a save that failed was replayed over later edits, which were lost (audit V-120).
-    const fresh = j.base !== undefined ? (stored?.rev ?? 0) === j.base : (stored?.updatedAt ?? 0) < Math.floor(j.seq / 1000);
+    // A project no longer stored was deleted: its journal does not bring it back without its media (S-1-1).
+    const fresh = !!stored && (j.base !== undefined ? (stored.rev ?? 0) === j.base : stored.updatedAt < Math.floor(j.seq / 1000));
     if (fresh) {
-      seen.set(id, stored?.rev ?? 0);
+      seen.set(id, stored.rev ?? 0);
       // A full disk must not stand between the person and their project (audit V-107): it opens, the journal stays.
       await saveProject(j.project).then(() => clearJournal(id, j.seq), (e) => console.warn('the journal could not be written back', e));
       return j.project;
@@ -149,18 +171,34 @@ export async function loadProject(id: string): Promise<Project | undefined> {
 
 /**
  * Saves the project. Throws ProjectConflict when another tab saved it after this tab loaded it (`force`: this
- * version wins anyway, the person chose it).
+ * version wins anyway, the person chose it), and ProjectDeleted when it was deleted since (`force` or not: its media
+ * are gone with it).
  */
 export async function saveProject(p: Project, thumb?: string, force = false): Promise<void> {
   const updatedAt = Date.now();
-  let conflict = false, rev = 0;
-  await update<Stored>(`p:${p.id}`, (old) => {
-    const base = seen.get(p.id);
-    conflict = !force && !!old && old.writer !== TAB && base !== undefined && (old.rev ?? 0) !== base;
-    if (conflict) return old!;
-    rev = (old?.rev ?? 0) + 1;
-    return { ...p, updatedAt, rev, writer: TAB };
-  }, store);
+  const key = `p:${p.id}`;
+  let conflict = false, deleted = false, rev = 0;
+  // Read and written in one transaction, and nothing written when refused (idb-keyval's `update` always writes).
+  await store('readwrite', (s) => new Promise<void>((ok, ko) => {
+    const read = s.get(key);
+    read.onerror = () => ko(read.error);
+    read.onsuccess = () => {
+      // `put` can throw right away (a full disk, a value it cannot copy): thrown from this handler, it never reached the
+      // caller, and the save waited forever (a project with a journal on a full disk did not open, audit V-107).
+      try {
+        const old = read.result as Stored | undefined;
+        const base = seen.get(p.id);
+        deleted = !old && base !== undefined; // this tab had it stored: it was deleted since
+        conflict = !force && !!old && old.writer !== TAB && base !== undefined && (old.rev ?? 0) !== base;
+        if (!deleted && !conflict) {
+          rev = (old?.rev ?? 0) + 1;
+          s.put({ ...p, updatedAt, rev, writer: TAB } satisfies Stored, key);
+        }
+        promisifyRequest(s.transaction).then(ok, ko);
+      } catch (e) { ko(e); }
+    };
+  }));
+  if (deleted) throw new ProjectDeleted(p.id);
   if (conflict) throw new ProjectConflict(p.id);
   seen.set(p.id, rev);
   channel?.postMessage({ id: p.id, rev, writer: TAB });
@@ -185,6 +223,8 @@ export async function deleteProject(id: string): Promise<void> {
   if (j) clearJournal(id, j.seq);
   await Promise.all((await keys(store)).filter((k) => typeof k === 'string' && k.startsWith(`t:${id}:`)).map((k) => del(k, store)));
   await del(`p:${id}`, store);
+  seen.delete(id);
+  channel?.postMessage({ id, deleted: true, writer: TAB } satisfies TabNews); // a tab that has it open stops saving it (S-1-1)
   await withIndex((index) => index.filter((m) => m.id !== id));
   await clearDiskFiles(); // the last export and backup: "its media will be removed" means those too (audit V-189)
 }

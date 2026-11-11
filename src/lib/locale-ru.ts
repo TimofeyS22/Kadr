@@ -537,6 +537,8 @@ export const RU: Record<string, string> = {
   'Hue': 'Оттенок',
   'Color code': 'Код цвета',
   'Keep this version': 'Оставить эту версию',
+  'This project was deleted': 'Проект удалён',
+  'It was deleted in another tab or window, together with its media. Edits made here can no longer be saved.': 'Его удалили в другой вкладке или окне вместе с медиа. Правки здесь больше не сохранятся.',
   'Could not read this frame': 'Не удалось прочитать кадр',
   'Could not encode the frame': 'Не удалось сохранить кадр',
   'No video in this clip': 'В клипе нет видео',

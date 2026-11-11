@@ -7,7 +7,7 @@ import type { Project } from '../core/types';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
-import { ProjectConflict, clearJournal, deleteBlob, deleteTake, forgetLoadedMedia, unfinishedTakes, forgetProject, journalProject, loadProject, onSavedElsewhere, saveProject } from '../storage/db';
+import { ProjectConflict, ProjectDeleted, clearJournal, deleteBlob, deleteTake, forgetLoadedMedia, unfinishedTakes, forgetProject, journalProject, loadProject, onDeletedElsewhere, onSavedElsewhere, saveProject } from '../storage/db';
 import { startExport } from './exportPrefs';
 import { forgetThumbs, probe } from '../engine/media';
 import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
@@ -42,19 +42,22 @@ export async function leaveEditor(): Promise<void> {
   if (useEditor.getState().sheetGuard && !useEditor.getState().closeSheet()) return; // an export or a file not saved yet
   player.pause();
   const p = useEditor.getState().project;
-  if (p) {
+  // Deleted in another tab: there is nothing to save it to, and saving would bring it back without its media (S-1-1).
+  if (p && !useEditor.getState().gone) {
     // Never close over unsaved work (v1.4.3: this error used to be swallowed): without the thumbnail, then give up loudly.
     // Changed in another tab: the person chooses first (ConflictNotice), nothing is written over.
     if (useEditor.getState().elsewhere) return;
     const failed = (e: unknown) => {
       if (e instanceof ProjectConflict) useEditor.setState({ elsewhere: true });
+      else if (e instanceof ProjectDeleted) useEditor.setState({ gone: true, saving: 'failed' });
       else useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error');
       return false;
     };
-    const saved = await saveProject(p, (await snapshot()) ?? undefined).then(() => true, (e) => (e instanceof ProjectConflict ? failed(e) : saveProject(p).then(() => true, failed)));
+    const told = (e: unknown) => e instanceof ProjectConflict || e instanceof ProjectDeleted;
+    const saved = await saveProject(p, (await snapshot()) ?? undefined).then(() => true, (e) => (told(e) ? failed(e) : saveProject(p).then(() => true, failed)));
     if (!saved) return;
-    forgetProject(p.id);
   }
+  if (p) forgetProject(p.id);
   useEditor.getState().close();
   location.hash = '';
 }
@@ -157,6 +160,7 @@ export function Editor({ id }: { id: string }) {
     const flush = (hiding = false) => {
       clearTimeout(timer);
       if (useEditor.getState().elsewhere) return; // changed in another tab: the person chooses first
+      if (useEditor.getState().gone) { pending = null; return; } // deleted in another tab: nothing to save it to
       if (!pending) {
         if (hiding && writing) writing.seq = journalProject(writing.p);
         return;
@@ -178,6 +182,7 @@ export function Editor({ id }: { id: string }) {
           if (writing === job) writing = null;
           pending ??= p; // a newer edit holds this one too
           if (e instanceof ProjectConflict) { useEditor.setState({ elsewhere: true }); saying('failed'); return; }
+          if (e instanceof ProjectDeleted) { useEditor.setState({ gone: true, saving: 'failed' }); pending = null; return; }
           if (document.visibilityState === 'hidden' && !retried) { retried = true; return; }
           retried = false;
           if (!failing) useEditor.getState().toast(t('Could not save: {error}', { error: errorMessage(e) }), 'error');
@@ -199,10 +204,11 @@ export function Editor({ id }: { id: string }) {
       timer = window.setTimeout(flush, Math.min(600, Math.max(0, firstEdit + SAVE_MAX_WAIT_MS - performance.now())));
     });
     const unsubTabs = onSavedElsewhere((pid) => { if (pid === useEditor.getState().project?.id) useEditor.setState({ elsewhere: true }); });
+    const unsubGone = onDeletedElsewhere((pid) => { if (pid === useEditor.getState().project?.id) useEditor.setState({ gone: true, saving: 'failed' }); });
     const onHide = () => { if (document.visibilityState === 'hidden') flush(true); else if (pending) flush(); };
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', onPageHide);
-    return () => { unsub(); unsubTabs(); flush(); document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', onPageHide); };
+    return () => { unsub(); unsubTabs(); unsubGone(); flush(); document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', onPageHide); };
   }, []);
 
   useEffect(() => {
@@ -400,7 +406,23 @@ function BusyCard() {
  */
 function ElsewhereNotice() {
   const on = useEditor((s) => s.elsewhere);
-  return on ? <ElsewhereCard /> : null;
+  const gone = useEditor((s) => s.gone);
+  return gone ? <GoneCard /> : on ? <ElsewhereCard /> : null;
+}
+
+/**
+ * The project was deleted in another tab or window (search S-1-1). Before, this tab went on saying "saved", its next edit
+ * wrote the project back without its media, and the export failed: the delete the person confirmed was undone.
+ */
+function GoneCard() {
+  const back = useRef<HTMLButtonElement>(null);
+  return (
+    <Veil label="gone-title" alert focus={back}>
+      <h2 id="gone-title">{t('This project was deleted')}</h2>
+      <p>{t('It was deleted in another tab or window, together with its media. Edits made here can no longer be saved.')}</p>
+      <Button ref={back} variant="primary" onClick={() => void leaveEditor()}>{t('Back to projects')}</Button>
+    </Veil>
+  );
 }
 
 function ElsewhereCard() {
@@ -413,14 +435,15 @@ function ElsewhereCard() {
   const fresh = () => run(async () => {
     const s = useEditor.getState();
     const p = s.project && await loadProject(s.project.id);
-    if (!p) return;
+    if (!p) { useEditor.setState({ elsewhere: false, gone: true, saving: 'failed' }); return; } // deleted since
     s.open(produce(p, (d) => { normalizeProject(d); }));
     track('tab_conflict', { choice: 'theirs' });
   });
   const mine = () => run(async () => {
     const p = useEditor.getState().project;
     if (!p) return;
-    await saveProject(p, undefined, true);
+    try { await saveProject(p, undefined, true); }
+    catch (e) { if (e instanceof ProjectDeleted) { useEditor.setState({ elsewhere: false, gone: true, saving: 'failed' }); return; } throw e; }
     useEditor.setState({ elsewhere: false, saving: 'saved' }); // this version is on the disk now
     track('tab_conflict', { choice: 'mine' });
   });
