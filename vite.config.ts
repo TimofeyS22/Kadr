@@ -121,7 +121,10 @@ export default defineConfig({
       },
       workbox: {
         importScripts: ['share-target.js'],
-        globPatterns: ['**/*.{js,css,html,svg}', '**/inter-*.woff2', '**/geologica-*.woff2'], // the face of the interface works offline from the first visit
+        // Every font from the first visit: the interface's, and every face a text or caption style can pick, so a style
+        // never used before is drawn with its own face offline, in the preview and the file (D-16, owner's choice
+        // 2026-11-11: 2.5 MB more on the first visit, in the background, once; hashed names are not fetched again).
+        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
         // On-device AI (speech model runtime, noise reduction) is large: cache it on first use instead of up front.
         globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision_bundle-*.js', '**/vision_wasm_internal-*.js', 'ru/**', 'en/**'],
         // Task pages are plain pages from the network, never the app shell.
@@ -153,8 +156,8 @@ export default defineConfig({
             options: { cacheName: 'kadr-music', expiration: { maxEntries: 60 } },
           },
           {
-            // Text fonts download when first used and then work offline. Room for every face (115 files in v1.5): a
-            // template whose font the cache let go would draw with a fallback face offline.
+            // The precache answers for this version's fonts. This keeps the faces a tab of another version asks for
+            // (deploy skew), once used, with room for every face: one let go would draw with a fallback face offline.
             urlPattern: ({ url }) => /\.woff2$/.test(url.pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'kadr-fonts', expiration: { maxEntries: 200 } },

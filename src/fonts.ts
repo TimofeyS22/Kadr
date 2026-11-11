@@ -1,5 +1,5 @@
-// Font faces: Latin and Cyrillic subsets only. Files download on first use (unicode-range + ensureFont),
-// except Inter, the UI font, which the service worker precaches.
+// Font faces: Latin and Cyrillic subsets only. A page loads a face on first use (unicode-range + ensureFont); the
+// service worker has every face from the first visit, so offline they all draw as themselves (D-16).
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-ext-400.css';
 import '@fontsource/inter/cyrillic-400.css';

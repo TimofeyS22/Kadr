@@ -2486,10 +2486,6 @@ test('captions work offline once the speech model is on the device (Russian inte
     await page.getByRole('button', { name: 'Сохранить .srt' }).click();
     const srt = (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
     for (const w of ['привет', 'работает', 'телефоне']) expect(srt).toContain(w);
-    // The style tiles of the sheet ask for fonts nobody used yet, which offline have nowhere to come from (D-16).
-    // WebKit reports each failed font load as a page error; those, and only those, are not this test's errors.
-    const fontLoads = /^(Response served by service worker is an error|Cannot load \.)$/;
-    pageErrors.splice(0, pageErrors.length, ...pageErrors.filter((m) => !fontLoads.test(m)));
   } finally {
     await context.setOffline(false);
     await net.close();
