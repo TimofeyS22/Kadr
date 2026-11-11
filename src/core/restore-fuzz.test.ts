@@ -35,6 +35,7 @@ function whole(): Project {
   Object.assign(text.style, {
     stroke: { color: '#000', width: 0.1 }, background: { color: '#fff', opacity: 0.5, padding: 0.2, lines: true, radius: 0.3 },
     outline2: { color: '#f00', width: 0.05 }, copies: [{ color: '#0f0', x: 0.05, y: 0.05, depth: true }], gradient: '#00f', uppercase: true, letterSpacing: 0.1, lineHeight: 1.2,
+    lines: [{ font: 'inter', scale: 0.6, gap: 0.2, italic: true }, { weight: 900, color: '#ff0', dx: 0.1, align: 'left', uppercase: false, letterSpacing: 0.05 }],
   } satisfies Partial<TextStyle>);
   const cap = createCaptionClip([{ t0: 0.2, t1: 0.6, text: 'раз' }, { t0: 0.7, t1: 1.1, text: 'два', cue: 1 }, { t0: 1.2, t1: 1.8, text: 'три.' }], CAPTION_PRESETS[0]);
   Object.assign(cap, { emphasis: 'box', motion: 'pop', reveal: true, lowerStart: true, highlight: '#ff0' } satisfies Partial<CaptionClip>);
@@ -70,7 +71,12 @@ function styleOk(s: TextStyle): boolean {
     && (s.outline2 === undefined || colorW(s.outline2))
     && (s.copies === undefined || (Array.isArray(s.copies) && s.copies.every((c) => c && typeof c.color === 'string' && finite(c.x) && finite(c.y))))
     && (s.letterSpacing === undefined || finite(s.letterSpacing)) && (s.lineHeight === undefined || finite(s.lineHeight))
-    && (s.gradient === undefined || typeof s.gradient === 'string') && (s.shadowColor === undefined || typeof s.shadowColor === 'string');
+    && (s.gradient === undefined || typeof s.gradient === 'string') && (s.shadowColor === undefined || typeof s.shadowColor === 'string')
+    && (s.lines === undefined || (Array.isArray(s.lines) && s.lines.every((l) => l && typeof l === 'object'
+      && (l.font === undefined || typeof l.font === 'string') && (l.color === undefined || typeof l.color === 'string')
+      && (l.weight === undefined || [400, 700, 900].includes(l.weight)) && (l.italic === undefined || typeof l.italic === 'boolean')
+      && (l.uppercase === undefined || typeof l.uppercase === 'boolean') && (l.scale === undefined || (finite(l.scale) && l.scale > 0))
+      && [l.letterSpacing, l.gap, l.dx].every((n) => n === undefined || finite(n)) && (l.align === undefined || ['left', 'center', 'right'].includes(l.align)))));
 }
 
 /** What must hold for any restored project: it draws, every number it draws with is a number. */

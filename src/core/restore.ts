@@ -67,6 +67,18 @@ function fixStyle(st: Loose): void {
   optional(st, 'outline2', colorWidth);
   optional(st, 'copies', Array.isArray);
   if (Array.isArray(st.copies)) for (const c of keepWhole<Loose>(st, 'copies', (c) => isObj(c) && isStr(c.color) && isNum(c.x) && isNum(c.y))) optional(c, 'depth', isBool);
+  // How each paragraph is set (docs/18): a look gives only what differs, so each part is optional on its own.
+  optional(st, 'lines', Array.isArray);
+  if (Array.isArray(st.lines)) {
+    for (const l of keepWhole<Loose>(st, 'lines', isObj)) {
+      for (const f of ['font', 'color']) optional(l, f, isStr);
+      optional(l, 'weight', (w) => [400, 700, 900].includes(w as number));
+      for (const f of ['italic', 'uppercase']) optional(l, f, isBool);
+      optional(l, 'scale', (x) => isNum(x) && x > 0);
+      for (const f of ['letterSpacing', 'gap', 'dx']) optional(l, f, isNum);
+      optional(l, 'align', among(['left', 'center', 'right']));
+    }
+  }
 }
 
 /** Hidden areas: each with a place that animates and a size; the style and the face switch known values. */
