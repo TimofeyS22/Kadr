@@ -1,6 +1,5 @@
 // Font faces: Latin and Cyrillic subsets only. A page loads a face on first use (unicode-range + ensureFont); the
 // service worker has every face from the first visit, so offline they all draw as themselves (D-16).
-// Italics: only the faces a style sets italic on and whose author drew one (docs/18 Ф1); elsewhere the browser slants.
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-ext-400.css';
 import '@fontsource/inter/cyrillic-400.css';
@@ -60,18 +59,10 @@ import '@fontsource/playfair-display/latin-400.css';
 import '@fontsource/playfair-display/cyrillic-400.css';
 import '@fontsource/playfair-display/latin-700.css';
 import '@fontsource/playfair-display/cyrillic-700.css';
-import '@fontsource/playfair-display/latin-400-italic.css';
-import '@fontsource/playfair-display/cyrillic-400-italic.css';
-import '@fontsource/playfair-display/latin-700-italic.css';
-import '@fontsource/playfair-display/cyrillic-700-italic.css';
 import '@fontsource/lora/latin-400.css';
 import '@fontsource/lora/cyrillic-400.css';
 import '@fontsource/lora/latin-700.css';
 import '@fontsource/lora/cyrillic-700.css';
-import '@fontsource/lora/latin-400-italic.css';
-import '@fontsource/lora/cyrillic-400-italic.css';
-import '@fontsource/lora/latin-700-italic.css';
-import '@fontsource/lora/cyrillic-700-italic.css';
 import '@fontsource/pt-serif/latin-400.css';
 import '@fontsource/pt-serif/cyrillic-400.css';
 import '@fontsource/pt-serif/latin-700.css';
@@ -123,10 +114,6 @@ import '@fontsource/cormorant-garamond/latin-400.css';
 import '@fontsource/cormorant-garamond/cyrillic-400.css';
 import '@fontsource/cormorant-garamond/latin-700.css';
 import '@fontsource/cormorant-garamond/cyrillic-700.css';
-import '@fontsource/cormorant-garamond/latin-400-italic.css';
-import '@fontsource/cormorant-garamond/cyrillic-400-italic.css';
-import '@fontsource/cormorant-garamond/latin-700-italic.css';
-import '@fontsource/cormorant-garamond/cyrillic-700-italic.css';
 import '@fontsource/pangolin/latin-400.css';
 import '@fontsource/pangolin/cyrillic-400.css';
 import '@fontsource/manrope/latin-400.css';
