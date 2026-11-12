@@ -24,7 +24,7 @@ import { warmFaces } from './faces';
 import { warmSegmenter } from './segment';
 import { TextRasterizer } from './text';
 import { matchStreamRange } from './videoRange';
-import { MAX_GIF_S, gifSize, outputSize, type Resolution, GIF_FPS } from './exportSizes';
+import { MAX_GIF_S, gifDelayMs, gifSize, outputSize, type Resolution, GIF_FPS } from './exportSizes';
 export type { Resolution } from './exportSizes';
 import { filmFrames } from '../core/exportProgress';
 import { within } from '../lib/limits';
@@ -508,7 +508,7 @@ async function gifOnce(p: Project, onProgress: (f: number) => void, signal: Abor
       const frame = await pixels(i / GIF_FPS);
       for (const k of shown?.get(i) ?? []) film!.take(ctx.canvas, k);
       const index = applyPalette(frame, palette, 'rgb565');
-      gif.writeFrame(index, w, h, i === 0 ? { palette, delay: Math.round(1000 / GIF_FPS), repeat: 0 } : { delay: Math.round(1000 / GIF_FPS) });
+      gif.writeFrame(index, w, h, i === 0 ? { palette, delay: gifDelayMs(i), repeat: 0 } : { delay: gifDelayMs(i) });
       onProgress((i + 1) / count);
       if (i % 4 === 0) await yieldToUi();
     }

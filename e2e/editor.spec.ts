@@ -3675,6 +3675,58 @@ test('trims and a reorder reach the file frame for frame, are undone exactly and
   console.log(`trims and a reorder frame for frame (${info.project.name}):\n${rows.join('\n')}`);
 });
 
+test('a GIF lasts as long as the timeline and each of its frames shows the source frame the preview shows then (QA matrix: export, Q-29)', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  test.skip(!fs.existsSync(fx('counter.mp4')), 'needs npm run fixtures');
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4']); // 6 s at 30 fps, frame N written in binary
+  await expect(main).toHaveCount(1);
+  // A cut in the middle (2–4 s gone): the GIF crosses it, 4 s in all.
+  await scrubTo(page, 120, '0:02.0');
+  await selectClip(page, main.first());
+  await tool(page, 'Split').click();
+  await expect(main).toHaveCount(2);
+  await scrubTo(page, 240, '0:04.0');
+  await selectClip(page, main.nth(1));
+  await tool(page, 'Split').click();
+  await expect(main).toHaveCount(3);
+  await selectClip(page, main.nth(1));
+  await tool(page, 'Delete').click();
+  await expect(main).toHaveCount(2);
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  const source = (k: number) => (k < 60 ? k : k + 60);
+
+  const gif = await exportAs(page, info, 'GIF', 'Export GIF');
+  const pr = await probe(gif);
+  const frames = Number(pr.streams[0].nb_read_frames), duration = Number(pr.format.duration);
+  const rows = [`${frames} frames, ${duration.toFixed(3)} s`];
+  // When each frame is shown (its delays added up, in seconds): the GIF's own clock against the timeline's.
+  const { execFileSync } = await import('node:child_process');
+  const starts = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'frame=pts_time', '-of', 'csv=p=0', gif]).toString().trim().split('\n').map(Number);
+  const drift = Math.max(...starts.map((s, j) => Math.abs(s - j / 12)));
+  rows.push(`frame starts drift from j/12 s by up to ${(drift * 1000).toFixed(0)} ms`);
+  expect.soft(frames, '12 frames a second').toBe(48);
+  expect.soft(Math.abs(duration - 4), 'as long as the timeline').toBeLessThan(0.02);
+  expect.soft(drift, 'each frame shown when the preview shows it (within 10 ms, the GIF\'s tick)').toBeLessThanOrEqual(0.011);
+  for (const j of [0, 1, 11, 23, 24, 25, 47]) {
+    const k = Math.floor(j * 30 / 12 + 1e-6);
+    const got = await counterAt(gif, j);
+    rows.push(`GIF frame ${j} (timeline frame ${k}): shows ${got} (expected ${source(k)})`);
+    expect.soft(got, `GIF frame ${j}`).toBe(source(k));
+  }
+  // The preview at the same moments.
+  for (const j of [1, 23, 25]) {
+    const t = j / 12, k = Math.floor(t * 30 + 1e-6);
+    const shown = await counterAt(await previewAt(page, info, (k + 0.5) / 30));
+    rows.push(`preview at GIF frame ${j}: ${shown} (expected ${source(k)})`);
+    expect.soft(shown, `preview at GIF frame ${j}`).toBe(source(k));
+  }
+  console.log(`GIF frame for frame (${info.project.name}):\n${rows.join('\n')}`);
+});
+
 // ---------- QA docs/11 §3.6 and §3.15: backups that are not what they claim ----------
 
 test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a broken LUT, an impossible canvas, impossible or missing media — a clear message or a project that works and says what it left out', async ({ page }, info) => {
