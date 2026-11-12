@@ -152,3 +152,47 @@ test('a long accent is set smaller, never broken between words, above or below t
   const height = ([a, b]: [number, number]) => b - a;
   expect(Math.abs(height(r.typed[0]) - height(r.full[0])), 'half typed, the accent keeps the size of the whole text').toBeLessThanOrEqual(2);
 });
+
+test('a script accent keeps white between its words («С днём», not «Сднём»); text in one face is drawn as before', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('./');
+  const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
+  test.skip(!dev, 'needs the dev server: the renderer is imported from its source');
+  const r = await page.evaluate(async () => {
+    const imp = (p: string) => import(/* @vite-ignore */ p);
+    const [{ TextRasterizer, ensureFont }, { createTextClip }] = await Promise.all([imp('/src/engine/text.ts'), imp('/src/core/defaults.ts')]);
+    const raster = new TextRasterizer(64);
+    type D = { image: HTMLCanvasElement; w: number; h: number };
+    /** The widest run of empty columns between the first and the last inked column of the rows [y0, y1). */
+    const widestGap = (d: D, y0: number, y1: number) => {
+      const px = d.image.getContext('2d')!.getImageData(0, 0, d.w, d.h).data;
+      const ink = (x: number) => { for (let y = y0; y < y1; y++) if (px[(y * d.w + x) * 4 + 3] > 96) return true; return false; };
+      let first = -1, last = -1, run = 0, widest = 0;
+      for (let x = 0; x < d.w; x++) if (ink(x)) { if (first < 0) first = x; last = x; }
+      for (let x = first; x <= last; x++) { run = ink(x) ? 0 : run + 1; widest = Math.max(widest, run); }
+      return widest;
+    };
+    const base = { font: 'tenor', size: 0.05, weight: 400, italic: false, color: '#ffffff', align: 'center', stroke: null, background: null, shadow: false };
+    const out: Record<string, number> = {};
+    // The accent alone in its face (2 × 0.05 × 1920 = 192 px) and the same accent over a support.
+    for (const font of ['pacifico', 'lobster']) {
+      const one = { ...base, font, size: 0.1 };
+      const pair = { ...base, lines: [{ font, scale: 2 }, { font: 'tenor', scale: 0.5, uppercase: true }] };
+      for (const [k, style, text] of [['one', one, 'С днём'], ['pair', pair, 'С днём\nАня']] as const) {
+        const c = createTextClip(0, text);
+        c.style = style;
+        await ensureFont(style, text);
+        const d = raster.get(c, Infinity, 1080, 1920) as D;
+        out[`${font}-${k}`] = widestGap(d, 0, k === 'one' ? d.h : Math.round(d.h * 0.62)) / 192;
+      }
+    }
+    return out;
+  });
+  console.log(JSON.stringify(r));
+  // Without the rule (control): 0.16–0.17 in Pacifico, 0.16 in Lobster. One face stays as the face sets it (the raster archive
+  // of old styles holds that pixel for pixel), so the pair is wider than it.
+  for (const font of ['pacifico', 'lobster']) {
+    expect(r[`${font}-pair`], `${font}: white between the words of the accent, in sizes`).toBeGreaterThanOrEqual(0.18);
+    expect(r[`${font}-pair`] - r[`${font}-one`], `${font}: wider than in one face`).toBeGreaterThan(0.04);
+  }
+});

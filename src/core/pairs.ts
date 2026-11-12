@@ -105,14 +105,21 @@ export function pairStyle(pair: FontPair, current: TextStyle, variant: PairVaria
 
 /**
  * The catalog of the first release (docs/18 Ф3): round 2 of the independent art director, drawn by the renderer, blind,
- * two weak controls mixed in (both scored 4 of 10, so the scores count). Every pair here scored 8 or 9 of 10. «Джаз» and
- * «Воздух» feel alike and never stand side by side. Ids are for ever.
+ * two weak controls mixed in (both scored 4 of 10, so the scores count). Every pair here scored 8 or 9 of 10. «Праздник»
+ * is round 3 (2026-11-12): six candidates and two controls (4 and 3), the only one at 8 of 10, with the director's tweak
+ * (capitals 10% smaller, 0.06 more spacing); it keeps the name readable both over and under the accent. «Джаз» and
+ * «Воздух» feel alike and never stand side by side, nor do «Праздник» and «Влог» (both in Caveat). Ids are for ever.
  */
 export const PAIRS: FontPair[] = [
   {
     id: 'tender', name: { ru: 'Нежно', en: 'Tender' }, sample: { ru: 'Нежность\nутро в Питере', en: 'Tenderness\nmorning in Paris' },
     base: { font: 'ysabeau', weight: 400 }, split: 'first',
     accent: { font: 'greatVibes', scale: 2.3 }, support: { font: 'ysabeau', scale: 0.5, uppercase: true, letterSpacing: 0.25, gap: -0.15 },
+  },
+  {
+    id: 'party', name: { ru: 'Праздник', en: 'Party' }, sample: { ru: 'Аня\nс днём рождения', en: 'Anna\nhappy birthday' },
+    base: { font: 'unbounded', weight: 700 }, split: 'first',
+    accent: { font: 'caveat', weight: 700, scale: 2 }, support: { font: 'unbounded', weight: 700, scale: 0.4, uppercase: true, letterSpacing: 0.16 },
   },
   {
     id: 'cover', name: { ru: 'Обложка', en: 'Cover' }, sample: { ru: 'Осень\nвыпуск № 3', en: 'Autumn\nissue no. 3' },

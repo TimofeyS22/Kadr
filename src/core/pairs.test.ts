@@ -65,6 +65,15 @@ it('the catalog: fonts bundled and whole in Russian, the base is the support, si
     expect(p.name.ru.length, p.id).toBeLessThanOrEqual(12);
   }
   expect(PAIRS.length).toBeGreaterThanOrEqual(8);
+  // Pairs that feel alike never stand side by side in the strip.
+  const at = (id: string) => PAIRS.findIndex((p) => p.id === id);
+  for (const [a, b] of [['jazz', 'air'], ['party', 'vlog']]) expect(Math.abs(at(a) - at(b)), `${a} and ${b}`).toBeGreaterThan(1);
+});
+
+it('«Праздник» keeps «С днём» together and puts the rest under it', () => {
+  const party = PAIRS.find((p) => p.id === 'party')!;
+  expect(splitForPair('С днём рождения', party.split)).toBe('С днём\nрождения');
+  expect(splitForPair('С днём рождения, Аня', party.split)).toBe('С днём\nрождения, Аня');
 });
 
 it('picks the letters that stand out from the picture under the text, and offers a box where neither does (Ш6)', () => {

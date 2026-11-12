@@ -138,6 +138,23 @@ function wordWidth(ctx: CanvasRenderingContext2D, w: string, ls: number): number
   return chars.reduce((a, ch) => a + ctx.measureText(ch).width, 0) + ls * (chars.length - 1);
 }
 
+/**
+ * The least white between the ink of two words of a text in several faces, in its size (docs/18). A connected script
+ * draws its swashes into the space: «С днём» read «Сднём» in Pacifico (0.02 of the size between the ink) and Lobster
+ * (0.17), Great Vibes overlaps «в городе» (−0.07); the book and sans faces leave 0.23–0.3 and are not touched.
+ */
+const WORD_INK = 0.22;
+
+/** The step between words that leaves WORD_INK of white between them: the overhang of each word's edge glyph counted. */
+function inkSpace(ctx: CanvasRenderingContext2D, paras: string[][], px: number): number {
+  let need = 0;
+  for (const p of paras) for (let i = 1; i < p.length; i++) {
+    const a = ctx.measureText(graphemes(p[i - 1]).at(-1) ?? ''), b = ctx.measureText(graphemes(p[i])[0] ?? '');
+    need = Math.max(need, px * WORD_INK + (a.actualBoundingBoxRight - a.width) + b.actualBoundingBoxLeft);
+  }
+  return need;
+}
+
 function drawWord(ctx: CanvasRenderingContext2D, w: string, x: number, y: number, ls: number, stroke: boolean): void {
   if (!ls) { if (stroke) ctx.strokeText(w, x, y); else ctx.fillText(w, x, y); return; }
   for (const ch of w) {
@@ -298,7 +315,8 @@ export class TextRasterizer {
     if (!words.length) return 1;
     const c = (this.measure ??= document.createElement('canvas').getContext('2d')!);
     c.font = f.font;
-    const width = words.reduce((a, w) => a + wordWidth(c, w, f.ls), 0) + (words.length - 1) * (c.measureText(' ').width + f.ls * 2);
+    const space = Math.max(c.measureText(' ').width + f.ls * 2, inkSpace(c, [words], f.px));
+    const width = words.reduce((a, w) => a + wordWidth(c, w, f.ls), 0) + (words.length - 1) * space;
     const room = W * 0.9 - f.px * 0.4; // the frame's width less the block's own margins
     return width > room ? Math.max(0.2, room / width) : 1;
   }
@@ -347,9 +365,11 @@ export class TextRasterizer {
     // Thick outlines eat a narrow space (heavy faces have 0.19–0.2 em): words keep a visible gap; the bigger spoken
     // word gets room of its own.
     const sideways = Math.max(0, ...(s.copies ?? []).map((c) => Math.abs(c.x) * px)); // solid copies to the side fill the gap too
+    // In several faces, a script's swashes keep WORD_INK of white between words; one face is drawn as it always was.
     const spaceIn = (f: (typeof faces)[number]) => {
       if (multi) ctx.font = f.font;
-      return Math.max(ctx.measureText(' ').width + f.ls * 2, (ring + sideways) * 2 + px * 0.06) + (look?.emphasis === 'scale' ? px * 0.14 : 0);
+      const ink = multi ? inkSpace(ctx, paras.filter((_, pi) => faceOf(pi) === f), f.px) : 0;
+      return Math.max(ctx.measureText(' ').width + f.ls * 2, ink, (ring + sideways) * 2 + px * 0.06) + (look?.emphasis === 'scale' ? px * 0.14 : 0);
     };
     const spaces = new Map(faces.map((f) => [f, spaceIn(f)]));
     const wordW = words.map((w, i) => { if (multi) ctx.font = faceW(i).font; return wordWidth(ctx, w, faceW(i).ls); });
