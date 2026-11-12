@@ -99,6 +99,7 @@ export function Scale({ label, spec, value, format, labels, onChange, onCommit, 
     const to = keyTo(spec, value, e.key);
     if (to === null) return;
     e.preventDefault();
+    e.stopPropagation(); // the value's own keys: the editor's arrows would move the playhead too
     stepTo(to, e.timeStamp);
   };
 

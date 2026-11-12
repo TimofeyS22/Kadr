@@ -7,7 +7,7 @@ import { EFFECT_IDS, type EffectId, type ImageClip, type Privacy, type VideoClip
 import { t } from '../lib/i18n';
 import { useEditor } from '../state/store';
 import { editClip, importLut, setHideFaces } from './actions';
-import { Chips, ClipScrub, Slider, Toggle, pct } from './controls';
+import { Chips, ClipScrub, Slider, Toggle, Values, pct } from './controls';
 import { LookActions } from './LookControls';
 import { useLookTiles } from './lookTiles';
 import { StylePicker, type TileDraw } from './picker';
@@ -38,8 +38,10 @@ export function EffectsBody({ clip }: { clip: MediaVisual }) {
           else c.effect = { id: id as EffectId, amount: c.effect?.amount ?? 0.6 };
         })} />
       {clip.effect && (
-        <Slider label={t('Strength')} value={clip.effect.amount} min={0} max={1} format={pct} reset={0.6}
-          onChange={(v) => editClip(clip.id, (c) => { if ((c.kind === 'video' || c.kind === 'image') && c.effect) c.effect.amount = v; }, `fx:${clip.id}`)} />
+        <Values label={t('Strength')}>
+          <Slider label={t('Strength')} value={clip.effect.amount} min={0} max={1} format={pct} reset={0.6}
+            onChange={(v) => editClip(clip.id, (c) => { if ((c.kind === 'video' || c.kind === 'image') && c.effect) c.effect.amount = v; }, `fx:${clip.id}`)} />
+        </Values>
       )}
       <p className="ck-hint">{t('Effects look the same in the preview and in the exported video.')}</p>
     </>
@@ -65,6 +67,7 @@ export function PrivacyBody({ clip }: { clip: MediaVisual }) {
       {pv.areas.map((a, i) => (
         <div key={i} className="privacy-area">
           <h3>{t('Area {n}', { n: i + 1 })}</h3>
+          <Values label={t('Area {n}', { n: i + 1 })}>
           {(['x', 'y'] as const).map((k) => (
             <Slider key={k} label={k === 'x' ? t('Position X') : t('Position Y')} value={evalAnim(a[k], local)} min={0} max={1} format={pct} reset={0.5}
               onChange={(v) => set((p) => { setAnim(p.areas[i][k], local, v); }, `pv:${k}:${i}:${clip.id}`)}
@@ -72,6 +75,7 @@ export function PrivacyBody({ clip }: { clip: MediaVisual }) {
           ))}
           <Slider label={t('Width')} value={a.w} min={0.03} max={1} format={pct} reset={0.3} onChange={(v) => set((p) => { p.areas[i].w = v; }, `pv:w:${i}:${clip.id}`)} />
           <Slider label={t('Height')} value={a.h} min={0.03} max={1} format={pct} reset={0.15} onChange={(v) => set((p) => { p.areas[i].h = v; }, `pv:h:${i}:${clip.id}`)} />
+          </Values>
           <Button onClick={() => set((p) => { p.areas.splice(i, 1); })}>{t('Remove area')}</Button>
         </div>
       ))}
@@ -101,8 +105,10 @@ export function LutSection({ clip, paint }: { clip: MediaVisual; paint: ReturnTy
           })} />
       )}
       {clip.lut && luts[clip.lut.id] && (
-        <Slider label={t('Intensity')} value={clip.lut.intensity} min={0} max={1} format={pct} reset={1}
-          onChange={(v) => editClip(clip.id, (c) => { if ((c.kind === 'video' || c.kind === 'image') && c.lut) c.lut.intensity = v; }, `lut:${clip.id}`)} />
+        <Values label={t('Intensity')}>
+          <Slider label={t('Intensity')} value={clip.lut.intensity} min={0} max={1} format={pct} reset={1}
+            onChange={(v) => editClip(clip.id, (c) => { if ((c.kind === 'video' || c.kind === 'image') && c.lut) c.lut.intensity = v; }, `lut:${clip.id}`)} />
+        </Values>
       )}
       <Button onClick={() => void importLut(clip.id)}>{t('Import LUT (.cube)')}</Button>
     </>

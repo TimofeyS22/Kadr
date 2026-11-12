@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dragTo, keyTo, offsetPx, quantize, segment, specProblems, tapTo, ticks, type ScaleSpec } from './scale';
+import { dragTo, keyTo, labelsFor, offsetPx, quantize, segment, specFor, specProblems, tapTo, ticks, type ScaleSpec } from './scale';
 
 const colour: ScaleSpec = { min: -100, max: 100, rest: 0, step: 1, hold: 4, pxPerUnit: 2, minor: 5, major: 25 };
 const speed: ScaleSpec = { min: 25, max: 400, rest: 100, step: 5, hold: 8, pxPerUnit: 1, minor: 25, major: 100 };
@@ -86,5 +86,42 @@ describe('the Scale: the maths of one strip for any number', () => {
     expect(segment(colour, 35)).toEqual({ left: 200, width: 70 });
     expect(segment(colour, -35)).toEqual({ left: 130, width: 70 });
     expect(segment(colour, 0)).toEqual({ left: 200, width: 0 });
+  });
+});
+
+describe('specFor: a slider of a sheet as a Scale', () => {
+  // The values the sheets set (Ч4: values on the Scale): volume, a share, rotation, the speed's position, a fade, a
+  // crop's width cut by its left edge, a silence level in dB.
+  const cases = [
+    { min: 0, max: 2, step: 0.01, rest: 1 },
+    { min: 0, max: 1, step: 0.01, rest: 0.8 },
+    { min: -180, max: 180, step: 1, rest: 0 },
+    { min: 0, max: 1, step: 0.001, rest: Math.log(10) / Math.log(100) },
+    { min: 0, max: 2.73, step: 0.05, rest: 0 },
+    { min: 0.05, max: 1 - 0.137, step: 0.01, rest: 1 - 0.137 },
+    { min: -60, max: -20, step: 1, rest: -35 },
+    { min: 0.05, max: 4, step: 0.01, rest: 1 },
+  ];
+  for (const c of cases) {
+    it(`${c.min}…${c.max} by ${c.step}`, () => {
+      const s = specFor(c);
+      expect(specProblems(s)).toEqual([]);
+      expect(s.min).toBeGreaterThanOrEqual(c.min - 1e-9);
+      expect(s.max).toBeLessThanOrEqual(c.max + 1e-9);
+      expect(s.max - s.min).toBeGreaterThan((c.max - c.min) - 2 * c.step); // nothing of the range lost but a part of a step
+      const length = (s.max - s.min) * s.pxPerUnit;
+      expect(length).toBeGreaterThanOrEqual(359.9);
+      expect(length).toBeLessThanOrEqual(960.1);
+      expect(s.major * s.pxPerUnit, 'numbers at least 64 px apart').toBeGreaterThanOrEqual(64);
+      expect(s.major * s.pxPerUnit, 'and not much further: the strip says where the value goes').toBeLessThanOrEqual(64 * 2.5 + 1e-6);
+      expect(Math.abs(s.major / s.minor - Math.round(s.major / s.minor)), 'a long tick is on a short one').toBeLessThan(1e-6);
+      expect(s.hold * s.pxPerUnit).toBeCloseTo(10, 2);
+      expect(labelsFor(s).length, 'some numbers to read').toBeGreaterThanOrEqual(2);
+    });
+  }
+  it('a value right at the rest holds, and every value of the range is reached', () => {
+    const s = specFor({ min: 0, max: 2, step: 0.01, rest: 1 });
+    expect(dragTo(s, 1, -5).held).toBe(true);
+    expect(dragTo(s, 1, -(s.hold * s.pxPerUnit) - s.pxPerUnit * 0.01).value).toBeCloseTo(1.01, 6);
   });
 });

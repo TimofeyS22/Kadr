@@ -81,7 +81,8 @@ export function Ribbon({ label, start, end, children, hook }: RibbonProps) {
   );
 }
 
-interface TabsProps { label: string; items: { id: string; label: string }[]; value: string; onChange: (id: string) => void }
+/** `note`: the tab's parameter was changed — a mark after its name, and these words for a screen reader («изменено»). */
+interface TabsProps { label: string; items: { id: string; label: string; note?: string }[]; value: string; onChange: (id: string) => void }
 /** Parameters of one tool. Arrows move between them, as the keyboard expects of tabs. */
 export function Tabs({ label, items, value, onChange }: TabsProps) {
   const list = useRef<HTMLDivElement>(null);
@@ -89,6 +90,7 @@ export function Tabs({ label, items, value, onChange }: TabsProps) {
     const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     if (!step) return;
     e.preventDefault();
+    e.stopPropagation(); // the tabs' own arrows: the editor's would move the playhead too
     const at = items.findIndex((i) => i.id === value);
     const next = items[(at + step + items.length) % items.length];
     onChange(next.id);
@@ -97,7 +99,7 @@ export function Tabs({ label, items, value, onChange }: TabsProps) {
   return (
     <div className="ck-tabs" role="tablist" aria-label={label} ref={list} onKeyDown={key}>
       {items.map((i) => (
-        <button key={i.id} type="button" role="tab" className="ck-tab" data-id={i.id} aria-selected={i.id === value} tabIndex={i.id === value ? 0 : -1} onClick={() => onChange(i.id)}>{i.label}</button>
+        <button key={i.id} type="button" role="tab" className="ck-tab" data-id={i.id} aria-selected={i.id === value} tabIndex={i.id === value ? 0 : -1} onClick={() => onChange(i.id)}>{i.label}{i.note && <span className="ck-tab-note"><span className="ck-sr">, {i.note}</span></span>}</button>
       ))}
     </div>
   );

@@ -18,7 +18,7 @@ import {
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
-import { Chips, ClipScrub, Sheet, Slider, Swatches, Toggle, num, pct, secs, signed, useSheetGuard } from './controls';
+import { Chips, ClipScrub, Sheet, Slider, Swatches, Toggle, Values, num, pct, secs, signed, useSheetGuard } from './controls';
 import { StylePicker, type TileDraw } from './picker';
 import { FontPicker } from './FontPicker';
 import { TextStyles } from './TextStyles';
@@ -108,7 +108,10 @@ function SpeedBody({ clip }: { clip: Clip }) {
     <>
       <Chips even options={['normal', 'curve'] as const} value={clip.curve ? 'curve' : 'normal'} render={(m) => (m === 'normal' ? t('Normal') : t('Curve'))}
         onChange={(m) => curve(m === 'curve' ? CURVE_PRESETS[0].points : null)} />
-      <Slider label={clip.curve ? t('Base speed') : t('Speed')} value={toPos(clip.speed)} min={0} max={1} step={0.001} format={() => `${num(clip.speed)}×`} onChange={(p) => set(fromPos(p))} reset={toPos(1)} />
+      {/* The sheet is named «Скорость»: the Scale needs its own name only as the base of a curve. */}
+      <Values label={t('Speed')} named={!!clip.curve}>
+        <Slider label={clip.curve ? t('Base speed') : t('Speed')} value={toPos(clip.speed)} min={0} max={1} step={0.001} format={(p) => `${num(fromPos(p))}×`} onChange={(p) => set(fromPos(p))} reset={toPos(1)} marks={[0.25, 0.5, 1, 2, 4].map(toPos)} />
+      </Values>
       {clip.curve ? (
         <>
           <Chips options={CURVE_PRESETS.map((p) => p.id)} value={preset ?? null} render={(id) => CURVE_PRESETS.find((p) => p.id === id)!.name}
@@ -133,9 +136,11 @@ function VolumeBody({ clip }: { clip: Clip }) {
   const maxFade = Math.min(5, clip.duration / 2);
   return (
     <>
-      <Slider label={t('Volume')} value={clip.volume} min={0} max={2} format={pct} reset={1} onChange={(v) => e((c) => { c.volume = v; }, 'vol')} />
-      <Slider label={t('Fade in')} value={clip.fadeIn} min={0} max={maxFade} step={0.05} format={secs} reset={0} onChange={(v) => e((c) => { c.fadeIn = v; }, 'fi')} />
-      <Slider label={t('Fade out')} value={clip.fadeOut} min={0} max={maxFade} step={0.05} format={secs} reset={0} onChange={(v) => e((c) => { c.fadeOut = v; }, 'fo')} />
+      <Values label={t('Volume')}>
+        <Slider label={t('Volume')} value={clip.volume} min={0} max={2} format={pct} reset={1} onChange={(v) => e((c) => { c.volume = v; }, 'vol')} />
+        <Slider label={t('Fade in')} value={clip.fadeIn} min={0} max={maxFade} step={0.05} format={secs} reset={0} onChange={(v) => e((c) => { c.fadeIn = v; }, 'fi')} />
+        <Slider label={t('Fade out')} value={clip.fadeOut} min={0} max={maxFade} step={0.05} format={secs} reset={0} onChange={(v) => e((c) => { c.fadeOut = v; }, 'fo')} />
+      </Values>
       <Toggle label={t('Mute')} value={clip.muted} onChange={(v) => e((c) => { c.muted = v; }, 'mute')} />
       <EnhanceToggle clip={clip} />
       {!clip.enhance && <DenoiseToggle clip={clip} />}
@@ -143,7 +148,7 @@ function VolumeBody({ clip }: { clip: Clip }) {
         <>
           <Toggle label={t('Lower when others speak')} value={(clip.duck ?? 0) > 0} onChange={(v) => e((c) => { c.duck = v ? 0.7 : 0; }, 'duck')} />
           {(clip.duck ?? 0) > 0 && (
-            <Slider label={t('How much')} value={clip.duck ?? 0.7} min={0.2} max={0.95} format={pct} reset={0.7} onChange={(v) => e((c) => { c.duck = v; }, 'duckd')} />
+            <Values label={t('How much')}><Slider label={t('How much')} value={clip.duck ?? 0.7} min={0.2} max={0.95} format={pct} reset={0.7} onChange={(v) => e((c) => { c.duck = v; }, 'duckd')} /></Values>
           )}
           <Toggle label={t('Guide track: plays while editing, not exported')} value={!!clip.guide} onChange={(v) => e((c) => { c.guide = v; }, 'guide')} />
           {clip.guide && <p className="ck-hint">{t('Edit to any song, even a trending one, then add it in TikTok or Instagram: there it is licensed.')}</p>}
@@ -179,8 +184,11 @@ function AdjustBody({ clip }: { clip: LookClip }) {
     <>
       <LookActions clip={clip} parts={['adjust']} />
       <StylePicker items={items} categories={ADJUST_CATEGORIES} value={active} onChange={(id) => setActive(id as AdjustKey)} label={t('Adjust')} draw={draw} rows={1} />
-      <Slider key={active} label={ADJUST_LABELS[active]} value={clip.adjust[active]} min={min} max={max} format={signed} reset={0}
-        onChange={(v) => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust[active] = v; }, `adj:${active}:${clip.id}`)} />
+      {/* The tile names the value: the Scale under it needs no name of its own. */}
+      <Values key={active} label={ADJUST_LABELS[active]} named={false}>
+        <Slider label={ADJUST_LABELS[active]} value={clip.adjust[active]} min={min} max={max} format={signed} reset={0}
+          onChange={(v) => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust[active] = v; }, `adj:${active}:${clip.id}`)} />
+      </Values>
       <Button icon={<RotateCcw aria-hidden="true" />} disabled={!changed} onClick={() => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust = defaultAdjust(); })}>{t('Reset all')}</Button>
     </>
   );
@@ -199,8 +207,10 @@ function FiltersBody({ clip }: { clip: LookClip }) {
       <StylePicker items={FILTER_ITEMS} categories={FILTER_CATEGORIES} value={clip.filter?.id ?? 'none'} label={t('Filters')} draw={draw} rows={1}
         onChange={(id) => (clip.filter?.id ?? 'none') !== id && editClip(clip.id, (c) => { if ('filter' in c) c.filter = id === 'none' ? null : { id, intensity: c.filter?.intensity ?? 0.8 }; })} />
       {clip.filter && (
-        <Slider label={t('Intensity')} value={clip.filter.intensity} min={0} max={1} format={pct} reset={0.8}
-          onChange={(v) => editClip(clip.id, (c) => { if ('filter' in c && c.filter) c.filter.intensity = v; }, `fint:${clip.id}`)} />
+        <Values label={t('Intensity')}>
+          <Slider label={t('Intensity')} value={clip.filter.intensity} min={0} max={1} format={pct} reset={0.8}
+            onChange={(v) => editClip(clip.id, (c) => { if ('filter' in c && c.filter) c.filter.intensity = v; }, `fint:${clip.id}`)} />
+        </Values>
       )}
       <LutSection clip={clip} paint={paint} />
     </>
@@ -224,6 +234,7 @@ function TransformBody({ clip }: { clip: Clip }) {
   return (
     <>
       <ClipScrub clip={clip} keys={TF.flatMap(({ key }) => clip.transform[key].k?.map((x) => x.t) ?? [])} />
+      <Values label={t('Transform')}>
       {TF.map(({ key, label, min, max, format, reset }) => {
         const a = clip.transform[key];
         return (
@@ -236,6 +247,7 @@ function TransformBody({ clip }: { clip: Clip }) {
             }} />
         );
       })}
+      </Values>
       <p className="ck-hint">{t('Tap ◆ to add a keyframe at the playhead. When a property has keyframes, changes create keyframes.')}</p>
       {(clip.kind === 'video' || clip.kind === 'image') && (
         <div className="flip-row">
@@ -261,10 +273,13 @@ function ChromaControls({ clip }: { clip: Extract<Clip, { chroma: unknown }> }) 
           {/* The eyedropper picks the key colour from the picture as it is, with the key off (else it is see-through). */}
           <Swatches label={t('Key color')} value={k.color} onChange={(col) => e((ck) => { ck.color = col; })}
             from={() => { const p = editor().project; return p && produce(p, (d) => { const f = findClip(d, clip.id); if (f && 'chroma' in f.clip) f.clip.chroma.enabled = false; }); }} />
-          <Slider label={t('Strength')} value={k.similarity} min={0} max={1} format={pct} reset={0.3} onChange={(v) => e((ck) => { ck.similarity = v; }, 'cks')} />
-          <Slider label={t('Softness')} value={k.smoothness} min={0} max={1} format={pct} reset={0.1} onChange={(v) => e((ck) => { ck.smoothness = v; }, 'ckf')} />
         </>
       )}
+      {/* Shown before the key is on, not settable: the sheet does not jump as it comes on (the art director, Ч4). */}
+      <Values label={t('Remove color (green screen)')}>
+        <Slider label={t('Strength')} value={k.similarity} min={0} max={1} format={pct} reset={0.3} disabled={!k.enabled} onChange={(v) => e((ck) => { ck.similarity = v; }, 'cks')} />
+        <Slider label={t('Softness')} value={k.smoothness} min={0} max={1} format={pct} reset={0.1} disabled={!k.enabled} onChange={(v) => e((ck) => { ck.smoothness = v; }, 'ckf')} />
+      </Values>
     </>
   );
 }
@@ -314,8 +329,8 @@ function TransitionBody() {
     <>
       <Chips options={opts} value={tr?.type ?? 'none'} render={(t) => (t === 'none' ? 'None' : TRANSITION_LABELS[t])}
         onChange={(t) => commit(t === 'none' ? null : { type: t, duration: tr?.duration ?? 0.5 })} />
-      {tr && <Slider label={t('Duration')} value={tr.duration} min={0.1} max={2} step={0.05} format={secs} reset={0.5}
-        onChange={(v) => commit({ ...tr, duration: v }, `trd:${clip.id}`)} />}
+      {tr && <Values label={t('Duration')}><Slider label={t('Duration')} value={tr.duration} min={0.1} max={2} step={0.05} format={secs} reset={0.5}
+        onChange={(v) => commit({ ...tr, duration: v }, `trd:${clip.id}`)} /></Values>}
       <Button onClick={() => useEditor.getState().commit((d) => applyTransitionToAll(d, tr ?? null))}>{t('Apply to all cuts')}</Button>
     </>
   );

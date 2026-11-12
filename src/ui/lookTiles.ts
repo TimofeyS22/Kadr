@@ -44,8 +44,9 @@ const tileLayer = (l: Layer): Layer => ({
   ...l, x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, fit: 'cover', blend: 'normal', mask: null, wipe: null, privacy: null, chroma: null, removeBg: false, blur: false,
 });
 
-/** Paints `canvas` with the clip after `edit`. Identity changes when the tiles have to be repainted. */
-export function useLookTiles(clip: LookClip): (canvas: HTMLCanvasElement, edit: (c: LookClip) => void, play?: number) => void {
+/** Paints `canvas` with the clip after `edit`. Identity changes when the tiles have to be repainted. `keep: 'mask'`: the
+ *  tile shows the piece's mask (the mask sheet's own tiles), which every other look leaves out. */
+export function useLookTiles(clip: LookClip): (canvas: HTMLCanvasElement, edit: (c: LookClip) => void, play?: number, keep?: 'mask') => void {
   const project = useEditor((s) => s.project);
   const at = useMemo(() => posterTime(clip, useEditor.getState().time), [clip.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [poster, setPoster] = useState<Source | null>(null);
@@ -73,7 +74,7 @@ export function useLookTiles(clip: LookClip): (canvas: HTMLCanvasElement, edit: 
     if (poster?.image instanceof HTMLCanvasElement) poster.image.width = 0; // the memory goes now, not at the next collection
   }, [poster]);
 
-  return useCallback((canvas, edit, play) => {
+  return useCallback((canvas, edit, play, keep) => {
     if (!poster || !comp || !project) return;
     if (comp.canvas.width !== canvas.width || comp.canvas.height !== canvas.height) {
       comp.canvas.width = canvas.width;
@@ -87,7 +88,7 @@ export function useLookTiles(clip: LookClip): (canvas: HTMLCanvasElement, edit: 
     const when = play === undefined ? at : clip.start + ((at - clip.start + play) % Math.max(clip.duration, 1e-3));
     const plain = { ...candidate, effect: undefined };
     const moved = visualLayer(project, candidate, when), still = visualLayer(project, plain, when);
-    const layer = { ...tileLayer(moved), x: moved.x - still.x, y: moved.y - still.y, scale: moved.scale / (still.scale || 1), rotation: moved.rotation - still.rotation };
+    const layer = { ...tileLayer(moved), x: moved.x - still.x, y: moved.y - still.y, scale: moved.scale / (still.scale || 1), rotation: moved.rotation - still.rotation, ...(keep === 'mask' ? { mask: moved.mask } : {}) };
     const slot = slotOf(layer);
     if (!slot) return;
     comp.draw({ t: when, background: '#000', layers: [layer] }, new Map([[slot, poster]]));

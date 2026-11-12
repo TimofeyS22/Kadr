@@ -95,3 +95,38 @@ export function specProblems(spec: ScaleSpec): string[] {
   if (spec.hold < 0) out.push('hold is negative');
   return out;
 }
+
+/** The least room between two numbers under the strip (DESIGN.md, Ruler): closer, they read as one. */
+const LABEL_GAP_PX = 64;
+/** A finger travels this far past `rest` while the strip holds there. */
+const HOLD_PX = 10;
+
+/** 1, 2, 2.5 or 5 times a power of ten, the first at or above `x`. */
+function niceAbove(x: number): number {
+  const p = 10 ** Math.floor(Math.log10(x));
+  const f = x / p;
+  return round((f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p);
+}
+
+/**
+ * A Scale for a value a sheet used to set with a plain slider: its range, its step and where it rests. The ends and
+ * the rest are put on the step (a range cut by another value, like a crop's width, rarely is); the strip is three px a
+ * step, between 360 and 960 px long, so a finger can take one step and still cross the range in two or three strokes;
+ * the numbers stand as close as 64 px allows (a nice 1, 2, 2.5 or 5), a short tick every fifth (or half) of a long one.
+ */
+export function specFor(o: { min: number; max: number; step: number; rest: number; length?: number }): ScaleSpec {
+  const step = o.step;
+  const min = round(Math.ceil(o.min / step - 1e-9) * step);
+  const max = Math.max(round(Math.floor(o.max / step + 1e-9) * step), round(min + step));
+  const range = max - min;
+  const pxPerUnit = Math.min(960, Math.max(360, o.length ?? (range / step) * 3)) / range;
+  // The closest the numbers may stand: as many as can be read, so the strip says where the value is going.
+  let major = Math.max(niceAbove(LABEL_GAP_PX / pxPerUnit), step);
+  while (Math.abs(major / step - Math.round(major / step)) > 1e-6) major = niceAbove(major * 1.01);
+  const minor = [major / 5, major / 4, major / 2, major].map(round).find((m) => m >= step - 1e-9 && Math.abs(m / step - Math.round(m / step)) < 1e-6) ?? major;
+  const rest = Math.min(max, Math.max(min, round(Math.round(o.rest / step) * step)));
+  return { min, max, rest, step, hold: round(HOLD_PX / pxPerUnit), pxPerUnit, minor, major };
+}
+
+/** The values that carry a number: the long ticks. */
+export const labelsFor = (spec: ScaleSpec): number[] => ticks(spec).filter((m) => m.major).map((m) => m.at);

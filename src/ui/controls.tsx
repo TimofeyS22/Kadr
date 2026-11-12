@@ -1,5 +1,7 @@
-import { Diamond, Pipette } from 'lucide-react';
-import { createContext, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import { Diamond, Minus, Pipette, Plus, RotateCcw } from 'lucide-react';
+import { Children, Fragment, createContext, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactElement, type ReactNode } from 'react';
+import { labelsFor, specFor } from '../core/scale';
+import { Scale } from './ck/Scale';
 import { player } from '../engine/player';
 import { track } from '../lib/telemetry';
 import { clipEnd } from '../core/timeline';
@@ -8,7 +10,7 @@ import { useEditor } from '../state/store';
 import { formatTime } from './format';
 import { Spectrum } from './Spectrum';
 import { t, useLocale } from '../lib/i18n';
-import { Button } from './ck/controls';
+import { Button, Tabs } from './ck/controls';
 import { giveBack, opener, watchPressed } from './ck/focus';
 
 /** Px of downward drag before the sheet follows the finger (taps on the header stay taps). */
@@ -123,7 +125,7 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
   );
 }
 
-interface SliderProps {
+export interface SliderProps {
   label: string;
   value: number;
   min: number;
@@ -134,6 +136,11 @@ interface SliderProps {
   /** Double-tap on the label resets to this value. */
   reset?: number;
   keyframe?: { active: boolean; animated: boolean; disabled: boolean; toggle: () => void };
+  /** On the Scale: the values that carry a number, where the long ticks would give odd ones (a speed set by a log); the
+   *  strip is then shorter, so the marks next to the value are in view. */
+  marks?: number[];
+  /** Shown, not settable yet: the part keeps its room before it applies (a mask before its shape; the art director, Ч4). */
+  disabled?: boolean;
 }
 
 /**
@@ -196,6 +203,69 @@ export function Slider({ label, value, min, max, step = 0.01, format, onChange, 
   );
 }
 
+/**
+ * Values on the Scale (DESIGN.md §1; docs/17 Ч4, «доделать листы»): the numbers of one part of a tool as tabs, the one
+ * chosen on one Scale — «Сбросить» at its left, its keyframe at its right, a step either way. The parts of the sheet are
+ * the `Slider`s it had, read for their props: what a sheet sets and in which words is as before, and the frame keeps the
+ * room of every slider but one. A part of one value carries its name over the Scale (`named`), or none where the sheet
+ * names it already (the tiles of «Настройка»).
+ */
+export function Values({ label, children, named = true }: { label: string; children: ReactNode; named?: boolean }) {
+  const items = sliders(children);
+  const [active, setActive] = useState(items[0]?.label ?? '');
+  const it = items.find((i) => i.label === active) ?? items[0];
+  if (!it) return null;
+  const changed = (i: SliderProps) => i.reset !== undefined && Math.abs(i.value - i.reset) > (i.step ?? 0.01) / 2;
+  return (
+    <div className="ck-values">
+      {items.length > 1
+        ? <Tabs label={label} value={it.label} onChange={setActive} items={items.map((i) => ({ id: i.label, label: t(i.label), note: changed(i) ? t('changed') : undefined }))} />
+        : named && <p className="ck-values-name">{t(it.label)}</p>}
+      <Value key={it.label} {...it} />
+    </div>
+  );
+}
+
+/** The `Slider`s among `children`, through fragments (a part whose values depend on a shape wraps some in one). */
+function sliders(children: ReactNode): SliderProps[] {
+  return Children.toArray(children).flatMap((c): SliderProps[] => {
+    if (!isValidElement(c)) return [];
+    if (c.type === Fragment) return sliders((c.props as { children?: ReactNode }).children);
+    return [(c as ReactElement<SliderProps>).props];
+  });
+}
+
+function Value({ label, value, min, max, step = 0.01, format, onChange, reset, keyframe, marks, disabled }: SliderProps) {
+  const ownMarks = !!marks;
+  const spec = useMemo(() => {
+    const s = specFor({ min, max, step, rest: reset ?? min, length: ownMarks ? 480 : undefined });
+    // Its own marks carry the numbers: the long ticks would stand at odd values, so only the ends are long.
+    return ownMarks ? { ...s, major: s.max - s.min, minor: s.max - s.min >= 20 * s.step ? (s.max - s.min) / 20 : s.step } : s;
+  }, [min, max, step, reset, ownMarks]);
+  const key = marks?.join();
+  const labels = useMemo(() => marks ?? labelsFor(spec), [spec, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The ticks are drawn once per Scale: their numbers read the latest way of showing a value.
+  const shown = useRef(format);
+  shown.current = format;
+  const show = useCallback((v: number) => (shown.current ? shown.current(v) : num(v)), []);
+  return (
+    <Scale label={t(label)} spec={spec} value={value} format={show} labels={labels} onChange={onChange} disabled={disabled}
+      stepDown={{ label: t('Less'), icon: <Minus aria-hidden="true" /> }} stepUp={{ label: t('More'), icon: <Plus aria-hidden="true" /> }}
+      before={reset !== undefined && (
+        <Button variant="plain" icon={<RotateCcw aria-hidden="true" />} disabled={disabled || Math.abs(value - spec.rest) <= step / 2} onClick={() => onChange(reset)}>{t('Reset')}</Button>
+      )}
+      after={keyframe && (
+        <button
+          type="button" className="ck-kf" data-active={keyframe.active || undefined} data-animated={keyframe.animated || undefined}
+          disabled={keyframe.disabled} onClick={keyframe.toggle}
+          aria-label={keyframe.active ? t('Remove {label} keyframe', { label }) : t('Add {label} keyframe', { label })}
+        >
+          <Diamond size={16} fill={keyframe.active ? 'currentColor' : 'none'} aria-hidden="true" />
+        </button>
+      )} />
+  );
+}
+
 export function Chips<T extends string | number>({ options, value, onChange, render, scroll, even, label }: {
   options: readonly T[]; value: T | null; onChange: (v: T) => void; render?: (v: T) => ReactNode;
   /** One horizontally scrolling row: every list that is not `even` is one now (Ч4 release 5: a wrapped cloud of options
@@ -223,11 +293,11 @@ export function Chips<T extends string | number>({ options, value, onChange, ren
 }
 
 /** `note`: a second, quieter line that says what the switch does, so its name stays a name and not a sentence. */
-export function Toggle({ label, value, onChange, note }: { label: string; value: boolean; onChange: (v: boolean) => void; note?: string }) {
+export function Toggle({ label, value, onChange, note, disabled }: { label: string; value: boolean; onChange: (v: boolean) => void; note?: string; disabled?: boolean }) {
   return (
-    <label className="ck-switch-row">
+    <label className="ck-switch-row" data-disabled={disabled || undefined}>
       <span>{t(label)}{note && <small className="ck-switch-note">{note}</small>}</span>
-      <span className="ck-switch"><input type="checkbox" role="switch" checked={value} onChange={(e) => onChange(e.target.checked)} /><i aria-hidden="true" /></span>
+      <span className="ck-switch"><input type="checkbox" role="switch" checked={value} disabled={disabled} onChange={(e) => onChange(e.target.checked)} /><i aria-hidden="true" /></span>
     </label>
   );
 }
@@ -330,7 +400,8 @@ function chipLabel<T extends string | number>(o: T, render?: (v: T) => ReactNode
 }
 
 export const pct = (v: number): string => `${Math.round(v * 100)}%`;
-export const signed = (v: number): string => `${v > 0 ? '+' : ''}${Math.round(v * 100)}`;
+/** «+35», «−20» with a true minus, as the gallery writes it (a hyphen is shorter than the plus beside it). */
+export const signed = (v: number): string => { const n = Math.round(v * 100); return `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`; };
 /** A number as a person of the interface's language writes it: «1,25» in Russian, «1.25» in English. */
 export const num = (v: number, digits = 2): string => new Intl.NumberFormat(useLocale.getState().locale === 'ru' ? 'ru-RU' : 'en-US', { maximumFractionDigits: digits }).format(v);
 /** Seconds as a person reads them: «0,5 с» in Russian (audit P3-8: «0.5s» in a Russian screen). */

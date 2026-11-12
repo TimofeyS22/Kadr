@@ -430,17 +430,19 @@ test('sheets: «Готово» is a word; a short sheet gives the frame what it 
   await page.locator('.tl-row.main .clip').first().click();
   const frame = () => page.locator('.preview').evaluate((e) => e.getBoundingClientRect().height);
   const shut = await frame();
-  await openTool(page, 'Маска');
+  // «Эффекты» before an effect is picked is a short sheet. (The mask's was, until its values came to be shown before the
+  // shape so the sheet does not jump as the shape comes: Ч4, «доделать листы».)
+  await openTool(page, 'Эффекты');
   const done = panel(page).getByRole('button', { name: 'Готово' });
   await expect(done).toHaveText('Готово'); // words, not a check (audit P3-2)
   expect((await done.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   const sheetH = await panel(page).evaluate((e) => e.getBoundingClientRect().height);
-  expect(sheetH, 'the mask sheet is as tall as what it holds').toBeLessThan(0.46 * 812 - 40);
+  expect(sheetH, 'the effects sheet is as tall as what it holds').toBeLessThan(0.46 * 812 - 40);
   // The frame sits right above the sheet: the editor leaves the sheet exactly its height.
   const gap = await page.evaluate(() => document.querySelector('.sheet')!.getBoundingClientRect().top - document.querySelector('.transport')!.getBoundingClientRect().bottom);
   expect(Math.abs(gap), 'nothing is left empty between the row under the frame and the sheet').toBeLessThanOrEqual(1);
-  const withMask = await frame();
-  expect(withMask, 'a short sheet leaves the frame more room than the 46% sheet of 1.7.1').toBeGreaterThan(shut - 0.46 * 812 + 60);
+  const withShort = await frame();
+  expect(withShort, 'a short sheet leaves the frame more room than the 46% sheet of 1.7.1').toBeGreaterThan(shut - 0.46 * 812 + 60);
   // Speed: «Кривая» makes the sheet taller; back to «Обычная», the sheet keeps its height, so the frame does not jump.
   await done.click();
   await openTool(page, 'Скорость');
@@ -500,7 +502,8 @@ test('sheets: choices are 44 px segments, switches show their state by the knob,
   expect(await knob(), 'on is said by where the knob is, not by colour alone').not.toBe(off);
   await sw.uncheck();
   // «0,0 с», not «0.0s» (audit P3-8).
-  await expect(panel(page).locator('.ck-slider', { hasText: 'Нарастание' })).toContainText('0,0 с');
+  await panel(page).getByRole('tab', { name: 'Нарастание' }).click();
+  await expect(panel(page).locator('.ck-values .ck-scale-head .ck-digit')).toHaveText('0,0 с');
   await panel(page).getByRole('button', { name: 'Готово' }).click();
   await page.locator('.toolbar .tool-back').click();
   await openTool(page, 'Холст');
@@ -522,10 +525,11 @@ test('sheets: a value has the whole width of the sheet and 44 px to a finger; th
   await page.locator('.tl-row.main .clip').first().click();
   await openTool(page, 'Трансформация');
   const body = (await panel(page).locator('.sheet-body').boundingBox())!;
+  // On the Scale (Ч4, «доделать листы»): the strip with a step either side takes the width of the sheet (UI-3: 131 of 343 px).
   const x = panel(page).getByRole('slider', { name: 'Положение X' });
-  const track = (await x.boundingBox())!;
-  expect(track.width, 'the track takes the width of the sheet (UI-3: 131 of 343 px)').toBeGreaterThanOrEqual(body.width - 32 - 44 - 8 - 1);
-  expect(track.height).toBeGreaterThanOrEqual(44);
+  const scale = (await panel(page).locator('.ck-values .ck-scale').boundingBox())!;
+  expect(scale.width, 'the Scale takes the width of the sheet').toBeGreaterThanOrEqual(body.width - 32 - 1);
+  expect((await x.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   const kfBox = await panel(page).getByRole('button', { name: 'Добавить ключевой кадр: Положение X' }).boundingBox();
   expect(kfBox!.width).toBeGreaterThanOrEqual(44);
   expect(kfBox!.height).toBeGreaterThanOrEqual(44);
@@ -719,11 +723,13 @@ test('export: what went wrong is a sign and words on a plate, never red; the det
   await panel(page).getByRole('radio', { name: 'Звук', exact: true }).click();
   await panel(page).getByRole('button', { name: 'Экспортировать звук' }).click();
   const alert = panel(page).getByRole('alert');
-  await expect(alert).toContainText('this test refused the sound', { timeout: 30_000 });
+  // The plate says it in words a person reads (S-1: a cause no one can act on goes to the details), the details carry it.
+  await expect(alert).toContainText('Экспорт не удался', { timeout: 30_000 });
   await expect(alert.locator('svg')).toHaveCount(1);
   const colours = await alert.evaluate((el) => [getComputedStyle(el).color, getComputedStyle(document.querySelector('.sheet h2')!).color]);
   expect(colours[0], 'the words are the colour of text, not red').toBe(colours[1]);
-  await panel(page).getByText('Подробнее').click();
+  await panel(page).locator('.ck-more summary').click(); // the message itself says «Подробности — в «Подробнее»»
+  await expect(panel(page).locator('.ck-details pre')).toContainText('this test refused the sound');
   await expect(panel(page).getByRole('button', { name: 'Скопировать для поддержки' })).toBeVisible();
   await panel(page).getByRole('button', { name: 'Назад', exact: true }).click();
   await expect(panel(page).getByRole('button', { name: 'Экспортировать звук' })).toBeVisible();
@@ -744,4 +750,78 @@ test('work in sheets: the question before a model download and the progress are 
   await expect(panel(page).locator('.btn, .progress:not(.ck-progress)')).toHaveCount(0);
   await ask.getByRole('button', { name: 'Не сейчас' }).click();
   await expect(panel(page).getByRole('button', { name: 'Создать субтитры' })).toBeVisible();
+});
+
+// ---- «доделать листы»: values on the Scale, the mask by its look ----
+test('values: the numbers of a part are tabs over one Scale — all on view without scrolling, a changed one marked, reset and a step either way', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row.main .clip').first().click();
+  await openTool(page, 'Трансформация');
+  const tabs = panel(page).getByRole('tab');
+  await expect(tabs).toHaveText(['Положение X', 'Положение Y', 'Масштаб', 'Поворот', 'Непрозрачность']);
+  await expect(panel(page).getByRole('slider')).toHaveCount(2); // the sheet's playhead and the one Scale
+  const sheetBox = (await panel(page).boundingBox())!;
+  const scale = (await panel(page).locator('.ck-values .ck-scale').boundingBox())!;
+  expect(scale.y + scale.height, 'the Scale is on view as the sheet opens').toBeLessThanOrEqual(sheetBox.y + sheetBox.height);
+  // A step with the + button, the digit and the mark on the tab; «Сбросить» takes it back.
+  const x = panel(page).getByRole('slider', { name: 'Положение X' });
+  const reset = panel(page).getByRole('button', { name: 'Сбросить', exact: true });
+  await expect(reset).toBeDisabled();
+  for (const b of await panel(page).locator('.ck-values button').all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await panel(page).getByRole('button', { name: 'Больше' }).click();
+  await expect(x).toHaveAttribute('aria-valuenow', '0.01');
+  await expect(tabs.first()).toHaveAccessibleName(/^Положение X ?, изменено$/); // the mark is a box of its own: a space before it
+  await expect(reset).toBeEnabled();
+  await reset.click();
+  await expect(x).toHaveAttribute('aria-valuenow', '0');
+  await expect(tabs.first()).toHaveAccessibleName('Положение X');
+  // At rest the needle stands in the white mark, which is a little larger: the two marks read even before a change.
+  const [was, needle] = await panel(page).locator('.ck-values').evaluate((v) => ['.ck-was', '.ck-needle'].map((c) => v.querySelector(c)!.getBoundingClientRect().width));
+  expect(was).toBeGreaterThan(needle);
+  // The Scale's arrows are its own: the playhead of the editor stays where it was (they moved it a frame a press).
+  const time = await page.locator('.time').textContent();
+  await x.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await expect(x).toHaveAttribute('aria-valuenow', '0.02');
+  await expect(page.locator('.time')).toHaveText(time!);
+  await reset.click();
+  // Another tab is another value on the same Scale; the keyframe diamond goes with it.
+  await tabs.nth(3).click();
+  await expect(panel(page).getByRole('slider', { name: 'Поворот' })).toBeVisible();
+  await expect(panel(page).getByRole('button', { name: 'Добавить ключевой кадр: Поворот' })).toBeVisible();
+  // The numbers under the strip stand 64 px apart or more and read as the value does.
+  const xs = await panel(page).locator('.ck-tick-label').evaluateAll((ls) => ls.map((l) => { const r = l.getBoundingClientRect(); return r.left + r.width / 2; }));
+  for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(63);
+  await expect(panel(page).locator('.ck-tick-label').first()).toHaveText(/°$/);
+});
+
+test('mask: the shapes are tiles of the person\'s own frame, the chosen one ringed; its values follow on the Scale', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  await page.locator('.tl-row.main .clip').first().click();
+  await openTool(page, 'Маска');
+  const shapes = panel(page).getByRole('radiogroup', { name: 'Маска' });
+  await expect(shapes.getByRole('radio')).toHaveText(['Нет', 'Круг', 'Прямоугольник', 'Градиент']);
+  // Drawn on the frame: «Нет» is the sky to its corner, «Круг» leaves its corner dark.
+  const corner = (name: string) => shapes.getByRole('radio', { name, exact: true }).locator('canvas').evaluate((c: HTMLCanvasElement) => {
+    const [r, g, b] = c.getContext('2d')!.getImageData(2, 2, 1, 1).data;
+    return r + g + b;
+  });
+  await expect.poll(() => corner('Нет'), { timeout: 30_000 }).toBeGreaterThan(150);
+  await expect.poll(() => corner('Круг'), { timeout: 30_000 }).toBeLessThan(60);
+  await expect(panel(page).getByRole('slider', { name: 'Размер' })).toHaveAttribute('aria-disabled', 'true');
+  const before = (await panel(page).boundingBox())!.height;
+  await shapes.getByRole('radio', { name: 'Круг', exact: true }).click();
+  await expect(panel(page).getByRole('slider', { name: 'Размер' })).not.toHaveAttribute('aria-disabled', 'true');
+  expect((await panel(page).boundingBox())!.height, 'the sheet does not jump as the shape comes').toBeCloseTo(before, 0);
+  await expect(shapes.getByRole('radio', { name: 'Круг', exact: true })).toHaveAttribute('aria-checked', 'true');
+  expect(await shapes.locator('[aria-checked="true"] .ck-tile-pic').evaluate((c) => getComputedStyle(c).outlineWidth), 'ringed in white').toBe('2px');
+  // The frame whole in its proportions, and all four shapes in a row on a 375 px screen.
+  const art = (await shapes.locator('canvas').first().boundingBox())!;
+  expect(art.width / art.height, 'the frame of the vertical sample, not cropped to a band').toBeLessThan(0.7);
+  for (const tile of await shapes.getByRole('radio').all()) expect((await tile.boundingBox())!.x + (await tile.boundingBox())!.width).toBeLessThanOrEqual(375);
+  await expect(panel(page).getByRole('tab')).toHaveText(['Размер', 'Влево ↔ вправо', 'Вверх ↕ вниз', 'Поворот', 'Мягкий край']);
+  await expect(panel(page).getByRole('slider', { name: 'Размер' })).toHaveAttribute('aria-valuenow', '0.7');
 });

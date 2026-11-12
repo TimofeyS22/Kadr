@@ -114,8 +114,10 @@
 .ck-seg { position: absolute; top: 11px; height: 8px; background: var(--signal); }
 /* The two marks of a value, 1 : 6: what it was (white, rides with the strip) and what it is (the needle, stands still). */
 .ck-was, .ck-needle { position: absolute; top: 0; width: var(--mark-fine); height: 30px; translate: -50% 0; }
-.ck-was { background: var(--mark-was); z-index: var(--z-mark); }
-.ck-needle { left: 50%; background: var(--signal); z-index: var(--z-playhead); transform-origin: 50% 0; transition: scale var(--dur-snap) var(--ease-soft); pointer-events: none; }
+/* The white mark is a frame a little larger than the needle: at rest the needle stands in it, and the Scale reads as two
+   marks, not a ruler with one pointer (the art director, Ч4). */
+.ck-was { width: calc(var(--mark-fine) + var(--space-1)); height: 34px; top: calc(-1 * var(--hairline)); background: var(--mark-was); z-index: var(--z-mark); }
+.ck-needle { top: var(--hairline); left: 50%; background: var(--signal); z-index: var(--z-playhead); transform-origin: 50% 0; transition: scale var(--dur-snap) var(--ease-soft); pointer-events: none; }
 .ck-scale[data-held='true'] .ck-needle { scale: 1.6 1.2; }
 
 /* ---- the sheet: for a choice ---- */
@@ -330,3 +332,6 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
   box-sizing: border-box; width: 100%; margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-control);
   background: var(--surface-field); color: var(--text-secondary); font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: var(--type-xs); white-space: pre-wrap; overflow-wrap: anywhere;
 }
+/* A tab whose parameter was changed: a small white mark after its name. */
+/* «Changed» is the mark a tool on the ribbon has: a short white upright, not a dot that reads as «unread». */
+.ck-tab-note { display: inline-block; width: 2px; height: 12px; margin-left: var(--space-2); vertical-align: -1px; background: var(--mark-was); }

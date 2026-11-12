@@ -473,11 +473,30 @@ async function selectClip(page: Page, clip: ReturnType<Page['locator']>) {
 }
 
 
-/** Opens a tool sheet, nudges its first slider, picks its second option and closes it. */
+/** The value `name` of a sheet on the Scale (Ч4, «доделать листы»): its tab chosen, if the part has more than one. */
+async function valueOf(page: Page, name: string) {
+  const tab = sheet(page).getByRole('tab', { name: new RegExp(`^${name}( ?,|$)`) });
+  if (await tab.count()) await tab.click();
+  return sheet(page).getByRole('slider', { name, exact: true });
+}
+/** Sets a value on the Scale. It takes no typing: the keys, as a person without a finger on the strip would, from its
+ *  start, one step at a time (the step read from the first one). */
+async function setValue(page: Page, name: string, to: number) {
+  const s = await valueOf(page, name);
+  const now = async () => Number(await s.getAttribute('aria-valuenow'));
+  await s.press('Home');
+  const min = await now();
+  await s.press('ArrowRight');
+  const step = (await now()) - min;
+  for (let i = 1; i < Math.round((to - min) / step); i++) await s.press('ArrowRight');
+  await expect.poll(now).toBeCloseTo(to, 5);
+}
+
+/** Opens a tool sheet, nudges its first value, picks its second option and closes it. */
 async function useSheet(page: Page, name: string) {
   await tool(page, name).click();
   await expect(sheet(page)).toBeVisible();
-  const slider = sheet(page).locator('input[type=range]:not([aria-label="Position in the clip"])').first();
+  const slider = sheet(page).locator('.ck-scale-strip, input[type=range]:not([aria-label="Position in the clip"])').first();
   if (await slider.count()) { await slider.focus(); await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); }
   const radios = sheet(page).getByRole('radio');
   if ((await radios.count()) > 1) await radios.nth(1).click();
@@ -1443,7 +1462,7 @@ test('text: trim handles sit outside the clip, spacing sliders resize the text, 
   await page.mouse.up();
   await expect(page.locator('.angle-tag')).toBeHidden();
   await tool(page, 'Transform').click();
-  await expect(page.getByRole('slider', { name: 'Rotation' })).toHaveValue('45');
+  await expect(await valueOf(page, 'Rotation')).toHaveAttribute('aria-valuenow', '45');
 });
 
 test('dragging text on a touch screen moves the text, not the page', async ({ page, browserName }) => {
@@ -1650,7 +1669,7 @@ test('reel in one tap: from the home card to a shorter reel with captions, title
   if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
   await selectClip(page, main.nth(1));
   await tool(page, 'Transform').click();
-  expect(Number(await page.getByRole('slider', { name: 'Scale' }).inputValue())).toBeCloseTo(1.12, 2); // jump zoom
+  expect(Number(await (await valueOf(page, 'Scale')).getAttribute('aria-valuenow'))).toBeCloseTo(1.12, 2); // jump zoom
   await page.getByRole('button', { name: 'Done' }).click();
   await page.getByRole('button', { name: 'Close tools' }).click().catch(() => undefined);
   await selectClip(page, page.locator('.clip-caption'));
@@ -3079,7 +3098,7 @@ test('WYSIWYG in motion: auto reframe and a LUT, mid-transition, a keyframe betw
   await at(start2 + 3.5);
   await selectClip(page, clips.nth(1));
   await tool(page, 'Transform').click();
-  await sheet(page).locator('input[type=range]:not([aria-label="Position in the clip"])').first().focus();
+  await sheet(page).locator('.ck-scale-strip').first().focus();
   for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowRight');
   await page.getByRole('button', { name: 'Done' }).click();
   await closeAll();
@@ -3157,12 +3176,12 @@ test('WYSIWYG for sound: what the preview plays matches the exported mix — vol
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await selectClip(page, page.locator('.tl-row.main .clip').first());
   await tool(page, 'Volume').click();
-  await page.getByRole('slider', { name: 'Volume', exact: true }).fill('0.6');
+  await setValue(page, 'Volume', 0.6);
   await page.getByRole('button', { name: 'Done' }).click();
   await selectClip(page, music);
   await tool(page, 'Volume').click();
-  await page.getByRole('slider', { name: 'Fade in', exact: true }).fill('1');
-  await page.getByRole('slider', { name: 'Fade out', exact: true }).fill('1.5');
+  await setValue(page, 'Fade in', 1);
+  await setValue(page, 'Fade out', 1.5);
   await page.getByRole('switch', { name: 'Lower when others speak' }).check();
   await page.getByRole('button', { name: 'Done' }).click();
   const closeTools = page.getByRole('button', { name: 'Close tools' });
@@ -3927,7 +3946,7 @@ test('a clip trimmed shorter than its fades still reaches full level in the midd
   await expect(main).toHaveCount(1);
   await selectClip(page, main.first());
   await tool(page, 'Volume').click();
-  for (const name of ['Fade in', 'Fade out']) await page.getByRole('slider', { name, exact: true }).press('End'); // 3 s each
+  for (const name of ['Fade in', 'Fade out']) await (await valueOf(page, name)).press('End'); // 3 s each
   await page.getByRole('button', { name: 'Done' }).click();
   // Trim the end from 6 s to about 2 s (60 px per second), with the end in view.
   await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 3.5 * 60; });
@@ -5351,6 +5370,7 @@ test('a second keyframe without closing the sheet: the playhead is inside it (au
   await page.locator('.toolbar').getByRole('button', { name: 'Transform', exact: true }).click();
   const scrub = page.getByRole('slider', { name: 'Position in the clip' });
   await expect(scrub).toBeVisible();
+  await valueOf(page, 'Scale'); // its tab: the values of «Transform» are tabs over one Scale (Ч4)
   const keyframe = page.getByRole('button', { name: /Scale keyframe/ });
   await scrub.fill('0.5');
   await keyframe.click();

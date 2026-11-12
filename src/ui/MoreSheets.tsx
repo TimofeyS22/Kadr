@@ -9,10 +9,12 @@ import { SFX, renderSfx } from '../engine/sfx';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { addSfx, editClip } from './actions';
-import { Chips, Slider, Toggle, pct, secs, useSheetGuard } from './controls';
+import { Chips, Slider, Toggle, Values, pct, secs, useSheetGuard } from './controls';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
 import { Button } from './ck/controls';
+import { useLookTiles } from './lookTiles';
+import { Tiles } from './ck/choice';
 
 // ---------- Remove pauses ----------
 
@@ -42,10 +44,12 @@ export function PausesBody({ clip }: { clip: SoundClip }) {
   if (!peaks) return <p className="ck-hint">{t('Listening to the clip…')}</p>;
   return (
     <>
+      <Values label={t('Remove pauses')}>
       <Slider label={t('Silence level')} value={toDb(o.threshold)} min={-60} max={-20} step={1} format={(v) => `${Math.round(v)} dB`} reset={toDb(DEFAULT_PAUSES.threshold)}
         onChange={(v) => setO({ ...o, threshold: fromDb(v) })} />
       <Slider label={t('Shortest pause')} value={o.minPause} min={0.2} max={2} step={0.05} format={secs} reset={DEFAULT_PAUSES.minPause} onChange={(v) => setO({ ...o, minPause: v })} />
       <Slider label={t('Keep around words')} value={o.pad} min={0} max={0.4} step={0.01} format={secs} reset={DEFAULT_PAUSES.pad} onChange={(v) => setO({ ...o, pad: v })} />
+      </Values>
       <p className="ck-hint">
         {removed < 0.05 ? t('No pauses found with these settings. Raise the silence level if the background is noisy.')
           : t('Cuts {n} pauses and makes the clip {s} s shorter. You can undo it.', { n: Math.max(0, keep.length - 1), s: removed.toFixed(1) })}
@@ -57,41 +61,75 @@ export function PausesBody({ clip }: { clip: SoundClip }) {
 
 // ---------- Mask ----------
 
-const SHAPES = ['none', 'circle', 'rect', 'linear'] as const;
-const SHAPE_LABEL = { none: 'None', circle: 'Circle', rect: 'Rectangle', linear: 'Gradient' };
+type Shape = 'none' | Mask['shape'];
+/** The shapes as tiles: each drawn on the person's own frame (DESIGN.md, Tiles) — the words alone said nothing of what a
+ *  «Градиент» does to a picture (the art director, Ч4 release 5). */
+const SHAPE_ITEMS: { id: Shape; name: string; cat: string }[] = [
+  { id: 'none', name: 'None', cat: 'shape' }, { id: 'circle', name: 'Circle', cat: 'shape' },
+  { id: 'rect', name: 'Rectangle', cat: 'shape' }, { id: 'linear', name: 'Gradient', cat: 'shape' },
+];
+/** A shape on the person's own frame, the frame whole in its proportions inside 72 px: a circle reads as a circle, and
+ *  four tiles stand in a row on a 375 px screen (the art director, Ч4). */
+function MaskArt({ paint, shape, aspect }: { paint: ReturnType<typeof useLookTiles>; shape: Shape; aspect: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const w = aspect >= 1 ? 72 : Math.round(72 * aspect), h = aspect >= 1 ? Math.round(72 / aspect) : 72;
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const k = Math.min(2, devicePixelRatio || 1);
+    c.width = Math.round(w * k);
+    c.height = Math.round(h * k);
+    paint(c, (cl) => { if (shape === 'none') delete cl.mask; else cl.mask = maskFor(shape, aspect); }, undefined, 'mask');
+  }, [paint, shape, aspect, w, h]);
+  return <canvas ref={ref} style={{ width: w, height: h }} />;
+}
+/** A new mask of a shape, centred, on a picture of `aspect` (width / height): a circle stays round. */
+function maskFor(s: Mask['shape'], aspect: number): Mask {
+  const w = 0.7;
+  return { shape: s, x: 0.5, y: 0.5, w, h: s === 'circle' ? Math.min(1, w * aspect) : 0.7, rotation: 0, feather: s === 'linear' ? 0.15 : 0.02, roundness: s === 'rect' ? 0.2 : 0, invert: false };
+}
 
 export function MaskBody({ clip }: { clip: VideoClip | ImageClip }) {
   const asset = useEditor((s) => s.project?.assets[clip.assetId]);
   const crop = clip.crop ?? { x: 0, y: 0, w: 1, h: 1 };
   const aspect = asset && asset.height ? (asset.width * crop.w) / (asset.height * crop.h) : 1;
-  const m = clip.mask;
+  // Before a shape is picked its values are shown, not settable: the sheet keeps its height when the shape comes, and the
+  // frame does not shrink just as the person looks at the mask on it (the art director, Ч4).
+  const m = clip.mask ?? maskFor('circle', aspect);
+  const off = !clip.mask;
   const set = (patch: Partial<Mask>, key = 'mask') =>
     editClip(clip.id, (c) => { if ((c.kind === 'video' || c.kind === 'image') && c.mask) Object.assign(c.mask, patch); }, `${key}:${clip.id}`);
-  const shape = (s: (typeof SHAPES)[number]) => editClip(clip.id, (c) => {
+  const shape = (s: Shape) => editClip(clip.id, (c) => {
     if (c.kind !== 'video' && c.kind !== 'image') return;
-    if (s === 'none') { delete c.mask; return; }
-    const w = 0.7;
-    c.mask = { shape: s, x: 0.5, y: 0.5, w, h: s === 'circle' ? Math.min(1, w * aspect) : 0.7, rotation: 0, feather: s === 'linear' ? 0.15 : 0.02, roundness: s === 'rect' ? 0.2 : 0, invert: false };
+    if (s === 'none') delete c.mask;
+    else c.mask = maskFor(s, aspect);
   });
+  const paint = useLookTiles(clip);
+  const now: Shape = clip.mask?.shape ?? 'none';
   return (
     <>
-      <Chips options={SHAPES} value={m?.shape ?? 'none'} render={(s) => SHAPE_LABEL[s]} onChange={shape} />
-      {m && (
+      <div className="ck-mask-tiles">
+        <Tiles label={t('Mask')} value={now} onChange={(id) => now !== id && shape(id as Shape)}
+          items={SHAPE_ITEMS.map((i) => ({ id: i.id, label: t(i.name), art: <MaskArt paint={paint} shape={i.id} aspect={aspect} /> }))} />
+      </div>
+      {(
         <>
+          <Values label={t('Mask')}>
           {m.shape === 'circle' ? (
-            <Slider label={t('Size')} value={m.w} min={0.05} max={1.5} format={pct} reset={0.7} onChange={(v) => set({ w: v, h: v * aspect }, 'msize')} />
+            <Slider label={t('Size')} value={m.w} min={0.05} max={1.5} format={pct} reset={0.7} disabled={off} onChange={(v) => set({ w: v, h: v * aspect }, 'msize')} />
           ) : m.shape === 'rect' ? (
             <>
-              <Slider label={t('Width')} value={m.w} min={0.05} max={1} format={pct} reset={0.7} onChange={(v) => set({ w: v }, 'mw')} />
-              <Slider label={t('Height')} value={m.h} min={0.05} max={1} format={pct} reset={0.7} onChange={(v) => set({ h: v }, 'mh')} />
-              <Slider label={t('Round corners')} value={m.roundness} min={0} max={1} format={pct} reset={0.2} onChange={(v) => set({ roundness: v }, 'mr')} />
+              <Slider label={t('Width')} value={m.w} min={0.05} max={1} format={pct} reset={0.7} disabled={off} onChange={(v) => set({ w: v }, 'mw')} />
+              <Slider label={t('Height')} value={m.h} min={0.05} max={1} format={pct} reset={0.7} disabled={off} onChange={(v) => set({ h: v }, 'mh')} />
+              <Slider label={t('Round corners')} value={m.roundness} min={0} max={1} format={pct} reset={0.2} disabled={off} onChange={(v) => set({ roundness: v }, 'mr')} />
             </>
           ) : null}
-          <Slider label={t('Left ↔ right')} value={m.x} min={0} max={1} format={pct} reset={0.5} onChange={(v) => set({ x: v }, 'mx')} />
-          <Slider label={t('Up ↕ down')} value={m.y} min={0} max={1} format={pct} reset={0.5} onChange={(v) => set({ y: v }, 'my')} />
-          <Slider label={t('Rotation')} value={m.rotation} min={-180} max={180} step={1} format={(v) => `${Math.round(v)}°`} reset={0} onChange={(v) => set({ rotation: v }, 'mrot')} />
-          <Slider label={t('Soft edge')} value={m.feather} min={0} max={0.5} format={pct} reset={0.02} onChange={(v) => set({ feather: v }, 'mf')} />
-          <Toggle label={t('Invert (keep the outside)')} value={m.invert} onChange={(v) => set({ invert: v })} />
+          <Slider label={t('Left ↔ right')} value={m.x} min={0} max={1} format={pct} reset={0.5} disabled={off} onChange={(v) => set({ x: v }, 'mx')} />
+          <Slider label={t('Up ↕ down')} value={m.y} min={0} max={1} format={pct} reset={0.5} disabled={off} onChange={(v) => set({ y: v }, 'my')} />
+          <Slider label={t('Rotation')} value={m.rotation} min={-180} max={180} step={1} format={(v) => `${Math.round(v)}°`} reset={0} disabled={off} onChange={(v) => set({ rotation: v }, 'mrot')} />
+          <Slider label={t('Soft edge')} value={m.feather} min={0} max={0.5} format={pct} reset={0.02} disabled={off} onChange={(v) => set({ feather: v }, 'mf')} />
+          </Values>
+          <Toggle label={t('Invert (keep the outside)')} value={m.invert} disabled={off} onChange={(v) => set({ invert: v })} />
         </>
       )}
       <p className="ck-hint">{t('A circle mask on an overlay makes a classic round picture-in-picture.')}</p>

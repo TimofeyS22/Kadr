@@ -20,7 +20,7 @@ import { VoiceRecorder } from '../engine/recorder';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles } from './actions';
-import { Chips, Slider, Swatches, Toggle, pct, useSheetGuard } from './controls';
+import { Chips, Slider, Swatches, Toggle, Values, num, pct, useSheetGuard } from './controls';
 import { ModelAsk, useModelAsk } from './modelAsk';
 import { PaceBar, learnPace, speechStage, speechStages } from './pace';
 import { formatTime } from './format';
@@ -77,18 +77,18 @@ export function CropBody({ clip }: { clip: VideoClip | ImageClip }) {
           if (r) { const b = fit(r, src); set({ w: b.w, h: b.h, x: (1 - b.w) / 2, y: (1 - b.h) / 2 }); }
         }} />
       {box ? (
-        <>
-          <Slider label={t('Zoom')} value={zoom} min={1} max={4} format={(v) => `${v.toFixed(2)}×`} reset={1} onChange={(z) => place(z, panX, panY)} />
+        <Values label={t('Zoom')}>
+          <Slider label={t('Zoom')} value={zoom} min={1} max={4} format={(v) => `${num(v)}×`} reset={1} onChange={(z) => place(z, panX, panY)} />
           <Slider label={t('Left ↔ right')} value={panX} min={-1} max={1} format={(v) => `${Math.round(v * 100)}`} reset={0} onChange={(v) => place(zoom, v, panY)} />
           <Slider label={t('Up ↕ down')} value={panY} min={-1} max={1} format={(v) => `${Math.round(v * 100)}`} reset={0} onChange={(v) => place(zoom, panX, v)} />
-        </>
+        </Values>
       ) : (
-        <>
+        <Values label={t('Crop')}>
           <Slider label={t('Left edge')} value={rect.x} min={0} max={0.95} format={pct} reset={0} onChange={(v) => set({ ...rect, x: v, w: Math.min(rect.w, 1 - v) })} />
           <Slider label={t('Top edge')} value={rect.y} min={0} max={0.95} format={pct} reset={0} onChange={(v) => set({ ...rect, y: v, h: Math.min(rect.h, 1 - v) })} />
           <Slider label={t('Width')} value={rect.w} min={0.05} max={1 - rect.x} format={pct} reset={1 - rect.x} onChange={(v) => set({ ...rect, w: v })} />
           <Slider label={t('Height')} value={rect.h} min={0.05} max={1 - rect.y} format={pct} reset={1 - rect.y} onChange={(v) => set({ ...rect, h: v })} />
-        </>
+        </Values>
       )}
       <p className="ck-hint">{t('Crop to 9:16 to turn a horizontal video into a full-screen vertical one.')}</p>
       <Button onClick={() => { setAspect('original'); editClip(clip.id, (c) => { if (c.kind === 'video' || c.kind === 'image') delete c.crop; }); }}>{t('Reset crop')}</Button>
