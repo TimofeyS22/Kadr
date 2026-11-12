@@ -159,6 +159,37 @@ describe('buildFrame', () => {
     expect(buildFrame(twoClips(), 1).layers[0].flip).toEqual([0, 0]);
   });
 
+  it('trims made a frame at a time keep every frame at a cut: none twice, none lost (Q-7)', () => {
+    // Stored to the microsecond, a frame (1/30 s) is 0.033333 s: three steps end a clip 1 µs past a frame's time, and
+    // that frame showed the clip's last picture again while the next clip's first one was never shown.
+    const p0 = createProject('t', '9:16');
+    p0.assets = { a: asset('a', 6), b: asset('b', 6) };
+    const p = produce(p0, (d) => {
+      insertMain(d, createVideoClip(d.assets.a), 0);
+      insertMain(d, createVideoClip(d.assets.b), 99);
+      const [a, b] = clips(d).map((c) => c.id);
+      // As the trim handle's arrows do (Timeline trimHandle): the edge plus a second, then plus a frame, three times.
+      const step = (id: string, edge: 'start' | 'end', by: number) => {
+        const c = findClip(d, id)!.clip;
+        trimClip(d, id, edge, (edge === 'start' ? c.start : c.start + c.duration) + by);
+      };
+      step(b, 'start', 1);
+      for (let k = 0; k < 3; k++) step(b, 'start', 1 / 30);
+      step(a, 'end', -1);
+      step(a, 'end', -1);
+      reorderMain(d, b, 0);
+    });
+    // B shows its source frames 33–179 (147 frames), then A its frames 0–119.
+    const [b, a] = clips(p).map((c) => c.id);
+    const expected = (k: number) => (k < 147 ? { id: b, frame: 33 + k } : { id: a, frame: k - 147 });
+    const shown = (t: number) => {
+      const l = buildFrame(p, t).layers.filter((x) => x.source.kind === 'video');
+      // The decoder shows the last frame that starts by the asked time, 0.1 ms of rounding allowed (MediaPool).
+      return l.map((x) => ({ id: x.id, frame: x.source.kind === 'video' ? Math.floor((x.source.time + 1e-4) * 30) : -1 }));
+    };
+    for (let k = 0; k < 267; k++) expect(shown(k / 30), `timeline frame ${k}`).toEqual([expected(k)]);
+  });
+
   it('maps timeline time to source time with speed', () => {
     const p = edit(twoClips(), (d) => { setSpeed(d, clips(d)[0].id, 2); });
     const f = buildFrame(p, 1);

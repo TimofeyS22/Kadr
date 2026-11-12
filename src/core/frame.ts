@@ -54,7 +54,13 @@ export interface Layer {
 
 export interface FrameDesc { t: number; background: string; layers: Layer[] }
 
-const active = (c: Clip, t: number) => t >= c.start && t < clipEnd(c);
+/**
+ * A clip's edges, as frames see them, 0.1 ms early: times are stored to the microsecond, where a frame (1/30 s) is not
+ * exact, so trims a frame at a time ended a clip a few µs past a frame's time — that frame showed the clip's last
+ * picture twice and the next clip's first one never (Q-7). The decoder picks its frame with the same 0.1 ms (MediaPool).
+ */
+const EDGE_S = 1e-4;
+const active = (c: Clip, t: number) => t >= c.start - EDGE_S && t < clipEnd(c) - EDGE_S;
 const smooth = (p: number) => p * p * (3 - 2 * p);
 const backOut = (p: number) => 1 + 2.70158 * (p - 1) ** 3 + 1.70158 * (p - 1) ** 2;
 const WORD_POP_S = 0.16;

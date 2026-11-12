@@ -7,6 +7,12 @@ export type Resolution = 720 | 1080 | 1440 | 2160;
 export const MAX_GIF_S = 30;
 /** A GIF's frame rate: smooth enough to read as motion, small enough to share. */
 export const GIF_FPS = 12;
+/**
+ * How long GIF frame `i` stays, in ms. A GIF counts in hundredths of a second: one delay for all, 1000 / 12 ms, was
+ * written as 8 hundredths, 12.5 frames a second, and the GIF ran 4% faster than the preview (6 s of video in 5.76 s).
+ * Delays of 8, 9, 8 … start frame i at i / GIF_FPS to the hundredth.
+ */
+export const gifDelayMs = (i: number): number => (Math.round(((i + 1) * 100) / GIF_FPS) - Math.round((i * 100) / GIF_FPS)) * 10;
 const GIF_SIDE = 480;
 
 const even = (x: number) => Math.max(2, Math.round(x / 2) * 2);

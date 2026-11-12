@@ -473,6 +473,13 @@ async function selectClip(page: Page, clip: ReturnType<Page['locator']>) {
 }
 
 
+/** Where clips lie on the timeline: [start, length] in seconds, 60 px a second from the first main clip's left edge
+ *  (the timeline starts half a screen in). */
+async function spansOf(page: Page, clips: ReturnType<Page['locator']>): Promise<[number, number][]> {
+  const zero = (await page.locator('.tl-row.main .clip').first().boundingBox())!.x;
+  return clips.evaluateAll((els, x0) => els.map((e) => { const r = e.getBoundingClientRect(); return [(r.left - x0) / 60, r.width / 60] as [number, number]; }), zero);
+}
+
 /** The value `name` of a sheet on the Scale (Ч4, «доделать листы»): its tab chosen, if the part has more than one. */
 async function valueOf(page: Page, name: string) {
   const tab = sheet(page).getByRole('tab', { name: new RegExp(`^${name}( ?,|$)`) });
@@ -648,7 +655,8 @@ async function exportAs(page: Page, info: { outputPath: (n: string) => string },
   if (opts.loudness === false) await page.getByRole('switch', { name: /Even loudness/ }).uncheck();
   if (opts.loudness === true) await page.getByRole('switch', { name: /Even loudness/ }).check();
   await page.getByRole('button', { name: button }).click();
-  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
+  // Headless Chromium draws in software: an 11 s reel with captions took over 2 min on a busy Mac (load ~25).
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 240_000 });
   const dl = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save / Share' }).click();
   const file = info.outputPath((await dl).suggestedFilename());
@@ -889,7 +897,8 @@ async function fakeCamera(page: Page) {
   await page.addInitScript(() => {
     const w = window as unknown as { __tracks: MediaStreamTrack[] };
     w.__tracks = [];
-    MediaDevices.prototype.getUserMedia = async function () {
+    // As a real device: a picture only when one is asked for (the voice-over asks for sound alone).
+    MediaDevices.prototype.getUserMedia = async function (want?: MediaStreamConstraints) {
       const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
       const g = c.getContext('2d')!;
       let f = 0;
@@ -903,7 +912,7 @@ async function fakeCamera(page: Page) {
       const dest = ctx.createMediaStreamDestination();
       osc.connect(dest);
       osc.start();
-      const s = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+      const s = new MediaStream([...(want?.video ? c.captureStream(30).getVideoTracks() : []), ...dest.stream.getAudioTracks()]);
       w.__tracks.push(...s.getTracks());
       return s;
     };
@@ -1683,6 +1692,37 @@ test('reel in one tap: from the home card to a shorter reel with captions, title
   expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
 });
 
+test('reel in one tap: the preview, the photo and the file show the same reel, and a reload keeps it (QA matrix: AI, Q-28)', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  await page.goto('./');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
+  await (await chooser).setFiles(fx('reel_ru.mp4'));
+  await agreeToModel(page, 'Download and make the reel');
+  await expect(page.locator('.reel-done')).toBeVisible({ timeout: 300_000 });
+  await page.getByRole('button', { name: 'Watch the reel' }).click();
+  await page.getByRole('button', { name: 'Pause' }).click();
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await page.keyboard.press('Escape'); // nothing selected: no handles over the picture
+  // What the reel made, in seconds of the timeline (60 px a second): its pieces, the hook title.
+  const pieces = await spansOf(page, page.locator('.tl-row.main .clip'));
+  const [[ts, td]] = await spansOf(page, page.locator('.tl-row .clip-text'));
+  expect(pieces.length, 'cut into pieces').toBeGreaterThan(2);
+  const mid = ([s, d]: [number, number]) => s + d / 2;
+  const points = [
+    { name: 'hook title', t: ts + td / 4 },
+    { name: 'second piece: jump zoom, captions', t: mid(pieces[1]) },
+    { name: 'a middle piece: captions, music', t: mid(pieces[Math.floor(pieces.length / 2)]) },
+    { name: 'last piece: captions', t: mid(pieces[pieces.length - 1]) },
+  ].filter((p, k, all) => all.findIndex((q) => Math.abs(q.t - p.t) < 0.3) === k); // distinct moments
+  expect(points.length, 'at least three distinct moments').toBeGreaterThanOrEqual(3);
+  await expectSameFrames(page, info, 'WYSIWYG reel', points, 2);
+  // The reel is a project like any other: a reload keeps it byte for byte and exports the same picture and sound.
+  await historyProof(page, info).reload();
+});
+
 // ---------- v1.1: share target and task pages (docs/08 B, C) ----------
 
 test('share to Kadr (Android): a shared video lands on the timeline of a new project; the share cache is emptied', async ({ page, browserName }) => {
@@ -2296,7 +2336,17 @@ async function previewAt(page: Page, info: { outputPath: (n: string) => string }
   await page.waitForTimeout(1000);
   const canvas = page.locator('.preview-canvas');
   const whole = info.outputPath(`preview-${t}-element.png`);
-  await canvas.screenshot({ path: whole, style: '.toast { visibility: hidden !important; }' }); // a tip lying over the preview is not in the export
+  const shoot = () => canvas.screenshot({ style: '.toast { visibility: hidden !important; }' }); // a tip lying over the preview is not in the export
+  // A scrub shows the nearest keyframe first and the exact frame once the finger rests (audit V-173): the picture is
+  // taken when it holds still. Headless Chromium decodes in software; on a busy Mac the exact frame came after > 1 s.
+  let still = await shoot();
+  for (let k = 1; k <= 20; k++) {
+    await page.waitForTimeout(500);
+    const next = await shoot();
+    if (next.equals(still)) { if (k > 1) console.log(`preview at ${t.toFixed(3)} s held still ${1 + (k - 1) * 0.5} s after the scrub`); break; }
+    still = next;
+  }
+  fs.writeFileSync(whole, still);
   // The element screenshot spans whole CSS pixels around the canvas, whose edges are fractional: up to 1.4 px of the page
   // and of the 1 px outline came along, a dark-and-grey frame that read as a colour cast. Keep only the canvas itself.
   const b = await canvas.evaluate((c) => { const r = c.getBoundingClientRect(); return [r.x - Math.floor(r.x), r.y - Math.floor(r.y), r.width, r.height].map((v) => v * devicePixelRatio); });
@@ -3118,20 +3168,12 @@ test('WYSIWYG in motion: auto reframe and a LUT, mid-transition, a keyframe betw
 });
 // ---------- QA docs/11 §3.2: the sound the preview plays is the sound the export contains ----------
 
-test.describe(() => {
-  // The tap is test equipment. WebKit loads its worklet from a routed same-origin URL; Chromium does not route worklet
-  // requests, so it takes a blob, which the app's CSP (enforced in every other test) refuses.
-  test.use({ bypassCSP: true, serviceWorkers: 'block' });
-
-test('WYSIWYG for sound: what the preview plays matches the exported mix — volume, fades, music ducked under speech', async ({ page, browserName }, info) => {
-  test.setTimeout(300_000);
-  // Headless Chromium decodes the video in software on this thread pool; on a busy Mac it decoded AAC at ~0.3× real
-  // time while playing (0.5 s of sound took 1.7 s), so its preview dropped seconds that no buffering can save. The
-  // mix code is the same for both engines; WebKit (hardware decoding, as on the iPhone) measures it.
-  test.skip(browserName === 'chromium', 'realtime sound in headless Chromium measures the machine, not the mix');
-  // Taps the preview mixer on the audio thread: an AudioWorklet sees every 128-sample render quantum of what the
-  // realtime context sends to the speakers, numbered, and outputs silence. (A ScriptProcessor runs on the main
-  // thread and repeats or drops blocks when it is busy — it made dropouts that were not in the preview.)
+/**
+ * Taps the preview mixer on the audio thread: an AudioWorklet sees every 128-sample render quantum of what the
+ * realtime context sends to the speakers, numbered, and outputs silence. (A ScriptProcessor runs on the main
+ * thread and repeats or drops blocks when it is busy — it made dropouts that were not in the preview.)
+ */
+async function tapPreviewSound(page: Page) {
   const TAP = `
     registerProcessor('tap', class extends AudioWorkletProcessor {
       constructor() { super(); this.buf = new Float32Array(4096); this.n = 0; }
@@ -3165,32 +3207,18 @@ test('WYSIWYG for sound: what the preview plays matches the exported mix — vol
       return connect.apply(this, args);
     } as typeof AudioNode.prototype.connect;
   }, TAP);
-  await newProject(page);
-  // 12 s of beat, on under the speech and after it: added first, on an empty project, it keeps its length (a sound
-  // added on top of a video ends with it, S-1-4).
-  await importFiles(page, 'Audio', ['beat120.m4a']);
-  const music = page.locator('.tl-row.audio .clip').first();
-  await expect(music).toHaveCount(1);
-  await page.getByRole('button', { name: 'Close tools' }).click();
-  await importFiles(page, 'Media', ['speech_en.mp4']); // 5.9 s of speech
-  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
-  await selectClip(page, page.locator('.tl-row.main .clip').first());
-  await tool(page, 'Volume').click();
-  await setValue(page, 'Volume', 0.6);
-  await page.getByRole('button', { name: 'Done' }).click();
-  await selectClip(page, music);
-  await tool(page, 'Volume').click();
-  await setValue(page, 'Fade in', 1);
-  await setValue(page, 'Fade out', 1.5);
-  await page.getByRole('switch', { name: 'Lower when others speak' }).check();
-  await page.getByRole('button', { name: 'Done' }).click();
-  const closeTools = page.getByRole('button', { name: 'Close tools' });
-  if (await closeTools.isVisible()) await closeTools.click();
+}
 
-  // The preview, played from the start to the end in real time. A first short play wakes the audio context (it starts
-  // suspended until a tap, which hides any delay); the measured play is the next one, as most are. Right after its
-  // tap the page is kept busy for 0.8 s, as a phone is while it opens files and renders: the sound must still start
-  // with the picture, not after.
+/**
+ * The preview, played from the start to the end in real time: what it sent to the speakers. A first short play wakes
+ * the audio context (it starts suspended until a tap, which hides any delay); the measured play is the next one, as
+ * most are. Right after its tap the page is kept busy for 0.8 s, as a phone is while it opens files and renders: the
+ * sound must still start with the picture, not after.
+ */
+async function playPreviewSound(page: Page): Promise<{ played: Float32Array; rate: number }> {
+  // From the start: near the end the waking play would end before its Pause (a voice-over leaves the playhead there).
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
+  await page.waitForTimeout(300);
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await page.waitForTimeout(700);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
@@ -3224,16 +3252,25 @@ test('WYSIWYG for sound: what the preview plays matches the exported mix — vol
   expect(count, 'the tap heard the preview').toBeGreaterThan(0);
   expect.soft(gaps, 'the tap saw every render quantum').toBe(0);
   const tb = Buffer.from(b64, 'base64');
-  const played = new Float32Array(tb.buffer, tb.byteOffset, tb.byteLength / 4);
+  return { played: new Float32Array(tb.buffer, tb.byteOffset, tb.byteLength / 4), rate };
+}
 
-  // The export at the preview's rate, (L + R) / 2 like the tap: ffmpeg's own `-ac 1` sums stereo at 0.707 each.
+/** The exported sound at the preview's rate, (L + R) / 2 like the tap: ffmpeg's own `-ac 1` sums stereo at 0.707 each. */
+async function exportedSound(file: string, rate: number): Promise<Float32Array> {
   const { execFileSync } = await import('node:child_process');
-  const file = await exportAs(page, info, 'Audio', 'Export audio', { loudness: false });
   const eb = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-af', 'pan=mono|c0=0.5*c0+0.5*c1', '-ar', String(rate), '-f', 'f32le', '-'], { maxBuffer: 64 << 20 });
-  const exported = new Float32Array(eb.buffer, eb.byteOffset, eb.byteLength / 4);
+  return new Float32Array(eb.buffer, eb.byteOffset, eb.byteLength / 4);
+}
 
-  // Line the two up: to the millisecond on 10 ms RMS (the tap starts before the sound: the clock may wait for it up to
-  // 2 s), then to the sample.
+/**
+ * Lines the preview up with the export and compares them in named windows (seconds of the export). Two different
+ * questions, 20 ms at a time. Delivery: a dropout is preview silence where the export is loud — the realtime engine
+ * late with a buffer (a slow first decode, a starved CPU). Mix: where the preview sounds, the gain that best maps the
+ * export onto it (1 = same level) and what is left over (fades, ducking, timing).
+ */
+function compareSound(played: Float32Array, exported: Float32Array, rate: number, windows: readonly (readonly [string, number, number])[]) {
+  // To the millisecond on 10 ms RMS (the tap starts before the sound: the clock may wait for it up to 2 s), then to the
+  // sample.
   const ms = rate / 1000;
   const perMs = (x: Float32Array) => Array.from({ length: Math.floor(x.length / ms) }, (_, k) => x.subarray(k * ms, (k + 1) * ms).reduce((s, v) => s + v * v, 0));
   const pp = perMs(played), pe = perMs(exported);
@@ -3245,13 +3282,11 @@ test('WYSIWYG for sound: what the preview plays matches the exported mix — vol
     if (d < bestMisfit) { bestMisfit = d; lagMs = l; }
   }
   const lag = lagMs * ms;
+  const span = Math.min(5 * rate, exported.length);
   const dot = (o: number, a: number, b2: number) => { let v = 0; for (let i = a; i < b2; i++) v += played[i + o] * exported[i]; return v; };
   let best = lag;
-  for (let o = lag - 2 * ms; o <= lag + 2 * ms; o++) if (o >= 0 && dot(o, rate, 5 * rate) > dot(best, rate, 5 * rate)) best = o;
+  for (let o = lag - 2 * ms; o <= lag + 2 * ms; o++) if (o >= 0 && dot(o, Math.min(rate, span / 5), span) > dot(best, Math.min(rate, span / 5), span)) best = o;
 
-  // Two different questions, 20 ms at a time. Delivery: a dropout is preview silence where the export is loud — the
-  // realtime engine late with a buffer (a slow first decode, a starved CPU). Mix: where the preview sounds, the gain
-  // that best maps the export onto it (1 = same level) and what is left over (fades, ducking, timing).
   const w = 20 * ms;
   const win = (i: number) => {
     let pv = 0, ev = 0;
@@ -3262,8 +3297,8 @@ test('WYSIWYG for sound: what the preview plays matches the exported mix — vol
   const drops: number[] = [];
   for (let i = Math.round(0.05 * rate); i + w <= exported.length; i += w) if (dropped(i)) drops.push(i / rate);
   const rows: string[] = [];
-  const stats: { name: string; gain: number; rest: number }[] = [];
-  for (const [name, a, b2] of [['music fades in under speech', 0.1, 1], ['speech, music ducked', 1.5, 5.5], ['music back up', 6.5, 10], ['music fades out', 10.5, 11.8]] as const) {
+  const stats: { name: string; gain: number; rest: number; shiftMs: number; ownRest: number; envGain: number; envRest: number }[] = [];
+  for (const [name, a, b2] of windows) {
     let xy = 0, yy = 0, rr = 0, gone = 0;
     const i0 = Math.round(a * rate), i1 = Math.round(b2 * rate);
     for (let i = i0; i + w <= i1; i += w) {
@@ -3273,20 +3308,153 @@ test('WYSIWYG for sound: what the preview plays matches the exported mix — vol
     const gain = xy / yy;
     for (let i = i0; i + w <= i1; i += w) if (!dropped(i)) for (let j = i; j < i + w; j++) rr += (played[j + best] - gain * exported[j]) ** 2;
     const rest = Math.sqrt(rr / yy);
-    stats.push({ name, gain, rest });
-    rows.push(`${name} ${a}–${b2} s: preview ×${gain.toFixed(4)}, left over ${(rest * 100).toFixed(1)}%${gone ? `, ${gone * 20} ms dropped` : ''}`);
+    // The window on its own: is it as early or late as the rest of the mix (a sound out of time), or the same moment
+    // and only coded differently? Its own best line-up within ±5 ms and what is left over there.
+    let own = 0, ownDot = -Infinity;
+    for (let o = -5 * ms; o <= 5 * ms; o++) { if (i0 + best + o < 0) continue; const v = dot(best + o, i0, i1); if (v > ownDot) { ownDot = v; own = o; } }
+    let oxy = 0, oyy = 0, orr = 0;
+    for (let j = i0; j < i1; j++) { oxy += played[j + best + own] * exported[j]; oyy += exported[j] ** 2; }
+    for (let j = i0; j < i1; j++) orr += (played[j + best + own] - (oxy / oyy) * exported[j]) ** 2;
+    const shiftMs = own / ms, ownRest = Math.sqrt(orr / oyy);
+    // The 10 ms loudness envelope: what a noise-like sound is heard as. AAC codes noise loosely (a whoosh came back with
+    // the same level in every band and the same timing, but its waveform 25% off, mostly above 3 kHz); its envelope
+    // does not care, and still moves 7% for 5 ms late and 5% for a 1 dB step.
+    const envOf = (x: Float32Array, from: number) => Array.from({ length: Math.floor((i1 - i0) / (10 * ms)) }, (_, k) => { let v = 0; for (let j = 0; j < 10 * ms; j++) v += x[from + k * 10 * ms + j] ** 2; return Math.sqrt(v / (10 * ms)); });
+    const pe = envOf(played, i0 + best), ee = envOf(exported, i0);
+    const envGain = pe.reduce((v, x, k) => v + x * ee[k], 0) / ee.reduce((v, x) => v + x * x, 0);
+    const envRest = Math.sqrt(pe.reduce((v, x, k) => v + (x - envGain * ee[k]) ** 2, 0) / ee.reduce((v, x) => v + x * x, 0));
+    stats.push({ name, gain, rest, shiftMs, ownRest, envGain, envRest });
+    rows.push(`${name} ${a.toFixed(2)}–${b2.toFixed(2)} s: preview ×${gain.toFixed(4)}, left over ${(rest * 100).toFixed(1)}%${gone ? `, ${gone * 20} ms dropped` : ''}; on its own ${shiftMs >= 0 ? '+' : ''}${shiftMs.toFixed(3)} ms, left over ${(ownRest * 100).toFixed(1)}%; envelope ×${envGain.toFixed(4)}, left over ${(envRest * 100).toFixed(1)}%`);
   }
-  console.log(`WYSIWYG sound (${info.project.name}): preview at ${rate} Hz, the clock waited ${(best / ms).toFixed(0)} ms; dropouts ${drops.length * 20} ms${drops.length ? ` from ${drops[0].toFixed(2)} s` : ''}\n${rows.join('\n')}`);
+  return { best, drops, stats, rows, header: `preview at ${rate} Hz, the clock waited ${(best / ms).toFixed(0)} ms; dropouts ${drops.length * 20} ms${drops.length ? ` from ${drops[0].toFixed(2)} s` : ''}` };
+}
+
+test.describe(() => {
+  // The tap is test equipment. WebKit loads its worklet from a routed same-origin URL; Chromium does not route worklet
+  // requests, so it takes a blob, which the app's CSP (enforced in every other test) refuses.
+  test.use({ bypassCSP: true, serviceWorkers: 'block' });
+
+test('WYSIWYG for sound: what the preview plays matches the exported mix — volume, fades, music ducked under speech', async ({ page, browserName }, info) => {
+  test.setTimeout(300_000);
+  // Headless Chromium decodes the video in software on this thread pool; on a busy Mac it decoded AAC at ~0.3× real
+  // time while playing (0.5 s of sound took 1.7 s), so its preview dropped seconds that no buffering can save. The
+  // mix code is the same for both engines; WebKit (hardware decoding, as on the iPhone) measures it.
+  test.skip(browserName === 'chromium', 'realtime sound in headless Chromium measures the machine, not the mix');
+  await tapPreviewSound(page);
+  await newProject(page);
+  // 12 s of beat, on under the speech and after it: added first, on an empty project, it keeps its length (a sound
+  // added on top of a video ends with it, S-1-4).
+  await importFiles(page, 'Audio', ['beat120.m4a']);
+  const music = page.locator('.tl-row.audio .clip').first();
+  await expect(music).toHaveCount(1);
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  await importFiles(page, 'Media', ['speech_en.mp4']); // 5.9 s of speech
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+  await selectClip(page, page.locator('.tl-row.main .clip').first());
+  await tool(page, 'Volume').click();
+  await setValue(page, 'Volume', 0.6);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await selectClip(page, music);
+  await tool(page, 'Volume').click();
+  await setValue(page, 'Fade in', 1);
+  await setValue(page, 'Fade out', 1.5);
+  await page.getByRole('switch', { name: 'Lower when others speak' }).check();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  const { played, rate } = await playPreviewSound(page);
+  const exported = await exportedSound(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }), rate);
+  const { best, drops, stats, rows, header } = compareSound(played, exported, rate, [['music fades in under speech', 0.1, 1], ['speech, music ducked', 1.5, 5.5], ['music back up', 6.5, 10], ['music fades out', 10.5, 11.8]]);
+  console.log(`WYSIWYG sound (${info.project.name}): ${header}\n${rows.join('\n')}`);
   expect(played.length - best, 'the preview played to the end').toBeGreaterThan(exported.length - rate / 2);
   // Delivery. The start is the app's to get right (it waits for the decoded sound); later dropouts measure the machine
   // as much as the app — clean on an idle Mac, seconds long at load average 10–20 with software video decoding.
   expect.soft(drops.filter((t) => t < 1), 'the sound starts with the picture').toEqual([]);
-  expect.soft(drops.length * 20 / (exported.length / ms), 'share of the sound dropped').toBeLessThan(0.1);
+  expect.soft(drops.length * 20 / (exported.length / (rate / 1000)), 'share of the sound dropped').toBeLessThan(0.1);
   // Mix. Matching: ×0.999–1.003 and 0.5–3.6% left over (AAC). The first 44 ms are not compared: the export drops the
   // encoder's priming there (engine/encoderDelay).
   for (const { name, gain, rest } of stats) {
     expect.soft(Math.abs(gain - 1), `level, ${name}`).toBeLessThan(0.03);
     expect.soft(rest, `left over, ${name}`).toBeLessThan(0.06);
+  }
+});
+
+test('WYSIWYG for a sound effect and a voice-over: what the preview plays is in the export, at its time and level (QA matrix: sound, Q-24)', async ({ page, browserName }, info) => {
+  test.setTimeout(300_000);
+  test.skip(browserName === 'chromium', 'realtime sound in headless Chromium measures the machine, not the mix');
+  await tapPreviewSound(page);
+  // The microphone: a 330 Hz tone that swells and fades four times a second, a voice the line-up can hold on to.
+  await page.addInitScript(() => {
+    MediaDevices.prototype.getUserMedia = async function () {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      osc.frequency.value = 330;
+      const swell = ctx.createGain();
+      swell.gain.value = 0.25;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 4;
+      const depth = ctx.createGain();
+      depth.gain.value = 0.2;
+      lfo.connect(depth).connect(swell.gain);
+      const dest = ctx.createMediaStreamDestination();
+      osc.connect(swell).connect(dest);
+      osc.start();
+      lfo.start();
+      return dest.stream;
+    };
+  });
+  await newProject(page);
+  await importFiles(page, 'Media', ['photo.png', 'person.jpg']); // 6 s of silent pictures
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await scrubTo(page, 30, '0:00.5');
+  await tool(page, 'Sounds').click();
+  await page.getByRole('button', { name: 'Add Whoosh at the playhead' }).click();
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1);
+  if (await closeTools.isVisible()) await closeTools.click();
+  await scrubTo(page, 150, '0:02.5');
+  await tool(page, 'Record').click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(1800);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(2, { timeout: 30_000 });
+  if (await sheet(page).isVisible()) await page.keyboard.press('Escape');
+  if (await closeTools.isVisible()) await closeTools.click();
+  // Where the two sounds lie, in seconds (60 px a second, from the first picture's left edge: the timeline starts
+  // half a screen in).
+  const spans = await spansOf(page, page.locator('.tl-row.audio .clip'));
+  spans.sort((x, y) => x[0] - y[0]);
+  const [[ws, wd], [vs, vd]] = spans;
+  expect(Math.abs(ws - 0.5), 'the whoosh at 0.5 s').toBeLessThan(0.05);
+  expect(Math.abs(vs - 2.5), 'the voice-over at 2.5 s').toBeLessThan(0.05);
+  expect(vd, 'the voice-over is over a second long').toBeGreaterThan(1);
+
+  const { played, rate } = await playPreviewSound(page);
+  const exported = await exportedSound(await exportAs(page, info, 'Audio', 'Export audio', { loudness: false }), rate);
+  // Kept for a closer look when it fails: raw float32 at `rate`.
+  fs.writeFileSync(info.outputPath('preview.f32'), Buffer.from(played.buffer, played.byteOffset, played.byteLength));
+  fs.writeFileSync(info.outputPath('export.f32'), Buffer.from(exported.buffer, exported.byteOffset, exported.byteLength));
+  const { best, drops, stats, rows, header } = compareSound(played, exported, rate, [['whoosh', ws + 0.05, ws + wd - 0.05], ['voice-over', vs + 0.1, vs + vd - 0.1]]);
+  // Where the export is silent, the preview is too: nothing plays that the file lacks.
+  const quiet = (x: Float32Array, a: number, b2: number, o = 0) => { let v = 0; const i0 = Math.round(a * rate), i1 = Math.round(b2 * rate); for (let i = i0; i < i1; i++) v += x[i + o] ** 2; return Math.sqrt(v / (i1 - i0)); };
+  const between = [ws + wd + 0.1, vs - 0.1] as const;
+  rows.push(`between them ${between[0].toFixed(2)}–${between[1].toFixed(2)} s: preview rms ${quiet(played, ...between, best).toFixed(4)}, export ${quiet(exported, ...between).toFixed(4)}`);
+  console.log(`WYSIWYG sound effect and voice-over (${info.project.name}): ${header}; whoosh ${ws.toFixed(2)}+${wd.toFixed(2)} s, voice ${vs.toFixed(2)}+${vd.toFixed(2)} s\n${rows.join('\n')}`);
+  expect(played.length - best, 'the preview played to the end').toBeGreaterThan(exported.length - rate / 2);
+  expect.soft(drops.filter((t) => t < 1), 'the sound starts with the picture').toEqual([]);
+  expect.soft(quiet(exported, ...between), 'the export is silent between the sounds').toBeLessThan(0.003);
+  expect.soft(quiet(played, ...between, best), 'and so is the preview').toBeLessThan(0.003);
+  for (const { name, gain, shiftMs, envGain, envRest, rest } of stats) {
+    // Each sound at the same moment as the whole mix, to the sample (0.000 ms on both measured).
+    expect.soft(Math.abs(shiftMs), `timing, ${name}`).toBeLessThan(0.05);
+    expect.soft(Math.abs(gain - 1), `level, ${name}`).toBeLessThan(0.03);
+    // As heard: matching 1.9% (whoosh) and 0.7% (voice).
+    expect.soft(Math.abs(envGain - 1), `envelope level, ${name}`).toBeLessThan(0.03);
+    expect.soft(envRest, `envelope left over, ${name}`).toBeLessThan(0.04);
+    // The waveform too where it is a tone (1.4%); noise is coded loosely (above).
+    if (name === 'voice-over') expect.soft(rest, `left over, ${name}`).toBeLessThan(0.06);
   }
 });
 });
@@ -3431,7 +3599,7 @@ test('WYSIWYG for an iPhone HDR video: HEVC 10-bit HLG looks the same in the pre
 
 // ---------- QA docs/11 §3.3–3.4: capture, import and selection in one history ----------
 
-test('history and persistence, capture and selection: a camera recording, a two-file import, several clips duplicated then deleted — each one exact undo step, a reload exports the same video', async ({ page }, info) => {
+test('history and persistence, capture and selection: a camera recording, a voice-over, a two-file import, several clips duplicated then deleted — each one exact undo step, a reload exports the same video', async ({ page }, info) => {
   test.setTimeout(480_000);
   await fakeCamera(page);
   await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
@@ -3446,6 +3614,15 @@ test('history and persistence, capture and selection: a camera recording, a two-
     await page.waitForTimeout(2000);
     await page.getByRole('button', { name: 'Stop recording' }).click();
     await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
+  });
+  await h.act('voice-over', async () => {
+    await tool(page, 'Record').click();
+    await page.getByRole('button', { name: 'Start recording' }).click();
+    await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(1500);
+    await page.getByRole('button', { name: 'Stop recording' }).click();
+    await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 30_000 });
+    if (await sheet(page).isVisible()) await page.keyboard.press('Escape');
   });
   await h.act('import of two files at once', async () => {
     await importFiles(page, 'Media', ['photo.png', 'landscape.mp4']);
@@ -3601,6 +3778,190 @@ test('clip tools reach the file frame for frame: 2× speed, reverse and a freeze
     expect.soft(photo, `photo at frame ${k}½`).toBe(source(t));
   }
   console.log(`clip tools frame for frame (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('trims and a reorder reach the file frame for frame, are undone exactly and survive a reload (QA matrix: timeline, Q-7)', async ({ page }, info) => {
+  test.setTimeout(420_000);
+  test.skip(!fs.existsSync(fx('counter.mp4')), 'needs npm run fixtures');
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4', 'counter.mp4']); // A, B: 6 s at 30 fps, frame N written in binary
+  await expect(main).toHaveCount(2);
+  const [a, b] = await main.evaluateAll((els) => els.map((e) => e.getAttribute('data-clip')!));
+  const clip = (id: string) => page.locator(`.tl-row.main .clip[data-clip="${id}"]`);
+  const order = () => main.evaluateAll((els) => els.map((e) => e.getAttribute('data-clip')));
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  const h = historyProof(page, info);
+  await h.start();
+  /** One key on a trim handle of a clip: a frame, with Shift a second (the handle's own step, so the amount is exact). */
+  const trimKey = async (id: string, edge: 'Trim start' | 'Trim end', key: string) => {
+    await selectClip(page, clip(id));
+    await clip(id).getByRole('slider', { name: edge }).press(key);
+  };
+  // B loses its first second and three frames: it starts on source frame 33, not on a round second.
+  await h.act('B start +1 s', () => trimKey(b, 'Trim start', 'Shift+ArrowRight'));
+  for (let k = 1; k <= 3; k++) await h.act(`B start +${k} frame`, () => trimKey(b, 'Trim start', 'ArrowRight'));
+  // A loses its last two seconds: source frames 0–119.
+  await h.act('A end −1 s', () => trimKey(a, 'Trim end', 'Shift+ArrowLeft'));
+  await h.act('A end −2 s', () => trimKey(a, 'Trim end', 'Shift+ArrowLeft'));
+  // B is dragged by a finger in front of A: dropped left of A's middle (2 s), clear of the auto-scroll edge.
+  await h.act('B before A', async () => {
+    await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 3.5 * 60; });
+    await page.waitForTimeout(300);
+    const view = (await page.locator('.tl-scroll').boundingBox())!;
+    const ba = (await clip(a).boundingBox())!, bb = (await clip(b).boundingBox())!;
+    const from = { x: Math.min(bb.x + 40, view.x + view.width - 70), y: bb.y + bb.height / 2 };
+    const to = Math.max(ba.x + ba.width * 0.3, view.x + 64);
+    expect(to, 'the drop point is left of A\'s middle').toBeLessThan(ba.x + ba.width / 2 - 10);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to, from.y, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(order).toEqual([b, a]);
+  });
+  await h.undoRedo();
+  expect(await order()).toEqual([b, a]);
+  const saved = await settledProject(page);
+  await page.reload();
+  await expect(main).toHaveCount(2);
+  expect(await order(), 'the order after a reload').toEqual([b, a]);
+  expect((await settledProject(page)) === saved, `the reload keeps the project; ${firstDiff(await savedProject(page), saved)}`).toBe(true);
+  if (await closeTools.isVisible()) await closeTools.click();
+
+  // Timeline frame k shows B's source frame 33 + k for 147 frames, then A's frames 0–119: 267 frames, 8.9 s.
+  const source = (k: number) => (k < 147 ? 33 + k : k - 147);
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const rows: string[] = [];
+  const duration = Number((await probe(video)).format.duration);
+  rows.push(`duration ${duration.toFixed(3)} s`);
+  expect(Math.abs(duration - 8.9)).toBeLessThan(0.05);
+  for (const k of [0, 1, 146, 147, 148, 200, 266]) {
+    const got = await counterAt(video, k);
+    rows.push(`timeline frame ${k}: video shows ${got} (expected ${source(k)})`);
+    expect.soft(got, `video frame ${k}`).toBe(source(k));
+  }
+  for (const k of [0, 146, 147, 230]) {
+    const shown = await counterAt(await previewAt(page, info, (k + 0.5) / 30)); // mid-frame: the playhead moves 2 px per frame
+    const photo = await counterAt(await exportAs(page, info, 'Photo', 'Save photo'));
+    rows.push(`timeline frame ${k}½: preview ${shown}, photo ${photo} (expected ${source(k)})`);
+    expect.soft(shown, `preview at frame ${k}½`).toBe(source(k));
+    expect.soft(photo, `photo at frame ${k}½`).toBe(source(k));
+  }
+  console.log(`trims and a reorder frame for frame (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('a GIF lasts as long as the timeline and each of its frames shows the source frame the preview shows then (QA matrix: export, Q-29)', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  test.skip(!fs.existsSync(fx('counter.mp4')), 'needs npm run fixtures');
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4']); // 6 s at 30 fps, frame N written in binary
+  await expect(main).toHaveCount(1);
+  // A cut in the middle (2–4 s gone): the GIF crosses it, 4 s in all.
+  await scrubTo(page, 120, '0:02.0');
+  await selectClip(page, main.first());
+  await tool(page, 'Split').click();
+  await expect(main).toHaveCount(2);
+  await scrubTo(page, 240, '0:04.0');
+  await selectClip(page, main.nth(1));
+  await tool(page, 'Split').click();
+  await expect(main).toHaveCount(3);
+  await selectClip(page, main.nth(1));
+  await tool(page, 'Delete').click();
+  await expect(main).toHaveCount(2);
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  const source = (k: number) => (k < 60 ? k : k + 60);
+
+  const gif = await exportAs(page, info, 'GIF', 'Export GIF');
+  const pr = await probe(gif);
+  const frames = Number(pr.streams[0].nb_read_frames), duration = Number(pr.format.duration);
+  const rows = [`${frames} frames, ${duration.toFixed(3)} s`];
+  // When each frame is shown (its delays added up, in seconds): the GIF's own clock against the timeline's.
+  const { execFileSync } = await import('node:child_process');
+  const starts = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'frame=pts_time', '-of', 'csv=p=0', gif]).toString().trim().split('\n').map(Number);
+  const drift = Math.max(...starts.map((s, j) => Math.abs(s - j / 12)));
+  rows.push(`frame starts drift from j/12 s by up to ${(drift * 1000).toFixed(0)} ms`);
+  expect.soft(frames, '12 frames a second').toBe(48);
+  expect.soft(Math.abs(duration - 4), 'as long as the timeline').toBeLessThan(0.02);
+  expect.soft(drift, 'each frame shown when the preview shows it (within 10 ms, the GIF\'s tick)').toBeLessThanOrEqual(0.011);
+  for (const j of [0, 1, 11, 23, 24, 25, 47]) {
+    const k = Math.floor(j * 30 / 12 + 1e-6);
+    const got = await counterAt(gif, j);
+    rows.push(`GIF frame ${j} (timeline frame ${k}): shows ${got} (expected ${source(k)})`);
+    expect.soft(got, `GIF frame ${j}`).toBe(source(k));
+  }
+  // The preview at the same moments.
+  for (const j of [1, 23, 25]) {
+    const t = j / 12, k = Math.floor(t * 30 + 1e-6);
+    const shown = await counterAt(await previewAt(page, info, (k + 0.5) / 30));
+    rows.push(`preview at GIF frame ${j}: ${shown} (expected ${source(k)})`);
+    expect.soft(shown, `preview at GIF frame ${j}`).toBe(source(k));
+  }
+  console.log(`GIF frame for frame (${info.project.name}):\n${rows.join('\n')}`);
+});
+
+test('a camera take is the same in the preview, the photo and the video, frame for frame (QA matrix: camera, Q-27)', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  // A camera whose every picture carries its own number: eight stripes across the whole width, white for a 1 bit, as
+  // counter.mp4 does (counterAt reads them). The take is a recorder's file, its frames timed as they came, not on a grid.
+  await page.addInitScript(() => {
+    const w = window as unknown as { __tracks: MediaStreamTrack[] };
+    w.__tracks = [];
+    MediaDevices.prototype.getUserMedia = async function () {
+      const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
+      const g = c.getContext('2d')!;
+      let n = 0;
+      const draw = () => {
+        g.fillStyle = '#000'; g.fillRect(0, 0, 640, 360);
+        g.fillStyle = '#fff';
+        for (let k = 0; k < 8; k++) if ((n >> k) & 1) g.fillRect(k * 80, 0, 80, 360);
+        n = (n + 1) % 256;
+      };
+      draw();
+      setInterval(draw, 33);
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const dest = ctx.createMediaStreamDestination();
+      osc.connect(dest);
+      osc.start();
+      const s = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+      w.__tracks.push(...s.getTracks());
+      return s;
+    };
+  });
+  await newProject(page);
+  await tool(page, 'Camera').click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
+  await page.waitForTimeout(3500);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const rows: string[] = [];
+  const seen: number[] = [];
+  // On a frame's own time (the playhead moves 2 px a frame): the take's frames are not on the grid, so any moment in
+  // between could fall either side of one of them in the preview and in the file alike; on the frame's time both ask
+  // for the same instant.
+  for (const k of [6, 30, 45, 60, 75]) {
+    const t = k / 30;
+    const shown = await counterAt(await previewAt(page, info, t));
+    const photo = await counterAt(await exportAs(page, info, 'Photo', 'Save photo'));
+    const frame = await counterAt(video, k);
+    rows.push(`frame ${k} (${t.toFixed(3)} s): preview ${shown}, photo ${photo}, video ${frame}`);
+    expect.soft(photo, `photo at frame ${k}`).toBe(shown);
+    expect.soft(frame, `video frame ${k}`).toBe(shown);
+    seen.push(shown);
+  }
+  console.log(`camera take frame for frame (${info.project.name}):\n${rows.join('\n')}`);
+  expect(new Set(seen).size, 'the take moves: each moment a different picture').toBe(seen.length);
 });
 
 // ---------- QA docs/11 §3.6 and §3.15: backups that are not what they claim ----------
