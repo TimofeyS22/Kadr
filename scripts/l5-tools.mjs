@@ -72,6 +72,33 @@ const WATCH = `if (!window.__l5) {
   window.__l5 = { errors: [], toasts: [], files: [], parts: [], warns: [] };
   // What the app warns of, with the error's name, words and stack: the only trace of a failure on the phone.
   const warn = console.warn;
+  // Which part fails: a read of a stored file, or the device's decoder (S-1-13). Each failure with what it was reading.
+  window.__l5.diag = [];
+  // A Blob made in memory, belonging to no storage: if it dies too, WebKit's network process (which holds every Blob
+  // of the page) was restarted, not one stored file lost (WebKit bug 230861).
+  window.__l5.canary = new Blob([new Uint8Array(1 << 20).fill(7)]);
+  const note = (x) => { if (window.__l5.diag.length < 40) window.__l5.diag.push(String(x).slice(0, 300)); };
+  // Where each Blob came from: the IndexedDB key it was read under; a slice keeps its parent's tag.
+  const tags = new WeakMap();
+  const at = () => Math.round(performance.now());
+  const get = IDBObjectStore.prototype.get;
+  IDBObjectStore.prototype.get = function (key) { const req = get.call(this, key); req.addEventListener('success', () => { const r = req.result; if (r instanceof Blob) tags.set(r, String(key).slice(0, 24) + ' size=' + r.size + ' got@' + at()); }); return req; };
+  const del = IDBObjectStore.prototype.delete;
+  window.__l5.kept = 0;
+  // S1_KEEP_PIECES (set below by the runner): the take's pieces are not deleted — does the error go away?
+  IDBObjectStore.prototype.delete = function (key) { if (window.__l5.keepPieces && String(key).startsWith('t:')) { window.__l5.kept++; return { onsuccess: null, onerror: null, addEventListener() {} }; } return del.call(this, key); };
+  const slice = Blob.prototype.slice;
+  Blob.prototype.slice = function (...a) { const s = slice.apply(this, a); tags.set(s, tags.get(this) || ('memory size=' + this.size)); return s; };
+  const ab = Blob.prototype.arrayBuffer;
+  Blob.prototype.arrayBuffer = function () { const b = this; return ab.call(b).catch((e) => { note('read ' + e.name + ' of ' + (tags.get(b) || 'untagged size=' + b.size) + ' @' + at()); throw e; }); };
+  if (window.VideoDecoder) {
+    const VD = window.VideoDecoder;
+    window.VideoDecoder = class extends VD {
+      constructor(init) { super({ ...init, error: (e) => { note('decoder ' + e.name + ' ' + e.message + ' at ' + Math.round(performance.now())); init.error(e); } }); }
+      decode(c) { try { return super.decode(c); } catch (e) { note('decode() threw ' + e.name + ' ' + e.message); throw e; } }
+      configure(c) { try { return super.configure(c); } catch (e) { note('configure() threw ' + e.name + ' ' + e.message + ' ' + c.codec); throw e; } }
+    };
+  }
   console.warn = function (...a) { try { window.__l5.warns.push(a.map((x) => x instanceof Error || (x && x.name && x.message) ? x.name + ': ' + x.message + ' @ ' + String(x.stack || '').slice(0, 600) : String(x)).join(' ').slice(0, 900)); } catch {} return warn.apply(this, a); };
   addEventListener('error', (e) => window.__l5.errors.push(String(e.message).slice(0, 200)));
   addEventListener('unhandledrejection', (e) => window.__l5.errors.push(String(e.reason && (e.reason.message || e.reason)).slice(0, 200)));
@@ -384,6 +411,7 @@ const SCENARIOS = {
   // load; here each take must land on the timeline. The first time Safari asks for the camera: a person taps Allow.
   's1-camera': async () => {
     await fresh([]);
+    if (process.env.S1_KEEP_PIECES) await js('window.__l5.keepPieces = true;');
     const takes = [];
     for (let k = 0; k < Number(process.env.S1_TAKES ?? 4); k++) {
       const before = await count('.tl-row.main .clip-video');
@@ -419,7 +447,9 @@ const SCENARIOS = {
     const file = await pull('camera.mp4');
     const p = probe(file);
     const black = (spawnSync('ffmpeg', ['-i', file, '-vf', 'blackdetect=d=0.1:pix_th=0.05', '-an', '-f', 'null', '-'], { encoding: 'utf8' }).stderr.match(/black_start:[\d.]+ black_end:[\d.]+/g) ?? []);
-    return { takes, afterPlay: playing, file: p, black, log, warns: await js('return window.__l5.warns.slice(-12)') };
+    const canary = await jsAsync("const done = arguments[arguments.length - 1]; window.__l5.canary.slice(1000, 1008).arrayBuffer().then((b) => done('readable ' + new Uint8Array(b)[0]), (e) => done(e.name + ': ' + e.message));");
+    const lost = await js("return window.__l5.warns.filter((w) => /IndexedDB connection lost|server lost|connection/i.test(w)).slice(0, 4)");
+    return { kept: await js('return window.__l5.kept'), takes, afterPlay: playing, file: p, black, log, canary, lost, warns: await js('return window.__l5.warns.slice(-4)'), diag: await js('return window.__l5.diag.slice(0, 6)') };
   },
   // One file of the S-1 batch on its own (S1_FILE=tiny_2x2|huge_8k|yuv444|mp3_in): which one, if any, takes the tab down.
   's1-one': async () => {
