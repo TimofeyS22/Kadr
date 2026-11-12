@@ -145,6 +145,17 @@ function wordWidth(ctx: CanvasRenderingContext2D, w: string, ls: number): number
  */
 const WORD_INK = 0.22;
 
+/**
+ * How far the fit of a long accent may shrink the other lines of a text in several faces (docs/18): the accent goes as
+ * small as it must to stay on one line, the support no smaller than this share of its size. Set with the block, the
+ * support under «Достопримечательности» was 0.5–0.8% of the frame high, past reading on a phone (the art director's
+ * finding in round 3). A support grown wider than the frame breaks between words, as any line may.
+ */
+const SUPPORT_FLOOR = 0.7;
+/** …and never above this share of the accent's size: the accent stays the largest (at the floor alone a support in
+ *  «Дерзко» outgrew a long accent in Dela Gothic). */
+const SUPPORT_UNDER = 0.6;
+
 /** The step between words that leaves WORD_INK of white between them: the overhang of each word's edge glyph counted. */
 function inkSpace(ctx: CanvasRenderingContext2D, paras: string[][], px: number): number {
   let need = 0;
@@ -344,7 +355,8 @@ export class TextRasterizer {
     const accent = looks.reduce((a, l, i) => ((l?.scale ?? 1) > (looks[a]?.scale ?? 1) ? i : a), 0);
     const fit = looks.length > 1 ? this.fitOf((whole ?? paragraphs)[accent] ?? [], facesAt(H)[accent], W) : 1;
     const px = Math.max(4, s.size * H * fit);
-    const faces = facesAt(H * fit);
+    const keep = (i: number) => Math.max(fit, Math.min(SUPPORT_FLOOR, (fit * (looks[accent]?.scale ?? 1) * SUPPORT_UNDER) / (looks[i]?.scale ?? 1)));
+    const faces = fit < SUPPORT_FLOOR ? facesAt(H * fit).map((f, i) => (i === accent ? f : facesAt(H * keep(i))[i])) : facesAt(H * fit);
     const multi = faces.length > 1;
     const faceOf = (para: number) => faces[Math.min(para, faces.length - 1)];
     const paras = paragraphs.map((p, pi) => (faceOf(pi).upper ? p.map((w) => w.toLocaleUpperCase()) : p));

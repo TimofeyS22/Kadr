@@ -178,3 +178,58 @@ test('a font tile keeps a long word on one line in a wide face (it broke into «
   }
   expect(lines, 'one line of letters in each').toEqual({ Unbounded: 1, 'Russo One': 1 });
 });
+
+test('in English the pairs, their samples and the line controls are English and fit 375 px (docs/11 §3: 11)', async ({ page }) => {
+  await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'en'); localStorage.setItem('kadr.undoMoved.v1', '1'); localStorage.setItem('kadr.tips', '99'); });
+  await page.goto('./?pairs');
+  await page.getByRole('button', { name: 'Try a sample' }).click();
+  await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
+  await page.locator('.tl-row .clip-text').first().click();
+  await page.locator('.toolbar .tool', { hasText: /^Edit text$/ }).click();
+  const field = panel(page).getByRole('textbox', { name: 'Text' });
+  await field.fill('Your text'); // the placeholder: a pair puts its own sample
+  await panel(page).locator('.ck-cat', { hasText: /^Pairs$/ }).click();
+  await panel(page).getByRole('radiogroup', { name: 'Style' }).getByRole('radio', { name: 'Party' }).click();
+  await expect(field, 'the English sample').toHaveValue('Anna\nhappy birthday');
+  const lines = panel(page).getByRole('radiogroup', { name: 'Line' });
+  for (const n of ['Whole text', 'Line 1', 'Line 2']) await expect(lines.getByRole('radio', { name: n })).toBeVisible();
+  for (const n of ['Swap lines', 'One font']) {
+    const b = panel(page).getByRole('button', { name: n });
+    await expect(b).toBeVisible();
+    expect(await b.evaluate((el) => el.querySelector('.ck-btn-label')!.getClientRects().length), `${n}: one line`).toBe(1);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll').toBe(true);
+  const ru = await panel(page).evaluate((el) => (el.textContent ?? '').match(/[А-яЁё]{3,}/g) ?? []);
+  expect(ru.filter((w) => !['Анна'].includes(w)), 'no Russian words left in the English sheet').toEqual([]);
+});
+
+test('a pair comes back from a backup with its faces (docs/11 §3: 4, ADR-П9)', async ({ page }, info) => {
+  // Headless WebKit has no share sheet (share() never settles): the backup takes the download path, as in editor.spec.
+  await page.addInitScript(() => { Object.defineProperty(navigator, 'canShare', { value: undefined }); });
+  await textSheet(page, './?pairs');
+  const field = panel(page).getByRole('textbox', { name: 'Текст' });
+  await field.fill('Лето в городе');
+  await panel(page).locator('.ck-cat', { hasText: /^Пары$/ }).click();
+  await panel(page).getByRole('radiogroup', { name: 'Стиль' }).locator('[data-cat="pairs"] [role=radio]').first().click();
+  const lines = panel(page).getByRole('radiogroup', { name: 'Строка' });
+  const fonts = panel(page).getByRole('radiogroup', { name: 'Шрифт' });
+  await lines.getByRole('radio', { name: 'Строка 2' }).click();
+  await fonts.getByRole('radio', { name: 'IBM Plex Mono', exact: true }).click();
+  await page.waitForTimeout(1200); // the journal is written
+  await page.getByRole('button', { name: 'Готово' }).click().catch(() => undefined);
+  await page.getByRole('button', { name: 'К проектам' }).click();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: /^Сохранить копию/ }).first().click();
+  const backup = info.outputPath((await dl).suggestedFilename());
+  await (await dl).saveAs(backup);
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Восстановить копию' }).click();
+  await (await chooser).setFiles(backup);
+  await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
+  await page.locator('.tl-row .clip-text').first().click();
+  await page.locator('.toolbar .tool', { hasText: /^Текст$/ }).click();
+  await expect(panel(page).getByRole('textbox', { name: 'Текст' })).toHaveValue('Лето\nв городе');
+  await expect(lines, 'the pair came back').toBeVisible();
+  await lines.getByRole('radio', { name: 'Строка 2' }).click();
+  await expect(fonts.locator('[aria-checked="true"]'), 'line 2 kept the face set on it').toHaveAttribute('aria-label', 'IBM Plex Mono');
+});

@@ -196,3 +196,52 @@ test('a script accent keeps white between its words («С днём», not «Сд
     expect(r[`${font}-pair`] - r[`${font}-one`], `${font}: wider than in one face`).toBeGreaterThan(0.04);
   }
 });
+
+test('under a long accent the support stays readable and smaller than the accent (the art director, round 3)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('./');
+  const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
+  test.skip(!dev, 'needs the dev server: the renderer is imported from its source');
+  const r = await page.evaluate(async () => {
+    const imp = (p: string) => import(/* @vite-ignore */ p);
+    const [{ TextRasterizer, ensureFont }, { createTextClip }] = await Promise.all([imp('/src/engine/text.ts'), imp('/src/core/defaults.ts')]);
+    const raster = new TextRasterizer(64);
+    type D = { image: HTMLCanvasElement; w: number; h: number };
+    const bands = (d: D) => {
+      const px = d.image.getContext('2d')!.getImageData(0, 0, d.w, d.h).data;
+      const out: [number, number][] = [];
+      let start = -1;
+      for (let y = 0; y < d.h; y++) {
+        let ink = false;
+        for (let x = 0; x < d.w && !ink; x++) ink = px[(y * d.w + x) * 4 + 3] > 128;
+        if (ink && start < 0) start = y;
+        if (!ink && start >= 0) { out.push([start, y]); start = -1; }
+      }
+      if (start >= 0) out.push([start, d.h]);
+      return out.filter(([a, b]) => b - a > 2);
+    };
+    const base = { font: 'ysabeau', size: 0.055, weight: 400, italic: false, color: '#ffffff', align: 'center', stroke: null, background: null, shadow: false };
+    const out: Record<string, number[]> = {};
+    for (const [k, lines] of [
+      ['tender', [{ font: 'greatVibes', scale: 2.3 }, { font: 'ysabeau', scale: 0.5, uppercase: true, letterSpacing: 0.25 }]],
+      ['bold', [{ font: 'dela', scale: 1.9, uppercase: true }, { font: 'notoSerif', italic: true, scale: 0.65 }]],
+    ] as const) {
+      const text = 'Достопримечательности\nПетербурга';
+      const c = createTextClip(0, text);
+      c.style = { ...base, lines };
+      await ensureFont(c.style, text);
+      const d = raster.get(c, Infinity, 1080, 1920) as D;
+      const b = bands(d);
+      out[k] = [b.length, (b[0][1] - b[0][0]) / 1920 * 100, (b.at(-1)![1] - b.at(-1)![0]) / 1920 * 100, d.w];
+    }
+    return out;
+  });
+  console.log(JSON.stringify(r));
+  for (const [k, [lines, accent, support, w]] of Object.entries(r)) {
+    expect(lines, `${k}: the accent on one line, the support under it`).toBe(2);
+    expect(w, `${k}: the block fits the frame`).toBeLessThanOrEqual(1080);
+    // Set with the block the support was 0.5–0.8% of the frame high; read on a phone it needs more.
+    expect(support, `${k}: the support's ink, % of the frame`).toBeGreaterThanOrEqual(1.1);
+    expect(support, `${k}: smaller than the accent`).toBeLessThan(accent);
+  }
+});
