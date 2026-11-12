@@ -292,9 +292,9 @@ export class TextRasterizer {
     return ctx;
   }
 
-  /** How much a text in several faces is set smaller so that its first paragraph fits the frame on one line. */
-  private fitOf(paras: string[][], f: Face, W: number): number {
-    const words = (paras[0] ?? []).map((w) => (f.upper ? w.toLocaleUpperCase() : w));
+  /** How much a text in several faces is set smaller so that its accent paragraph fits the frame on one line. */
+  private fitOf(para: string[], f: Face, W: number): number {
+    const words = para.map((w) => (f.upper ? w.toLocaleUpperCase() : w));
     if (!words.length) return 1;
     const c = (this.measure ??= document.createElement('canvas').getContext('2d')!);
     c.font = f.font;
@@ -320,9 +320,11 @@ export class TextRasterizer {
         dx: l?.dx ?? 0, align: l?.align ?? s.align, color: l?.color ?? s.color,
       };
     });
-    // The first paragraph of a text in several faces (the accent) is never broken between words: if it is wider than the
-    // frame, the whole block is set smaller (docs/18 ADR-П2).
-    const fit = looks.length > 1 ? this.fitOf(whole ?? paragraphs, facesAt(H)[0], W) : 1;
+    // The accent of a text in several faces — the paragraph of its largest look, the first one unless the lines were
+    // swapped («Поменять местами») — is never broken between words: if it is wider than the frame, the whole block is set
+    // smaller (docs/18 ADR-П2).
+    const accent = looks.reduce((a, l, i) => ((l?.scale ?? 1) > (looks[a]?.scale ?? 1) ? i : a), 0);
+    const fit = looks.length > 1 ? this.fitOf((whole ?? paragraphs)[accent] ?? [], facesAt(H)[accent], W) : 1;
     const px = Math.max(4, s.size * H * fit);
     const faces = facesAt(H * fit);
     const multi = faces.length > 1;

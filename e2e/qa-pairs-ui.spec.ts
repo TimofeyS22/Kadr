@@ -1,6 +1,6 @@
 // Font pairs in the text sheet (docs/18 Ф4, Ф5), switched on by `?pairs`: off by default, on from the link and kept on;
-// a pair breaks a one-line text in two and sets each line in its face; one line's font changes alone; «Один шрифт»
-// takes the pair off.
+// a pair breaks a one-line text in two and sets each line in its face; «Поменять местами» swaps the lines with their
+// faces; one line's font changes alone; «Один шрифт» takes the pair off.
 import { expect, test, type Page } from '@playwright/test';
 
 const panel = (page: Page) => page.locator('.sheet');
@@ -55,6 +55,18 @@ test('with ?pairs: the pairs come second, a pair sets two faces on two lines, on
   expect(second, 'each line has its own face').not.toBe(first);
   // The look below follows the chosen line (Ж5: no switch is silent): the support is in capitals.
   await expect(caps, 'the support is set in capitals').toBeChecked();
+  // «Поменять местами» (ADR-П7): the lines trade places, each with its face, and the chosen line is followed to its new
+  // place; one «Отменить» gives the text and the faces back.
+  await panel(page).getByRole('button', { name: 'Поменять местами' }).click();
+  await expect(field, 'the small line goes over the accent').toHaveValue('в городе\nЛето');
+  await expect(lines.getByRole('radio', { name: 'Строка 1' }), 'the chosen line is followed').toBeChecked();
+  await expect(fonts.locator('[aria-checked="true"]')).toHaveAttribute('aria-label', second!);
+  await expect(caps, 'with its capitals').toBeChecked();
+  await lines.getByRole('radio', { name: 'Строка 2' }).click();
+  await expect(fonts.locator('[aria-checked="true"]'), 'the accent went down with its face').toHaveAttribute('aria-label', first!);
+  await page.getByRole('button', { name: 'Отменить', exact: true }).click();
+  await expect(field, 'one undo step').toHaveValue('Лето\nв городе');
+  await expect(fonts.locator('[aria-checked="true"]'), 'line 2 has its own face back').toHaveAttribute('aria-label', second!);
   await fonts.getByRole('radio', { name: 'IBM Plex Mono', exact: true }).click();
   await expect(fonts.getByRole('radio', { name: 'IBM Plex Mono', exact: true })).toBeChecked();
   await lines.getByRole('radio', { name: 'Строка 1' }).click();

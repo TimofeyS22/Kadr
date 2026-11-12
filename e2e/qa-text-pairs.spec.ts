@@ -104,7 +104,7 @@ test('a pair: each paragraph in its own face, tucked by its gap; captions ignore
   expect(r.mono, 'the support face was loaded before drawing').toContain('loaded');
 });
 
-test('a long accent is set smaller, never broken between words; typed out letter by letter it keeps its size', async ({ page }) => {
+test('a long accent is set smaller, never broken between words, above or below the support; typed out letter by letter it keeps its size', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('./');
   const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
@@ -138,10 +138,16 @@ test('a long accent is set smaller, never broken between words; typed out letter
     };
     const full = raster.get(clip, Infinity, 1080, 1920) as D;
     const typed = raster.get(clip, 9, 1080, 1920) as D; // «С днём ро»
-    return { w: full.w, full: bands(full), typed: bands(typed) };
+    // «Поменять местами»: the support over the accent. The accent is the paragraph of the largest look, wherever it is.
+    const swapped = createTextClip(0, 'Аня · 25\nС днём рождения');
+    swapped.style = { ...style, lines: [...style.lines].reverse() };
+    const sw = raster.get(swapped, Infinity, 1080, 1920) as D;
+    return { w: full.w, full: bands(full), typed: bands(typed), swapped: bands(sw), sw: sw.w };
   });
   console.log(JSON.stringify(r));
   expect(r.full.length, 'the accent on one line and the support under it').toBe(2);
+  expect(r.swapped.length, 'swapped: the support on one line and the accent under it, unbroken').toBe(2);
+  expect(r.sw, 'swapped, the block fits the frame').toBeLessThanOrEqual(1080);
   expect(r.w, 'the block fits the frame').toBeLessThanOrEqual(1080);
   const height = ([a, b]: [number, number]) => b - a;
   expect(Math.abs(height(r.typed[0]) - height(r.full[0])), 'half typed, the accent keeps the size of the whole text').toBeLessThanOrEqual(2);

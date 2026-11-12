@@ -50,3 +50,19 @@ export function setLineSize(s: TextStyle, choice: LineChoice, size: number): voi
   if (look) look.scale = Math.min(3, Math.max(0.3, size / s.size));
   else s.size = size;
 }
+
+/** «Поменять местами» (docs/18 ADR-П7) is offered on a text of two lines set in two faces. */
+export function canSwap(text: string, s: TextStyle): boolean {
+  return s.lines?.length === 2 && text.split('\n').length === 2;
+}
+
+/**
+ * The two lines trade places, each with its words and its whole look, the gap under it included: the small line goes
+ * over the accent like the overline of a magazine, and a second tap gives back the first. Returns the new text.
+ */
+export function swapLines(text: string, s: TextStyle): string {
+  if (!canSwap(text, s)) return text;
+  const [a, b] = text.split('\n');
+  s.lines!.reverse();
+  return `${b}\n${a}`;
+}

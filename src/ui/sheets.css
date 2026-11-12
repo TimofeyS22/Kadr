@@ -192,6 +192,8 @@
 .ck-panel-part { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-1); margin-bottom: calc(-1 * var(--space-2)); }
 .ck-panel-part h3 { margin: 0; }
 .ck-panel-part .ck-btn { padding: 0 var(--space-2); font-size: var(--type-sm); }
+/* «Поменять местами · Один шрифт» under the parts of a pair (docs/18 ADR-П7): two halves, each 44 px to a finger. */
+.ck-line-acts { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--space-2); }
 
 /* ---- fields of a sheet ---- */
 textarea.ck-panel-text, textarea.ck-panel-script { resize: none; background: var(--surface-panel); box-shadow: none; }

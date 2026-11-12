@@ -5,6 +5,7 @@
 // word in white on the black of the stage, drawn by the video's renderer, instead of the same «Ёж» on the grey sheet.
 import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { canSwap, swapLines } from '../core/lineLook';
 import { previewWord } from '../core/previewWord';
 import { findClip } from '../core/timeline';
 import { FONT_IDS, type CustomFontId, type FontId, type TextStyle } from '../core/types';
@@ -47,6 +48,10 @@ export function FontPicker({ clipId, style, onFont, onWeight }: {
     const c = st.project ? findClip(st.project, clipId)?.clip : undefined;
     return c?.kind === 'text' ? c.text : c?.kind === 'caption' ? c.words.map((w) => w.text).join(' ') : '';
   });
+  const swappable = useEditor((st) => {
+    const c = st.project ? findClip(st.project, clipId)?.clip : undefined;
+    return c?.kind === 'text' && canSwap(c.text, c.style);
+  });
   // A pair (docs/18 ADR-П7): «Весь текст · Строка 1 · Строка 2». The font and weight of one line, or of the whole text
   // (which takes back what the lines set for themselves); the size and the look below follow the same choice. The
   // tiles show the chosen line's own words.
@@ -86,12 +91,21 @@ export function FontPicker({ clipId, style, onFont, onWeight }: {
         <h3>{t('Font')}</h3>
         <Button variant="plain" icon={<Plus aria-hidden="true" />} onClick={() => void addCustomFont(clipId)}>{t('Add font')}</Button>
       </div>
-      {/* The parts of a pair get the whole width (at 375 px «Весь текст» was cut beside a button); «Один шрифт» under them. */}
+      {/* The parts of a pair get the whole width (at 375 px «Весь текст» was cut beside a button); «Поменять местами» and
+          «Один шрифт» under them. A swapped line keeps being the chosen one: the choice follows it to its new place. */}
       {lines?.length ? (
         <>
           <Chips options={['all' as const, ...lines.map((_, i) => i)]} value={choice} label={t('Line')} onChange={setChoice} even
             render={(i) => (i === 'all' ? t('Whole text') : t('Line {n}', { n: i + 1 }))} />
-          <Button variant="plain" onClick={() => editClip(clipId, (c) => { if (c.kind === 'text') delete c.style.lines; })}>{t('One font')}</Button>
+          <div className="ck-line-acts">
+            {swappable && (
+              <Button variant="plain" onClick={() => {
+                editClip(clipId, (c) => { if (c.kind === 'text') c.text = swapLines(c.text, c.style); });
+                if (choice !== 'all') setChoice(1 - choice);
+              }}>{t('Swap lines')}</Button>
+            )}
+            <Button variant="plain" onClick={() => editClip(clipId, (c) => { if (c.kind === 'text') delete c.style.lines; })}>{t('One font')}</Button>
+          </div>
         </>
       ) : null}
       <StylePicker items={items} categories={GROUPS} value={font} label={t('Font')} kind="font" ground="stage" draw={draw}

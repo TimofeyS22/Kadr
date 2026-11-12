@@ -1,6 +1,6 @@
 import { produce } from 'immer';
 import { expect, it } from 'vitest';
-import { editLine, lineSize, lineView, setLineSize } from './lineLook';
+import { canSwap, editLine, lineSize, lineView, setLineSize, swapLines } from './lineLook';
 import type { TextStyle } from './types';
 
 const pair = (): TextStyle => ({
@@ -57,4 +57,27 @@ it('works on an immer draft, as the store hands it (a draft cannot be structured
     if (choice === 'all') expect([s.letterSpacing, s.lines![1].letterSpacing]).toEqual([0.3, undefined]);
     else expect(s.lines![choice].letterSpacing).toBe(0.3);
   }
+});
+
+it('«Поменять местами»: the lines trade places with their looks, and a second tap gives back the first', () => {
+  const s0 = pair(), text0 = 'Лето\nв городе';
+  let text = text0;
+  const s = produce(s0, (d) => { text = swapLines(text, d); });
+  expect(text).toBe('в городе\nЛето');
+  expect(s.lines!.map((l) => l.font)).toEqual(['tenor', 'greatVibes']);
+  expect(s.lines![0], 'the small line keeps its capitals and spacing').toMatchObject({ uppercase: true, letterSpacing: 0.25, scale: 0.5 });
+  const back = produce(s, (d) => { text = swapLines(text, d); });
+  expect(text).toBe(text0);
+  expect(back).toEqual(s0);
+});
+
+it('«Поменять местами» is offered only on two lines in two faces', () => {
+  expect(canSwap('Лето\nв городе', pair())).toBe(true);
+  expect(canSwap('Лето в городе', pair()), 'one line').toBe(false);
+  expect(canSwap('a\nb\nc', pair()), 'three lines').toBe(false);
+  const { lines: _, ...one } = pair();
+  expect(canSwap('Лето\nв городе', one), 'one face').toBe(false);
+  let text = 'Лето в городе';
+  const same = produce(pair(), (d) => { text = swapLines(text, d); });
+  expect([text, same]).toEqual(['Лето в городе', pair()]);
 });
