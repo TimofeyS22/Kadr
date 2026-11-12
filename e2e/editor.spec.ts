@@ -655,7 +655,8 @@ async function exportAs(page: Page, info: { outputPath: (n: string) => string },
   if (opts.loudness === false) await page.getByRole('switch', { name: /Even loudness/ }).uncheck();
   if (opts.loudness === true) await page.getByRole('switch', { name: /Even loudness/ }).check();
   await page.getByRole('button', { name: button }).click();
-  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
+  // Headless Chromium draws in software: an 11 s reel with captions took over 2 min on a busy Mac (load ~25).
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 240_000 });
   const dl = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save / Share' }).click();
   const file = info.outputPath((await dl).suggestedFilename());
@@ -1691,6 +1692,37 @@ test('reel in one tap: from the home card to a shorter reel with captions, title
   expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
 });
 
+test('reel in one tap: the preview, the photo and the file show the same reel, and a reload keeps it (QA matrix: AI, Q-28)', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  await page.goto('./');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
+  await (await chooser).setFiles(fx('reel_ru.mp4'));
+  await agreeToModel(page, 'Download and make the reel');
+  await expect(page.locator('.reel-done')).toBeVisible({ timeout: 300_000 });
+  await page.getByRole('button', { name: 'Watch the reel' }).click();
+  await page.getByRole('button', { name: 'Pause' }).click();
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  await page.keyboard.press('Escape'); // nothing selected: no handles over the picture
+  // What the reel made, in seconds of the timeline (60 px a second): its pieces, the hook title.
+  const pieces = await spansOf(page, page.locator('.tl-row.main .clip'));
+  const [[ts, td]] = await spansOf(page, page.locator('.tl-row .clip-text'));
+  expect(pieces.length, 'cut into pieces').toBeGreaterThan(2);
+  const mid = ([s, d]: [number, number]) => s + d / 2;
+  const points = [
+    { name: 'hook title', t: ts + td / 4 },
+    { name: 'second piece: jump zoom, captions', t: mid(pieces[1]) },
+    { name: 'a middle piece: captions, music', t: mid(pieces[Math.floor(pieces.length / 2)]) },
+    { name: 'last piece: captions', t: mid(pieces[pieces.length - 1]) },
+  ].filter((p, k, all) => all.findIndex((q) => Math.abs(q.t - p.t) < 0.3) === k); // distinct moments
+  expect(points.length, 'at least three distinct moments').toBeGreaterThanOrEqual(3);
+  await expectSameFrames(page, info, 'WYSIWYG reel', points, 2);
+  // The reel is a project like any other: a reload keeps it byte for byte and exports the same picture and sound.
+  await historyProof(page, info).reload();
+});
+
 // ---------- v1.1: share target and task pages (docs/08 B, C) ----------
 
 test('share to Kadr (Android): a shared video lands on the timeline of a new project; the share cache is emptied', async ({ page, browserName }) => {
@@ -2304,7 +2336,17 @@ async function previewAt(page: Page, info: { outputPath: (n: string) => string }
   await page.waitForTimeout(1000);
   const canvas = page.locator('.preview-canvas');
   const whole = info.outputPath(`preview-${t}-element.png`);
-  await canvas.screenshot({ path: whole, style: '.toast { visibility: hidden !important; }' }); // a tip lying over the preview is not in the export
+  const shoot = () => canvas.screenshot({ style: '.toast { visibility: hidden !important; }' }); // a tip lying over the preview is not in the export
+  // A scrub shows the nearest keyframe first and the exact frame once the finger rests (audit V-173): the picture is
+  // taken when it holds still. Headless Chromium decodes in software; on a busy Mac the exact frame came after > 1 s.
+  let still = await shoot();
+  for (let k = 1; k <= 20; k++) {
+    await page.waitForTimeout(500);
+    const next = await shoot();
+    if (next.equals(still)) { if (k > 1) console.log(`preview at ${t.toFixed(3)} s held still ${1 + (k - 1) * 0.5} s after the scrub`); break; }
+    still = next;
+  }
+  fs.writeFileSync(whole, still);
   // The element screenshot spans whole CSS pixels around the canvas, whose edges are fractional: up to 1.4 px of the page
   // and of the 1 px outline came along, a dark-and-grey frame that read as a colour cast. Keep only the canvas itself.
   const b = await canvas.evaluate((c) => { const r = c.getBoundingClientRect(); return [r.x - Math.floor(r.x), r.y - Math.floor(r.y), r.width, r.height].map((v) => v * devicePixelRatio); });
