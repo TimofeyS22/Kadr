@@ -90,3 +90,65 @@ test('with ?pairs: the pairs come second, a pair sets two faces on two lines, on
   expect(await categories(page)).toContain('Пары');
   expect(errors).toEqual([]);
 });
+
+test('Ш4: from the text sheet a pair is two taps, a line\'s font three, each target in view without a sideways swipe', async ({ page }) => {
+  await textSheet(page, './?pairs');
+  let taps = 0;
+  /** A tap the person can make where they are: the target is in its strip's or row's view (the sheet may scroll down). */
+  const tap = async (target: ReturnType<Page['locator']>, what: string) => {
+    // The strip scrolls itself after a category tap (smoothly): the target has a moment to come into view.
+    await expect.poll(() => target.evaluate((el) => {
+      const row = el.closest('.ck-strip, .ck-cats');
+      if (!row) return true;
+      const r = el.getBoundingClientRect(), s = row.getBoundingClientRect();
+      return r.left >= s.left - 1 && r.right <= s.right + 1;
+    }), { message: `${what}: in view without a sideways swipe`, timeout: 3000 }).toBe(true);
+    taps++;
+    await target.click();
+  };
+  const styles = panel(page).getByRole('radiogroup', { name: 'Стиль' });
+  await tap(panel(page).locator('.ck-cat', { hasText: /^Пары$/ }), 'the «Пары» category');
+  await tap(styles.locator('[data-cat="pairs"] [role=radio]').first(), 'the first pair');
+  const lines = panel(page).getByRole('radiogroup', { name: 'Строка' });
+  await expect(lines, 'the pair is on the text').toBeVisible();
+  expect(taps, 'taps to a pair').toBeLessThanOrEqual(2);
+
+  taps = 0;
+  const fonts = panel(page).getByRole('radiogroup', { name: 'Шрифт' });
+  await tap(lines.getByRole('radio', { name: 'Строка 2' }), 'line 2');
+  await tap(fonts.locator('xpath=..').locator('.ck-cat', { hasText: /^С засечками$/ }), 'the serif fonts');
+  const serif = fonts.locator('[data-cat="serif"] [role=radio]').first();
+  const name = await serif.getAttribute('aria-label');
+  await tap(serif, `the first serif font, ${name}`);
+  await expect(fonts.locator('[aria-checked="true"]'), 'line 2 is set in it').toHaveAttribute('aria-label', name!);
+  await tap(lines.getByRole('radio', { name: 'Строка 1' }), 'line 1, to look');
+  await expect(fonts.locator('[aria-checked="true"]'), 'line 1 kept its own face').not.toHaveAttribute('aria-label', name!);
+  expect(taps - 1, 'taps to the font of a line').toBeLessThanOrEqual(3);
+});
+
+test('a pair is one undo step both ways and is still there after a reload (docs/11 §3: 3, 4)', async ({ page }) => {
+  await textSheet(page, './?pairs');
+  const field = panel(page).getByRole('textbox', { name: 'Текст' });
+  await field.fill('Лето в городе');
+  await page.waitForTimeout(600); // the typing settles into its own history step
+  await panel(page).locator('.ck-cat', { hasText: /^Пары$/ }).click();
+  await panel(page).getByRole('radiogroup', { name: 'Стиль' }).locator('[data-cat="pairs"] [role=radio]').first().click();
+  const lines = panel(page).getByRole('radiogroup', { name: 'Строка' });
+  await expect(field).toHaveValue('Лето\nв городе');
+  await expect(lines).toBeVisible();
+  await page.waitForTimeout(1500); // the variant under the text is settled in the same step, not a step of its own
+  await page.getByRole('button', { name: 'Отменить', exact: true }).click();
+  await expect(field, 'one undo takes the pair and the line break back').toHaveValue('Лето в городе');
+  await expect(lines).toHaveCount(0);
+  await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await expect(field, 'one redo puts them again').toHaveValue('Лето\nв городе');
+  await expect(lines).toBeVisible();
+  // Reload: the project is opened again from the device, the pair with it.
+  await page.waitForTimeout(1200); // the journal is written
+  await page.reload(); // the project is in the address: the editor opens on it
+  await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
+  await page.locator('.tl-row .clip-text').first().click();
+  await page.locator('.toolbar .tool', { hasText: /^Текст$/ }).click();
+  await expect(panel(page).getByRole('textbox', { name: 'Текст' })).toHaveValue('Лето\nв городе');
+  await expect(panel(page).getByRole('radiogroup', { name: 'Строка' }), 'the pair came back with the project').toBeVisible();
+});

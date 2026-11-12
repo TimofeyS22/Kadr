@@ -6,6 +6,7 @@ import './ckFont';
 import './tokens.css';
 import './ds.css';
 import { DsComponents } from './DsComponents';
+import { DsPairs } from './DsPairs';
 import { DsParts } from './DsParts';
 import { TOKEN_PAIRS } from './tokenPairs';
 
@@ -112,6 +113,7 @@ export function DesignSystem() {
 
         <DsComponents />
         <DsParts />
+        <DsPairs />
 
         <section>
           <h2>Цвет</h2>

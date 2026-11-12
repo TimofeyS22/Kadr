@@ -168,7 +168,7 @@
 /* The chosen preview: a white ring with a gap round the picture, as every chosen thing of a sheet. */
 .ck-ptile[aria-checked='true'] .ck-ptile-art canvas { outline: 2px solid var(--mark-was); outline-offset: 2px; }
 .ck-ptile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: var(--leading-tight); }
-.ck-ptile:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-ptile:focus-visible, .ck-ptile[data-demo='focus'] { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 /* Fonts (docs/18; the owner, 2026-11-11: «серая обложка за шрифтами выглядит ужасно старо»): the person's word in white
    on the black of the stage round the frame, drawn by the video's renderer (ui/tiles.ts, fontTile). Columns of 96 leave
    the edge of a fourth in view at 375 px: the strip reads as one that runs on. */
@@ -179,7 +179,7 @@
   outline: var(--hairline) solid var(--image-outline); outline-offset: calc(-1 * var(--hairline));
   transition: transform var(--dur-press) var(--ease-out);
 }
-.ck-strip[data-ground='stage'] .ck-ptile:active .ck-ptile-art { transform: scale(0.96); }
+.ck-strip[data-ground='stage'] .ck-ptile:active .ck-ptile-art, .ck-strip[data-ground='stage'] .ck-ptile[data-demo='pressed'] .ck-ptile-art { transform: scale(0.96); }
 /* The letters come in once their face is in, never in a fallback face; the ring is on the tile, so it shows at once. */
 .ck-strip[data-ground='stage'] .ck-ptile-art canvas { outline: none; opacity: 0; transition: opacity var(--dur-press) var(--ease-soft); }
 .ck-strip[data-ground='stage'] .ck-ptile-art canvas[data-ready] { opacity: 1; }

@@ -1,6 +1,6 @@
 // The font files as they are served (docs/18 Ш1, Ш2): every face draws Russian, Latin and the common signs with its own
 // glyphs, read from the woff2 files themselves (their cmap), not from the browser, which falls back without a word.
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import * as fontkit from 'fontkit';
 import { expect, it } from 'vitest';
@@ -60,4 +60,17 @@ it('every face served fits the cache that keeps them offline (Ш2)', () => {
   const limit = Number(/cacheName: 'kadr-fonts', expiration: \{ maxEntries: (\d+) \}/.exec(config)![1]);
   const served = [...imports.matchAll(/^import '@fontsource\//gm)].length + 2; // + the interface's Geologica, two files
   expect(served).toBeLessThanOrEqual(limit);
+});
+
+/** The font files a first visit caches before docs/18 (commit 9675426, D-16): 153 files, 2698 KB. */
+const BEFORE_PAIRS_KB = 2698;
+
+it('the font files of a first visit grew by no more than 0.8 MB with the pairs (Ш8)', () => {
+  let bytes = 0;
+  for (const m of imports.matchAll(/^import '@fontsource\/([a-z0-9-]+)\/([a-z-]+?)-(\d+)(-italic)?\.css'/gm)) {
+    bytes += statSync(join(ROOT, 'node_modules', '@fontsource', m[1], 'files', `${m[1]}-${m[2]}-${m[3]}-${m[4] ? 'italic' : 'normal'}.woff2`)).size;
+  }
+  const kb = Math.round(bytes / 1024);
+  expect(kb, 'every import is a file that is read').toBeGreaterThan(BEFORE_PAIRS_KB);
+  expect(kb - BEFORE_PAIRS_KB, `the cache grew by ${kb - BEFORE_PAIRS_KB} KB`).toBeLessThanOrEqual(819);
 });
