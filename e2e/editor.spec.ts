@@ -3727,6 +3727,66 @@ test('a GIF lasts as long as the timeline and each of its frames shows the sourc
   console.log(`GIF frame for frame (${info.project.name}):\n${rows.join('\n')}`);
 });
 
+test('a camera take is the same in the preview, the photo and the video, frame for frame (QA matrix: camera, Q-27)', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  // A camera whose every picture carries its own number: eight stripes across the whole width, white for a 1 bit, as
+  // counter.mp4 does (counterAt reads them). The take is a recorder's file, its frames timed as they came, not on a grid.
+  await page.addInitScript(() => {
+    const w = window as unknown as { __tracks: MediaStreamTrack[] };
+    w.__tracks = [];
+    MediaDevices.prototype.getUserMedia = async function () {
+      const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
+      const g = c.getContext('2d')!;
+      let n = 0;
+      const draw = () => {
+        g.fillStyle = '#000'; g.fillRect(0, 0, 640, 360);
+        g.fillStyle = '#fff';
+        for (let k = 0; k < 8; k++) if ((n >> k) & 1) g.fillRect(k * 80, 0, 80, 360);
+        n = (n + 1) % 256;
+      };
+      draw();
+      setInterval(draw, 33);
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const dest = ctx.createMediaStreamDestination();
+      osc.connect(dest);
+      osc.start();
+      const s = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+      w.__tracks.push(...s.getTracks());
+      return s;
+    };
+  });
+  await newProject(page);
+  await tool(page, 'Camera').click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
+  await page.waitForTimeout(3500);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const rows: string[] = [];
+  const seen: number[] = [];
+  // On a frame's own time (the playhead moves 2 px a frame): the take's frames are not on the grid, so any moment in
+  // between could fall either side of one of them in the preview and in the file alike; on the frame's time both ask
+  // for the same instant.
+  for (const k of [6, 30, 45, 60, 75]) {
+    const t = k / 30;
+    const shown = await counterAt(await previewAt(page, info, t));
+    const photo = await counterAt(await exportAs(page, info, 'Photo', 'Save photo'));
+    const frame = await counterAt(video, k);
+    rows.push(`frame ${k} (${t.toFixed(3)} s): preview ${shown}, photo ${photo}, video ${frame}`);
+    expect.soft(photo, `photo at frame ${k}`).toBe(shown);
+    expect.soft(frame, `video frame ${k}`).toBe(shown);
+    seen.push(shown);
+  }
+  console.log(`camera take frame for frame (${info.project.name}):\n${rows.join('\n')}`);
+  expect(new Set(seen).size, 'the take moves: each moment a different picture').toBe(seen.length);
+});
+
 // ---------- QA docs/11 §3.6 and §3.15: backups that are not what they claim ----------
 
 test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a broken LUT, an impossible canvas, impossible or missing media — a clear message or a project that works and says what it left out', async ({ page }, info) => {
