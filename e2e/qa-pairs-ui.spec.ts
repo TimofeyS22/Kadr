@@ -152,3 +152,29 @@ test('a pair is one undo step both ways and is still there after a reload (docs/
   await expect(panel(page).getByRole('textbox', { name: 'Текст' })).toHaveValue('Лето\nв городе');
   await expect(panel(page).getByRole('radiogroup', { name: 'Строка' }), 'the pair came back with the project').toBeVisible();
 });
+
+test('a font tile keeps a long word on one line in a wide face (it broke into «рожде / ния» in Unbounded)', async ({ page }) => {
+  await textSheet(page, './');
+  await panel(page).getByRole('textbox', { name: 'Текст' }).fill('рождения');
+  const fonts = panel(page).getByRole('radiogroup', { name: 'Шрифт' });
+  await fonts.locator('xpath=..').locator('.ck-cat', { hasText: /^Акцентные$/ }).click();
+  const lines: Record<string, number> = {};
+  for (const name of ['Unbounded', 'Russo One']) {
+    const canvas = fonts.getByRole('radio', { name, exact: true }).locator('canvas');
+    await expect(canvas, `${name}: drawn on the new word`).toHaveAttribute('data-ready', '1', { timeout: 15_000 });
+    await page.waitForTimeout(500); // the tiles follow the text 300 ms after the last key
+    // Runs of rows with ink: one per line of letters.
+    lines[name] = await canvas.evaluate((c: HTMLCanvasElement) => {
+      const px = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      let runs = 0, inRun = false;
+      for (let y = 0; y < c.height; y++) {
+        let ink = false;
+        for (let x = 0; x < c.width && !ink; x++) ink = px[(y * c.width + x) * 4 + 3] > 128;
+        if (ink && !inRun) runs++;
+        inRun = ink;
+      }
+      return runs;
+    });
+  }
+  expect(lines, 'one line of letters in each').toEqual({ Unbounded: 1, 'Russo One': 1 });
+});

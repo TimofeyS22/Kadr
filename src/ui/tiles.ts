@@ -145,6 +145,9 @@ export type FontTileLook = Pick<TextStyle, 'weight' | 'italic' | 'uppercase' | '
 /** The word's size on a font tile, CSS px: from a cap height of ~13 px (a long word) to ~24 px (a short one). */
 const FONT_TILE_PX = [18, 34] as const;
 const FONT_TILE_PAD = 10;
+/** The frame a font tile's word is set in: wide, so the word is never broken (at 360 px «рождения» in Unbounded broke
+ *  into «рожде / ния», the renderer breaking a word wider than the frame). */
+const FONT_TILE_W = 2000;
 /** The letters of a new text: white, as the word will stand on the video by default. */
 const NEW_TEXT = createTextClip(0, '').style;
 
@@ -164,7 +167,7 @@ export function fontTile(word: string, look: FontTileLook): TileDraw<{ id: strin
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!fontReady(style, word, redraw)) { delete canvas.dataset.ready; return; }
-    const d = raster.get(textOn(`font|${it.id}|${look.weight}|${+look.italic}|${+!!look.uppercase}|${look.letterSpacing ?? 0}`, word, style), Infinity, W, H);
+    const d = raster.get(textOn(`font|${it.id}|${look.weight}|${+look.italic}|${+!!look.uppercase}|${look.letterSpacing ?? 0}`, word, style), Infinity, FONT_TILE_W, H);
     if (!d) return;
     const px = style.size * H, edge = px * 0.2; // the renderer's room round letters with no outline or box
     const dpr = canvas.width / Math.max(1, canvas.clientWidth);
