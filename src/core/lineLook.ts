@@ -25,7 +25,9 @@ export function lineView(s: TextStyle, choice: LineChoice): TextStyle {
 /** Runs an edit of the sheet's controls (written against a whole style) on `s` as `choice` sees it. */
 export function editLine(s: TextStyle, choice: LineChoice, fn: (v: TextStyle) => void): void {
   const look = lookOf(s, choice) as Loose | undefined;
-  const view = structuredClone(lineView(s, choice)) as unknown as Loose, before = structuredClone(view);
+  // A JSON copy, not structuredClone: in the store `s` is an immer draft, and a draft (a Proxy) cannot be cloned.
+  const copy = (o: unknown): Loose => JSON.parse(JSON.stringify(o)) as Loose;
+  const view = copy(lineView(s, choice)), before = copy(view);
   fn(view as unknown as TextStyle);
   const block = s as unknown as Loose;
   for (const k of new Set([...Object.keys(before), ...Object.keys(view)])) {

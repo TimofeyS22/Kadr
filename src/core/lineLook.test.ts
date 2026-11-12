@@ -1,3 +1,4 @@
+import { produce } from 'immer';
 import { expect, it } from 'vitest';
 import { editLine, lineSize, lineView, setLineSize } from './lineLook';
 import type { TextStyle } from './types';
@@ -47,4 +48,13 @@ it('the size slider of a line sets its share of the block, held to 0.3–3', () 
   expect(s.lines![1].scale).toBe(3);
   setLineSize(s, 'all', 0.07);
   expect(s.size).toBe(0.07);
+});
+
+it('works on an immer draft, as the store hands it (a draft cannot be structuredClone-d)', () => {
+  for (const choice of ['all', 0, 1] as const) {
+    const s = produce(pair(), (d) => { editLine(d, choice, (v) => { v.letterSpacing = 0.3; v.lineHeight = 2; }); });
+    expect(s.lineHeight, `choice ${choice}`).toBe(2);
+    if (choice === 'all') expect([s.letterSpacing, s.lines![1].letterSpacing]).toEqual([0.3, undefined]);
+    else expect(s.lines![choice].letterSpacing).toBe(0.3);
+  }
 });
