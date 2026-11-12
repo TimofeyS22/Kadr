@@ -3603,6 +3603,78 @@ test('clip tools reach the file frame for frame: 2× speed, reverse and a freeze
   console.log(`clip tools frame for frame (${info.project.name}):\n${rows.join('\n')}`);
 });
 
+test('trims and a reorder reach the file frame for frame, are undone exactly and survive a reload (QA matrix: timeline, Q-7)', async ({ page }, info) => {
+  test.setTimeout(420_000);
+  test.skip(!fs.existsSync(fx('counter.mp4')), 'needs npm run fixtures');
+  await page.addInitScript(() => localStorage.setItem('kadr.iosVideoTip.v3', '1'));
+  const main = page.locator('.tl-row.main .clip');
+  await newProject(page);
+  await importFiles(page, 'Media', ['counter.mp4', 'counter.mp4']); // A, B: 6 s at 30 fps, frame N written in binary
+  await expect(main).toHaveCount(2);
+  const [a, b] = await main.evaluateAll((els) => els.map((e) => e.getAttribute('data-clip')!));
+  const clip = (id: string) => page.locator(`.tl-row.main .clip[data-clip="${id}"]`);
+  const order = () => main.evaluateAll((els) => els.map((e) => e.getAttribute('data-clip')));
+  const closeTools = page.getByRole('button', { name: 'Close tools' });
+  if (await closeTools.isVisible()) await closeTools.click();
+  const h = historyProof(page, info);
+  await h.start();
+  /** One key on a trim handle of a clip: a frame, with Shift a second (the handle's own step, so the amount is exact). */
+  const trimKey = async (id: string, edge: 'Trim start' | 'Trim end', key: string) => {
+    await selectClip(page, clip(id));
+    await clip(id).getByRole('slider', { name: edge }).press(key);
+  };
+  // B loses its first second and three frames: it starts on source frame 33, not on a round second.
+  await h.act('B start +1 s', () => trimKey(b, 'Trim start', 'Shift+ArrowRight'));
+  for (let k = 1; k <= 3; k++) await h.act(`B start +${k} frame`, () => trimKey(b, 'Trim start', 'ArrowRight'));
+  // A loses its last two seconds: source frames 0–119.
+  await h.act('A end −1 s', () => trimKey(a, 'Trim end', 'Shift+ArrowLeft'));
+  await h.act('A end −2 s', () => trimKey(a, 'Trim end', 'Shift+ArrowLeft'));
+  // B is dragged by a finger in front of A: dropped left of A's middle (2 s), clear of the auto-scroll edge.
+  await h.act('B before A', async () => {
+    await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 3.5 * 60; });
+    await page.waitForTimeout(300);
+    const view = (await page.locator('.tl-scroll').boundingBox())!;
+    const ba = (await clip(a).boundingBox())!, bb = (await clip(b).boundingBox())!;
+    const from = { x: Math.min(bb.x + 40, view.x + view.width - 70), y: bb.y + bb.height / 2 };
+    const to = Math.max(ba.x + ba.width * 0.3, view.x + 64);
+    expect(to, 'the drop point is left of A\'s middle').toBeLessThan(ba.x + ba.width / 2 - 10);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to, from.y, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(order).toEqual([b, a]);
+  });
+  await h.undoRedo();
+  expect(await order()).toEqual([b, a]);
+  const saved = await settledProject(page);
+  await page.reload();
+  await expect(main).toHaveCount(2);
+  expect(await order(), 'the order after a reload').toEqual([b, a]);
+  expect((await settledProject(page)) === saved, `the reload keeps the project; ${firstDiff(await savedProject(page), saved)}`).toBe(true);
+  if (await closeTools.isVisible()) await closeTools.click();
+
+  // Timeline frame k shows B's source frame 33 + k for 147 frames, then A's frames 0–119: 267 frames, 8.9 s.
+  const source = (k: number) => (k < 147 ? 33 + k : k - 147);
+  const video = await exportAs(page, info, 'Video', 'Export video');
+  const rows: string[] = [];
+  const duration = Number((await probe(video)).format.duration);
+  rows.push(`duration ${duration.toFixed(3)} s`);
+  expect(Math.abs(duration - 8.9)).toBeLessThan(0.05);
+  for (const k of [0, 1, 146, 147, 148, 200, 266]) {
+    const got = await counterAt(video, k);
+    rows.push(`timeline frame ${k}: video shows ${got} (expected ${source(k)})`);
+    expect.soft(got, `video frame ${k}`).toBe(source(k));
+  }
+  for (const k of [0, 146, 147, 230]) {
+    const shown = await counterAt(await previewAt(page, info, (k + 0.5) / 30)); // mid-frame: the playhead moves 2 px per frame
+    const photo = await counterAt(await exportAs(page, info, 'Photo', 'Save photo'));
+    rows.push(`timeline frame ${k}½: preview ${shown}, photo ${photo} (expected ${source(k)})`);
+    expect.soft(shown, `preview at frame ${k}½`).toBe(source(k));
+    expect.soft(photo, `photo at frame ${k}½`).toBe(source(k));
+  }
+  console.log(`trims and a reorder frame for frame (${info.project.name}):\n${rows.join('\n')}`);
+});
+
 // ---------- QA docs/11 §3.6 and §3.15: backups that are not what they claim ----------
 
 test('hostile backups: garbage, broken JSON, a re-zipped copy, corrupt clips, a broken LUT, an impossible canvas, impossible or missing media — a clear message or a project that works and says what it left out', async ({ page }, info) => {
