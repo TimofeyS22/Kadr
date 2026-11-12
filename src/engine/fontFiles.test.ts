@@ -53,7 +53,7 @@ it('every face draws Russian, Latin and the common signs with its own glyphs (Ш
     }
   }
   expect(found, 'the recorded gaps, no more and no fewer').toEqual(KNOWN_GAPS);
-});
+}, 60_000); // it unpacks some 190 WOFF2 files in JavaScript: about a second alone, past 5 s on a machine under load (gate, 2026-11-12)
 
 it('every face served fits the cache that keeps them offline (Ш2)', () => {
   const config = readFileSync(join(ROOT, 'vite.config.ts'), 'utf8');
