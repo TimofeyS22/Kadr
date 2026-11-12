@@ -2,7 +2,7 @@
 // instead of the Photos picker, taps as click() in the page (safaridriver's touches arrive as long presses). Records
 // time, page errors, error toasts and whether the tab died. Nothing of the test stays on the phone.
 //   node scripts/l5-tools.mjs [scenario ...]      Env: L5_URL (site), L5_UDID, L5_OUT (screenshots)
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 
@@ -69,7 +69,10 @@ const idle = (ms) => waitFor('the job to end', () => js("return !document.queryS
 
 /** Watches the page: errors, error toasts, a marker that a reload (a crashed tab) wipes, the file input answered with pushed files. */
 const WATCH = `if (!window.__l5) {
-  window.__l5 = { errors: [], toasts: [], files: [], parts: [] };
+  window.__l5 = { errors: [], toasts: [], files: [], parts: [], warns: [] };
+  // What the app warns of, with the error's name, words and stack: the only trace of a failure on the phone.
+  const warn = console.warn;
+  console.warn = function (...a) { try { window.__l5.warns.push(a.map((x) => x instanceof Error || (x && x.name && x.message) ? x.name + ': ' + x.message + ' @ ' + String(x.stack || '').slice(0, 600) : String(x)).join(' ').slice(0, 900)); } catch {} return warn.apply(this, a); };
   addEventListener('error', (e) => window.__l5.errors.push(String(e.message).slice(0, 200)));
   addEventListener('unhandledrejection', (e) => window.__l5.errors.push(String(e.reason && (e.reason.message || e.reason)).slice(0, 200)));
   new MutationObserver(() => document.querySelectorAll('.toast.error').forEach((el) => { const t = el.textContent.slice(0, 200); if (!window.__l5.toasts.includes(t)) window.__l5.toasts.push(t); })).observe(document, { subtree: true, childList: true });
@@ -341,6 +344,82 @@ const SCENARIOS = {
     const stopped = (await js('return window.__l5.toasts.slice()')).filter((x) => /decoder of this device stopped|Видеодекодер/.test(x));
     if (stopped.length) throw new Error(`a clip that went in failed in the export: ${stopped.join(' | ')}`);
     return { said, clips, ready };
+  },
+  // S-1-1: a project deleted on the home screen of a second Safari tab. The tab that has it open says so when the person
+  // comes back to it, its header no longer says "saved", and nothing writes the project back (as iOS does it: the
+  // first tab is in the background while the second one deletes).
+  's1-tabs': async () => {
+    await fresh(['landscape.mp4']);
+    const id = await js("return decodeURIComponent(location.hash.replace(/^#\\/p\\//, ''))");
+    const stored = () => jsAsync(`const done = arguments[arguments.length - 1]; const o = indexedDB.open('kadr');
+      o.onsuccess = () => { const r = o.result.transaction('kv').objectStore('kv').getAllKeys(); r.onsuccess = () => { done(r.result.map(String)); o.result.close(); }; };
+      o.onerror = () => done(null);`);
+    if (!(await stored()).includes(`p:${id}`)) throw new Error('the project was not stored before the test');
+    const a = await call('GET', `${S}/window`);
+    const { handle: b } = await call('POST', `${S}/window/new`, { type: 'tab' });
+    await call('POST', `${S}/window`, { handle: b });
+    await call('POST', `${S}/url`, { url: URL_ });
+    await waitFor('home in the second tab', () => js("return [...document.querySelectorAll('button')].some((x) => /^Delete /.test(x.getAttribute('aria-label') || ''))"), 30_000);
+    try {
+      await js("[...document.querySelectorAll('button')].find((x) => /^Delete /.test(x.getAttribute('aria-label') || '')).click()");
+      await waitFor('the confirmation', () => js("const c = [...document.querySelectorAll('button')].find((x) => x.offsetParent !== null && x.textContent.trim() === 'Delete'); if (!c) return false; c.click(); return true;"), 10_000);
+      await waitFor('the project gone from the list', () => js("return ![...document.querySelectorAll('button')].some((x) => /^Open /.test(x.getAttribute('aria-label') || ''))"), 15_000);
+    } finally {
+      await call('DELETE', `${S}/window`).catch(() => undefined); // closes the second tab
+      await call('POST', `${S}/window`, { handle: a });
+    }
+    const told = await waitFor('the open tab is told', () => js("const d = document.querySelector('[role=alertdialog]'); return d && d.textContent.includes('This project was deleted') && d.textContent.slice(0, 120);"), 15_000);
+    const header = await js("return document.querySelector('.ck-editor-saved')?.getAttribute('data-state') ?? null");
+    // A key and the page going away write nothing (past the 2.5 s a save may wait).
+    await js("document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true })); document.dispatchEvent(new Event('visibilitychange')); dispatchEvent(new PageTransitionEvent('pagehide'));");
+    await sleep(3500);
+    const back = (await stored()).includes(`p:${id}`);
+    if (back) throw new Error('the deleted project was written back');
+    if (header !== 'failed') throw new Error(`the header says ${header}`);
+    const journal = await js("return localStorage.getItem('kadr.journal')");
+    if (journal) throw new Error('a journal is left that could bring it back');
+    return { told, header };
+  },
+  // S-1-12: takes from the real camera. On the Mac's WebKit about 5 takes in 45 gave the recorder nothing (0 bytes) under
+  // load; here each take must land on the timeline. The first time Safari asks for the camera: a person taps Allow.
+  's1-camera': async () => {
+    await fresh([]);
+    const takes = [];
+    for (let k = 0; k < Number(process.env.S1_TAKES ?? 4); k++) {
+      const before = await count('.tl-row.main .clip-video');
+      await tap('Camera');
+      await waitFor('the camera (Allow on the phone, the first time)', () => js(`${FIND.replace('return [', 'const el = [')} return !!el;`, ['Start recording']), 90_000);
+      await sleep(1000);
+      await tap('Start recording');
+      const t0 = Date.now();
+      await waitFor('recording', () => js(`${FIND.replace('return [', 'const el = [')} return !!el;`, ['Stop recording']), 15_000);
+      await sleep(3000);
+      await tap('Stop recording').catch(() => undefined); // the net may have stopped it already
+      // The take, however long it takes: a word on the way (a decoder that stopped) does not end the wait.
+      const got = await waitFor('the take on the timeline', async () => (await count('.tl-row.main .clip-video')) > before && 'clip', 40_000).catch(() => 'no clip in 40 s');
+      await closeTools();
+      // The take settles in the preview: a decoder that stops says so by now. S1_PAUSE shortens it, as a person who
+      // records the next take at once does (the first run, 1.5 s, saw "the video decoder of this device stopped").
+      await sleep(Number(process.env.S1_PAUSE ?? 4000));
+      takes.push({ take: k + 1, got, recordedMs: Date.now() - t0, said: await js('return window.__l5.toasts.slice()') });
+    }
+    // What Kadr wrote down about each error it showed (lib/errorLog: kind, where, message; nothing personal).
+    const log = await jsAsync(`const done = arguments[arguments.length - 1]; const o = indexedDB.open('kadr-log');
+      o.onsuccess = () => { try { const r = o.result.transaction('log').objectStore('log').getAll(); r.onsuccess = () => done(JSON.stringify(r.result).slice(-1500)); r.onerror = () => done('?'); } catch (e) { done(String(e)); } };
+      o.onerror = () => done('no log');`);
+    const bad = takes.filter((x) => x.got !== 'clip');
+    if (bad.length) throw new Error(`takes that did not land: ${JSON.stringify(bad)}; log ${log}; warns ${JSON.stringify(await js('return window.__l5.warns.slice(-12)'))}`);
+    // The takes as a film: the preview plays them, and the file has every frame (none black).
+    await seek(0);
+    await tap('Play');
+    await sleep(4000);
+    await tap('Pause').catch(() => undefined);
+    const playing = await js('return window.__l5.toasts.slice()');
+    await exportAs('Video', 'Export video', 'TikTok, Reels, Shorts');
+    const file = await pull('camera.mp4');
+    const p = probe(file);
+    const black = (spawnSync('ffmpeg', ['-i', file, '-vf', 'blackdetect=d=0.1:pix_th=0.05', '-an', '-f', 'null', '-'], { encoding: 'utf8' }).stderr.match(/black_start:[\d.]+ black_end:[\d.]+/g) ?? []);
+    return { takes, afterPlay: playing, file: p, black, log, warns: await js('return window.__l5.warns.slice(-12)') };
   },
   // One file of the S-1 batch on its own (S1_FILE=tiny_2x2|huge_8k|yuv444|mp3_in): which one, if any, takes the tab down.
   's1-one': async () => {
