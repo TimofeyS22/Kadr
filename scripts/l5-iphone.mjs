@@ -40,8 +40,11 @@ const jsAsync = (script, ...args) => call('POST', `${S}/execute/async`, { script
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** A button or radio by what a screen reader calls it, as the e2e tests find it. */
+// A button's own words: since the Chetko export sheet (v1.9.0) the big buttons carry a line of facts under their name
+// ("Export video" over "1080×1920 · 7.4 s · …"), which is not part of what the button is called.
 const FIND = `const name = arguments[0];
-  return [...document.querySelectorAll('button,[role=radio],[role=switch]')].find((e) => e.offsetParent !== null && ((e.getAttribute('aria-label') || e.textContent).trim() === name)) || null;`;
+  const own = (e) => { const c = e.cloneNode(true); c.querySelectorAll('.ck-btn-sub').forEach((x) => x.remove()); return c.textContent; };
+  return [...document.querySelectorAll('button,[role=radio],[role=switch]')].find((e) => e.offsetParent !== null && ((e.getAttribute('aria-label') || own(e)).trim() === name)) || null;`;
 async function waitFor(what, fn, ms = 60_000) {
   const t = Date.now();
   for (;;) {

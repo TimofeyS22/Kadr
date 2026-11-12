@@ -4,7 +4,7 @@
 //   node scripts/l5-tools.mjs [scenario ...]      Env: L5_URL (site), L5_UDID, L5_OUT (screenshots)
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { extname, join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 
 const URL_ = process.env.L5_URL ?? 'https://timofeys22.github.io/Kadr/';
 const OUT = process.env.L5_OUT ?? join(process.env.TMPDIR ?? '/tmp', 'kadr-l5-tools');
@@ -47,7 +47,9 @@ async function waitFor(what, fn, ms) {
 }
 /** A button, radio or switch by its accessible name (any of the names, for two languages); clicked in the page. */
 const FIND = `const names = arguments[0];
-  const named = (e) => (e.getAttribute('aria-label') || (e.getAttribute('aria-labelledby') || '').split(' ').map((id) => document.getElementById(id)?.textContent ?? '').join(' ').trim() || e.closest('label')?.textContent || e.textContent).trim();
+  // A button's own words: the line of facts under a big button (Chetko export sheet, v1.9.0) is not its name.
+  const own = (e) => { const c = e.cloneNode(true); c.querySelectorAll('.ck-btn-sub').forEach((x) => x.remove()); return c.textContent; };
+  const named = (e) => (e.getAttribute('aria-label') || (e.getAttribute('aria-labelledby') || '').split(' ').map((id) => document.getElementById(id)?.textContent ?? '').join(' ').trim() || e.closest('label')?.textContent || own(e)).trim();
   return [...document.querySelectorAll('button,[role=radio],[role=switch],[role=tab]')].find((e) => e.offsetParent !== null && names.includes(named(e))) || null;`;
 const tap = async (names, ms = 30_000) => {
   const list = [names].flat();
@@ -81,14 +83,17 @@ const WATCH = `if (!window.__l5) {
     this.dispatchEvent(new Event('change'));
   };
 }`;
+/** A test file: a fixture by name, or a file made here by its full path. */
 async function push(name) {
-  const bytes = readFileSync(fx(name));
+  const path = name.startsWith('/') ? name : fx(name);
+  name = basename(path);
+  const bytes = readFileSync(path);
   await js('window.__l5.parts = [];');
   for (let at = 0; at < bytes.length; at += CHUNK) {
     const ok = await jsAsync("const done = arguments[arguments.length - 1]; fetch('data:application/octet-stream;base64,' + arguments[0]).then((r) => r.arrayBuffer()).then((b) => { window.__l5.parts.push(b); done(true); }, (e) => done(String(e)));", bytes.subarray(at, at + CHUNK).toString('base64'));
     if (ok !== true) throw new Error(`push failed: ${ok}`);
   }
-  const type = { '.mov': 'video/quicktime', '.mp4': 'video/mp4', '.jpg': 'image/jpeg', '.png': 'image/png', '.m4a': 'audio/mp4' }[extname(name).toLowerCase()];
+  const type = { '.mov': 'video/quicktime', '.mp4': 'video/mp4', '.jpg': 'image/jpeg', '.png': 'image/png', '.m4a': 'audio/mp4', '.kadr': 'application/zip' }[extname(name).toLowerCase()];
   await js("window.__l5.files.push(new File(window.__l5.parts, arguments[0], { type: arguments[1] })); window.__l5.parts = [];", name, type);
 }
 const RU = { 'New project': 'Новый проект', Media: 'Медиа' };
@@ -313,7 +318,116 @@ const SCENARIOS = {
   'export-photo': async () => { await fresh(['landscape.mp4']); return { ready: await exportAs('Photo', 'Save photo') }; },
   'export-gif': async () => { await fresh(['landscape.mp4']); return { ready: await exportAs('GIF', 'Export GIF') }; },
   'export-audio': async () => { await fresh(['speech_en.mp4']); return { ready: await exportAs('Audio', 'Export audio') }; },
+
+  // ---- The S-1 search's fixes (v1.9.0–v1.9.1) where only the phone can say: its decoder, its storage, its sheet. ----
+  // S-1-7/8/9: a 2×2 video, one 8K frame, H.264 4:4:4 and MP3 in a .mov are refused for their real reason, in Kadr's
+  // words; the good file of the batch goes in and exports, and nothing fails later with "the decoder stopped".
+  's1-refusals': async () => {
+    const files = [
+      make('tiny_2x2.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=2x2:r=30', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']),
+      make('huge_8k.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=8192x4320:r=1', '-frames:v', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']),
+      make('yuv444.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=320x240:r=30', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv444p']),
+      make('mp3_in.mov', ['-f', 'lavfi', '-i', 'sine=f=440:d=3', '-c:a', 'libmp3lame']),
+      'landscape.mp4',
+    ];
+    await fresh(files);
+    await sleep(15_000); // the refusals are shown one after another
+    const said = await js('const t = window.__l5.toasts.splice(0); return t;');
+    const engine = said.filter((x) => /WebCodecs|decodability|Decoder failure|Out of memory|Try Chrome or Safari/.test(x));
+    if (!said.some((x) => x.includes('tiny_2x2') && /2×2/.test(x))) throw new Error(`2×2 not refused for its size: ${said.join(' | ')}`);
+    if (engine.length) throw new Error(`engine words or advice: ${engine.join(' | ')}`);
+    const clips = await count('.tl-row.main .clip');
+    const ready = await exportAs('Video', 'Export video', 'TikTok, Reels, Shorts');
+    const stopped = (await js('return window.__l5.toasts.slice()')).filter((x) => /decoder of this device stopped|Видеодекодер/.test(x));
+    if (stopped.length) throw new Error(`a clip that went in failed in the export: ${stopped.join(' | ')}`);
+    return { said, clips, ready };
+  },
+  // One file of the S-1 batch on its own (S1_FILE=tiny_2x2|huge_8k|yuv444|mp3_in): which one, if any, takes the tab down.
+  's1-one': async () => {
+    const made = {
+      tiny_2x2: () => make('tiny_2x2.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=2x2:r=30', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']),
+      huge_8k: () => make('huge_8k.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=8192x4320:r=1', '-frames:v', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']),
+      yuv444: () => make('yuv444.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=320x240:r=30', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv444p']),
+      mp3_in: () => make('mp3_in.mov', ['-f', 'lavfi', '-i', 'sine=f=440:d=3', '-c:a', 'libmp3lame']),
+    }[process.env.S1_FILE];
+    await fresh([]);
+    await push(made());
+    await push('landscape.mp4');
+    await tap('Media');
+    await waitFor('clips', async () => (await count('.tl-row.main .clip')) >= 1, 120_000);
+    await sleep(12_000);
+    const said = await js('return window.__l5.toasts.splice(0);');
+    return { said, clips: await count('.tl-row.main .clip') };
+  },
+  // S-1-5: an hour of video reads in hours, and the first tap on Export says how big and how long before anything runs.
+  's1-hour': async () => {
+    await fresh([make('hour.mp4', ['-f', 'lavfi', '-i', 'color=c=blue:s=32x32:r=1', '-t', '3600', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-g', '600'])]);
+    const hours = await js("return document.body.innerText.includes('1:00:00.0')");
+    if (!hours) throw new Error('the time does not read 1:00:00.0');
+    await tap(['Export', 'Экспорт']);
+    const note = await waitFor('the note on length and size', () => js("const m = document.body.innerText.match(/A 60-minute video[^\\n]*/); return m && m[0];"), 30_000);
+    await sleep(3000);
+    const running = await js("return /% — keep this screen open/.test(document.body.innerText)");
+    if (running) throw new Error('the export started by itself');
+    await tap(['Done', 'Готово']).catch(() => undefined);
+    return { note };
+  },
+  // S-1-4: a 10 s song on a 6 s video ends with the video, and the file has no black tail.
+  's1-sound-end': async () => {
+    await fresh(['landscape.mp4']);
+    await push('music.m4a');
+    await tap('Audio');
+    await waitFor('the song', async () => (await count('.tl-row.audio .clip')) >= 1, 60_000);
+    await closeTools();
+    const [v, a] = await js("return ['.tl-row.main .clip', '.tl-row.audio .clip'].map((q) => Math.round(document.querySelector(q).getBoundingClientRect().width))");
+    if (Math.abs(a - v) > 4) throw new Error(`the song is ${a} px, the video ${v} px`);
+    await exportAs('Video', 'Export video', 'TikTok, Reels, Shorts');
+    const file = probe(await pull('sound-end.mp4'));
+    if (file.duration > 6.15 || !file.audio) throw new Error(`file ${file.duration} s, sound ${file.audio}`);
+    return { videoPx: v, songPx: a, fileS: file.duration };
+  },
+  // S-1-3: a backup whose caption has a null among its words opens, keeps what is whole and drops the rest.
+  's1-backup': async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const transform = { x: { v: 0 }, y: { v: 0.18, k: [null, { t: 0, v: 0.2 }, { t: 'x', v: 1 }] }, scale: { v: 1 }, rotation: { v: 0 }, opacity: { v: 1 } };
+    const style = { font: 'inter', size: 0.05, weight: 700, italic: false, color: '#ffffff', align: 'center', stroke: 'red', background: { color: 5 }, shadow: false, copies: [null, { color: '#f00', x: 0.02, y: 0.02 }] };
+    const project = { id: `dmg${Date.now()}`, version: 1, name: 'Damaged', createdAt: 1, updatedAt: 1,
+      settings: { aspect: '9:16', width: 1080, height: 1920, fps: 30, background: { mode: 'color', color: '#000000' } }, assets: {},
+      tracks: [{ id: 'm', kind: 'main', clips: [] }, { id: 'o', kind: 'overlay', clips: [{ kind: 'caption', id: 'cap', start: 0, duration: 3, blend: 'normal', highlight: null, wordsPerPage: 4, transform, style,
+        words: [null, { t0: 0.2, t1: 0.9, text: 'WHOLE' }, { t0: 1, t1: 2, text: 5 }, { t0: 1, t1: 2 }] }] }] };
+    const file = join(OUT, 'damaged.kadr');
+    writeFileSync(file, zipSync({ 'project.json': strToU8(JSON.stringify(project)) }, { level: 0 }));
+    await call('POST', `${S}/url`, { url: URL_ });
+    await js("localStorage.setItem('kadr.tips','99');localStorage.setItem('kadr.locale','en');");
+    await call('POST', `${S}/url`, { url: URL_ });
+    await waitFor('home', () => js("return !!document.querySelector('button')"), 30_000);
+    await js(WATCH);
+    await push(file);
+    await tap('Restore backup', 30_000);
+    await waitFor('the editor', () => js("return !!document.querySelector('.preview-canvas')"), 60_000);
+    await sleep(2000);
+    const broken = await js("return document.body.innerText.includes('Something went wrong')");
+    if (broken) throw new Error('the editor fell to "Something went wrong"');
+    return { clips: await count('.tl-row .clip'), caption: await js("return document.querySelector('.clip-caption')?.textContent.slice(0, 40) ?? null") };
+  },
+  // S-1-2: an edit is in the journal at once (a tab iOS kills a moment later keeps it), not only when the page is left.
+  's1-journal': async () => {
+    await fresh(['landscape.mp4']);
+    await selectClip();
+    await seek(2);
+    await sleep(600);
+    const t = Date.now();
+    await tap('Split');
+    const ms = await waitFor('the split in the journal', async () => (await js("try { const j = JSON.parse(localStorage.getItem('kadr.journal') || 'null'); return j && j.project.tracks.find((x) => x.kind === 'main').clips.length === 2; } catch { return false; }")) && Date.now() - t, 5000);
+    return { journaledWithinMs: ms };
+  },
 };
+/** A test file made here with ffmpeg (into the output folder). */
+function make(name, args) {
+  const out = join(OUT, name);
+  execFileSync('ffmpeg', ['-v', 'error', '-y', ...args, out]);
+  return out;
+}
 
 const pick = process.argv.slice(2);
 const names = pick.length ? pick : Object.keys(SCENARIOS);
