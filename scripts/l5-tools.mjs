@@ -449,7 +449,9 @@ const SCENARIOS = {
     const black = (spawnSync('ffmpeg', ['-i', file, '-vf', 'blackdetect=d=0.1:pix_th=0.05', '-an', '-f', 'null', '-'], { encoding: 'utf8' }).stderr.match(/black_start:[\d.]+ black_end:[\d.]+/g) ?? []);
     const canary = await jsAsync("const done = arguments[arguments.length - 1]; window.__l5.canary.slice(1000, 1008).arrayBuffer().then((b) => done('readable ' + new Uint8Array(b)[0]), (e) => done(e.name + ': ' + e.message));");
     const lost = await js("return window.__l5.warns.filter((w) => /IndexedDB connection lost|server lost|connection/i.test(w)).slice(0, 4)");
-    return { kept: await js('return window.__l5.kept'), takes, afterPlay: playing, file: p, black, log, canary, lost, warns: await js('return window.__l5.warns.slice(-4)'), diag: await js('return window.__l5.diag.slice(0, 6)') };
+    // Dead Blobs the door replaced since v1.9.6 (docs/19 H5): the trigger still fires, and is cured without a word.
+    const leases = await js('return window.__kadrPerf && window.__kadrPerf.leases');
+    return { kept: await js('return window.__l5.kept'), takes, afterPlay: playing, file: p, black, log, canary, lost, leases, warns: await js('return window.__l5.warns.slice(-4)'), diag: await js('return window.__l5.diag.slice(0, 6)') };
   },
   // One file of the S-1 batch on its own (S1_FILE=tiny_2x2|huge_8k|yuv444|mp3_in): which one, if any, takes the tab down.
   's1-one': async () => {
