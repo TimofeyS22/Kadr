@@ -10,7 +10,7 @@ const URL_ = process.env.L5_URL ?? 'https://timofeys22.github.io/Kadr/';
 const OUT = process.env.L5_OUT ?? join(process.env.TMPDIR ?? '/tmp', 'kadr-l5-tools');
 mkdirSync(OUT, { recursive: true });
 const fx = (n) => join(import.meta.dirname, '..', 'fixtures', n);
-const PORT = 4450;
+const PORT = Number(process.env.L5_PORT ?? 4450); // another port for a second driver (a dry run in Safari on the Mac while the phone is busy)
 const CHUNK = 3 * 2 ** 20;
 
 const driver = spawn('safaridriver', ['-p', String(PORT)], { stdio: 'ignore' });
@@ -239,6 +239,59 @@ async function longCaptions(ru) {
   const span = await js("const r = [...document.querySelectorAll('.clip-caption')].map((e) => e.getBoundingClientRect()); return Math.round((Math.max(...r.map((x) => x.right)) - Math.min(...r.map((x) => x.left))) / 6) / 10");
   if (span < 95) throw new Error(`captions cover ${span} s of 101 s`);
   return { askedMb, captionsCoverS: span };
+}
+
+
+// ---------- docs/20: captions on the phone (С1–С4, С6, С7; Г4) ----------
+const TEXTS = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'e2e', 'eval', 'texts.json'), 'utf8'));
+const wordsOf = (s) => s.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+/** Share of the reference's words the captions got wrong (word-level Levenshtein), as captions-eval counts it. */
+function wer(reference, captions) {
+  const ref = wordsOf(reference), hyp = wordsOf(captions);
+  let row = hyp.map((_, j) => j + 1);
+  row.unshift(0);
+  for (let i = 1; i <= ref.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= hyp.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (ref[i - 1] === hyp[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return Math.round((row[hyp.length] / ref.length) * 1000) / 10;
+}
+/** Records what the person reads while captions are made: the work's lines, every question, every toast. */
+const SAID = `window.__l5.said = []; window.__l5.asks = []; window.__l5.notes = [];
+  new MutationObserver(() => {
+    const s = document.querySelector('.ck-work-label')?.textContent ?? '', L = window.__l5.said;
+    if (s && L[L.length - 1] !== s) L.push(s);
+    const q = document.querySelector('.model-ask')?.textContent ?? '', A = window.__l5.asks;
+    if (q && A[A.length - 1] !== q) A.push(q.slice(0, 220));
+    document.querySelectorAll('.toast').forEach((el) => { const t = el.textContent.slice(0, 160); if (!window.__l5.notes.includes(t)) window.__l5.notes.push(t); });
+  }).observe(document, { subtree: true, childList: true, characterData: true });`;
+const heard = () => js('return { said: window.__l5.said.slice(), asks: window.__l5.asks.slice(), notes: window.__l5.notes.slice() }');
+const captionLines = () => js("return [...document.querySelectorAll('.caption-row input')].map((i) => i.value)");
+const YES = ['Скачать и сделать субтитры', 'Download and make captions'];
+/** One tap on Captions; every question about a model is answered yes; waits for the lines. */
+async function oneTapCaptions(file, { ru = true, ms = 600_000 } = {}) {
+  await fresh([file], { ru });
+  await js(SAID);
+  const t = Date.now();
+  await tap(ru ? 'Субтитры' : 'Captions');
+  await waitFor('the caption lines', async () => {
+    await js(`${FIND.replace('return [', 'const el = [')} if (el) el.click();`, YES);
+    return (await count('.caption-row')) >= 1;
+  }, ms);
+  await idle(60_000);
+  return { seconds: Math.round((Date.now() - t) / 100) / 10, lines: await captionLines(), ...(await heard()) };
+}
+/** A range input set as a finger would leave it (React hears `input`). */
+const setRange = (label, value) => js(`const el = [...document.querySelectorAll('input[type=range]')].find((e) => e.getAttribute('aria-label') === arguments[0]); if (!el) return false;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, String(arguments[1])); el.dispatchEvent(new Event('input', { bubbles: true })); return true;`, label, value);
+/** The live sample read with one tap in the Russian interface: the words wrong, what was asked and said. */
+async function liveSpeech(file, limit) {
+  const r = await oneTapCaptions(file);
+  const wrong = wer(TEXTS.ru_live, r.lines.join(' '));
+  if (r.asks.some((a) => /77|не похоже/.test(a))) throw new Error(`Whisper was asked for: ${JSON.stringify(r.asks)}`);
+  if (limit && wrong > limit) throw new Error(`${wrong}% of words wrong, the limit is ${limit}%`);
+  return { werPercent: wrong, seconds: r.seconds, asks: r.asks, said: r.said, notes: r.notes };
 }
 
 const SCENARIOS = {
@@ -546,6 +599,112 @@ const SCENARIOS = {
     await tap('Split');
     const ms = await waitFor('the split in the journal', async () => (await js("try { const j = JSON.parse(localStorage.getItem('kadr.journal') || 'null'); return j && j.project.tracks.find((x) => x.kind === 'main').clips.length === 2; } catch { return false; }")) && Date.now() - t, 5000);
     return { journaledWithinMs: ms };
+  },
+  // docs/20 on the phone. С6: a caption template's tile is never empty while its demo loops.
+  'captions-tiles': async () => {
+    await fresh(['speech_en.mp4']);
+    await tap('Captions');
+    await tap(['Settings', 'Not now'], 60_000);
+    await js("[...document.querySelectorAll('[role=radiogroup]')].find((g) => g.getAttribute('aria-label') === 'Style')?.scrollIntoView({ block: 'center' })");
+    await waitFor('tiles drawn', async () => (await count('.sheet canvas[data-id][data-ready]')) >= 4, 30_000);
+    await sleep(1500);
+    const seen = await jsAsync(`const done = arguments[arguments.length - 1];
+      const tiles = [...document.querySelectorAll('.sheet canvas[data-id][data-ready]')].filter((c) => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.width > 0; });
+      const peak = (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let m = 0; for (let i = 3; i < d.length; i += 16) if (d[i] > m) m = d[i]; return m; };
+      let samples = 0, empty = 0, allEmpty = 0; const t0 = performance.now();
+      const tick = () => { const n = tiles.filter((c) => peak(c) < 24).length; samples++; empty += n; if (n === tiles.length) allEmpty++;
+        if (performance.now() - t0 < 6000) setTimeout(tick, 40); else done({ tiles: tiles.length, samples, empty, allEmpty }); };
+      tick();`);
+    await shot('captions-tiles');
+    if (seen.tiles < 4 || seen.allEmpty > 0 || seen.empty > 0) throw new Error(`tiles went empty: ${JSON.stringify(seen)}`);
+    return seen;
+  },
+  // С1, С2, С7: the model downloads once and the screen says so; the word under the playhead; a part made again keeps the rest.
+  'captions-docs20': async () => {
+    const first = await oneTapCaptions('eval_ru.mp4');
+    const downloaded = first.asks.length > 0;
+    const says = first.said.join(' | ');
+    if (downloaded && !/Скачиваем модель речи: \d+ МБ/.test(says)) throw new Error(`a download without its words: ${says}`);
+    if (!downloaded && /Скачиваем|скачается/.test(says)) throw new Error(`"downloading" with the model on the phone: ${says}`);
+    if (!first.said.includes('Запускаем модель речи (она уже на устройстве)…')) throw new Error(`no "starting": ${says}`);
+    const wrong = wer(TEXTS.ru, first.lines.join(' '));
+    // The word under the playhead, 5 s in: its line is the current one and the mark lies where the field draws the word.
+    await seek(5);
+    await sleep(1200);
+    await js("document.querySelector('.caption-row[data-now]')?.scrollIntoView({ block: 'center' })");
+    await sleep(600);
+    const mark = await js(`const rows = [...document.querySelectorAll('.caption-row')], row = rows.find((r) => r.hasAttribute('data-now'));
+      if (!row) return null;
+      const f = row.querySelector('input'), m = row.querySelector('mark');
+      if (!m) return { row: rows.indexOf(row), word: null };
+      const cs = getComputedStyle(f), c = document.createElement('canvas').getContext('2d');
+      c.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+      const before = f.value.slice(0, f.value.indexOf(m.textContent)), mr = m.getBoundingClientRect(), fr = f.getBoundingClientRect();
+      const r1 = (x) => Math.round(x * 10) / 10;
+      return { row: rows.indexOf(row), at: row.querySelector('span').textContent, word: m.textContent, line: f.value, current: f.getAttribute('aria-current'),
+        left: r1(mr.left - fr.left - f.scrollLeft * 0), wantLeft: r1(parseFloat(cs.paddingLeft) + c.measureText(before).width - f.scrollLeft), width: r1(mr.width), wantWidth: r1(c.measureText(m.textContent).width),
+        markTop: r1(mr.top - fr.top), markHeight: r1(mr.height), fieldHeight: r1(fr.height), fontPx: cs.fontSize };`);
+    await shot('captions-word');
+    if (!mark || !mark.word) throw new Error(`no word is marked under the playhead: ${JSON.stringify(mark)}`);
+    if (mark.current !== 'true' || Math.abs(mark.left - mark.wantLeft) > 2 || Math.abs(mark.width - mark.wantWidth) > 2.5) throw new Error(`the mark is off its word: ${JSON.stringify(mark)}`);
+    // A correction in the first line, then captions again for 10–20 s only.
+    await js(`const i = document.querySelector('.caption-row input'); i.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'ПРАВКА человека'); i.dispatchEvent(new Event('input', { bubbles: true }));
+      i.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); i.blur();`);
+    await sleep(800);
+    const before = await captionLines();
+    if (!before[0].startsWith('ПРАВКА человека')) throw new Error(`the correction did not land: ${before[0]}`);
+    await js('window.__l5.said.length = 0; window.__l5.asks.length = 0;');
+    const stored = await usage();
+    await tap('Создать заново…');
+    await sleep(2500); // the chips learn what the phone keeps
+    const chips = await js("const g = [...document.querySelectorAll('[role=radiogroup]')].find((x) => x.getAttribute('aria-label') === 'Распознавание'); return g ? [...g.querySelectorAll('[role=radio]')].map((c) => c.textContent + (c.getAttribute('aria-checked') === 'true' ? ' ✓' : '')) : null");
+    if (!chips || !chips.some((c) => /на устройстве/.test(c)) || !chips.includes('Авто ✓')) throw new Error(`the chips: ${JSON.stringify(chips)}`);
+    await tap('Участок');
+    await sleep(400);
+    if (!(await setRange('Конец участка', 20)) || !(await setRange('Начало участка', 10))) throw new Error('no marks for the part');
+    await sleep(400);
+    const part = await js("return document.querySelector('.ck-part-says')?.textContent");
+    await js("document.querySelector('.ck-part')?.scrollIntoView({ block: 'center' })");
+    await sleep(400);
+    await shot('captions-part');
+    const t = Date.now();
+    await tap('Создать субтитры');
+    await waitFor('captions for the part', () => js("return [...document.querySelectorAll('button')].some((b) => b.offsetParent !== null && b.textContent.trim() === 'Создать заново…') && document.querySelectorAll('.caption-row').length > 0"), 300_000);
+    const again = await heard();
+    const after = await captionLines();
+    const grewMb = Math.round(((await usage()) - stored) / 1e5) / 10;
+    const says2 = again.said.join(' | ');
+    if (again.asks.length || /Скачиваем|скачается/.test(says2)) throw new Error(`the second run spoke of a download: ${JSON.stringify(again)}`);
+    if (!again.said.includes('Запускаем модель речи (она уже на устройстве)…')) throw new Error(`the second run did not say "starting": ${says2}`);
+    if (grewMb > 2) throw new Error(`the second run stored ${grewMb} MB more`);
+    if (after[0] !== before[0]) throw new Error(`the corrected line changed: ${after[0]}`);
+    const persisted = await jsAsync('const done = arguments[arguments.length - 1]; navigator.storage.persisted().then(done, () => done(null));');
+    return { firstRun: { seconds: first.seconds, asked: first.asks, said: first.said, werPercent: wrong, lines: first.lines.length }, mark, chips, part,
+      secondRun: { seconds: Math.round((Date.now() - t) / 100) / 10, said: again.said, storedMoreMb: grewMb, lines: after.length, first: after[0] }, storagePersisted: persisted };
+  },
+  // С4, С5 and ADR-С7: live Russian speech with one tap; under music Whisper is not asked for; a quiet recording reads as a normal one.
+  'captions-live-ru': () => liveSpeech('eval_ru_live.mp4', 12),
+  'captions-music-ru': () => liveSpeech('eval_ru_live_music.mp4', 0),
+  'captions-quiet-ru': () => liveSpeech('eval_ru_live_quiet.mp4', 12),
+  // С3: an English interface, Russian speech, Auto: the Russian model reads it (asked about first, when the phone does not keep it).
+  'captions-auto-en': async () => {
+    const r = await oneTapCaptions('eval_ru.mp4', { ru: false });
+    const text = r.lines.join(' ').toLowerCase();
+    const wrong = wer(TEXTS.ru, text);
+    if (!text.includes('привет') || wrong > 25) throw new Error(`not read by the Russian model: ${wrong}% wrong, "${text.slice(0, 80)}"`);
+    return { werPercent: wrong, seconds: r.seconds, asks: r.asks, said: r.said, notes: r.notes };
+  },
+  // Г4: does GigaAM (225 MB, heap about 500 MB) start and read on this iPhone? Through the site's own ?diag page.
+  'diag-gigaam': async () => {
+    await call('POST', `${S}/url`, { url: `${URL_}?diag` });
+    await waitFor('the diagnostics page', () => js("return !!document.querySelector('.diag-report')"), 60_000);
+    await js(WATCH);
+    await waitFor('the first report', () => js("return (document.querySelector('.diag-report')?.textContent ?? '').includes('## Video export') && !document.querySelector('.diag [role=status]')"), 240_000);
+    await js("const b = [...document.querySelectorAll('button')].find((x) => /^(Русская речь|Russian speech), 225/.test(x.textContent.trim())); if (!b) throw new Error('no GigaAM button'); b.click();");
+    const ru = await waitFor('GigaAM on the phone', () => js("const t = document.querySelector('.diag-report')?.textContent ?? ''; const m = t.split('## Speech model: ru')[1]; return m && /result: (ok|FAILED)/.test(m) ? m.slice(0, 600) : null"), 560_000);
+    if (!/result: ok/.test(ru)) throw new Error(`GigaAM did not run: ${ru.replace(/\s+/g, ' ').slice(0, 200)}`);
+    return { report: ru.replace(/\n+/g, ' | ').slice(0, 500) };
   },
 };
 /** A test file made here with ffmpeg (into the output folder). */
