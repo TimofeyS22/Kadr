@@ -245,14 +245,17 @@ export function ExportSheet() {
               {phase.quick && !IOS && <p className="ck-work-saved"><Check aria-hidden />{t('Saved to Downloads.')}</p>}
               {phase.quick && IOS && <p className="ck-hint">{t('iPhone saves to Photos through the share sheet: tap Save, then “Save Video”.')}</p>}
               <div className="ck-work-actions" data-stack>
-                {phase.quick && !IOS
-                  ? <Button icon={<Share aria-hidden />} onClick={() => save(phase.result)}>{t('Share')}</Button>
-                  : <Button variant="primary" size="large" onClick={() => save(phase.result)}>{phase.quick ? t('Save') : t('Save / Share')}</Button>}
+                {phase.quick && !IOS && <Button icon={<Share aria-hidden />} onClick={() => save(phase.result)}>{t('Share')}</Button>}
                 <Button variant="plain" onClick={() => setPhase({ kind: 'setup' })}>{t('Export again')}</Button>
               </div>
             </>
           )}
         </div>
+      )}
+      {/* Where the file still has to be saved (iPhone, an export without quick save), «Сохранить» is held at the bottom of
+          the sheet: on an iPhone 15 the film, the facts and the note about Photos pushed it half under the sheet's edge (L5). */}
+      {phase.kind === 'done' && !(phase.quick && !IOS) && (
+        <Foot lead={lead} disabled={false} onClick={() => save(phase.result)}>{phase.quick ? t('Save') : t('Save / Share')}</Foot>
       )}
       {phase.kind === 'setup' && (
         <Chips options={Object.keys(FORMATS) as Format[]} value={format} onChange={setFormat} render={(f) => t(FORMATS[f])} even />

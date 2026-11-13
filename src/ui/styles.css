@@ -50,7 +50,6 @@ h1, h2, h3 { margin: 0; }
 }
 .icon-btn.accent { color: var(--accent); }
 .hint { color: var(--muted); font-size: 13px; line-height: 1.45; margin: 8px 0; }
-.center-msg { height: 100%; display: grid; place-content: center; gap: 12px; text-align: center; padding: 24px; }
 .diag { height: 100%; overflow-y: auto; box-sizing: border-box; max-width: 760px; margin: 0 auto; padding: 16px 16px 40px; }
 .diag h1 { font-size: 22px; margin: 8px 0; }
 .diag h2 { font-size: 16px; margin: 20px 0 4px; }
@@ -69,12 +68,7 @@ h1, h2, h3 { margin: 0; }
 }
 /* The header, the row under the frame and the ribbon: on the Chetko system since Ч4 release 3 (editor.css). */
 
-.preview { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; background: #050507; }
-.preview-canvas { display: block; border-radius: 4px; box-shadow: 0 0 0 1px var(--line); }
-.sel-box {
-  position: absolute; left: 0; top: 0; display: none; pointer-events: none; transform-origin: center;
-  border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-}
+.preview { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; }
 
 .zoom-hint { justify-self: end; font-size: 11px; color: var(--muted); }
 
@@ -106,24 +100,8 @@ h1, h2, h3 { margin: 0; }
 .color-loupe canvas { display: block; width: 100%; height: 100%; }
 .color-loupe i { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px; border: 3px solid; border-radius: 999px; box-shadow: 0 0 0 1px #fff, 0 0 0 2px rgba(0, 0, 0, 0.6); }
 
-/* Eyedropper over the preview (v1.6). */
-.eyedrop { position: absolute; inset: 0; z-index: 5; touch-action: none; cursor: crosshair; }
-.eyedrop-hint { position: absolute; left: 12px; right: 12px; top: 10px; margin: 0; padding: 8px 12px; border-radius: 10px; text-align: center;
-  font-size: 13px; color: #fff; background: rgba(0, 0, 0, 0.62); pointer-events: none; }
-.eyedrop-loupe { position: absolute; width: 56px; height: 56px; margin: -92px 0 0 -28px; border-radius: 999px; pointer-events: none;
-  border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 6px 18px rgba(0, 0, 0, 0.45); }
-.eyedrop-loupe::after { content: ''; position: absolute; left: 50%; top: calc(100% + 30px); width: 10px; height: 10px; margin: -5px 0 0 -5px;
-  border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
-.eyedrop-cancel { position: absolute; right: 10px; bottom: 10px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px;
-  color: #fff; background: rgba(0, 0, 0, 0.62); font-size: 14px; }
+/* The frame, what lies on it, the eyedropper, the drop hint and the toasts: on the Chetko system since Ч4 release 8 (stage.css). */
 
-/* ---------- Toasts ---------- */
-.toasts { position: fixed; left: 50%; top: calc(58px + var(--safe-top)); transform: translateX(-50%); z-index: 50; display: grid; gap: 8px; width: min(92vw, 420px); }
-.toast { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: #24242e; font-size: 13px; text-align: left; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); }
-.toast.error { background: #3a1c1c; border-color: #5b2a2a; }
-.toast.with-detail { display: grid; gap: 8px; }
-.toast .toast-text { all: unset; cursor: pointer; }
-.toast .toast-more { justify-self: start; min-height: 44px; padding: 0 4px; background: none; border: 0; color: inherit; text-decoration: underline; font-size: 13px; }
 
 /* A phone on its side (audit V-208): the picture on the left, the tools on the right, instead of a strip between them. */
 @media (orientation: landscape) and (max-height: 520px) {
@@ -157,19 +135,12 @@ h1, h2, h3 { margin: 0; }
 .caption-row { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 8px; }
 .caption-row span { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .caption-row input { min-height: 40px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font: inherit; font-size: 15px; }
-.safe-zones { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; }
-.safe-zones i { position: absolute; background: rgba(255, 107, 107, 0.16); outline: 1px dashed rgba(255, 107, 107, 0.7); }
-.safe-zones .z-top { left: 0; right: 0; top: 0; height: 8%; }
-.safe-zones .z-right { right: 0; width: 16%; top: 38%; height: 44%; }
-.safe-zones .z-bottom { left: 0; right: 0; bottom: 0; height: 18%; }
-.safe-zones .z-title { inset: 5%; background: none; }
 
 /* ---------- v0.3 components ---------- */
 .sfx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .sfx { display: flex; align-items: center; border-radius: 12px; background: var(--panel-2); }
 .sfx-add { flex: 1; min-height: 48px; border: 0; background: none; text-align: left; padding: 0 12px; font-weight: 600; }
 .sfx-play { color: var(--muted); }
-.drop-hint { position: fixed; inset: 12px; z-index: 45; display: grid; place-items: center; border: 2px dashed var(--accent); border-radius: 20px; background: rgba(22, 22, 22, 0.8); font-size: 18px; font-weight: 600; pointer-events: none; }
 
 /* ---------- v0.4 components ---------- */
 .beat-bpm { margin: 4px 0 0; color: var(--muted); }
@@ -194,17 +165,6 @@ h1, h2, h3 { margin: 0; }
 .coach { position: fixed; left: 12px; right: 12px; bottom: calc(84px + var(--safe-bottom)); z-index: 15; }
 @media (min-width: 900px) { .coach { left: auto; width: 380px; } }
 
-/* Selection handle: scale + rotate (big touch target, small visual) */
-.guide { position: absolute; left: 0; top: 0; display: none; pointer-events: none; background: #ff3b8d; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.35); }
-.guide.v { width: 1px; }
-.guide.h { height: 1px; }
-.angle-tag {
-  display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 4; pointer-events: none;
-  padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
-}
-.angle-tag.snapped { background: var(--accent); color: var(--on-accent); }
-.sel-handle { position: absolute; right: -22px; bottom: -22px; width: 44px; height: 44px; pointer-events: auto; touch-action: none; cursor: nwse-resize; }
-.sel-handle::after { content: ''; position: absolute; inset: 12px; border-radius: 999px; background: var(--text); border: 2px solid var(--bg); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
 
 /* Multi-select (v0.6) */
 .privacy-area { display: grid; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); }

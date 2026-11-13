@@ -677,6 +677,11 @@ test('export: the file\'s own frames come out between two marks as far as it is 
   await expect.poll(() => work.locator('.ck-progress-rest').evaluate((el) => el.getBoundingClientRect().width), { message: 'nothing of the film is covered' }).toBeLessThan(1);
   if (iphone) {
     expect(await whiteFilled(page), 'one white button: save to Photos').toEqual(['Сохранить']);
+    // Held at the bottom of the sheet, on screen: on an iPhone 15 it was half under the sheet's edge (L5, 2026-11-12).
+    const save = (await panel(page).getByRole('button', { name: 'Сохранить', exact: true }).boundingBox())!;
+    const sheet = (await panel(page).boundingBox())!;
+    expect(save.y + save.height, 'the save button is whole inside the sheet').toBeLessThanOrEqual(sheet.y + sheet.height + 1);
+    expect(save.y + save.height).toBeLessThanOrEqual(812);
   } else {
     await expect(work.getByText('Сохранено в «Загрузки».')).toBeVisible();
     expect(await whiteFilled(page), 'saved already: no white button asks to save it again').toEqual([]);
@@ -824,4 +829,90 @@ test('mask: the shapes are tiles of the person\'s own frame, the chosen one ring
   for (const tile of await shapes.getByRole('radio').all()) expect((await tile.boundingBox())!.x + (await tile.boundingBox())!.width).toBeLessThanOrEqual(375);
   await expect(panel(page).getByRole('tab')).toHaveText(['Размер', 'Влево ↔ вправо', 'Вверх ↕ вниз', 'Поворот', 'Мягкий край']);
   await expect(panel(page).getByRole('slider', { name: 'Размер' })).toHaveAttribute('aria-valuenow', '0.7');
+});
+
+// ---- release 8: the frame and what lies on it ----
+/** A CSS property of an element (or its pseudo-element) as sRGB, read through a canvas: the browser gives tokens as oklch(). */
+const rgbOf = (loc: ReturnType<Page['locator']>, prop: 'backgroundColor' | 'outlineColor', pseudo?: string) => loc.evaluate((e, [p, ps]) => {
+  const ctx = document.createElement('canvas').getContext('2d')!;
+  ctx.fillStyle = getComputedStyle(e, ps || null)[p as 'backgroundColor'];
+  ctx.fillRect(0, 0, 1, 1);
+  return Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3);
+}, [prop, pseudo ?? ''] as const);
+/** No hue: black, white or a grey between — so not red or pink. */
+const neutral = ([r, g, b]: number[]) => Math.max(r, g, b) - Math.min(r, g, b) <= 12;
+
+test('frame: the field is black and the frame square-cornered with no line round it; what lies on it is white with a dark edge, never pink or red', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  expect(await rgbOf(page.locator('.preview'), 'backgroundColor'), 'DESIGN.md §2.1: round the frame only black').toEqual([0, 0, 0]);
+  const frame = await page.locator('.preview-canvas').evaluate((e) => [getComputedStyle(e).borderRadius, getComputedStyle(e).boxShadow]);
+  expect(frame).toEqual(['0px', 'none']);
+  // The text of the sample, selected inside its time: its box and handle.
+  await page.locator('.preview').click({ position: { x: 5, y: 5 } });
+  for (let i = 0; i < 45; i++) await page.keyboard.press('ArrowRight');
+  await page.locator('.tl-row .clip-text').first().click();
+  const sel = page.locator('.sel-box');
+  await expect(sel).toBeVisible();
+  const ring = await sel.evaluate((e) => getComputedStyle(e).boxShadow);
+  expect(ring, 'white, 2 px as a held piece on the timeline, with a dark edge both sides').toMatch(/1px inset.*0px 0px 0px 2px.*0px 0px 0px 3px/);
+  const handle = (await page.locator('.sel-handle').boundingBox())!;
+  expect(handle.width).toBeGreaterThanOrEqual(44);
+  const dot = await rgbOf(page.locator('.sel-handle'), 'backgroundColor', '::after');
+  expect(Math.min(...dot), `the handle is white: ${dot}`).toBeGreaterThan(230);
+  // The guide shows while the text is dragged to the middle, white; the angle plate is dark and white once it snaps.
+  // The sample's text stands in the middle: a drag of 2 px keeps it within the snap, 20 px down moves it.
+  const b = (await sel.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2 + 2, b.y + b.height / 2 + 20, { steps: 8 });
+  const guide = page.locator('.guide.v');
+  await expect(guide).toBeVisible();
+  const g = await rgbOf(guide, 'backgroundColor');
+  expect(Math.min(...g), `the guide is white, not pink: ${g}`).toBeGreaterThan(230);
+  await page.mouse.up();
+  const tag = page.locator('.angle-tag');
+  const plain = await rgbOf(tag, 'backgroundColor');
+  await tag.evaluate((e) => e.setAttribute('data-snapped', ''));
+  const snapped = await rgbOf(tag, 'backgroundColor');
+  await tag.evaluate((e) => e.removeAttribute('data-snapped'));
+  expect(neutral(plain) && neutral(snapped), `${plain} / ${snapped}`).toBe(true);
+  expect(await tag.evaluate((e) => { e.setAttribute('data-snapped', ''); const r = getComputedStyle(e).boxShadow; e.removeAttribute('data-snapped'); return r; }), 'a snap rings the plate in white').toMatch(/inset/);
+  // The safe zones: dimmed and edged in white, not red.
+  await page.getByRole('button', { name: /безопасн/i }).first().click();
+  for (const zone of await page.locator('.safe-zones i').all()) {
+    const [bg, line] = [await rgbOf(zone, 'backgroundColor'), await rgbOf(zone, 'outlineColor')];
+    expect(neutral(bg) && neutral(line), `a zone: ${bg} / ${line}`).toBe(true);
+  }
+});
+
+test('toasts: a failure is a dark plate with a white ring and a sign, never red, where toasts always stood', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Новый проект' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('.toolbar .tool', { hasText: /^Медиа$/ }).click();
+  await (await chooser).setFiles([fx('hostile_empty.mp4')]);
+  const toast = page.locator('.toast.error').first();
+  await expect(toast).toBeVisible({ timeout: 30_000 });
+  const bg = await rgbOf(toast, 'backgroundColor');
+  const shadow = await toast.evaluate((e) => getComputedStyle(e).boxShadow);
+  expect(neutral(bg), `not a red ground: ${bg}`).toBe(true);
+  expect(shadow, 'a white ring').toMatch(/inset/);
+  await expect(toast.locator('.ck-apptoast-text svg')).toHaveCount(1);
+  // A failure stays until closed, and says how: a cross 44 px to a finger.
+  const close = toast.getByRole('button', { name: 'Закрыть' });
+  expect((await close.boundingBox())!.width).toBeGreaterThanOrEqual(44);
+  const top = (await toast.boundingBox())!.y;
+  expect(top, 'under the header, as before').toBeLessThan(160);
+  // A plain toast is a plate too, not bare words over the video (found by eye after release 8: it had lost its ground).
+  await close.click();
+  await page.evaluate(() => localStorage.removeItem('kadr.hint.move')); // the hint on moving a text, said once
+  await page.locator('.toolbar .tool', { hasText: /^Текст$/ }).click();
+  const info = page.locator('.toast.info').first();
+  await expect(info).toBeVisible();
+  const [ground, pad] = await info.evaluate((e) => [getComputedStyle(e).backgroundColor, parseFloat(getComputedStyle(e).paddingTop)] as const);
+  expect(ground, 'a ground of its own').not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+  expect(pad).toBeGreaterThanOrEqual(12);
+  await page.evaluate(() => { (window as unknown as { __toastErrors?: string[] }).__toastErrors = []; });
 });

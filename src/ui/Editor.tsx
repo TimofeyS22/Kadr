@@ -273,7 +273,7 @@ export function Editor({ id }: { id: string }) {
 
   if (missing) {
     return (
-      <div className="center-msg">
+      <div className="center-msg ck-center">
         <div className="ck">
           <Empty title={t('This project is not on this device.')}
             action={<Button variant="primary" size="large" onClick={() => { location.hash = ''; }}>{t('Back to projects')}</Button>}>
@@ -283,7 +283,7 @@ export function Editor({ id }: { id: string }) {
       </div>
     );
   }
-  if (!project) return <div className="center-msg"><p>{t('Opening…')}</p></div>;
+  if (!project) return <div className="center-msg ck-center"><p>{t('Opening…')}</p></div>;
 
   return (
     <div
@@ -309,7 +309,7 @@ export function Editor({ id }: { id: string }) {
       <BusyOverlay />
       <ElsewhereNotice />
       <Coach hold={!undoMovedSeen} />
-      {dragging && <div className="drop-hint">{t('Drop videos, photos or music to add them')}</div>}
+      {dragging && <div className="drop-hint ck-drop">{t('Drop videos, photos or music to add them')}</div>}
     </div>
   );
 }

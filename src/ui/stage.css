@@ -1,0 +1,110 @@
+/* The field round the frame and what lies on the frame, on the Chetko system (docs/17 Ч4, release 8). DESIGN.md §2.1:
+   round the frame only black and white, and the frame is not rounded — every pixel of the file is in view. What lies on
+   the picture is white with a dark edge, readable on any video. Every value comes from tokens.css; the drift test reads
+   this file. `preview`, `preview-canvas`, `sel-box`, `sel-handle`, `guide`, `angle-tag` (and its `snapped`),
+   `safe-zones`, `eyedrop*`, `drop-hint`, `toast*` and `center-msg` stay in the markup as hooks for the tests. */
+
+/* ---- the field and the frame ---- */
+.ck-stage { background: var(--surface-field); }
+.ck-stage-frame { display: block; border-radius: 0; box-shadow: none; }
+
+/* ---- the selected text or picture (ObjectFrame): a white line with a dark edge, a corner handle 44 px to a finger ---- */
+/* As thick as a held piece on the timeline, with a dark edge on both sides: it holds on white video too. Above the safe
+   zones, so a caption held in the bottom zone keeps its white frame (the art director, release 8). */
+.ck-stage-sel {
+  position: absolute; left: 0; top: 0; z-index: var(--z-mark); display: none; pointer-events: none; transform-origin: center;
+  box-shadow: inset 0 0 0 var(--hairline) var(--mark-edge), 0 0 0 2px var(--mark-was), 0 0 0 3px var(--mark-edge);
+}
+.ck-stage-handle {
+  position: absolute; right: calc(var(--touch) / -2); bottom: calc(var(--touch) / -2); width: var(--touch); height: var(--touch);
+  display: grid; place-items: center; pointer-events: auto; touch-action: none; cursor: nwse-resize;
+}
+.ck-stage-handle::after { content: ''; width: 20px; height: 20px; border-radius: 50%; background: var(--mark-was); box-shadow: 0 0 0 1.5px var(--mark-edge); }
+
+/* ---- guides while a layer is dragged: white with a dark edge (they were pink) ---- */
+.ck-stage-guide { position: absolute; left: 0; top: 0; z-index: var(--z-mark); display: none; pointer-events: none; background: var(--mark-was); box-shadow: 0 0 0 var(--hairline) var(--mark-edge); }
+.ck-stage-guide.ck-v { width: var(--hairline); }
+.ck-stage-guide.ck-h { height: var(--hairline); }
+
+/* ---- the angle while turning, over the top of the stage, away from the hand: a solid dark plate (a see-through one let
+   white video wash out its words); on a snap a white ring — held, as what is chosen is (it was the accent) ---- */
+.ck-stage-angle {
+  display: none; position: absolute; top: var(--space-3); left: 50%; translate: -50% 0; z-index: var(--z-mark); pointer-events: none;
+  padding: var(--space-1) var(--space-3); border-radius: var(--radius-control); background: var(--surface-raised); color: var(--text-primary);
+  font-size: var(--type-sm); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums;
+}
+.ck-stage-angle[data-snapped] { box-shadow: inset 0 0 0 2px var(--mark-was); }
+
+/* ---- safe zones of TikTok, Reels and Shorts: what the app lays over the video is a light white veil edged with a dash
+   that is white on a dark line, readable on any video. Not a dimming — that reads as «cut off», and every pixel is in
+   the file — and never red (DESIGN.md §2.3: red is for deleting only) ---- */
+.ck-stage-zones { position: absolute; left: 50%; top: 50%; translate: -50% -50%; pointer-events: none; }
+.ck-stage-zones i {
+  position: absolute; background: var(--image-outline); box-shadow: inset 0 0 0 var(--hairline) var(--mark-edge);
+  outline: var(--hairline) dashed var(--mark-was); outline-offset: calc(-1 * var(--hairline));
+}
+.ck-stage-zones .ck-zone-top { left: 0; right: 0; top: 0; height: 8%; }
+.ck-stage-zones .ck-zone-right { right: 0; width: 16%; top: 38%; height: calc(44% + var(--hairline)); } /* meets the bottom zone in one dash */
+.ck-stage-zones .ck-zone-bottom { left: 0; right: 0; bottom: 0; height: 18%; }
+.ck-stage-zones .ck-zone-title { inset: 5%; background: none; }
+
+/* ---- the eyedropper over the frame ---- */
+.ck-eyedrop { position: absolute; inset: 0; z-index: var(--z-scrim); touch-action: none; cursor: crosshair; }
+.ck-eyedrop-hint {
+  position: absolute; left: var(--space-3); right: var(--space-3); top: var(--space-3); margin: 0; padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control); background: var(--surface-raised); color: var(--text-primary); font-size: var(--type-sm); line-height: var(--leading-text);
+  text-align: center; pointer-events: none;
+}
+/* The loupe stands above the finger and points at what it reads; a white ring with a dark edge, like every mark on a picture. */
+.ck-eyedrop-loupe {
+  position: absolute; width: 56px; height: 56px; margin: -92px 0 0 -28px; border-radius: 50%; pointer-events: none;
+  box-shadow: 0 0 0 3px var(--mark-was), 0 0 0 4px var(--mark-edge);
+}
+.ck-eyedrop-loupe::after {
+  content: ''; position: absolute; left: 50%; top: calc(100% + 36px); width: var(--mark-width); height: var(--mark-width); margin: calc(var(--mark-width) / -2) 0 0 calc(var(--mark-width) / -2); border-radius: 50%; /* on the point it reads */
+  box-shadow: 0 0 0 2px var(--mark-was), 0 0 0 3px var(--mark-edge);
+}
+.ck-eyedrop-cancel {
+  position: absolute; right: var(--space-3); bottom: var(--space-3); min-height: var(--touch); padding: 0 var(--space-4); border: 0;
+  border-radius: var(--radius-control); background: var(--surface-raised); color: var(--text-primary); font: inherit; font-size: var(--type-sm);
+  font-weight: var(--weight-medium); cursor: pointer;
+}
+.ck-eyedrop-cancel:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+
+/* ---- files dragged over the editor (a computer): a white dashed edge on the dimmed screen ---- */
+.ck-drop {
+  position: fixed; inset: var(--space-3); z-index: var(--z-over-old); display: grid; place-items: center; padding: var(--space-6);
+  border-radius: var(--radius-sheet); background: var(--scrim); outline: 2px dashed var(--mark-was); outline-offset: -2px;
+  color: var(--text-primary); font-size: var(--type-lg); font-weight: var(--weight-strong); text-align: center; pointer-events: none;
+}
+
+/* ---- what happened: a dark plate where toasts always stood; a failure has a white ring and a sign, not a red ground ---- */
+.ck-apptoasts {
+  position: fixed; left: 50%; top: calc(var(--touch) + var(--space-3) + env(safe-area-inset-top, 0px)); translate: -50% 0; z-index: var(--z-over-old);
+  display: grid; gap: var(--space-2); width: min(92vw, 420px);
+}
+.ck-apptoast {
+  display: grid; gap: var(--space-2); width: 100%; padding: var(--space-3) var(--space-4); border: 0; border-radius: var(--radius-control);
+  background: var(--surface-raised); color: var(--text-primary); font: inherit; font-size: var(--type-sm); line-height: var(--leading-text);
+  text-align: left; box-shadow: 0 var(--space-2) var(--space-6) var(--scrim);
+}
+.ck-apptoast[data-tone='error'] { box-shadow: inset 0 0 0 2px var(--text-primary), 0 var(--space-2) var(--space-6) var(--scrim); }
+.ck-apptoast-text { display: flex; align-items: flex-start; gap: var(--space-2); padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ck-apptoast-text > svg { flex: none; width: 18px; height: 18px; margin-top: var(--hairline); }
+button.ck-apptoast { cursor: pointer; }
+.ck-apptoast-more { justify-self: start; min-height: var(--touch); margin-left: calc(18px + var(--space-2)); padding: 0 var(--space-1); border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+/* A failure stays until it is closed: it says how, with a cross 44 px to a finger. */
+.ck-apptoast-row { display: flex; align-items: flex-start; gap: var(--space-1); }
+.ck-apptoast-row > .ck-apptoast-text { flex: 1; min-width: 0; padding-top: var(--space-1); }
+.ck-apptoast-close { flex: none; width: var(--touch); height: var(--touch); margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-3)) 0 0; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--text-secondary); cursor: pointer; }
+.ck-apptoast-close svg { width: 18px; height: 18px; }
+button.ck-apptoast:focus-visible, .ck-apptoast-close:focus-visible, .ck-apptoast-more:focus-visible, .ck-apptoast-text:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+
+/* ---- a screen with only a few words: «Открываю…», or what went wrong and the way back ---- */
+.ck-center {
+  height: 100%; display: grid; place-content: center; justify-items: center; gap: var(--space-3); padding: var(--space-6);
+  background: var(--surface-panel); color: var(--text-primary); font-size: var(--type-md); line-height: var(--leading-text); text-align: center;
+}
+.ck-center p { margin: 0; max-width: 32rem; }
+.ck-center > svg { width: 32px; height: 32px; }
+.ck-center p + p { font-size: var(--type-sm); color: var(--text-secondary); overflow-wrap: anywhere; }

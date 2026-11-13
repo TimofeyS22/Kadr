@@ -240,6 +240,7 @@ export function Preview() {
       tag.textContent = `${norm}°`;
       tag.style.display = 'block';
       tag.classList.toggle('snapped', r.snapped);
+      tag.toggleAttribute('data-snapped', r.snapped);
     }
     return r.deg as T;
   };
@@ -295,18 +296,18 @@ export function Preview() {
   };
 
   return (
-    <div className="preview" ref={wrap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDoubleClick}>
-      <canvas key={surface} ref={canvas} className="preview-canvas" role="img" aria-label={t('Video preview')} />
-      <div ref={guideV} className="guide v" aria-hidden />
-      <div ref={guideH} className="guide h" aria-hidden />
-      <div ref={angleTag} className="angle-tag" aria-live="polite" />
-      <div ref={box} className="sel-box">
-        <div className="sel-handle" onPointerDown={onHandleDown} role="button" aria-label={t('Drag to resize and rotate')} />
+    <div className="preview ck-stage" ref={wrap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDoubleClick}>
+      <canvas key={surface} ref={canvas} className="preview-canvas ck-stage-frame" role="img" aria-label={t('Video preview')} />
+      <div ref={guideV} className="guide v ck-stage-guide ck-v" aria-hidden />
+      <div ref={guideH} className="guide h ck-stage-guide ck-h" aria-hidden />
+      <div ref={angleTag} className="angle-tag ck-stage-angle" aria-live="polite" />
+      <div ref={box} className="sel-box ck-stage-sel">
+        <div className="sel-handle ck-stage-handle" onPointerDown={onHandleDown} role="button" aria-label={t('Drag to resize and rotate')} />
       </div>
       <Eyedropper canvas={canvas} />
       {safeZones && (
-        <div ref={zones} className={`safe-zones ${vertical ? 'vertical' : 'title-safe'}`} aria-hidden>
-          {vertical ? <><i className="z-top" /><i className="z-right" /><i className="z-bottom" /></> : <i className="z-title" />}
+        <div ref={zones} className={`safe-zones ck-stage-zones ${vertical ? 'vertical' : 'title-safe'}`} aria-hidden>
+          {vertical ? <><i className="z-top ck-zone-top" /><i className="z-right ck-zone-right" /><i className="z-bottom ck-zone-bottom" /></> : <i className="z-title ck-zone-title" />}
         </div>
       )}
     </div>
@@ -386,15 +387,15 @@ function Eyedropper({ canvas }: { canvas: RefObject<HTMLCanvasElement | null> })
 
   const stop = (e: RPointerEvent<HTMLDivElement>) => e.stopPropagation(); // the layer gestures below must not see it
   return (
-    <div ref={host} className="eyedrop" role="application" aria-label={t('Eyedropper')}
+    <div ref={host} className="eyedrop ck-eyedrop" role="application" aria-label={t('Eyedropper')}
       onPointerDown={(e) => { stop(e); try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a pointer already gone */ } touch(e); }}
       onPointerMove={(e) => { stop(e); if (e.buttons || e.pointerType !== 'mouse') touch(e); }}
       onPointerUp={(e) => { stop(e); touch(e, true); }}
       onPointerCancel={(e) => { stop(e); waiting.current = null; setLoupe(null); }}
       onDoubleClick={(e) => e.stopPropagation()}>
-      {!loupe && <p className="eyedrop-hint">{t('Touch the video and lift your finger on the color you want')}</p>}
-      {loupe && <div className="eyedrop-loupe" style={{ left: loupe.x, top: loupe.y, background: loupe.color }} aria-live="polite" aria-label={loupe.color} />}
-      <button className="eyedrop-cancel" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
+      {!loupe && <p className="eyedrop-hint ck-eyedrop-hint">{t('Touch the video and lift your finger on the color you want')}</p>}
+      {loupe && <div className="eyedrop-loupe ck-eyedrop-loupe" style={{ left: loupe.x, top: loupe.y, background: loupe.color }} aria-live="polite" aria-label={loupe.color} />}
+      <button type="button" className="eyedrop-cancel ck-eyedrop-cancel" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
         onClick={() => useEditor.setState({ eyedropper: null })}>{t('Cancel')}</button>
     </div>
   );
