@@ -106,9 +106,10 @@ export function pairStyle(pair: FontPair, current: TextStyle, variant: PairVaria
 /**
  * The catalog of the first release (docs/18 Ф3): round 2 of the independent art director, drawn by the renderer, blind,
  * two weak controls mixed in (both scored 4 of 10, so the scores count). Every pair here scored 8 or 9 of 10. «Праздник»
- * is round 3 (2026-11-12): six candidates and two controls (4 and 3), the only one at 8 of 10, with the director's tweak
- * (capitals 10% smaller, 0.06 more spacing); it keeps the name readable both over and under the accent. «Джаз» and
- * «Воздух» feel alike and never stand side by side, nor do «Праздник» and «Влог» (both in Caveat). Ids are for ever.
+ * is round 4 (2026-11-13): in Caveat (round 3) it was taken for «Влог» on neutral words (Ш5), so its accent is now
+ * Rubik Bubbles, a face the app already ships: 10 of 10 blind among six candidates and two controls, and the only one
+ * named «Праздник» by its faces alone; the director's tweak is a support 12% larger and 0.02 em between the puffs. «Джаз»
+ * and «Воздух» feel alike and never stand side by side, nor do «Праздник» and «Дерзко» (its second guess). Ids are for ever.
  */
 export const PAIRS: FontPair[] = [
   {
@@ -119,7 +120,7 @@ export const PAIRS: FontPair[] = [
   {
     id: 'party', name: { ru: 'Праздник', en: 'Party' }, sample: { ru: 'Аня\nс днём рождения', en: 'Anna\nhappy birthday' },
     base: { font: 'unbounded', weight: 700 }, split: 'first',
-    accent: { font: 'caveat', weight: 700, scale: 2 }, support: { font: 'unbounded', weight: 700, scale: 0.4, uppercase: true, letterSpacing: 0.16 },
+    accent: { font: 'bubbles', weight: 400, scale: 2, letterSpacing: 0.02 }, support: { font: 'unbounded', weight: 700, scale: 0.45, uppercase: true, letterSpacing: 0.16 },
   },
   {
     id: 'cover', name: { ru: 'Обложка', en: 'Cover' }, sample: { ru: 'Осень\nвыпуск № 3', en: 'Autumn\nissue no. 3' },
