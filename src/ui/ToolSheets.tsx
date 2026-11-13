@@ -1,4 +1,4 @@
-import { Mic, Square } from 'lucide-react';
+import { CircleAlert, Mic } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { CAPTION_LAYOUTS, applyCaptionLook, captionLayout, captionPages, lineWords, setCaptionLayout, wordsFromSegment, type CaptionLayout } from '../core/captions';
 import { fillerIndices } from '../core/reframe';
@@ -17,6 +17,9 @@ import { ASR_MODELS, CAPTION_LANGUAGES, alignToScript, defaultAsrModel, firstDow
 import { importFile } from '../engine/importer';
 import { player } from '../engine/player';
 import { VoiceRecorder } from '../engine/recorder';
+import './capture.css';
+import './catalog.css';
+import './detail.css';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles } from './actions';
@@ -174,17 +177,21 @@ export function VoiceoverBody() {
   }
 
   return (
-    <div className="recorder">
-      <p className="ck-hint">{t('Recording starts at the playhead. The video plays without sound so you can talk over it.')}</p>
-      <div className={`meter ${meter.clip ? 'clip' : ''}`} aria-hidden>
-        <div style={{ width: `${Math.round(level * 100)}%` }} />
-        <i className="hold" style={{ left: `${Math.round(Math.min(1, meter.hold * 1.5) * 100)}%` }} />
+    // Chetko (Ч4 release 9): the same white record button as the camera's; too loud is words with a sign, not red.
+    <div className="recorder ck-voice">
+      <div className="ck-voice-note" role="status">
+        {meter.clip && state === 'recording'
+          ? <p className="clip-warn ck-loud"><CircleAlert aria-hidden />{t('Too loud: hold the phone a little further away')}</p>
+          : <p className="ck-hint">{t('Recording starts at the playhead. The video plays without sound so you can talk over it.')}</p>}
       </div>
-      {meter.clip && state === 'recording' && <p className="clip-warn" role="status">{t('Too loud: hold the phone a little further away')}</p>}
-      <span className="rec-time">{state === 'asking' ? t('Allow microphone access…') : formatTime(elapsed)}</span>
+      <div className={`meter ck-meter ${meter.clip ? 'clip' : ''}`} data-clip={meter.clip ? true : undefined} aria-hidden>
+        <div style={{ width: `${Math.round(level * 100)}%` }} />
+        {meter.hold > 0 && <i className="hold" style={{ left: `${Math.round(Math.min(1, meter.hold * 1.5) * 100)}%` }} />}
+      </div>
+      <span className="rec-time ck-rec-time" data-on={state === 'recording' ? true : undefined}>{state === 'asking' ? t('Allow microphone access…') : formatTime(elapsed)}</span>
       {state === 'recording'
-        ? <button className="rec-btn on" onClick={() => void stop()} aria-label={t('Stop recording')}><Square size={26} fill="currentColor" /></button>
-        : <button className="rec-btn" disabled={state === 'saving' || state === 'asking'} onClick={() => void start()} aria-label={t('Start recording')}><Mic size={28} /></button>}
+        ? <button type="button" className="rec-btn on ck-rec" data-on onClick={() => void stop()} aria-label={t('Stop recording')} />
+        : <button type="button" className="rec-btn ck-rec" disabled={state === 'saving' || state === 'asking'} onClick={() => void start()} aria-label={t('Start recording')}><Mic aria-hidden /></button>}
     </div>
   );
 }
@@ -198,8 +205,8 @@ export function StickersBody() {
       {STICKER_GROUPS.map((g) => (
         <section key={g.id} aria-label={t(g.name)}>
           <h3>{t(g.name)}</h3>
-          <div className="sticker-grid">
-            {g.items.map((s) => <button key={s} className="sticker" onClick={() => addSticker(s)} aria-label={`Add ${s}`}>{s}</button>)}
+          <div className="sticker-grid ck-stickers">
+            {g.items.map((s) => <button type="button" key={s} className="sticker ck-sticker" onClick={() => addSticker(s)} aria-label={t('Add {name}', { name: s })}>{s}</button>)}
           </div>
         </section>
       ))}
@@ -422,14 +429,14 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
         onChange={(m) => e((c) => { c.motion = m; })} />
       <h3>{t('Text ({n} lines)', { n: pages.length })}</h3>
       <Toggle label={t('Lines start with a small letter')} value={!!clip.lowerStart} onChange={(v) => e((c) => { if (v) c.lowerStart = true; else delete c.lowerStart; })} />
-      <div className="caption-list">
+      <div className="caption-list ck-lines">
         {pages.map((pg, i) => {
           const text = lineText(clip, pg);
           return (
-            <label key={`${pg[0].t0.toFixed(3)}:${text}`} className="caption-row">
+            <label key={`${pg[0].t0.toFixed(3)}:${text}`} className="caption-row ck-line">
               <span>{formatTime(clip.start + pg[0].t0)}</span>
               {/* No automatic capital: a phone keyboard would start every corrected line with one (v1.6). */}
-              <input defaultValue={text} aria-label={t('Caption line {n}', { n: i + 1 })} autoCapitalize="none"
+              <input className="ck-input" defaultValue={text} aria-label={t('Caption line {n}', { n: i + 1 })} autoCapitalize="none"
                 onFocus={() => { player.pause(); player.seek(clip.start + pg[0].t0 + 0.01); useEditor.setState({ time: player.time }); }}
                 onBlur={(ev) => commitPage(i, ev.target.value)}
                 onKeyDown={(ev) => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); }} />
@@ -474,16 +481,19 @@ function CutByText({ clip }: { clip: CaptionClip }) {
 
   if (!on) return <Button onClick={() => setOn(true)}>{t('Edit video by text')}</Button>;
   return (
-    <div className="cut-text">
+    <div className="cut-text ck-cut">
       <h3>{t('Tap words to cut them from the video')}</h3>
-      <div className="words">
+      <div className="words ck-words">
         {clip.words.map((w, i) => (
-          <button key={i} className={`word ${marked.has(i) ? 'cut' : ''}`} aria-pressed={marked.has(i)} onClick={() => toggle(i)}>{w.text}</button>
+          <button type="button" key={i} className={`word ck-word ${marked.has(i) ? 'cut' : ''}`} aria-pressed={marked.has(i)} onClick={() => toggle(i)}>{w.text}</button>
         ))}
       </div>
-      <div className="row">
+      <div className="row ck-actions">
         <Button onClick={() => setMarked(new Set(fillerIndices(clip.words)))}>{t('Mark fillers and repeats')}</Button>
-        <Button variant="primary" disabled={!marked.size} onClick={() => void cut()}>{t('Cut {n} words ({s} s)', { n: marked.size, s: seconds.toFixed(1) })}</Button>
+      </div>
+      {/* It deletes: red, on a line of its own, apart from the marking (DESIGN.md §2.3 and §2.6; the art director, release 11). */}
+      <div className="ck-cut-go">
+        <Button variant="danger" disabled={!marked.size} onClick={() => void cut()}>{t('Cut {n} words ({s} s)', { n: marked.size, s: num(seconds, 1) })}</Button>
       </div>
       <p className="ck-hint">{t('Only the main track is cut; captions move with it. You can undo it.')}</p>
     </div>

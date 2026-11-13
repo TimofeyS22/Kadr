@@ -11,7 +11,7 @@ export function IosFormatBody() {
   return (
     <>
       <p className="ck-hint" data-lead="">{t('An iPhone re-encodes a video from Photos before a site gets it: up to a minute and a half for 20 seconds of 4K, and the quality drops. The iPhone does this, not Kadr. Ask it for originals once:')}</p>
-      <p className="steps">{t('In the Photos window: ⋯ → Options → Format: Current')}</p>
+      <p className="steps ck-steps">{t('In the Photos window: ⋯ → Options → Format: Current')}</p>
       <Button variant="primary" onClick={() => void pickAfterFormatCard()}>{t('Choose from Photos')}</Button>
       <p className="ck-hint">{t('The iPhone remembers the choice, and videos then arrive in seconds. Cannot find it? Save the video to Files and pick it from there: that way it also arrives untouched.')}</p>
     </>

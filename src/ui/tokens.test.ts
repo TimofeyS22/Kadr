@@ -1,7 +1,7 @@
 // Chetko tokens (docs/17 stage Ч2, condition Д6): the contrast of every pair, the size of every scale, and drift —
 // a value written by hand in a file that already lives on tokens. Each check has a control: a deliberate violation
 // must turn it red, otherwise the check proves nothing.
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { TOKEN_LIMITS, TOKEN_PAIRS } from './tokenPairs';
@@ -89,7 +89,7 @@ describe('tokens: scales do not grow', () => {
 // ---- drift: a file that lives on tokens has no value written by hand ----
 /** Files already moved onto tokens. A screen is added here in the same commit that migrates it (stage Ч4). */
 const ON_TOKENS = ['ds.css', 'DesignSystem.tsx', 'DsComponents.tsx', 'DsParts.tsx', 'ck/ck.css', 'ck/Scale.tsx', 'ck/Sheet.tsx', 'ck/controls.tsx', 'ck/choice.tsx',
-  'ck/Field.tsx', 'ck/feedback.tsx', 'ck/home.tsx', 'ck/timeline.tsx', 'home.css', 'editor.css', 'timeline.css', 'sheets.css'];
+  'ck/Field.tsx', 'ck/feedback.tsx', 'ck/home.tsx', 'ck/timeline.tsx', 'home.css', 'editor.css', 'timeline.css', 'sheets.css', 'stage.css', 'capture.css', 'catalog.css', 'detail.css', 'base.css'];
 /** Pictures that stand in for a person's video in the gallery: content, so their colours are free and not interface debt. */
 const CONTENT = ['dsArt.tsx'];
 const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -117,7 +117,8 @@ describe('tokens: drift', () => {
   it('classes of the new system are namespaced, so the old stylesheet cannot restyle them', () => {
     // Found the hard way: the gallery's `.tile` took the width and the font size of the editor's `.tile`.
     const classesOf = (css: string) => [...new Set([...stripComments(css).matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]))];
-    const old = new Set(classesOf(read('styles.css')));
+    // The old stylesheet is gone since Ч4 release 12; were it back, its classes could not reach the system either.
+    const old = new Set(existsSync(join(import.meta.dirname, 'styles.css')) ? classesOf(read('styles.css')) : []);
     const foreign = (css: string) => classesOf(css).filter((c) => !/^(?:ck|ds)(?:-|$)/.test(c) || old.has(c));
     for (const file of ON_TOKENS.filter((f) => f.endsWith('.css'))) expect(foreign(read(file)), file).toEqual([]);
     expect(foreign('.ds .tile { width: 100%; } .ck-held.now::after { top: 0; }'), 'control').toEqual(['tile', 'now']);
@@ -132,24 +133,21 @@ describe('tokens: drift', () => {
   });
 });
 
-// ---- the screens that are not migrated yet: their debt may only shrink ----
-/** What styles.css and the components held on 2026-11-10 (reports/Chetko — аудит интерфейса.md §6). Lower a number when a
- *  screen moves onto tokens; never raise one. */
-const LEGACY = { hex: 87, colourFunctions: 38, fontSizes: 13, radii: 14, layers: 13, hexInComponents: 49 };
+// ---- the old stylesheet of 1.7.1 is gone (Ч4 release 12): every screen is on the system ----
+/** Colours written in components that are not interface: the palettes a person picks text and keys from. Lower it when
+ *  one goes; never raise it. */
+const CONTENT_HEX = 49;
 
-describe('tokens: the old styles do not grow new debt', () => {
-  const css = stripComments(read('styles.css'));
-  const distinct = (re: RegExp) => new Set([...css.matchAll(re)].map((m) => m[1].trim())).size;
-  it('styles.css', () => {
-    expect([...css.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].length).toBeLessThanOrEqual(LEGACY.hex);
-    expect([...css.matchAll(/\b(?:rgba?|hsla?)\(/g)].length).toBeLessThanOrEqual(LEGACY.colourFunctions);
-    expect(distinct(/(?<![a-z-])font-size:\s*([^;}]+)/g)).toBeLessThanOrEqual(LEGACY.fontSizes);
-    expect(distinct(/border-radius:\s*([^;}]+)/g)).toBeLessThanOrEqual(LEGACY.radii);
-    expect(distinct(/z-index:\s*([^;}]+)/g)).toBeLessThanOrEqual(LEGACY.layers);
+describe('tokens: no old styles are left', () => {
+  it('styles.css is gone, and nothing imports it', () => {
+    expect(existsSync(join(import.meta.dirname, 'styles.css'))).toBe(false);
+    const main = readFileSync(join(import.meta.dirname, '..', 'main.tsx'), 'utf8');
+    expect(main).not.toMatch(/styles\.css/);
+    expect(main).toMatch(/base\.css/);
   });
-  it('components', () => {
+  it('components hold no more colours by hand than the palettes', () => {
     const files = readdirSync(import.meta.dirname).filter((f) => /\.tsx?$/.test(f) && !f.endsWith('.test.ts') && !ON_TOKENS.includes(f) && f !== 'tokenPairs.ts' && f !== 'ckFont.ts' && !CONTENT.includes(f));
     const hex = files.reduce((n, f) => n + [...read(f).matchAll(/#[0-9a-fA-F]{6}\b/g)].length, 0);
-    expect(hex).toBeLessThanOrEqual(LEGACY.hexInComponents);
+    expect(hex).toBeLessThanOrEqual(CONTENT_HEX);
   });
 });

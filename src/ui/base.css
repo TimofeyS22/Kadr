@@ -1,0 +1,74 @@
+/* The ground of every screen, on the Chetko system (docs/17 Ч4, release 12): the page, what a bare button and field are,
+   the editor's grid, and the screens for support (?diag, ?styles). It takes the place of the old stylesheet of 1.7.1,
+   whose last rules lived here; every value comes from tokens.css, and the drift test reads this file. `editor`,
+   `preview`, `coach`, `diag`, `diag-actions`, `diag-report`, `styles-thumbs`, `perf-overlay`, `steps` and `banner` stay
+   in the markup as hooks for the tests. */
+
+:root {
+  color-scheme: dark;
+  font-family: var(--font-ui);
+  font-variation-settings: 'SHRP' var(--sharp-rest);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; background: var(--surface-panel); color: var(--text-primary); }
+body { overscroll-behavior: none; }
+h1, h2, h3 { margin: 0; }
+button { font: inherit; color: inherit; cursor: pointer; }
+/* A bare button with no look of its own dims when it is off; the Chetko controls set their own disabled colour and are
+   not dimmed twice (the art director, release 12: the home cards and the play button vanished under both). */
+button:disabled { cursor: default; }
+button:not([class*='ck-']):disabled { opacity: 0.4; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+/* A long press on a real iPhone selected the words on a button (L5, 2026-11-09). */
+button, [role=radio], [role=switch] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* ---- the editor: header, the frame, the row under it, the timeline, the ribbon ---- */
+.ck-editor {
+  position: fixed; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto auto; grid-template-columns: minmax(0, 1fr);
+  background: var(--surface-panel);
+}
+.ck-stage { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; }
+/* A phone on its side (audit V-208): the picture on the left, the tools on the right, instead of a strip between them. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .ck-editor { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  .ck-editor > .ck-editor-top { grid-column: 1 / -1; }
+  .ck-editor > .ck-stage { grid-column: 1; grid-row: 2 / -1; }
+  .ck-editor > .ck-transport, .ck-editor > .ck-tl, .ck-editor > .ck-ribbon { grid-column: 2; }
+}
+@media (min-width: 900px) { .ck-tl-scroll { max-height: 40dvh; } }
+/* Where a first-run tip lies: over the ribbon, in reach of the thumb; how it looks is `ck-editor-tip` (editor.css). */
+.ck-coach { position: fixed; left: var(--space-3); right: var(--space-3); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); z-index: var(--z-over-old); }
+@media (min-width: 900px) { .ck-coach { left: auto; width: 380px; } }
+
+/* ---- what keeps Kadr from working in this browser: a plate with a sign and a white ring, never a red ground ---- */
+.ck-banner {
+  display: flex; gap: var(--space-2); margin: var(--space-4) 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-control);
+  background: var(--surface-raised); box-shadow: inset 0 0 0 var(--hairline) var(--text-primary); color: var(--text-primary); font-size: var(--type-sm); line-height: var(--leading-text);
+} /* a hairline: a 2 px white ring is what «chosen» looks like (RU, a ringed tile); the alarm is in the sign */
+.ck-banner > svg { flex: none; width: 20px; height: 20px; }
+
+/* ---- a few words in a sheet that tell the steps to take (the iPhone's «Format: Current») ---- */
+.ck-steps { margin: var(--space-2) 0 var(--space-1); font-size: var(--type-md); font-weight: var(--weight-strong); line-height: var(--leading-text); }
+
+/* ---- the screens for support: what the device can do (?diag), the caption styles on a busy ground (?styles) ---- */
+.ck-diag { height: 100%; max-width: 760px; margin: 0 auto; overflow-y: auto; padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--space-4) var(--space-8); }
+.ck-diag h1 { margin: var(--space-2) 0; font-size: var(--type-xl); font-weight: var(--weight-strong); }
+.ck-diag h2 { margin: var(--space-6) 0 var(--space-1); font-size: var(--type-md); font-weight: var(--weight-strong); }
+.ck-diag .ck-hint { margin: var(--space-1) 0 var(--space-2); }
+.ck-diag-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0; }
+.ck-diag-report {
+  margin: var(--space-3) 0 var(--space-4); padding: var(--space-3); border-radius: var(--radius-control); background: var(--surface-raised);
+  box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle); font-size: var(--type-xs); line-height: var(--leading-text); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ck-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-3); }
+.ck-thumbs figure { display: grid; gap: var(--space-1); margin: 0; }
+.ck-thumbs canvas { width: 100%; height: auto; border-radius: var(--radius-control); }
+.ck-thumbs figcaption { font-size: var(--type-xs); color: var(--text-secondary); }
+/* The frame rate over everything (?perf): a dark plate in a corner, never in the way of a finger. */
+.ck-perf {
+  position: fixed; left: var(--space-2); top: calc(var(--space-1) + env(safe-area-inset-top, 0px)); z-index: var(--z-over-old); pointer-events: none;
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-control); background: var(--surface-field); color: var(--text-primary);
+  font-size: var(--type-xs); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums;
+}

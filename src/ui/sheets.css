@@ -37,8 +37,7 @@
 .ck-panel-body > * { min-width: 0; }
 /* A part of a sheet is named in small strong words, never under 12 px (audit P3-9). */
 .ck-panel-body h3 { margin: var(--space-2) 0 calc(-1 * var(--space-1)); font-size: var(--type-xs); font-weight: var(--weight-strong); letter-spacing: 0.02em; color: var(--text-secondary); }
-.ck-hint { margin: 0; font-size: var(--type-sm); line-height: var(--leading-text); color: var(--text-secondary); text-wrap: pretty; }
-.ck-hint[data-lead] { color: var(--text-primary); }
+/* `ck-hint` lives in ck.css since Ч4 release 12: support screens and the error screen use it without the sheets. */
 /* An action of a sheet stands at its start; the one main action of the sheet is white and takes the whole width. */
 .ck-panel-body > .ck-btn { justify-self: start; max-width: 100%; }
 .ck-panel-body > .ck-primary { justify-self: stretch; }

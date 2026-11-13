@@ -28,5 +28,5 @@ export function PerfOverlay() {
     }, 1000);
     return () => clearInterval(id);
   }, []);
-  return <div className="perf-overlay" aria-hidden>{text}</div>;
+  return <div className="perf-overlay ck-perf" aria-hidden>{text}</div>;
 }

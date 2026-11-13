@@ -11,6 +11,7 @@ import { PAIRS, pairPlate, pairStyle, type PairVariant } from '../core/pairs';
 import { CAPTION_PRESETS, TEXT_PRESETS } from '../core/presets';
 import { FONT_IDS, type CaptionClip, type FontId, type TextClip, type TextStyle } from '../core/types';
 import { FONTS, TextRasterizer, ensureFont, type CaptionState } from '../engine/text';
+import { Button } from './ck/controls';
 
 export interface StyleRow {
   kind: 'caption' | 'text' | 'pair'; id: string; lang: 'ru' | 'en';
@@ -232,11 +233,11 @@ export function StylesCheck() {
     `fonts missing letters: ${report.fonts.filter((f) => f.cyrillic || f.latin).map((f) => `${f.id} [${f.cyrillic}${f.latin}]`).join(', ') || 'none'}`,
   ].join('\n');
   return (
-    <main className="diag">
+    <main className="diag ck-diag">
       <h1>Kadr: templates</h1>
       <pre data-testid="styles-summary">{text}</pre>
-      <button className="btn" onClick={() => void navigator.clipboard?.writeText(`${text}\n${report.rows.map((r) => `${r.kind} ${r.id} ${r.lang} ${BACKGROUNDS.map((b) => r.edge[b]).join(' ')} ${r.ms} ${r.msPreview}`).join('\n')}`)}>Copy report</button>
-      <div ref={thumbs} className="styles-thumbs" />
+      <Button onClick={() => void navigator.clipboard?.writeText(`${text}\n${report.rows.map((r) => `${r.kind} ${r.id} ${r.lang} ${BACKGROUNDS.map((b) => r.edge[b]).join(' ')} ${r.ms} ${r.msPreview}`).join('\n')}`)}>Copy report</Button>
+      <div ref={thumbs} className="styles-thumbs ck-thumbs" />
     </main>
   );
 }

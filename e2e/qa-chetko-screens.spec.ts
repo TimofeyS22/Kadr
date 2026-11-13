@@ -677,6 +677,11 @@ test('export: the file\'s own frames come out between two marks as far as it is 
   await expect.poll(() => work.locator('.ck-progress-rest').evaluate((el) => el.getBoundingClientRect().width), { message: 'nothing of the film is covered' }).toBeLessThan(1);
   if (iphone) {
     expect(await whiteFilled(page), 'one white button: save to Photos').toEqual(['Сохранить']);
+    // Held at the bottom of the sheet, on screen: on an iPhone 15 it was half under the sheet's edge (L5, 2026-11-12).
+    const save = (await panel(page).getByRole('button', { name: 'Сохранить', exact: true }).boundingBox())!;
+    const sheet = (await panel(page).boundingBox())!;
+    expect(save.y + save.height, 'the save button is whole inside the sheet').toBeLessThanOrEqual(sheet.y + sheet.height + 1);
+    expect(save.y + save.height).toBeLessThanOrEqual(812);
   } else {
     await expect(work.getByText('Сохранено в «Загрузки».')).toBeVisible();
     expect(await whiteFilled(page), 'saved already: no white button asks to save it again').toEqual([]);
@@ -824,4 +829,194 @@ test('mask: the shapes are tiles of the person\'s own frame, the chosen one ring
   for (const tile of await shapes.getByRole('radio').all()) expect((await tile.boundingBox())!.x + (await tile.boundingBox())!.width).toBeLessThanOrEqual(375);
   await expect(panel(page).getByRole('tab')).toHaveText(['Размер', 'Влево ↔ вправо', 'Вверх ↕ вниз', 'Поворот', 'Мягкий край']);
   await expect(panel(page).getByRole('slider', { name: 'Размер' })).toHaveAttribute('aria-valuenow', '0.7');
+});
+
+// ---- release 8: the frame and what lies on it ----
+/** A CSS property of an element (or its pseudo-element) as sRGB, read through a canvas: the browser gives tokens as oklch(). */
+const rgbOf = (loc: ReturnType<Page['locator']>, prop: 'backgroundColor' | 'outlineColor', pseudo?: string) => loc.evaluate((e, [p, ps]) => {
+  const ctx = document.createElement('canvas').getContext('2d')!;
+  ctx.fillStyle = getComputedStyle(e, ps || null)[p as 'backgroundColor'];
+  ctx.fillRect(0, 0, 1, 1);
+  return Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3);
+}, [prop, pseudo ?? ''] as const);
+/** No hue: black, white or a grey between — so not red or pink. */
+const neutral = ([r, g, b]: number[]) => Math.max(r, g, b) - Math.min(r, g, b) <= 12;
+
+test('frame: the field is black and the frame square-cornered with no line round it; what lies on it is white with a dark edge, never pink or red', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kadr.undoMoved.v1', '1'));
+  await sampleEditor(page);
+  expect(await rgbOf(page.locator('.preview'), 'backgroundColor'), 'DESIGN.md §2.1: round the frame only black').toEqual([0, 0, 0]);
+  const frame = await page.locator('.preview-canvas').evaluate((e) => [getComputedStyle(e).borderRadius, getComputedStyle(e).boxShadow]);
+  expect(frame).toEqual(['0px', 'none']);
+  // The text of the sample, selected inside its time: its box and handle.
+  await page.locator('.preview').click({ position: { x: 5, y: 5 } });
+  for (let i = 0; i < 45; i++) await page.keyboard.press('ArrowRight');
+  await page.locator('.tl-row .clip-text').first().click();
+  const sel = page.locator('.sel-box');
+  await expect(sel).toBeVisible();
+  const ring = await sel.evaluate((e) => getComputedStyle(e).boxShadow);
+  expect(ring, 'white, 2 px as a held piece on the timeline, with a dark edge both sides').toMatch(/1px inset.*0px 0px 0px 2px.*0px 0px 0px 3px/);
+  const handle = (await page.locator('.sel-handle').boundingBox())!;
+  expect(handle.width).toBeGreaterThanOrEqual(44);
+  const dot = await rgbOf(page.locator('.sel-handle'), 'backgroundColor', '::after');
+  expect(Math.min(...dot), `the handle is white: ${dot}`).toBeGreaterThan(230);
+  // The guide shows while the text is dragged to the middle, white; the angle plate is dark and white once it snaps.
+  // The sample's text stands in the middle: a drag of 2 px keeps it within the snap, 20 px down moves it.
+  const b = (await sel.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2 + 2, b.y + b.height / 2 + 20, { steps: 8 });
+  const guide = page.locator('.guide.v');
+  await expect(guide).toBeVisible();
+  const g = await rgbOf(guide, 'backgroundColor');
+  expect(Math.min(...g), `the guide is white, not pink: ${g}`).toBeGreaterThan(230);
+  await page.mouse.up();
+  const tag = page.locator('.angle-tag');
+  const plain = await rgbOf(tag, 'backgroundColor');
+  await tag.evaluate((e) => e.setAttribute('data-snapped', ''));
+  const snapped = await rgbOf(tag, 'backgroundColor');
+  await tag.evaluate((e) => e.removeAttribute('data-snapped'));
+  expect(neutral(plain) && neutral(snapped), `${plain} / ${snapped}`).toBe(true);
+  expect(await tag.evaluate((e) => { e.setAttribute('data-snapped', ''); const r = getComputedStyle(e).boxShadow; e.removeAttribute('data-snapped'); return r; }), 'a snap rings the plate in white').toMatch(/inset/);
+  // The safe zones: dimmed and edged in white, not red.
+  await page.getByRole('button', { name: /безопасн/i }).first().click();
+  for (const zone of await page.locator('.safe-zones i').all()) {
+    const [bg, line] = [await rgbOf(zone, 'backgroundColor'), await rgbOf(zone, 'outlineColor')];
+    expect(neutral(bg) && neutral(line), `a zone: ${bg} / ${line}`).toBe(true);
+  }
+});
+
+test('toasts: a failure is a dark plate with a white ring and a sign, never red, where toasts always stood', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Новый проект' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('.toolbar .tool', { hasText: /^Медиа$/ }).click();
+  await (await chooser).setFiles([fx('hostile_empty.mp4')]);
+  const toast = page.locator('.toast.error').first();
+  await expect(toast).toBeVisible({ timeout: 30_000 });
+  const bg = await rgbOf(toast, 'backgroundColor');
+  const shadow = await toast.evaluate((e) => getComputedStyle(e).boxShadow);
+  expect(neutral(bg), `not a red ground: ${bg}`).toBe(true);
+  expect(shadow, 'a white ring').toMatch(/inset/);
+  await expect(toast.locator('.ck-apptoast-text svg')).toHaveCount(1);
+  // A failure stays until closed, and says how: a cross 44 px to a finger.
+  const close = toast.getByRole('button', { name: 'Закрыть' });
+  expect((await close.boundingBox())!.width).toBeGreaterThanOrEqual(44);
+  const top = (await toast.boundingBox())!.y;
+  expect(top, 'under the header, as before').toBeLessThan(160);
+  // A plain toast is a plate too, not bare words over the video (found by eye after release 8: it had lost its ground).
+  await close.click();
+  await page.evaluate(() => localStorage.removeItem('kadr.hint.move')); // the hint on moving a text, said once
+  await page.locator('.toolbar .tool', { hasText: /^Текст$/ }).click();
+  const info = page.locator('.toast.info').first();
+  await expect(info).toBeVisible();
+  const [ground, pad] = await info.evaluate((e) => [getComputedStyle(e).backgroundColor, parseFloat(getComputedStyle(e).paddingTop)] as const);
+  expect(ground, 'a ground of its own').not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+  expect(pad).toBeGreaterThanOrEqual(12);
+  await page.evaluate(() => { (window as unknown as { __toastErrors?: string[] }).__toastErrors = []; });
+});
+
+// ---- release 9: recording ----
+/** A camera and a microphone that work headless: a picture only when one is asked for, a tone as the voice. */
+async function fakeMedia(page: Page) {
+  await page.addInitScript(() => {
+    MediaDevices.prototype.getUserMedia = async function (want?: MediaStreamConstraints) {
+      const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
+      const g = c.getContext('2d')!;
+      let f = 0;
+      setInterval(() => { g.fillStyle = '#eee'; g.fillRect(0, 0, 640, 360); g.fillStyle = `hsl(${(f++ * 7) % 360} 70% 50%)`; g.fillRect(0, 0, 640, 20); }, 33);
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const dest = ctx.createMediaStreamDestination();
+      osc.connect(dest);
+      osc.start();
+      return new MediaStream([...(want?.video ? c.captureStream(30).getVideoTracks() : []), ...dest.stream.getAudioTracks()]);
+    };
+  });
+}
+const darkRound = (c: number[]) => neutral(c) && Math.max(...c) < 80;
+const signal = ([r, g, b]: number[]) => r > 200 && g > 170 && b < 120;
+
+test('camera: black round the picture; white icons on dark rounds 44 px; the record button white, never red, and held under the thumb while a take runs', async ({ page }) => {
+  await fakeMedia(page);
+  await sampleEditor(page);
+  await page.getByRole('button', { name: 'Камера', exact: true }).first().click();
+  const cam = page.getByRole('dialog', { name: 'Камера' });
+  await expect(cam).toBeVisible();
+  expect(await rgbOf(cam, 'backgroundColor'), 'DESIGN.md §2.1: black round the picture').toEqual([0, 0, 0]);
+  for (const name of ['Закрыть камеру', 'Сценарий телесуфлёра', 'Сменить камеру']) {
+    const b = cam.getByRole('button', { name });
+    const box = (await b.boundingBox())!;
+    expect(Math.min(box.width, box.height), name).toBeGreaterThanOrEqual(44);
+    const bg = await rgbOf(b, 'backgroundColor');
+    expect(darkRound(bg), `${name}: a solid dark round, so a light wall does not take the icon: ${bg}`).toBe(true);
+  }
+  const start = cam.getByRole('button', { name: 'Начать запись' });
+  await expect(start).toBeEnabled({ timeout: 10_000 });
+  const disc = await rgbOf(start, 'backgroundColor', '::before');
+  expect(neutral(disc) && Math.min(...disc) > 230, `DESIGN.md §2.3: the record button is white, red is for deleting: ${disc}`).toBe(true);
+  const at = (await start.boundingBox())!;
+  expect(Math.abs(at.x + at.width / 2 - 375 / 2), 'in the middle, under the thumb').toBeLessThan(2);
+  expect(at.y, 'in the lower fifth').toBeGreaterThan(812 * 0.8);
+  // The script: a named field; its speed and size as tabs over one Scale; read on a solid dark plate by the lens.
+  await cam.getByRole('button', { name: 'Сценарий телесуфлёра' }).click();
+  await cam.getByRole('textbox', { name: 'Текст для суфлёра' }).fill('Привет! Это проверка суфлёра.\nВторая строка.');
+  await expect(cam.getByRole('tab')).toHaveText(['Скорость прокрутки', 'Размер текста']);
+  await expect(cam.getByRole('slider', { name: 'Скорость прокрутки', exact: true })).toHaveAttribute('aria-valuenow', '1');
+  const plate = cam.locator('.ck-prompter');
+  expect(darkRound(await rgbOf(plate, 'backgroundColor')), 'a solid plate').toBe(true);
+  const pb = (await plate.boundingBox())!;
+  expect(pb.y, 'at the top, by the lens').toBeLessThan(60);
+  expect(pb.height, 'four lines, not a third of the screen over the face').toBeLessThan(812 * 0.25);
+  // The time is there before the take, so the camera reads as video; its «now» mark is not lit yet.
+  await expect(cam.locator('.rec-time')).toHaveText(/^0:00/);
+  // 3, 2, 1 is stopped by the same button, and closing is not offered while a take is counted in or runs.
+  await start.click();
+  await cam.getByRole('button', { name: 'Отменить отсчёт' }).click();
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(cam.getByRole('button', { name: 'Закрыть камеру' })).toBeDisabled();
+  // A take: the disc becomes a square to stop in the same place; the time runs over it with the signal mark of «now».
+  const stop = cam.getByRole('button', { name: 'Остановить запись' });
+  await expect(stop).toBeVisible({ timeout: 10_000 });
+  const now = (await stop.boundingBox())!;
+  expect(Math.abs(now.x - at.x) + Math.abs(now.y - at.y), 'the button does not move from under the thumb').toBeLessThan(1);
+  const time = cam.locator('.rec-time');
+  await expect(time).toHaveText(/^0:0\d/);
+  const tb = (await time.boundingBox())!;
+  expect(tb.y + tb.height, 'the time stands over the button').toBeLessThanOrEqual(now.y + 1);
+  expect(signal(await rgbOf(time, 'backgroundColor', '::before')), 'the mark of «now»').toBe(true);
+  await page.waitForTimeout(1500);
+  await stop.click();
+  await expect(cam).toHaveCount(0, { timeout: 30_000 });
+});
+
+test('voice-over: the same white record button; the level is a grey bar with a white mark, too loud turns it white — never red', async ({ page }) => {
+  await fakeMedia(page);
+  await sampleEditor(page);
+  await page.getByRole('button', { name: 'Запись', exact: true }).first().click();
+  await expect(panel(page)).toBeVisible();
+  const start = panel(page).getByRole('button', { name: 'Начать запись' });
+  const disc = await rgbOf(start, 'backgroundColor', '::before');
+  expect(neutral(disc) && Math.min(...disc) > 230, `white, not red: ${disc}`).toBe(true);
+  expect((await start.boundingBox())!.width).toBeGreaterThanOrEqual(44);
+  const meter = panel(page).locator('.meter');
+  // The peak mark is drawn only once there is a peak; here one stands in for it, to read its colour.
+  await meter.evaluate((e) => { if (!e.querySelector('i')) e.append(Object.assign(document.createElement('i'), { className: 'hold' })); });
+  const parts = async () => [await rgbOf(meter.locator('> div'), 'backgroundColor'), await rgbOf(meter.locator('> i'), 'backgroundColor')];
+  const [bar, mark] = await parts();
+  expect(neutral(bar) && neutral(mark) && Math.min(...mark) > 230, `a grey bar and a white mark: ${bar} / ${mark}`).toBe(true);
+  await meter.evaluate((e) => e.setAttribute('data-clip', ''));
+  const [loud, loudMark] = await parts();
+  expect(neutral(loud) && Math.min(...loud) > 230 && neutral(loudMark), `too loud is white, not red: ${loud} / ${loudMark}`).toBe(true);
+  await meter.evaluate((e) => e.removeAttribute('data-clip'));
+  const before = await page.locator('.tl-row.audio .clip').count();
+  await start.click();
+  const stop = panel(page).getByRole('button', { name: 'Остановить запись' });
+  await expect(stop).toBeVisible({ timeout: 15_000 });
+  expect(signal(await rgbOf(panel(page).locator('.rec-time'), 'backgroundColor', '::before')), 'the mark of «now»').toBe(true);
+  await page.waitForTimeout(1200);
+  await stop.click();
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(before + 1, { timeout: 30_000 });
 });

@@ -1,9 +1,13 @@
 import { Component, Suspense, lazy, useEffect, useState, type ReactNode } from 'react';
+import { CircleAlert, X } from 'lucide-react';
 import { track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { Home } from './Home';
 import { t, useLocale } from '../lib/i18n';
 import { ErrorDetails } from './ErrorDetails';
+import { Button } from './ck/controls';
+import './ck/ck.css';
+import './stage.css';
 import { keepError } from '../lib/errorLog';
 
 // The editor (and the media engine) load on demand so the home screen starts fast.
@@ -47,10 +51,11 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   override render() {
     if (!this.state.error) return this.props.children;
     return (
-      <div className="center-msg">
+      <div className="center-msg ck-center" role="alert">
+        <CircleAlert aria-hidden />
         <p>{t('Something went wrong. Your project is saved on this device.')}</p>
-        <p className="hint">{this.state.error.message}</p>
-        <button className="btn primary" onClick={() => { location.hash = ''; location.reload(); }}>{t('Reload')}</button>
+        <p className="ck-hint">{this.state.error.message}</p>
+        <Button variant="primary" size="large" onClick={() => { location.hash = ''; location.reload(); }}>{t('Reload')}</Button>
       </div>
     );
   }
@@ -61,15 +66,28 @@ function Toasts() {
   const dismiss = useEditor((s) => s.dismiss);
   const keep = useEditor((s) => s.keep);
   return (
-    <div className="toasts" role="status" aria-live="polite">
+    // Chetko (Ч4 release 8): a dark plate; a failure is a white ring and a sign, never red (DESIGN.md §2.3). Where they stand
+    // and how long they stay is as before: nothing moves silently.
+    <div className="toasts ck-apptoasts" role="status" aria-live="polite">
       {toasts.map((x) => (x.detail ? (
-        <div key={x.id} className={`toast ${x.kind} with-detail`}>
-          <button className="toast-text" onClick={() => dismiss(x.id)}>{x.text}</button>
-          {x.kept ? <ErrorDetails entry={x.detail} /> : <button className="toast-more" onClick={() => keep(x.id)}>{t('Details')}</button>}
-          {x.kept && <button className="btn" onClick={() => dismiss(x.id)}>{t('Close')}</button>}
+        <div key={x.id} className={`toast ${x.kind} with-detail ck-apptoast`} data-tone={x.kind}>
+          <div className="ck-apptoast-row">
+            <button type="button" className="toast-text ck-apptoast-text" onClick={() => dismiss(x.id)}>{x.kind === 'error' && <CircleAlert aria-hidden />}{x.text}</button>
+            <button type="button" className="ck-apptoast-close" aria-label={t('Close')} onClick={() => dismiss(x.id)}><X aria-hidden /></button>
+          </div>
+          {/* Kept open by Details, it is closed by the same cross: one «Close», not two of one name (release 8). */}
+          {x.kept ? <ErrorDetails entry={x.detail} /> : <button type="button" className="toast-more ck-apptoast-more" onClick={() => keep(x.id)}>{t('Details')}</button>}
+        </div>
+      ) : x.kind === 'error' ? (
+        <div key={x.id} className={`toast ${x.kind} ck-apptoast`} data-tone={x.kind}>
+          <div className="ck-apptoast-row">
+            <button type="button" className="toast-text ck-apptoast-text" onClick={() => dismiss(x.id)}><CircleAlert aria-hidden />{x.text}</button>
+            <button type="button" className="ck-apptoast-close" aria-label={t('Close')} onClick={() => dismiss(x.id)}><X aria-hidden /></button>
+          </div>
         </div>
       ) : (
-        <button key={x.id} className={`toast ${x.kind}`} onClick={() => dismiss(x.id)}>{x.text}</button>
+        // A plain toast is the plate itself (not `ck-apptoast-text`, which is the bare words inside a failure's row).
+        <button type="button" key={x.id} className={`toast ${x.kind} ck-apptoast`} data-tone={x.kind} onClick={() => dismiss(x.id)}>{x.text}</button>
       )))}
     </div>
   );
@@ -82,13 +100,13 @@ export function App() {
   return (
     <ErrorBoundary key={locale}>
       {diag ? (
-        <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><Diag /></Suspense>
+        <Suspense fallback={<div className="center-msg ck-center"><p>{t('Opening…')}</p></div>}><Diag /></Suspense>
       ) : styles ? (
-        <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><StylesCheck /></Suspense>
+        <Suspense fallback={<div className="center-msg ck-center"><p>{t('Opening…')}</p></div>}><StylesCheck /></Suspense>
       ) : ds ? (
-        <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><DesignSystem /></Suspense>
+        <Suspense fallback={<div className="center-msg ck-center"><p>{t('Opening…')}</p></div>}><DesignSystem /></Suspense>
       ) : id ? (
-        <Suspense fallback={<div className="center-msg"><p>{t('Opening…')}</p></div>}><Editor key={id} id={id} /></Suspense>
+        <Suspense fallback={<div className="center-msg ck-center"><p>{t('Opening…')}</p></div>}><Editor key={id} id={id} /></Suspense>
       ) : <Home />}
       <Toasts />
     </ErrorBoundary>

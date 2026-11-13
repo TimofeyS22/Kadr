@@ -273,7 +273,7 @@ export function Editor({ id }: { id: string }) {
 
   if (missing) {
     return (
-      <div className="center-msg">
+      <div className="center-msg ck-center">
         <div className="ck">
           <Empty title={t('This project is not on this device.')}
             action={<Button variant="primary" size="large" onClick={() => { location.hash = ''; }}>{t('Back to projects')}</Button>}>
@@ -283,7 +283,7 @@ export function Editor({ id }: { id: string }) {
       </div>
     );
   }
-  if (!project) return <div className="center-msg"><p>{t('Opening…')}</p></div>;
+  if (!project) return <div className="center-msg ck-center"><p>{t('Opening…')}</p></div>;
 
   return (
     <div
@@ -309,7 +309,7 @@ export function Editor({ id }: { id: string }) {
       <BusyOverlay />
       <ElsewhereNotice />
       <Coach hold={!undoMovedSeen} />
-      {dragging && <div className="drop-hint">{t('Drop videos, photos or music to add them')}</div>}
+      {dragging && <div className="drop-hint ck-drop">{t('Drop videos, photos or music to add them')}</div>}
     </div>
   );
 }
@@ -503,7 +503,7 @@ function Coach({ hold }: { hold: boolean }) {
   if (seen >= TIPS.length || !hasClips || sheet || hold) return null;
   const next = () => { const n = seen + 1; setSeen(n); try { localStorage.setItem('kadr.tips', String(n)); } catch { /* ignore */ } };
   return (
-    <div className="coach" role="note">
+    <div className="coach ck-coach" role="note">
       <div className="ck ck-editor-tip">
         <span>{t(TIPS[seen])}</span>
         <Button onClick={next}>{seen + 1 < TIPS.length ? t('Next') : t('Got it')}</Button>

@@ -65,7 +65,7 @@ export function PrivacyBody({ clip }: { clip: MediaVisual }) {
       <Chips even options={['blur', 'pixelate'] as const} value={pv.style} render={(s) => (s === 'blur' ? t('Blur') : t('Pixelate'))}
         onChange={(s) => set((p) => { p.style = s; })} />
       {pv.areas.map((a, i) => (
-        <div key={i} className="privacy-area">
+        <div key={i} className="privacy-area ck-area">
           <h3>{t('Area {n}', { n: i + 1 })}</h3>
           <Values label={t('Area {n}', { n: i + 1 })}>
           {(['x', 'y'] as const).map((k) => (
