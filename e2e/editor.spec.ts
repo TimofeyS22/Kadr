@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
 import { switchableNetwork } from './network';
+import { compareSound } from './soundMatch';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
@@ -3264,73 +3265,6 @@ async function exportedSound(file: string, rate: number): Promise<Float32Array> 
   const { execFileSync } = await import('node:child_process');
   const eb = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-af', 'pan=mono|c0=0.5*c0+0.5*c1', '-ar', String(rate), '-f', 'f32le', '-'], { maxBuffer: 64 << 20 });
   return new Float32Array(eb.buffer, eb.byteOffset, eb.byteLength / 4);
-}
-
-/**
- * Lines the preview up with the export and compares them in named windows (seconds of the export). Two different
- * questions, 20 ms at a time. Delivery: a dropout is preview silence where the export is loud — the realtime engine
- * late with a buffer (a slow first decode, a starved CPU). Mix: where the preview sounds, the gain that best maps the
- * export onto it (1 = same level) and what is left over (fades, ducking, timing).
- */
-function compareSound(played: Float32Array, exported: Float32Array, rate: number, windows: readonly (readonly [string, number, number])[]) {
-  // To the millisecond on 10 ms RMS (the tap starts before the sound: the clock may wait for it up to 2 s), then to the
-  // sample.
-  const ms = rate / 1000;
-  const perMs = (x: Float32Array) => Array.from({ length: Math.floor(x.length / ms) }, (_, k) => x.subarray(k * ms, (k + 1) * ms).reduce((s, v) => s + v * v, 0));
-  const pp = perMs(played), pe = perMs(exported);
-  const rms10 = (e: number[], k: number) => { let v = 0; for (let j = k; j < k + 10; j++) v += e[j] ?? 0; return Math.sqrt(v); };
-  let lagMs = 0, bestMisfit = Infinity;
-  for (let l = 0; l <= 3000; l++) {
-    let d = 0;
-    for (let k = 0; k + 10 <= pe.length; k += 10) d += Math.abs(rms10(pp, k + l) - rms10(pe, k));
-    if (d < bestMisfit) { bestMisfit = d; lagMs = l; }
-  }
-  const lag = lagMs * ms;
-  const span = Math.min(5 * rate, exported.length);
-  const dot = (o: number, a: number, b2: number) => { let v = 0; for (let i = a; i < b2; i++) v += played[i + o] * exported[i]; return v; };
-  let best = lag;
-  for (let o = lag - 2 * ms; o <= lag + 2 * ms; o++) if (o >= 0 && dot(o, Math.min(rate, span / 5), span) > dot(best, Math.min(rate, span / 5), span)) best = o;
-
-  const w = 20 * ms;
-  const win = (i: number) => {
-    let pv = 0, ev = 0;
-    for (let j = i; j < i + w; j++) { pv += played[j + best] ** 2; ev += exported[j] ** 2; }
-    return { p: Math.sqrt(pv / w), e: Math.sqrt(ev / w) };
-  };
-  const dropped = (i: number) => { const v = win(i); return v.e > 0.01 && v.p < 0.1 * v.e; };
-  const drops: number[] = [];
-  for (let i = Math.round(0.05 * rate); i + w <= exported.length; i += w) if (dropped(i)) drops.push(i / rate);
-  const rows: string[] = [];
-  const stats: { name: string; gain: number; rest: number; shiftMs: number; ownRest: number; envGain: number; envRest: number }[] = [];
-  for (const [name, a, b2] of windows) {
-    let xy = 0, yy = 0, rr = 0, gone = 0;
-    const i0 = Math.round(a * rate), i1 = Math.round(b2 * rate);
-    for (let i = i0; i + w <= i1; i += w) {
-      if (dropped(i)) { gone++; continue; }
-      for (let j = i; j < i + w; j++) { xy += played[j + best] * exported[j]; yy += exported[j] * exported[j]; }
-    }
-    const gain = xy / yy;
-    for (let i = i0; i + w <= i1; i += w) if (!dropped(i)) for (let j = i; j < i + w; j++) rr += (played[j + best] - gain * exported[j]) ** 2;
-    const rest = Math.sqrt(rr / yy);
-    // The window on its own: is it as early or late as the rest of the mix (a sound out of time), or the same moment
-    // and only coded differently? Its own best line-up within ±5 ms and what is left over there.
-    let own = 0, ownDot = -Infinity;
-    for (let o = -5 * ms; o <= 5 * ms; o++) { if (i0 + best + o < 0) continue; const v = dot(best + o, i0, i1); if (v > ownDot) { ownDot = v; own = o; } }
-    let oxy = 0, oyy = 0, orr = 0;
-    for (let j = i0; j < i1; j++) { oxy += played[j + best + own] * exported[j]; oyy += exported[j] ** 2; }
-    for (let j = i0; j < i1; j++) orr += (played[j + best + own] - (oxy / oyy) * exported[j]) ** 2;
-    const shiftMs = own / ms, ownRest = Math.sqrt(orr / oyy);
-    // The 10 ms loudness envelope: what a noise-like sound is heard as. AAC codes noise loosely (a whoosh came back with
-    // the same level in every band and the same timing, but its waveform 25% off, mostly above 3 kHz); its envelope
-    // does not care, and still moves 7% for 5 ms late and 5% for a 1 dB step.
-    const envOf = (x: Float32Array, from: number) => Array.from({ length: Math.floor((i1 - i0) / (10 * ms)) }, (_, k) => { let v = 0; for (let j = 0; j < 10 * ms; j++) v += x[from + k * 10 * ms + j] ** 2; return Math.sqrt(v / (10 * ms)); });
-    const pe = envOf(played, i0 + best), ee = envOf(exported, i0);
-    const envGain = pe.reduce((v, x, k) => v + x * ee[k], 0) / ee.reduce((v, x) => v + x * x, 0);
-    const envRest = Math.sqrt(pe.reduce((v, x, k) => v + (x - envGain * ee[k]) ** 2, 0) / ee.reduce((v, x) => v + x * x, 0));
-    stats.push({ name, gain, rest, shiftMs, ownRest, envGain, envRest });
-    rows.push(`${name} ${a.toFixed(2)}–${b2.toFixed(2)} s: preview ×${gain.toFixed(4)}, left over ${(rest * 100).toFixed(1)}%${gone ? `, ${gone * 20} ms dropped` : ''}; on its own ${shiftMs >= 0 ? '+' : ''}${shiftMs.toFixed(3)} ms, left over ${(ownRest * 100).toFixed(1)}%; envelope ×${envGain.toFixed(4)}, left over ${(envRest * 100).toFixed(1)}%`);
-  }
-  return { best, drops, stats, rows, header: `preview at ${rate} Hz, the clock waited ${(best / ms).toFixed(0)} ms; dropouts ${drops.length * 20} ms${drops.length ? ` from ${drops[0].toFixed(2)} s` : ''}` };
 }
 
 test.describe(() => {
