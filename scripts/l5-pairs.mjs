@@ -91,15 +91,26 @@ const WATCH = `if (!window.__l5) {
   }
 }`;
 
-/** The preview canvas cut out of a screenshot of the page, at the screenshot's own scale. */
+/**
+ * The preview canvas cut out of a screenshot. On the iPhone the screenshot holds the status bar over the page, so the
+ * canvas's page box lands ~59 pt too high (2026-11-13, iPhone 15): the canvas is found in the picture instead, by the
+ * pure black stage around it — down the middle to its top, across to its sides, down its own left edge to its bottom.
+ */
 async function preview(name) {
-  const r = await js("const r = document.querySelector('.preview-canvas').getBoundingClientRect(); return [r.x, r.y, r.width, r.height, innerWidth];");
   const png = await shot(`${name}-screen`);
-  const w = Number(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width', '-of', 'csv=p=0', png], { encoding: 'utf8' }).trim());
-  const k = w / r[4];
-  const [x, y, cw, ch] = r.slice(0, 4).map((v) => Math.round(v * k));
+  const [w, h] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', png], { encoding: 'utf8' }).trim().split(',').map(Number);
+  const px = execFileSync('ffmpeg', ['-v', 'error', '-i', png, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 64 << 20 });
+  const black = (x, y) => { const i = (y * w + x) * 3; return px[i] <= 3 && px[i + 1] <= 3 && px[i + 2] <= 3; };
+  const cx = Math.round(w / 2);
+  let y0 = 0; while (y0 < h && !black(cx, y0)) y0++;
+  while (y0 < h && black(cx, y0)) y0++;
+  let x0 = 0; while (x0 < w && black(x0, y0 + 40)) x0++;
+  let x1 = w - 1; while (x1 > 0 && black(x1, y0 + 40)) x1--;
+  let y1 = y0; while (y1 < h && !black(x0 + 2, y1)) y1++;
+  const cw = x1 - x0 + 1, ch = y1 - y0;
+  if (Math.abs(cw / ch - 9 / 16) > 0.01) throw new Error(`${name}: the canvas was not found (${cw}×${ch} at ${x0},${y0})`);
   const out = join(OUT, `${name}.png`);
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', png, '-vf', `crop=${cw}:${ch}:${x}:${y}`, out]);
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', png, '-vf', `crop=${cw}:${ch}:${x0}:${y0}`, out]);
   return out;
 }
 const rgb = (file, n) => execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', `${n === undefined ? '' : `select=eq(n\\,${n}),`}scale=135:240`, '-fps_mode', 'passthrough', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
@@ -288,7 +299,7 @@ try {
     const n = Math.round(T * 30);
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', file, '-vf', `select=eq(n\\,${n})`, '-frames:v', '1', join(OUT, 'export-frame.png')]);
     const frame = rgb(file, n), pair = rgb(previewFile), before = rgb(join(OUT, 'preview-before.png'));
-    const m = { video: v?.codec_name, size: `${v?.width}×${v?.height}`, previewAspect: undefined, duration: Number(probe.format.duration), exportMs,
+    const m = { video: v?.codec_name, size: `${v?.width}×${v?.height}`, duration: Number(probe.format.duration), exportMs,
       diff: +meanAbsDiff(pair, frame).toFixed(2), block: +worstBlock(pair, frame).toFixed(1),
       controlDiff: +meanAbsDiff(before, frame).toFixed(2), controlBlock: +worstBlock(before, frame).toFixed(1) };
     result.wysiwyg = m;
