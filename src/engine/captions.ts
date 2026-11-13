@@ -1,13 +1,15 @@
 // Auto-captions client: mixes the timeline sound to 16 kHz mono, cuts it into ≤30 s chunks at the
 // quietest moments (so words are not split), and transcribes the chunks in the ASR worker.
-import { DEFAULT_VAD, GIGAAM_VAD, alignToSpeech, captionSource, dropArtifacts, speechOnset, speechWindows, vadSegments, wordsInSpeech } from '../core/captions';
+import { DEFAULT_VAD, GIGAAM_VAD, alignToSpeech, captionSource, clipToRanges, dropArtifacts, normalizeRanges, speechOnset, speechWindows, vadSegments, wordsInSpeech } from '../core/captions';
+import { liftGain } from '../core/speechLevel';
+import { russianVerdict, type RussianReading } from '../core/speechLanguage';
 import { projectDuration, soundAssetId } from '../core/timeline';
 import type { ScriptCaptions } from '../core/script';
 import type { CaptionWord, Project } from '../core/types';
 import type { AsrModel, AsrRequest, AsrResponse } from './asr.worker';
 import { renderAudioWindow, soundEntries } from './audio';
 import { MediaError, MediaPool } from './media';
-import { DOWNLOAD_STOPPED, PARTS_CACHE, SPEECH_REPOS, missingBytes } from './modelFiles';
+import { DOWNLOAD_STOPPED, PARTS_CACHE, SPEECH_REPOS, keepModelsThroughPressure, missingBytes } from './modelFiles';
 import type { HeapInfo } from './wasmMemory';
 import { IOS } from '../lib/device';
 import { useLocale } from '../lib/i18n';
@@ -23,6 +25,13 @@ export const ASR_MODELS: Record<AsrModel, { label: string; mb: number }> = {
   'ru-fast': { label: 'Russian speech, compact', mb: 132 },
 };
 const isRussian = (m: AsrModel): m is 'ru' | 'ru-fast' => m === 'ru' || m === 'ru-fast';
+/**
+ * What the person chooses under "Recognition": a model, or `auto` — the model that reads the speech's language best
+ * on this device (docs/20 ADR-С2). Before, the choice was a model only, and its default came from the interface
+ * language: Russian speech in an English interface was read by Whisper base, with three to four times the mistakes.
+ */
+export type AsrChoice = AsrModel | 'auto';
+export const ASR_CHOICES: readonly AsrChoice[] = ['auto', 'ru', 'ru-fast', 'tiny', 'base', 'small'];
 
 /**
  * The next lighter model, for when one does not fit this device's memory: captions still come, from a smaller
@@ -73,28 +82,24 @@ const smallMemory = () => IOS || ((navigator as Navigator & { deviceMemory?: num
  * Where the interface is Russian (its speech is mostly Russian): GigaAM, or on a phone FastConformer (docs/12 §6.3).
  * Elsewhere Whisper base.
  */
-export const defaultAsrModel = (): AsrModel => fittingModel(useLocale.getState().locale === 'ru' ? (smallMemory() ? 'ru-fast' : 'ru') : 'base');
-
+export const defaultAsrModel = (): AsrModel => (useLocale.getState().locale === 'ru' ? russianModel() : fittingModel('base'));
+/** The model that reads Russian speech on this device: GigaAM, on a phone FastConformer, or the one that fits. */
+const russianModel = (): AsrModel => fittingModel(smallMemory() ? 'ru-fast' : 'ru');
 /**
- * A Russian model confirms Russian speech by itself (no Whisper download) when it is at least this sure and reads at
- * least this many letters per second; otherwise Whisper detects the language. Measured on the eval set:
- * - GigaAM (docs/10 §2): Russian 0.96–0.99, under music 0.88; Ukrainian 0.84, English 0.82–0.84, Spanish 0.92 with
- *   almost no letters.
- * - FastConformer (2026-10-29): Russian 0.925–0.96, under music 0.85; Ukrainian 0.79, German 0.68, English 0.69,
- *   Italian 0.59, Spanish 0.55. Russian reads 7–12 letters/s.
+ * The model `auto` starts a run with: the one for the language the person named; with no language named, the one
+ * for the language the interface is in, as the likeliest speech. The speech itself decides after that (transcribeWith).
  */
-const SURE: Record<'ru' | 'ru-fast', { confidence: number; letters: number }> = {
-  ru: { confidence: 0.93, letters: 5 },
-  'ru-fast': { confidence: 0.88, letters: 5 },
-};
+const autoModel = (language: string | null): AsrModel => (language ? (language === 'russian' ? russianModel() : fittingModel('base')) : defaultAsrModel());
 
 /**
  * A speech model download, as the person is asked about it before it starts (audit V-181: the first tap on Captions
  * took 132–225 MB without a word, on mobile data too). `mb` is what is still to come: the whole model the first
  * time, the rest of it after a download that broke. `why`: asked in the middle of a run, because the speech turned
- * out not to be Russian (Whisper reads it), or because the model before did not fit this device's memory.
+ * out not to be Russian (Whisper reads it), because the model before did not fit this device's memory, or because
+ * the speech turned out to be Russian and the Russian model reads it far better (`russian`: the one question a "no"
+ * does not end the run on — the model at work goes on).
  */
-export interface ModelDownload { model: AsrModel; mb: number; why?: 'language' | 'memory' }
+export interface ModelDownload { model: AsrModel; mb: number; why?: 'language' | 'memory' | 'russian' }
 /**
  * The person's say over downloads in one run. `agreed`: the model they said yes to before the run started
  * (firstDownload). `ask` is called for any other model this device does not keep, and the run waits for the answer.
@@ -108,9 +113,19 @@ async function download(model: AsrModel, why?: ModelDownload['why']): Promise<Mo
 }
 
 /** The model a run loads first. A Russian model reads Russian speech; speech in another language goes to Whisper base. */
-function firstEngine(model: AsrModel, language: string | null): AsrModel {
-  model = fittingModel(model);
+function firstEngine(choice: AsrChoice, language: string | null): AsrModel {
+  if (choice === 'auto') return autoModel(language);
+  const model = fittingModel(choice);
   return isRussian(model) && language && language !== 'russian' ? fittingModel('base') : model;
+}
+/** The model a run with this choice starts with: for the progress bar's pace and the question before a download. */
+export const startingModel = firstEngine;
+
+/** Megabytes of each model this device does not keep yet (0: it is here, nothing to download), for the chips. */
+export async function modelsToDownload(): Promise<Record<AsrModel, number>> {
+  const out = {} as Record<AsrModel, number>;
+  for (const m of Object.keys(ASR_MODELS) as AsrModel[]) out[m] = Math.round((await missingBytes(SPEECH_REPOS[m]).catch(() => ASR_MODELS[m].mb * 1e6)) / 1e6);
+  return out;
 }
 
 /**
@@ -118,8 +133,8 @@ function firstEngine(model: AsrModel, language: string | null): AsrModel {
  * starts anything. Null when that model is on this device: no question, one tap as before. Null offline too: there
  * is nothing to say yes to, and the run itself says there is no internet.
  */
-export const firstDownload = async (model: AsrModel, language: string | null): Promise<ModelDownload | null> =>
-  (navigator.onLine ? download(firstEngine(model, language)) : null);
+export const firstDownload = async (choice: AsrChoice, language: string | null): Promise<ModelDownload | null> =>
+  (navigator.onLine ? download(firstEngine(choice, language)) : null);
 
 export const CAPTION_LANGUAGES: { id: string | null; code: string; label: string }[] = [
   { id: null, code: '', label: 'Auto' }, { id: 'english', code: 'en', label: 'English' }, { id: 'russian', code: 'ru', label: 'Русский' },
@@ -147,31 +162,47 @@ export interface Transcript {
   speech: [number, number][];
   /** Names of the files whose sound this browser could not decode: captioned without them. */
   unreadable: string[];
+  /** The model that read the speech: the chosen one, or the one that took over (language, memory). */
+  engine: AsrModel;
+  /** The parts of the timeline that were listened to (seconds); null: the whole video. */
+  ranges: [number, number][] | null;
 }
 
 const SR = 16000;
 
-export type CaptionProgress = { phase: 'download'; fraction: number; mb: number } | { phase: 'prepare' } | { phase: 'listen' } | { phase: 'transcribe'; fraction: number };
+/**
+ * What a run is doing. `download`: bytes are coming from the network, `mb` of them in this run (what the device did
+ * not keep yet; the person said yes to this number). `load`: the model is on the device and is being started — no
+ * network. Before docs/20 both were one phase, worded "Getting the speech model (77 MB, once)…" on every run: the
+ * owner read it, rightly, as a download every time (2026-11-13).
+ */
+export type CaptionProgress =
+  | { phase: 'download'; fraction: number; mb: number } | { phase: 'load' }
+  | { phase: 'prepare' } | { phase: 'listen' } | { phase: 'transcribe'; fraction: number };
 
 /**
  * Timeline mix as 16 kHz mono, rendered in windows to bound memory. A sound no decoder in this browser can read is
  * left out (its asset id goes to `skipped`) instead of failing the captions for everything else.
  */
-async function timelineAudio(p: Project, signal: AbortSignal, skipped: Set<string>): Promise<Float32Array> {
+async function timelineAudio(p: Project, signal: AbortSignal, skipped: Set<string>, parts: [number, number][]): Promise<Float32Array> {
   const duration = projectDuration(p);
   const total = Math.round(duration * SR);
-  const out = new Float32Array(total);
+  const out = new Float32Array(total); // silence outside the parts asked for: nothing there is decoded
   const pool = new MediaPool(16);
-  // Render at 48 kHz (supported everywhere) and decimate by 3 with a box filter; plenty for speech.
+  // Render at 48 kHz (supported everywhere) and decimate by 3 with a box filter; plenty for speech. (A real
+  // low-pass in its place was measured on 2026-11-13 and changed nothing: core/speechLevel, docs/20 Г2.)
   try {
-    for (let i = 0; i < total; i += SR * 20) {
-      if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-      const j = Math.min(total, i + SR * 20);
-      const buf = await renderAudioWindow(p, pool, i / SR, j / SR, SR * 3, skipped);
-      const l = buf.getChannelData(0), r = buf.getChannelData(1);
-      for (let k = 0; k < j - i; k++) {
-        const q = k * 3;
-        out[i + k] = (l[q] + r[q] + (l[q + 1] ?? 0) + (r[q + 1] ?? 0) + (l[q + 2] ?? 0) + (r[q + 2] ?? 0)) / 6;
+    for (const [from, to] of parts) {
+      const end = Math.min(total, Math.ceil(to * SR));
+      for (let i = Math.max(0, Math.floor(from * SR)); i < end; i += SR * 20) {
+        if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+        const j = Math.min(end, i + SR * 20);
+        const buf = await renderAudioWindow(p, pool, i / SR, j / SR, SR * 3, skipped);
+        const l = buf.getChannelData(0), r = buf.getChannelData(1);
+        for (let k = 0; k < j - i; k++) {
+          const q = k * 3;
+          out[i + k] = (l[q] + r[q] + (l[q + 1] ?? 0) + (r[q + 1] ?? 0) + (l[q + 2] ?? 0) + (r[q + 2] ?? 0)) / 6;
+        }
       }
     }
   } finally {
@@ -239,7 +270,7 @@ let seq = 0;
  * Sends a request to the ASR worker. With a signal, Cancel (or Settings) is honoured at once, even mid-download or
  * mid-chunk: the worker finishes that job on its own (a model download is cached for next time), its reply is dropped.
  */
-function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<AsrResponse> {
+function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total: number, fetched: number) => void, signal?: AbortSignal): Promise<AsrResponse> {
   return new Promise((resolve, reject) => {
     const id = (msg.id = ++seq);
     let settled = false;
@@ -271,7 +302,7 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
       const r = e.data;
       // Every answer names its request: a load given up on (Cancel) still runs in the worker, and its progress or
       // its error must not be taken for a later request's.
-      if (r.type === 'download') { if (r.id === id) onDownload?.(r.loaded, r.total); return; }
+      if (r.type === 'download') { if (r.id === id) onDownload?.(r.loaded, r.total, r.fetched); return; }
       const mine = r.id === id && (msg.type === 'load' ? r.type === 'ready' || r.type === 'error' : r.type !== 'ready');
       if (!mine) return;
       done();
@@ -293,48 +324,73 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
 }
 
 /**
- * Transcribes the whole timeline; returns words in timeline seconds. Without a language, it is detected once on the
- * longest stretch of speech and then used for every chunk (one language per video, no per-chunk flips).
- * No model is downloaded without `consent`: a "no" ends the run like Cancel (AbortError), with nothing changed.
+ * Transcribes the timeline, or the `ranges` of it that were asked for (seconds; docs/20 ADR-С6); returns words in
+ * timeline seconds. Without a language, it is found once and then used for every chunk (one language per video, no
+ * per-chunk flips). No model is downloaded without `consent`: a "no" ends the run like Cancel (AbortError), with
+ * nothing changed.
  */
 export async function transcribeProject(
-  p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal, consent: DownloadConsent,
+  p: Project, choice: AsrChoice, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal, consent: DownloadConsent,
+  ranges?: readonly (readonly [number, number])[] | null,
 ): Promise<Transcript> {
-  model = fittingModel(model);
   try {
-    return await transcribeWith(p, model, language, onProgress, signal, consent);
+    return await transcribeWith(p, choice, language, onProgress, signal, consent, ranges ?? null);
   } finally {
     setWorking(null);
   }
 }
 
+/** How many of the longest stretches of speech a Russian model reads before it says what language this is. */
+const EVIDENCE_WINDOWS = 3;
+
 async function transcribeWith(
-  p: Project, model: AsrModel, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal, consent: DownloadConsent,
+  p: Project, choice: AsrChoice, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal, consent: DownloadConsent,
+  ranges: readonly (readonly [number, number])[] | null,
 ): Promise<Transcript> {
-  let engine: AsrModel = firstEngine(model, language);
-  // The Russian model of this run: the chosen one, or the lighter one that replaced it.
-  let russian: AsrModel = model;
+  const auto = choice === 'auto';
+  let engine: AsrModel = firstEngine(choice, language);
+  // The Russian model of this run: the chosen one, the one `auto` takes on this device, or the lighter one that replaced it.
+  let russian: AsrModel = !auto && isRussian(fittingModel(choice)) ? fittingModel(choice) : russianModel();
+  /** Models the person has said yes to in this run, or that need no download. */
+  const agreed = new Set<AsrModel>(consent.agreed ? [consent.agreed] : []);
   /**
    * Every model of a run is loaded through here, the ones that take over later too (Whisper for speech that is not
    * Russian, a lighter model after one that did not fit): none of them is downloaded before the person says yes.
+   * False only for `russian`, the one switch a "no" leaves the run going without (the model at work reads on).
    */
-  const agree = async (m: AsrModel, why?: ModelDownload['why']): Promise<void> => {
-    if (m === consent.agreed) return;
+  const agree = async (m: AsrModel, why?: ModelDownload['why']): Promise<boolean> => {
+    if (agreed.has(m)) return true;
     const d = await download(m, why);
-    if (!d) return;
-    // Offline before the first download: say what to do, not ask about a download that cannot start (docs/11 QA).
-    if (!navigator.onLine) throw new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: ASR_MODELS[m].mb });
-    const yes = await consent.ask(d);
-    if (!yes || signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+    if (d) {
+      if (!navigator.onLine) {
+        if (why === 'russian') return false;
+        // Offline before the first download: say what to do, not ask about a download that cannot start (docs/11 QA).
+        throw new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: ASR_MODELS[m].mb });
+      }
+      const yes = await consent.ask(d);
+      if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      if (!yes) {
+        if (why === 'russian') return false;
+        throw new DOMException('Cancelled', 'AbortError');
+      }
+    }
+    agreed.add(m);
+    return true;
   };
   /** Loads `m`, or the lighter model when `m` does not fit in memory; returns the one loaded. */
   const load = async (m: AsrModel, why?: ModelDownload['why']): Promise<AsrModel> => {
     for (;;) {
-      await agree(m, why);
-      onProgress({ phase: 'download', fraction: 0, mb: ASR_MODELS[m].mb });
+      await agree(m, why === 'russian' ? undefined : why);
+      // What this load takes from the network: nothing when the device keeps the model — then it only starts.
+      const missing = await missingBytes(SPEECH_REPOS[m]);
+      const mb = Math.max(1, Math.round(missing / 1e6));
+      if (missing) void keepModelsThroughPressure();
+      onProgress(missing ? { phase: 'download', fraction: 0, mb } : { phase: 'load' });
       setWorking(m);
       // A worker whose engine failed was replaced (retire): each request goes to the current one.
-      const loaded = await request(getWorker(), { type: 'load', id: 0, model: m }, (l, t) => onProgress({ phase: 'download', fraction: t ? l / t : 0, mb: ASR_MODELS[m].mb }), signal);
+      const loaded = await request(getWorker(), { type: 'load', id: 0, model: m }, (_l, _t, fetched) => {
+        if (missing) onProgress(fetched >= missing ? { phase: 'load' } : { phase: 'download', fraction: fetched / missing, mb });
+      }, signal);
       if (loaded.type !== 'error') return m;
       // Offline before the first download: say what to do, not "Failed to fetch" (docs/11 QA).
       if (!navigator.onLine) throw new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: ASR_MODELS[m].mb });
@@ -362,50 +418,84 @@ async function transcribeWith(
   onProgress({ phase: 'prepare' });
   const skipped = new Set<string>();
   const heard = captionSource(p); // the voice, without background music (v1.4.1)
-  const audio = await timelineAudio(heard, signal, skipped);
+  const duration = projectDuration(heard);
+  // The parts to listen to: the ones asked for, or the whole video. Nothing outside them is decoded or read.
+  const parts: [number, number][] = ranges ? normalizeRanges(ranges, duration) : [[0, duration]];
+  const audio = await timelineAudio(heard, signal, skipped, parts);
+  // A quiet recording is lifted before speech is looked for in it (core/speechLevel); a normal one is untouched.
+  const lift = liftGain(audio, SR);
+  if (lift !== 1) { for (let k = 0; k < audio.length; k++) audio[k] *= lift; console.info(`speech: a quiet recording, lifted ×${lift.toFixed(1)}`); }
   const unreadable = [...skipped].map((id) => p.assets[id]?.name ?? '?');
   if (skipped.size && soundEntries(heard).every((e) => skipped.has(soundAssetId(e.clip)))) {
     throw new MediaError('The sound of “{name}” cannot be decoded in this browser', { name: unreadable.join(', ') });
   }
   // Whisper invents text over music and silence, so only speech found by the VAD is transcribed.
   onProgress({ phase: 'listen' });
-  const vad = await request(getWorker(), { type: 'vad', id: 0, audio: audio.slice() }, undefined, signal);
-  if (vad.type === 'error') throw engineError(vad.message, 'Speech detection failed. Try again; the details are under “Details”.');
+  const FRAME = 512;
+  const probs = new Float32Array(Math.floor(audio.length / FRAME));
+  for (const [from, to] of parts) {
+    // Each part from a frame boundary, with a detector that starts fresh: what came before the part is not its past.
+    const f0 = Math.floor((from * SR) / FRAME), f1 = Math.min(probs.length, Math.ceil((to * SR) / FRAME));
+    if (f1 <= f0) continue;
+    const vad = await request(getWorker(), { type: 'vad', id: 0, audio: audio.slice(f0 * FRAME, f1 * FRAME) }, undefined, signal);
+    if (vad.type === 'error') throw engineError(vad.message, 'Speech detection failed. Try again; the details are under “Details”.');
+    if (vad.type === 'vad') probs.set(vad.probs.subarray(0, f1 - f0), f0);
+  }
   // Speech segments for the engine at work: lenient for the Russian CTC models, strict for Whisper (it invents text
   // over music; CTC models do not).
   let speech: [number, number][] = [], windows: [number, number][] = [];
   function segment() {
-    speech = vad.type === 'vad' ? vadSegments(vad.probs, 512 / SR, isRussian(engine) ? GIGAAM_VAD : DEFAULT_VAD) : [];
+    const found = vadSegments(probs, FRAME / SR, isRussian(engine) ? GIGAAM_VAD : DEFAULT_VAD);
+    speech = ranges ? clipToRanges(found, parts) : found; // the detector's padding does not reach outside a part
     windows = speechWindows(speech);
   }
   segment();
+  const cut = (i: number) => audio.slice(Math.floor(windows[i][0] * SR), Math.ceil(windows[i][1] * SR));
   const transcribe = async (i: number): Promise<Extract<AsrResponse, { type: 'result' }> | null> => {
-    const [a0, a1] = windows[i];
-    const r = await request(getWorker(), { type: 'transcribe', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), language: isRussian(engine) ? null : language, model: engine }, undefined, signal);
+    const r = await request(getWorker(), { type: 'transcribe', id: 0, audio: cut(i), language: isRussian(engine) ? null : language, model: engine }, undefined, signal);
     if (r.type === 'error') {
       if (await lighten(r)) return transcribe(i);
       throw engineError(r.message, 'Speech recognition failed. Try again; the details are under “Details”.');
     }
     return r.type === 'result' ? r : null;
   };
+  /** Windows already read by the engine at work (the evidence of the language): not read twice. */
   const done = new Map<number, NonNullable<Awaited<ReturnType<typeof transcribe>>>>();
+  const longestFirst = () => windows.map((_, i) => i).sort((x, y) => (windows[y][1] - windows[y][0]) - (windows[x][1] - windows[x][0]));
   const detected = !language && windows.length > 0;
   if (detected) {
-    const longest = windows.reduce((best, x, i) => (x[1] - x[0] > windows[best][1] - windows[best][0] ? i : best), 0);
-    const [a0, a1] = windows[longest];
     if (isRussian(engine)) {
-      const r = await transcribe(longest);
-      const sure = SURE[isRussian(engine) ? engine : 'ru'];
-      if (r && (r.confidence ?? 0) >= sure.confidence && (r.chars ?? 0) / (a1 - a0) >= sure.letters) { language = 'russian'; done.set(longest, r); }
-      else { engine = await load(fittingModel('base'), 'language'); segment(); }
+      // The Russian model says whether this is Russian speech by reading it (core/speechLanguage): no Whisper, no
+      // download, and what it read is kept. Only speech it does not take for Russian goes to Whisper.
+      const readings: RussianReading[] = [];
+      let verdict = russianVerdict(engine, readings);
+      for (const i of longestFirst().slice(0, EVIDENCE_WINDOWS)) {
+        const was: AsrModel = engine;
+        const r = await transcribe(i);
+        if (engine !== was) { done.clear(); readings.length = 0; } // a lighter model took over: its own evidence
+        if (!r) continue;
+        done.set(i, r);
+        readings.push({ confidence: r.confidence ?? 0, seconds: windows[i][1] - windows[i][0], words: r.words.map((w) => w.text) });
+        if (isRussian(engine)) verdict = russianVerdict(engine, readings);
+        if (verdict !== 'unsure') break;
+      }
+      console.info(`speech language by ${engine}: ${verdict}`, JSON.stringify(readings.map((x) => ({ confidence: +x.confidence.toFixed(3), seconds: +x.seconds.toFixed(1), text: x.words.join(' ').slice(0, 160) }))));
+      if (verdict === 'russian') language = 'russian';
+      else { done.clear(); engine = await load(fittingModel('base'), 'language'); segment(); }
     }
-    if (!language) {
-      const r = await request(getWorker(), { type: 'detect', id: 0, audio: audio.slice(Math.floor(a0 * SR), Math.ceil(a1 * SR)), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code), model: engine }, undefined, signal);
+    if (!language && windows.length) {
+      const r = await request(getWorker(), { type: 'detect', id: 0, audio: cut(longestFirst()[0]), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code), model: engine }, undefined, signal);
       if (r.type === 'error') throw engineError(r.message, 'Speech detection failed. Try again; the details are under “Details”.');
       if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
-      // The Russian model was unsure (Russian under loud music) but it is Russian: it still reads it best.
-      if (isRussian(model) && language === 'russian') { engine = await load(russian); segment(); }
+      console.info(`speech language by ${engine}: ${language}`, r.type === 'language' ? r.p.toFixed(3) : '');
     }
+  }
+  // Russian speech is read by the Russian model whenever the choice allows it (docs/20 ADR-С2): `auto` always — also
+  // when the run began with Whisper (an interface that is not Russian, or a language found by Whisper); a chosen
+  // Russian model that was unsure under loud music comes back, it still reads Russian best. A chosen Whisper stays:
+  // the person named it, and the sheet says the Russian model makes fewer mistakes.
+  if (language === 'russian' && !isRussian(engine) && (auto || isRussian(fittingModel(choice as AsrModel))) && windows.length) {
+    if (await agree(russian, 'russian')) { done.clear(); engine = await load(russian, 'russian'); if (isRussian(engine)) russian = engine; segment(); }
   }
   const words: CaptionWord[] = [];
   for (let i = 0; i < windows.length; i++) {
@@ -423,6 +513,8 @@ async function transcribeWith(
     detected,
     speech,
     unreadable,
+    engine,
+    ranges: ranges ? parts : null,
   };
 }
 

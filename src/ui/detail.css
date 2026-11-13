@@ -48,7 +48,39 @@
 /* ---- the lines of captions: when, then the words to correct ---- */
 .ck-lines { display: grid; gap: var(--space-2); }
 .ck-line { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: var(--space-2); }
-.ck-line > span { font-size: var(--type-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ck-line > span:first-child { font-size: var(--type-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+/* The line the playhead stands on: its time in the text colour, and on its word a white mark, as the playhead is white
+   (DESIGN.md rule 2: the signal colour is not a selection). The mark is a copy of the field's text in the same face,
+   laid over it: only the mark of the word shows, the letters are the field's own. Gone while the line is typed in. */
+.ck-line[data-now] > span:first-child { color: var(--text-primary); font-weight: var(--weight-strong); }
+.ck-line-field { position: relative; display: grid; min-width: 0; border-radius: var(--radius-control); background: var(--surface-field); }
+/* The copy lies under the field's letters: the field itself is clear, its ground is the wrapper's. */
+.ck-line-field > input.ck-input { position: relative; background: none; } /* after the copy in the markup: drawn over it */
+.ck-line-now {
+  position: absolute; inset: 0; display: block; overflow: hidden; white-space: pre; pointer-events: none;
+  background: none; box-shadow: none; color: transparent; line-height: calc(var(--touch) + var(--space-1));
+}
+.ck-line-now mark { color: transparent; background: var(--border-subtle); box-shadow: inset 0 calc(-1 * var(--space-1) / 2) 0 var(--mark-was); padding: var(--space-1) 0; }
+.ck-line-field:focus-within .ck-line-now { display: none; }
+.ck-word[data-now] { box-shadow: inset 0 calc(-1 * var(--space-1) / 2) 0 var(--mark-was); color: var(--text-primary); }
+.ck-word[data-now][aria-pressed='true'] { box-shadow: inset 0 0 0 var(--hairline) var(--action-danger), inset 0 calc(-1 * var(--space-1) / 2) 0 var(--mark-was); color: var(--action-danger); }
+
+/* ---- a part of the video for captions: the stretch held between two white marks ---- */
+.ck-part { display: grid; gap: var(--space-2); }
+.ck-part-bar { position: relative; height: var(--touch); }
+.ck-part-bar::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: var(--space-1); translate: 0 -50%; background: var(--border-subtle); }
+/* A native thumb travels the bar less its own width: the held stretch is laid out the same way, so it ends under the marks. */
+.ck-part-held { position: absolute; top: 50%; left: calc(var(--touch) / 2 + (100% - var(--touch)) * var(--from)); right: calc(var(--touch) / 2 + (100% - var(--touch)) * (1 - var(--to))); height: var(--space-1); translate: 0 -50%; background: var(--mark-was); }
+.ck-part-bar input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; background: none; appearance: none; -webkit-appearance: none; pointer-events: none; outline: none; }
+.ck-part-bar input::-webkit-slider-runnable-track { background: none; height: 100%; }
+.ck-part-bar input::-moz-range-track { background: none; height: 100%; }
+/* A mark is 8 px to the eye and 44 px to the finger (DESIGN.md rule 5). */
+.ck-part-bar input::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; pointer-events: auto; width: var(--touch); height: var(--touch); border: 0; border-radius: 0; background: linear-gradient(to right, transparent calc(50% - var(--space-1)), var(--mark-was) calc(50% - var(--space-1)) calc(50% + var(--space-1)), transparent calc(50% + var(--space-1))) center / 100% var(--space-6) no-repeat; cursor: ew-resize; }
+.ck-part-bar input::-moz-range-thumb { pointer-events: auto; width: var(--touch); height: var(--touch); border: 0; border-radius: 0; background: linear-gradient(to right, transparent calc(50% - var(--space-1)), var(--mark-was) calc(50% - var(--space-1)) calc(50% + var(--space-1)), transparent calc(50% + var(--space-1))) center / 100% var(--space-6) no-repeat; cursor: ew-resize; }
+.ck-part-bar input:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-part-bar input:focus-visible::-moz-range-thumb { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-part-says { margin: 0; font-size: var(--type-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ck-pieces .ck-chip { font-variant-numeric: tabular-nums; }
 
 /* ---- edit by text: the words of the speech; a word to cut is struck through in red, as everything that deletes ---- */
 .ck-cut { display: grid; gap: var(--space-3); margin-top: var(--space-2); }

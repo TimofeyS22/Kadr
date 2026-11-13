@@ -1,6 +1,6 @@
 import { CircleAlert, Mic } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { CAPTION_LAYOUTS, applyCaptionLook, captionLayout, captionPages, lineWords, setCaptionLayout, wordsFromSegment, type CaptionLayout } from '../core/captions';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { CAPTION_LAYOUTS, applyCaptionLook, captionCursor, captionLayout, captionPages, lineWords, normalizeRanges, rangesSeconds, setCaptionLayout, wordsFromSegment, type CaptionLayout } from '../core/captions';
 import { fillerIndices } from '../core/reframe';
 import { wordCutRange } from '../core/silence';
 import { clipEnd, cutTimelineRanges, mainTrack, projectDuration, soundAssetId, sourceTime, timelineTimeOf } from '../core/timeline';
@@ -13,7 +13,7 @@ import { soundEntries } from '../engine/audio';
 import { METER_IDLE, meterStep } from '../core/meter';
 import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
 import { projectScript } from '../core/script';
-import { ASR_MODELS, CAPTION_LANGUAGES, alignToScript, defaultAsrModel, firstDownload, fittingModel, languageLabel, transcribeProject, type AsrModel, type CaptionProgress, type DownloadConsent } from '../engine/captions';
+import { ASR_CHOICES, ASR_MODELS, CAPTION_LANGUAGES, alignToScript, firstDownload, fittingModel, languageLabel, modelsToDownload, startingModel, transcribeProject, type AsrChoice, type AsrModel, type CaptionProgress, type DownloadConsent } from '../engine/captions';
 import { importFile } from '../engine/importer';
 import { player } from '../engine/player';
 import { VoiceRecorder } from '../engine/recorder';
@@ -218,7 +218,10 @@ export function StickersBody() {
 
 
 function progressLabel(p: CaptionProgress): string {
-  if (p.phase === 'download') return t('Getting the speech model ({mb} MB, once)…', { mb: p.mb });
+  // Two different things, worded apart (the owner, 2026-11-13: «модель скачивается каждый раз»): bytes from the
+  // network, with how many; or the model this device keeps being started, with no network at all.
+  if (p.phase === 'download') return t('Downloading the speech model: {mb} MB, once…', { mb: p.mb });
+  if (p.phase === 'load') return t('Starting the speech model (it is on this device)…');
   if (p.phase === 'prepare') return t('Preparing the sound…');
   if (p.phase === 'listen') return t('Finding speech…');
   return t('Recognizing speech…');
@@ -243,27 +246,94 @@ function CaptionLook({ layout, preset, onLayout, onPreset }: { layout: CaptionLa
   );
 }
 
-/** The caption look last chosen here: one-tap captions (v1.3) reuse it. */
+/**
+ * The caption look and the recognition last chosen here: one-tap captions (v1.3) reuse them. The model was not kept
+ * before docs/20: the next tap went back to the default, whatever the person had chosen (the owner, 2026-11-13:
+ * «всегда пишется… 77 МБ, хотя в выборе есть другие»). The language is not kept: the next video may be in another.
+ */
 const LOOK_KEY = 'kadr.captionLook';
-function savedLook(): { preset: string; layout: CaptionLayout } {
+function savedLook(): { preset: string; layout: CaptionLayout; model: AsrChoice } {
   try {
-    const v = JSON.parse(localStorage.getItem(LOOK_KEY) ?? 'null') as { preset?: string; layout?: CaptionLayout } | null;
-    if (v && CAPTION_PRESETS.some((x) => x.id === v.preset) && CAPTION_LAYOUTS.includes(v.layout!)) return { preset: v.preset!, layout: v.layout! };
+    const v = JSON.parse(localStorage.getItem(LOOK_KEY) ?? 'null') as { preset?: string; layout?: CaptionLayout; model?: AsrChoice } | null;
+    const model = v && ASR_CHOICES.includes(v.model!) ? v.model! : 'auto';
+    if (v && CAPTION_PRESETS.some((x) => x.id === v.preset) && CAPTION_LAYOUTS.includes(v.layout!)) return { preset: v.preset!, layout: v.layout!, model };
+    return { preset: 'pop', layout: 'highlight', model };
   } catch { /* storage off: defaults */ }
-  return { preset: 'pop', layout: 'highlight' };
+  return { preset: 'pop', layout: 'highlight', model: 'auto' };
+}
+
+/** Where captions are made: the whole video, the clips ticked, or one stretch of it (docs/20 ADR-С6). */
+type Scope = 'all' | 'clips' | 'part';
+const SCOPE_LABELS: Record<Scope, string> = { all: 'Whole video', clips: 'Clips', part: 'A part' };
+
+/**
+ * A stretch of the video between two marks, the system's own sign for work that is held: two sliders on one line (each
+ * a native range, so keys, a screen reader and a finger all work), and "here" buttons that take the playhead. Moving
+ * a mark shows its frame.
+ */
+function PartPick({ value, duration, onChange }: { value: [number, number]; duration: number; onChange: (v: [number, number]) => void }) {
+  const [a, b] = value;
+  const STEP = 0.1, MIN = 0.5;
+  const show = (at: number) => { player.pause(); player.seek(at); useEditor.setState({ time: player.time }); };
+  const from = (v: number, look = true) => { const x = Math.max(0, Math.min(v, b - MIN)); onChange([x, b]); if (look) show(x); };
+  const to = (v: number, look = true) => { const x = Math.min(duration, Math.max(v, a + MIN)); onChange([a, x]); if (look) show(Math.max(0, x - 0.05)); };
+  const pos = (v: number) => (duration > 0 ? v / duration : 0).toFixed(5);
+  return (
+    <div className="ck-part">
+      <div className="ck-part-bar" style={{ ['--from' as string]: pos(a), ['--to' as string]: pos(b) }}>
+        <i className="ck-part-held" aria-hidden="true" />
+        <input type="range" min={0} max={duration} step={STEP} value={a} aria-label={t('Start of the part')} aria-valuetext={formatTime(a)}
+          onChange={(e) => from(Number(e.target.value))} />
+        <input type="range" min={0} max={duration} step={STEP} value={b} aria-label={t('End of the part')} aria-valuetext={formatTime(b)}
+          onChange={(e) => to(Number(e.target.value))} />
+      </div>
+      <p className="ck-part-says" aria-live="polite">{t('From {a} to {b}: {s} s', { a: formatTime(a), b: formatTime(b), s: num(b - a, 1) })}</p>
+      <div className="ck-work-actions" data-pair>
+        <Button onClick={() => from(player.time, false)}>{t('Start here')}</Button>
+        <Button onClick={() => to(player.time, false)}>{t('End here')}</Button>
+      </div>
+    </div>
+  );
 }
 
 export function CaptionsBody() {
-  // Where the interface is Russian: GigaAM (v1.4: under half of Whisper small's errors on live Russian speech, docs/10),
-  // on a phone FastConformer (v1.4.18, docs/12 §6.3); "Accurate" elsewhere (v1.0: on Russian speech tiny made 2× the
-  // errors of base). The others stay a choice.
-  const [picked, setModel] = useState<AsrModel>(defaultAsrModel);
+  // "Auto" by default (docs/20 ADR-С2): the model that reads the speech's language best on this device — the Russian
+  // model for Russian speech whatever the interface language, Whisper for the rest. A model the person picks is kept
+  // for the next time. Before, the default came from the interface language and the choice was forgotten.
+  const [picked, setPicked] = useState<AsrChoice>(() => savedLook().model);
   // Auto by default: the language is detected from the speech (eval in docs/02, v1.1.1).
   const [lang, setLang] = useState('');
   // The Russian models read Russian only: offered while the language is Russian or Auto.
   // "Fast" got four words in five wrong on Russian (audit V-251): not offered once the language is known to be Russian.
-  const models: readonly AsrModel[] = lang === 'russian' ? ['ru', 'ru-fast', 'base', 'small'] : lang === '' ? ['ru', 'ru-fast', 'tiny', 'base', 'small'] : ['tiny', 'base', 'small'];
-  const model = models.includes(picked) ? picked : 'base';
+  const models: readonly AsrChoice[] = lang === 'russian' ? ['auto', 'ru', 'ru-fast', 'base', 'small'] : lang === '' ? ASR_CHOICES : ['auto', 'tiny', 'base', 'small'];
+  const model: AsrChoice = models.includes(picked) ? picked : 'auto';
+  const setModel = (m: AsrChoice) => {
+    setPicked(m);
+    try { localStorage.setItem(LOOK_KEY, JSON.stringify({ ...savedLook(), model: m })); } catch { /* storage off */ }
+  };
+  // What each model would still download: a model this device keeps says so on its chip, instead of its megabytes
+  // (the owner, 2026-11-13: it looked as if the model came again every time).
+  const [toCome, setToCome] = useState<Record<AsrModel, number> | null>(null);
+  useEffect(() => { let on = true; void modelsToDownload().then((m) => { if (on) setToCome(m); }); return () => { on = false; }; }, []);
+  const chip = (m: AsrChoice) => (m === 'auto' ? t('Auto')
+    : toCome && toCome[m] === 0 ? t('{name}, on this device', { name: t(ASR_MODELS[m].label) })
+      : `${t(ASR_MODELS[m].label)}, ${t('{n} MB', { n: toCome?.[m] ?? ASR_MODELS[m].mb })}`);
+  // Where: the whole video, the clips ticked, or a stretch between two marks (the owner, 2026-11-13).
+  const [scope, setScope] = useState<Scope>('all');
+  const project = useEditor((st) => st.project);
+  const duration = project ? projectDuration(project) : 0;
+  // Every piece of the main track: the voice may lie on another track over a photo.
+  const pieces = project ? mainTrack(project).clips : [];
+  const under = (at: number) => pieces.find((c) => at >= c.start && at < clipEnd(c)) ?? pieces[0];
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set(under(player.time) ? [under(player.time).id] : []));
+  const [part, setPart] = useState<[number, number]>(() => {
+    const at = player.time < duration - 1 ? player.time : 0;
+    return [at, Math.min(duration, Math.max(at + 1, under(at) ? clipEnd(under(at)) : duration))];
+  });
+  /** The stretches to caption, or null for the whole video. */
+  const wanted = (): [number, number][] | null => (scope === 'all' ? null
+    : normalizeRanges(scope === 'part' ? [part] : pieces.filter((c) => ticked.has(c.id)).map((c): [number, number] => [c.start, clipEnd(c)]), duration));
+  const hasCaptions = !!project?.tracks.some((tr) => tr.clips.some((c) => c.kind === 'caption'));
   const [preset, setPreset] = useState(() => savedLook().preset);
   const [layout, setLayout] = useState<CaptionLayout>(() => savedLook().layout);
   // Words from the user's own text (docs/09 S1) are a choice: captions say what the video says (v1.6, the owner: "from
@@ -291,7 +361,9 @@ export function CaptionsBody() {
     const p = editor().project;
     if (!p || checking.current) return;
     if (!soundEntries(p).length) { editor().toast(t('There is no sound in this project to caption')); return; }
-    try { localStorage.setItem(LOOK_KEY, JSON.stringify({ preset, layout })); } catch { /* storage off */ }
+    const ranges = source === 'speech' ? wanted() : null;
+    if (ranges && !ranges.length) { editor().toast(t('Choose the clips to caption')); return; }
+    try { localStorage.setItem(LOOK_KEY, JSON.stringify({ preset, layout, model })); } catch { /* storage off */ }
     player.pause();
     const ac = new AbortController();
     abort.current = ac;
@@ -306,16 +378,17 @@ export function CaptionsBody() {
       let waited = false;
       const consent: DownloadConsent = { agreed: first?.model, ask: (d) => { waited = true; return ask(d); } };
       const started = performance.now();
-      const seconds = projectDuration(p);
+      const seconds = ranges ? rangesSeconds(ranges) : projectDuration(p);
       const withScript = source === 'script' && !!script.trim();
-      pace.current = startPace(speechStages(model, seconds, { script: withScript }), performance.now());
+      const starts = startingModel(model, lang || null);
+      pace.current = startPace(speechStages(starts, seconds, { script: withScript }), performance.now());
       setProgress(t('Getting ready…'));
       const report = (pr: CaptionProgress) => {
         if (pace.current) reportPace(pace.current, speechStage(pr.phase), pr.phase === 'download' || pr.phase === 'transcribe' ? pr.fraction : null, performance.now());
         const label = progressLabel(pr);
         setProgress((old) => (old === label ? old : label));
       };
-      const tr = await transcribeProject(p, model, lang || null, report, ac.signal, consent);
+      const tr = await transcribeProject(p, model, lang || null, report, ac.signal, consent, ranges);
       if (withScript && pace.current) { reportPace(pace.current, 'align', null, performance.now()); setProgress(t('Matching your text…')); }
       const { language, detected } = tr;
       let words = tr.words;
@@ -323,14 +396,15 @@ export function CaptionsBody() {
       if (own) words = own.words;
       else if (source === 'script' && script.trim() && tr.words.length) editor().toast(t('The text did not match the speech: captions are from recognition.'), 'info', 6000);
       track('captions_generated', {
-        model, lang: lang || 'auto', detected: detected ? language ?? 'none' : '', layout, words: words.length, seconds: Math.round((performance.now() - started) / 1000),
+        model, engine: tr.engine, scope, lang: lang || 'auto', detected: detected ? language ?? 'none' : '', layout, words: words.length, seconds: Math.round((performance.now() - started) / 1000),
         source: own ? 'script' : 'speech', ...(own && { matched: Math.round(own.matched * 100), skipped: own.skipped, adlibs: own.adlibs }),
       });
-      if (pace.current && !waited) learnPace(model, seconds, finishPace(pace.current, performance.now()));
-      addCaptions(words, preset, layout);
+      // The pace is this device's only when one model did the whole run (no switch for the language or the memory).
+      if (pace.current && !waited && tr.engine === starts) learnPace(starts, seconds, finishPace(pace.current, performance.now()));
+      addCaptions(words, preset, layout, true, ranges);
       if (detected && language) editor().toast(t('Speech language: {language}. Wrong? Pick it and create again.', { language: languageLabel(language) }), 'info', 6000);
       // Whisper on Russian speech gets a third of the words wrong; the Russian model, one in ten (audit V-191).
-      if (detected && language === 'russian' && model !== 'ru' && model !== 'ru-fast') editor().toast(t('This is Russian speech: choose the Russian model for far fewer mistakes.'), 'info', 8000);
+      if (detected && language === 'russian' && tr.engine !== 'ru' && tr.engine !== 'ru-fast') editor().toast(t('This is Russian speech: choose the Russian model for far fewer mistakes.'), 'info', 8000);
       if (tr.unreadable.length) editor().toast(t('Captions are made without “{name}”: its sound cannot be decoded in this browser.', { name: tr.unreadable.join(', ') }), 'info', 8000);
     } catch (e) {
       // A decoder interrupted by Cancel or by leaving the project fails with its own error: that is a cancel, not a failure.
@@ -365,14 +439,34 @@ export function CaptionsBody() {
           <p className="ck-hint">{t('Words come from your text, timing from the recording. The speech model still runs to place each word.')}</p>
         </>
       )}
+      {/* A part of the video is for recognized speech: a text of one's own is matched to the whole recording. */}
+      {source === 'speech' && (
+        <>
+          <h3>{t('Where')}</h3>
+          <Chips even options={['all', 'clips', 'part'] as const} value={scope} onChange={setScope} label={t('Where')} render={(x) => t(SCOPE_LABELS[x])} />
+          {scope === 'clips' && (
+            <div className="ck-chips ck-pieces" data-scroll role="group" aria-label={t('Clips to caption')}>
+              {pieces.map((c, i) => (
+                <button key={c.id} type="button" role="checkbox" aria-checked={ticked.has(c.id)} className="chip ck-chip"
+                  onClick={() => { setTicked((old) => { const n = new Set(old); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n; }); player.pause(); player.seek(c.start + 0.01); useEditor.setState({ time: player.time }); }}>
+                  {`${i + 1} · ${formatTime(c.start, false)}–${formatTime(clipEnd(c), false)}`}
+                </button>
+              ))}
+            </div>
+          )}
+          {scope === 'part' && <PartPick value={part} duration={duration} onChange={setPart} />}
+          {scope !== 'all' && hasCaptions && <p className="ck-hint">{t('Captions in the rest of the video stay as they are.')}</p>}
+        </>
+      )}
       <h3>{t('Language')}</h3>
       <select className="ck-select" value={lang} onChange={(e) => setLang(e.target.value)} aria-label={t('Language')}>
         {CAPTION_LANGUAGES.map((l) => <option key={l.label} value={l.id ?? ''}>{t(l.label)}</option>)}
       </select>
       <p className="ck-hint">{t('Pick the language if the video mixes languages or the result looks wrong.')}</p>
       <h3>{t('Recognition')}</h3>
-      <Chips options={models} value={model} onChange={setModel} render={(m) => `${t(ASR_MODELS[m].label)}, ${ASR_MODELS[m].mb} MB`} />
-      {fittingModel(model) !== model
+      <Chips options={models} value={model} onChange={setModel} render={chip} label={t('Recognition')} />
+      {model === 'auto' ? <p className="ck-hint">{t('Kadr picks the model for the language of the speech: “{name}” reads Russian, “{other}” the other languages.', { name: t(ASR_MODELS[startingModel('auto', 'russian')].label), other: t(ASR_MODELS.base.label) })}</p>
+        : fittingModel(model) !== model
         ? <p className="ck-hint">{t('This device ran out of memory for it before: captions are made by “{name}”.', { name: t(ASR_MODELS[fittingModel(model)].label) })}</p>
         : model === 'ru' ? <p className="ck-hint">{t('GigaAM reads Russian speech best. Speech in other languages is recognized by “Accurate”.')}</p>
         : model === 'ru-fast' && <p className="ck-hint">{t('Reads Russian speech with punctuation, made for phones. Speech in other languages is recognized by “Accurate”.')}</p>}
@@ -388,18 +482,6 @@ export function CaptionsBody() {
 export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
   const e = (fn: (c: CaptionClip) => void, key?: string) =>
     editClip(clip.id, (c) => { if (c.kind === 'caption') fn(c); }, key && `${key}:${clip.id}`);
-  const pages = captionPages(clip.words, Math.max(1, clip.wordsPerPage));
-
-  // A line reads as it is drawn (`lineWords`): with small first letters, the list shows them too.
-  const lineText = (c: CaptionClip, pg: { text: string }[]) => lineWords(c, pg.map((w) => w.text)).join(' ');
-  const commitPage = (i: number, text: string) => e((c) => {
-    const pg = captionPages(c.words, Math.max(1, c.wordsPerPage))[i];
-    if (!pg || lineText(c, pg) === text.trim().replace(/\s+/g, ' ')) return;
-    const at = c.words.indexOf(pg[0]);
-    const words = text.trim() ? wordsFromSegment(pg[0].t0, pg[pg.length - 1].t1, text) : [];
-    c.words.splice(at, pg.length, ...words);
-  });
-
   return (
     <>
       <CaptionLook layout={captionLayout(clip)} preset={clip.preset ?? null}
@@ -427,26 +509,114 @@ export function CaptionEditBody({ clip }: { clip: CaptionClip }) {
       <h3>{t('Animation')}</h3>
       <Chips options={CAPTION_MOTIONS} value={clip.motion ?? (clip.wordsPerPage === 1 && !clip.reveal ? 'pop' : 'none')} label={t('Animation')} render={(m) => t(MOTION_LABELS[m])}
         onChange={(m) => e((c) => { c.motion = m; })} />
-      <h3>{t('Text ({n} lines)', { n: pages.length })}</h3>
-      <Toggle label={t('Lines start with a small letter')} value={!!clip.lowerStart} onChange={(v) => e((c) => { if (v) c.lowerStart = true; else delete c.lowerStart; })} />
-      <div className="caption-list ck-lines">
-        {pages.map((pg, i) => {
-          const text = lineText(clip, pg);
-          return (
-            <label key={`${pg[0].t0.toFixed(3)}:${text}`} className="caption-row ck-line">
-              <span>{formatTime(clip.start + pg[0].t0)}</span>
-              {/* No automatic capital: a phone keyboard would start every corrected line with one (v1.6). */}
-              <input className="ck-input" defaultValue={text} aria-label={t('Caption line {n}', { n: i + 1 })} autoCapitalize="none"
-                onFocus={() => { player.pause(); player.seek(clip.start + pg[0].t0 + 0.01); useEditor.setState({ time: player.time }); }}
-                onBlur={(ev) => commitPage(i, ev.target.value)}
-                onKeyDown={(ev) => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); }} />
-            </label>
-          );
-        })}
-      </div>
+      <CaptionLines clip={clip} />
       <CutByText clip={clip} />
       <Button onClick={() => void exportSubtitles()}>{t('Save as .srt')}</Button>
       <Button onClick={() => editor().openSheet('captions')}>{t('Create again…')}</Button>
+    </>
+  );
+}
+
+/** A line reads as it is drawn (`lineWords`): with small first letters, the list shows them too. */
+const lineText = (c: CaptionClip, pg: { text: string }[]) => lineWords(c, pg.map((w) => w.text)).join(' ');
+
+/**
+ * Where the playhead stands in the caption's text, as one number that changes only when the word does: the sheet is
+ * not drawn again on every tick of playback. -1: nowhere (no words).
+ */
+function useCaptionCursor(clip: CaptionClip): { page: number; word: number; index: number } | null {
+  const key = useEditor((st) => { const at = captionCursor(clip, st.time - clip.start); return at ? at.index : -1; });
+  return key < 0 ? null : captionCursor(clip, clip.words[key]?.t0 ?? 0);
+}
+
+/**
+ * One line of the captions: when, and its words to correct. On the line the playhead stands on, the word it stands on
+ * is marked (the owner, 2026-11-13: «слово, на котором остановили просмотр, должно подсвечиваться»): white, as the
+ * playhead is. The mark is drawn over the field by a copy of its text set in the same face, and is gone while the
+ * line is being typed in.
+ */
+const CaptionLine = memo(function CaptionLine({ i, at, text, now, onSeek, onCommit }: {
+  i: number; at: number; text: string; /** The word the playhead is on, or -1 when it is on another line. */ now: number;
+  /** The same functions from render to render: only the two lines the playhead moves between are drawn again. */
+  onSeek: (line: number) => void; onCommit: (line: number, text: string) => void;
+}) {
+  const field = useRef<HTMLInputElement>(null), copy = useRef<HTMLSpanElement>(null);
+  const words = text.split(' ');
+  // A long line runs past the field's edge: the field and the copy move together, so the marked word is in sight.
+  useLayoutEffect(() => {
+    const f = field.current, c = copy.current, m = c?.querySelector('mark');
+    if (!f || document.activeElement === f) return;
+    if (!c || !m) { f.scrollLeft = 0; return; }
+    const pad = parseFloat(getComputedStyle(f).paddingLeft) || 0;
+    const room = f.clientWidth - 2 * pad;
+    f.scrollLeft = m.offsetLeft + m.offsetWidth - pad > room ? Math.max(0, m.offsetLeft - pad - (room - m.offsetWidth) / 2) : 0;
+    c.scrollLeft = f.scrollLeft; // what the field really did (a browser may refuse to scroll it)
+  }, [now, text]);
+  return (
+    <label className="caption-row ck-line" data-now={now >= 0 || undefined}>
+      <span>{formatTime(at)}</span>
+      <span className="ck-line-field">
+        {now >= 0 && (
+          <span ref={copy} className="ck-input ck-line-now" aria-hidden="true">
+            {words.map((w, i) => (i === now ? <mark key={i}>{w}</mark> : <span key={i}>{w}</span>)).flatMap((el, i) => (i ? [' ', el] : [el]))}
+          </span>
+        )}
+        {/* No automatic capital: a phone keyboard would start every corrected line with one (v1.6). */}
+        <input ref={field} className="ck-input" defaultValue={text} aria-label={t('Caption line {n}', { n: i + 1 })} autoCapitalize="none"
+          aria-current={now >= 0 ? 'true' : undefined}
+          onFocus={() => onSeek(i)}
+          onBlur={(ev) => { onCommit(i, ev.target.value); if (ev.target.value.trim().replace(/\s+/g, ' ') === text) ev.target.value = text; }}
+          onKeyDown={(ev) => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); }} />
+      </span>
+    </label>
+  );
+});
+
+/** The lines of the captions, the one under the playhead marked and kept in sight while the list is on screen. */
+function CaptionLines({ clip }: { clip: CaptionClip }) {
+  const pages = captionPages(clip.words, Math.max(1, clip.wordsPerPage));
+  const cursor = useCaptionCursor(clip);
+  const list = useRef<HTMLDivElement>(null);
+  const clipRef = useRef(clip);
+  clipRef.current = clip;
+  const seek = useRef((i: number) => {
+    const c = clipRef.current, pg = captionPages(c.words, Math.max(1, c.wordsPerPage))[i];
+    if (!pg) return;
+    player.pause(); player.seek(c.start + pg[0].t0 + 0.01); useEditor.setState({ time: player.time });
+  }).current;
+  const commit = useRef((i: number, text: string) => editClip(clipRef.current.id, (c) => {
+    if (c.kind !== 'caption') return;
+    const pg = captionPages(c.words, Math.max(1, c.wordsPerPage))[i];
+    if (!pg || lineText(c, pg) === text.trim().replace(/\s+/g, ' ')) return;
+    const at = c.words.indexOf(pg[0]);
+    const words = text.trim() ? wordsFromSegment(pg[0].t0, pg[pg.length - 1].t1, text) : [];
+    c.words.splice(at, pg.length, ...words);
+  })).current;
+  const toNow = (block: ScrollLogicalPosition) => list.current?.querySelector('[data-now]')?.scrollIntoView({ block, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  // The line follows the playhead while the list is in sight and nobody is typing in it; a sheet open on its style
+  // is not pulled down to the text.
+  const page = cursor?.page ?? -1;
+  useEffect(() => {
+    const el = list.current, body = el?.closest('.sheet-body');
+    if (!el || !body || el.contains(document.activeElement)) return;
+    const r = el.getBoundingClientRect(), b = body.getBoundingClientRect();
+    if (r.bottom > b.top && r.top < b.bottom) toNow('nearest');
+  }, [page]);
+  return (
+    <>
+      <h3>{t('Text ({n} lines)', { n: pages.length })}</h3>
+      <Toggle label={t('Lines start with a small letter')} value={!!clip.lowerStart}
+        onChange={(v) => editClip(clip.id, (c) => { if (c.kind !== 'caption') return; if (v) c.lowerStart = true; else delete c.lowerStart; })} />
+      {pages.length > 4 && <Button onClick={() => toNow('center')}>{t('Show the line at the playhead')}</Button>}
+      <div ref={list} className="caption-list ck-lines">
+        {pages.map((pg, i) => {
+          const text = lineText(clip, pg);
+          return (
+            <CaptionLine key={`${pg[0].t0.toFixed(3)}:${text}`} i={i} at={clip.start + pg[0].t0} text={text} now={cursor?.page === i ? cursor.word : -1}
+              onSeek={seek} onCommit={commit} />
+          );
+        })}
+      </div>
     </>
   );
 }
@@ -457,6 +627,7 @@ function CutByText({ clip }: { clip: CaptionClip }) {
   const [marked, setMarked] = useState<Set<number>>(new Set());
   const toggle = (i: number) => setMarked((m) => { const n = new Set(m); if (n.has(i)) n.delete(i); else n.add(i); return n; });
   const seconds = [...marked].reduce((n, i) => n + (clip.words[i].t1 - clip.words[i].t0), 0);
+  const now = useCaptionCursor(clip)?.index ?? -1;
 
   async function cut() {
     const p = editor().project;
@@ -485,7 +656,8 @@ function CutByText({ clip }: { clip: CaptionClip }) {
       <h3>{t('Tap words to cut them from the video')}</h3>
       <div className="words ck-words">
         {clip.words.map((w, i) => (
-          <button type="button" key={i} className={`word ck-word ${marked.has(i) ? 'cut' : ''}`} aria-pressed={marked.has(i)} onClick={() => toggle(i)}>{w.text}</button>
+          <button type="button" key={i} className={`word ck-word ${marked.has(i) ? 'cut' : ''}`} aria-pressed={marked.has(i)} data-now={i === now || undefined}
+            aria-current={i === now ? 'true' : undefined} onClick={() => toggle(i)}>{w.text}</button>
         ))}
       </div>
       <div className="row ck-actions">

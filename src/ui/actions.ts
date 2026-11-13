@@ -1,5 +1,5 @@
 // User-level editing actions shared by the toolbar, sheets and keyboard shortcuts.
-import { parseSubtitles, setCaptionLayout, toSrt, type CaptionLayout } from '../core/captions';
+import { clipWordsOnTimeline, mergeCaptionWords, parseSubtitles, setCaptionLayout, setClipWords, toSrt, type CaptionLayout } from '../core/captions';
 import { anim, createAudioClip, createCaptionClip, createImageClip, createTextClip, createVideoClip, uid } from '../core/defaults';
 import { MAX_CUBE_BYTES, parseCube, toBase64 } from '../core/lut';
 import { endWithVideo, fitTrack, type LibraryTrack, type MusicManifest } from '../core/music';
@@ -316,16 +316,35 @@ export function startCaptions(): void {
 
 /** Adds captions as one clip; they replace earlier captions in the same undo step (one set of captions per project). */
 /** `lowerStart` (v1.6): lines start with a small letter; off for imported subtitles, which keep their own text. */
-export function addCaptions(words: CaptionWord[], presetId = 'pop', layout?: CaptionLayout | { wordsPerPage: number }, lowerStart = true): void {
-  if (!words.length) { editor().toast(t('No speech was found in this video')); return; }
+/**
+ * `ranges` (docs/20 ADR-С6): the captions were made for these parts of the video only. Captions the project has
+ * outside them stay — their words, corrections and look — and the new words take the parts; still one clip.
+ */
+export function addCaptions(words: CaptionWord[], presetId = 'pop', layout?: CaptionLayout | { wordsPerPage: number }, lowerStart = true, ranges?: [number, number][] | null): void {
+  const had = (editor().project?.tracks ?? []).flatMap((tr) => tr.clips.filter((c): c is CaptionClip => c.kind === 'caption'));
+  const kept = ranges && had.length ? had.flatMap(clipWordsOnTimeline) : null;
+  if (!words.length) {
+    editor().toast(t(ranges ? 'No speech was found in this part of the video' : 'No speech was found in this video'));
+    if (!kept) return;
+  }
+  const all = kept && ranges ? mergeCaptionWords(kept, words, ranges) : words;
+  if (!all.length) { editor().commit((d) => { deleteClips(d, d.tracks.flatMap((tr) => tr.clips.filter((c) => c.kind === 'caption').map((c) => c.id))); }); return; }
   const preset = CAPTION_PRESETS.find((x) => x.id === presetId) ?? CAPTION_PRESETS[0];
   let id = '';
   editor().commit((d) => {
     deleteClips(d, d.tracks.flatMap((tr) => tr.clips.filter((c) => c.kind === 'caption').map((c) => c.id)));
-    const c = createCaptionClip(words, typeof layout === 'object' ? { ...preset, ...layout } : preset);
-    // The template brings its layout (v1.5); another one chosen in the sheet wins.
-    if (typeof layout === 'string' && layout !== preset.layout) setCaptionLayout(c, layout, preset.highlight ?? CAPTION_ACCENT);
-    if (lowerStart) c.lowerStart = true;
+    let c: CaptionClip;
+    if (kept) {
+      // The look the captions already have, not the sheet's: a part made again reads as one with the rest.
+      c = structuredClone(had[0]);
+      c.id = uid();
+      setClipWords(c, all);
+    } else {
+      c = createCaptionClip(all, typeof layout === 'object' ? { ...preset, ...layout } : preset);
+      // The template brings its layout (v1.5); another one chosen in the sheet wins.
+      if (typeof layout === 'string' && layout !== preset.layout) setCaptionLayout(c, layout, preset.highlight ?? CAPTION_ACCENT);
+      if (lowerStart) c.lowerStart = true;
+    }
     endWithContent(d, c);
     placeClip(d, c);
     id = c.id;

@@ -7,7 +7,7 @@ import { fitTrack, type Mood } from '../core/music';
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import { cutTimelineRanges, endWithContent, mainTrack, placeClip, projectDuration, soundAssetId } from '../core/timeline';
 import type { CaptionWord, Project } from '../core/types';
-import type { AsrModel, CaptionProgress, DownloadConsent, ModelDownload } from '../engine/captions';
+import type { AsrChoice, CaptionProgress, DownloadConsent, ModelDownload } from '../engine/captions';
 import { MediaError, PEAKS_PER_SEC, waveform } from '../engine/media';
 import { player } from '../engine/player';
 import { t } from '../lib/i18n';
@@ -18,10 +18,10 @@ import { keepAwake } from '../lib/wakeLock';
 
 export interface ReelOptions {
   pauses: boolean; fillers: boolean; captions: boolean; preset: string; zoom: boolean; hook: boolean;
-  music: Mood | null; language: string; model: AsrModel;
+  music: Mood | null; language: string; model: AsrChoice;
 }
 export const DEFAULT_REEL: ReelOptions = {
-  pauses: true, fillers: true, captions: true, preset: 'bold', zoom: true, hook: true, music: 'calm', language: '', model: 'base',
+  pauses: true, fillers: true, captions: true, preset: 'bold', zoom: true, hook: true, music: 'calm', language: '', model: 'auto',
 };
 
 export interface ReelReport {
@@ -36,7 +36,8 @@ export const reelUsesSpeech = (o: ReelOptions): boolean => o.captions || o.fille
 
 /** Stage on the progress bar (ui/pace), what to say, and the fraction when the job knows it. */
 function speechLabel(p: CaptionProgress): [string, string, number | null] {
-  if (p.phase === 'download') return ['model', t('Getting the speech model ({mb} MB, once)…', { mb: p.mb }), p.fraction];
+  if (p.phase === 'download') return ['model', t('Downloading the speech model: {mb} MB, once…', { mb: p.mb }), p.fraction];
+  if (p.phase === 'load') return ['model', t('Starting the speech model (it is on this device)…'), null];
   if (p.phase === 'prepare') return ['prepare', t('Preparing the sound…'), null];
   if (p.phase === 'listen') return ['listen', t('Finding speech…'), null];
   return ['transcribe', t('Recognizing speech…'), p.fraction];
