@@ -31,7 +31,9 @@
    below; the button's own room is the gap to the name. */
 .ck-panel-back { flex: none; display: flex; margin-right: calc(-1 * var(--space-2)); }
 .ck-panel-back:empty { display: none; }
-.ck-panel-head:has(> .ck-panel-back:not(:empty)) { padding-left: 0; }
+/* By a child, not by `:not(:empty)`: Safari 26.5 on an iPhone matched that one yet kept the 16 px when the chevron came in
+   after the sheet was drawn (a portal), and the name stood 16 px off its line (L5 v1.9.10, a probe page on the phone). */
+.ck-panel-head:has(> .ck-panel-back > *) { padding-left: 0; }
 .ck-panel[data-scrolled] .ck-panel-head { box-shadow: inset 0 calc(-1 * var(--hairline)) var(--border-subtle); }
 /* «Готово» is a white word, not one more box: the header holds the name and the way out, nothing to weigh. */
 .ck-panel-head .ck-btn { flex: none; padding: 0 var(--space-3); background: none; box-shadow: none; color: var(--text-primary); }

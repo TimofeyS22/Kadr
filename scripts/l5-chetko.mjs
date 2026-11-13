@@ -239,11 +239,12 @@ try {
   check('export: the film fills with the file\'s own frames as it is made', seen.length > 0 && seen.every(([p, n]) => n <= Math.floor(((p + 3) / 100) * 8) + 1), `${seen.length} looks: ${seen.slice(0, 8).map(([p, n]) => `${p}%:${n}`).join(' ')}`);
   check('export: the whole film stays when the file is ready', frames === 8, `${frames} of 8 painted; ${end.ready}; ${end.facts}; ${took} s`);
   // After L5 v1.9.7: the state and what the file is stand above the held foot's 24 px fade, and «export again» is the
-  // chevron before the sheet's name, on screen (it was under «Сохранить», seen only after a scroll). One look.
+  // chevron before the sheet's name, on screen (it was under «Сохранить», seen only after a scroll), at the sheet's edge:
+  // Safari kept the header's 16 px when it came in late (L5 v1.9.10), which Playwright's WebKit does not show. One look.
   const fit = await js(`const r = (s) => document.querySelector(s)?.getBoundingClientRect(), foot = r('.sheet .ck-panel-foot'), back = r('.sheet .ck-panel-back button');
     return { footTop: foot && Math.round(foot.top), ready: Math.round(r('.sheet .ck-work-ready').bottom), facts: r('.sheet .ck-work-facts') && Math.round(r('.sheet .ck-work-facts').bottom), back: back && [Math.round(back.left), Math.round(back.width), Math.round(back.bottom)], vh: innerHeight };`);
   check('export: «Файл готов» and what the file is stand above the fade of the held foot; the chevron back is on screen',
-    fit.footTop !== null && fit.facts !== null && fit.facts <= fit.footTop - 24 && fit.ready <= fit.footTop - 24 && !!fit.back && fit.back[1] >= 44 && fit.back[2] <= fit.vh, JSON.stringify(fit));
+    fit.footTop !== null && fit.facts !== null && fit.facts <= fit.footTop - 24 && fit.ready <= fit.footTop - 24 && !!fit.back && fit.back[0] <= 1 && fit.back[1] >= 44 && fit.back[2] <= fit.vh, JSON.stringify(fit));
   await shot('export-done');
   result.errors = await js('return window.__errs || []');
   check('no page errors', result.errors.length === 0, result.errors.join(' | '));

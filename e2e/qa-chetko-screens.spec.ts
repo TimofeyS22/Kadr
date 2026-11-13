@@ -731,6 +731,9 @@ for (const [w, h] of [[375, 548], [393, 695]]) {
     expect(a.width, 'a finger takes it').toBeGreaterThanOrEqual(44);
     expect(a.height).toBeGreaterThanOrEqual(44);
     expect(a.x + a.width, 'before the name').toBeLessThanOrEqual(name.x + 1);
+    // At the sheet's edge, so its stroke stands near the 16 px line of the words below (the header gives up its margin).
+    // Safari on the iPhone kept the margin when the chevron came in late (L5 v1.9.10); Playwright's WebKit never did.
+    expect(a.x, 'at the sheet\'s edge').toBeLessThanOrEqual(1);
     expect(a.y + a.height, 'on screen').toBeLessThanOrEqual(h);
     await expect(panel(page).locator('.ck-panel-body').getByRole('button', { name: /заново|снова/i }), 'only in the header').toHaveCount(0);
     // The file is not saved yet: the first tap says so, as «Готово» does (V-225); the second means it.
