@@ -181,5 +181,6 @@ export default defineConfig({
     rolldownOptions: { plugins: [noReservePlugin] },
   },
   worker: { plugins: () => [noReservePlugin] },
-  test: { include: ['src/**/*.test.ts', 'seo/**/*.test.ts', 'scripts/**/*.test.ts'] },
+  // e2e/*.unit.ts: the e2e tests' own arithmetic (Playwright runs only *.spec.ts and *.test.ts there).
+  test: { include: ['src/**/*.test.ts', 'seo/**/*.test.ts', 'scripts/**/*.test.ts', 'e2e/**/*.unit.ts'] },
 });
