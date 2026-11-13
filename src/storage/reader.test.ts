@@ -1,7 +1,7 @@
 // The door to a stored file's bytes (docs/19 §10): a lease that dies is replaced, a file that is gone or broken says so.
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ChunkedMedia, StoredMedia } from './chunks';
-import { MediaMissing, MediaReadError, RENEWALS_PER_MINUTE, isStorageError, leasedReader, resetRenewals, type LeaseEvent } from './reader';
+import { MediaMissing, MediaReadError, RENEWALS_PER_MINUTE, RENEW_PAUSES_MS, isStorageError, leasedReader, resetRenewals, type LeaseEvent } from './reader';
 
 const BYTES = Uint8Array.from({ length: 1000 }, (_, i) => i % 251);
 /** WebKit's own words for a Blob whose backing is gone (S-1-13, on the iPhone). */
@@ -58,8 +58,9 @@ describe('a stored file read through the door', () => {
     expect(e).toBeInstanceOf(MediaReadError);
     expect(isStorageError(e)).toBe(true);
     expect((e as MediaReadError).cause).toBeInstanceOf(DOMException);
-    expect(s.opened).toBe(2);
-    expect(pauses).toEqual([50, 250]);
+    expect(s.opened).toBe(RENEW_PAUSES_MS.length);
+    expect(pauses).toEqual(RENEW_PAUSES_MS);
+    expect(RENEW_PAUSES_MS.reduce((a, b) => a + b), 'well past the 2.8 s a dead take stayed unreadable on the iPhone').toBeGreaterThan(2 * 2800);
     expect(events.at(-1)).toMatchObject({ healed: false, error: 'NotFoundError' });
   });
 

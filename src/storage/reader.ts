@@ -45,10 +45,15 @@ export function leaseDied(e: unknown): boolean {
   return ['NotFoundError', 'NotReadableError', 'InvalidStateError', 'UnknownError'].includes(e.name) || /connection|lost/i.test(e.message);
 }
 
-/** Pauses before each new lease. Two leases, then the error: a file that is really broken is not hidden. */
-export const RENEW_PAUSES_MS = [50, 250];
+/**
+ * Pauses before each new lease, 7.8 s in all, then the error: a file that is really broken is not hidden. On the iPhone
+ * (live v1.9.6–1.9.7, 60 runs of five takes, 2026-11-13) a take's record read again after ≤ 0.26 s in 22 of 29 cases,
+ * ~0.78 s in 4 and 2.5–2.8 s in 3. With 50 and 250 ms some reads gave up first: a take kept an empty film strip (6 runs),
+ * and once the person was told the file could not be read. The preview waits for the frame rather than say so.
+ */
+export const RENEW_PAUSES_MS = [50, 250, 500, 1000, 2000, 4000];
 /** New leases one file may take in a minute (docs/19 С14): past this a dead read is an error at once, not a loop. */
-export const RENEWALS_PER_MINUTE = 6;
+export const RENEWALS_PER_MINUTE = 10;
 
 /** What the door tells whoever counts (docs/19 H5): no content, only what happened. */
 export interface LeaseEvent { assetId: string; healed: boolean; attempts: number; error: string }

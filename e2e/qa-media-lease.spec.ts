@@ -48,10 +48,16 @@ const killer = () => {
     track(b);
     return part;
   };
+  // As on the iPhone, a fresh read of the record may give a Blob that is dead too, for a while (up to 2.6 s there).
+  let deadFor = { size: 0, until: 0 };
   const result = Object.getOwnPropertyDescriptor(IDBRequest.prototype, 'result')!;
   Object.defineProperty(IDBRequest.prototype, 'result', {
     ...result,
-    get(this: IDBRequest) { const r: unknown = result.get!.call(this); if (r instanceof Blob) track(r); return r; },
+    get(this: IDBRequest) {
+      const r: unknown = result.get!.call(this);
+      if (r instanceof Blob) { track(r); if (r.size === deadFor.size && performance.now() < deadFor.until) dead.add(r); }
+      return r;
+    },
   });
   const arrayBuffer = Blob.prototype.arrayBuffer;
   Blob.prototype.arrayBuffer = function (this: Blob) { return dead.has(base(this)) ? Promise.reject(gone()) : arrayBuffer.call(this); };
@@ -64,8 +70,8 @@ const killer = () => {
     for (const w of seen) { const b = w.deref(); if (b && b.size === size) { dead.add(b); n++; } }
     return n;
   };
-  const w = window as unknown as { __killBlobs: (size: number) => number; __killOnThumbs: (size: number) => void; __killedOnThumbs: number };
-  w.__killBlobs = kill;
+  const w = window as unknown as { __killBlobs: (size: number, ms?: number) => number; __killOnThumbs: (size: number) => void; __killedOnThumbs: number };
+  w.__killBlobs = (size, ms = 0) => { deadFor = { size, until: performance.now() + ms }; return kill(size); };
   let armed = 0;
   w.__killedOnThumbs = 0;
   w.__killOnThumbs = (size) => { armed = size; };
@@ -160,6 +166,26 @@ test('a Blob that stops reading under the preview is opened again: the next fram
     expect(await toasts(page), 'no error is shown').toEqual([]);
     const { leases } = await perf(page);
     expect(leases, 'the dead Blob was replaced, and counted').toMatchObject({ failed: 0 });
+    expect(leases!.renewed).toBeGreaterThan(0);
+  });
+});
+
+test('a stored file that stays unreadable for over a second after its Blob dies still plays on, without a word (S-1-13 on the iPhone)', async ({ playwright }, info) => {
+  test.setTimeout(240_000);
+  const size = fs.statSync(fx(FILE)).size;
+  await withKadr(playwright, info, async (page) => {
+    await addLongVideo(page);
+    await expect.poll(async () => (await perf(page)).thumbs, { message: 'the film strip is made', timeout: 60_000 }).toBe(true);
+    // On the iPhone a take's record read again after up to 2.6 s; v1.9.6 gave up after 0.3 s.
+    expect(await page.evaluate((s) => (window as unknown as { __killBlobs: (n: number, ms: number) => number }).__killBlobs(s, 1500), size)).toBeGreaterThan(0);
+    const before = (await perf(page)).drawn;
+    await page.locator('.tl-scroll').evaluate((el, px) => { el.scrollLeft = px; }, 45 * PX_PER_S);
+    await expect.configure({ soft: true }).poll(async () => { const p = await perf(page); return p.drawn > before && p.last.exact && Math.abs(p.last.t - 45) < 0.1; }, {
+      message: 'the exact frame at 0:45 once the file reads again', timeout: 30_000,
+    }).toBe(true);
+    expect(await toasts(page), 'no error is shown').toEqual([]);
+    const { leases } = await perf(page);
+    expect(leases, 'the dead Blob was replaced once the file read again').toMatchObject({ failed: 0 });
     expect(leases!.renewed).toBeGreaterThan(0);
   });
 });
