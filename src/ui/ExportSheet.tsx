@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Check, CircleAlert, Share } from 'lucide-react';
+import { Check, ChevronLeft, CircleAlert, Share } from 'lucide-react';
 import { estimateMb, exportCost, exportDefaults, exportNotes, exportSource, isFast } from '../core/exportDefaults';
 import { projectDuration } from '../core/timeline';
 import { roundLeft, timeLeft } from '../core/exportProgress';
@@ -14,8 +14,8 @@ import { errorMessage, track } from '../lib/telemetry';
 import { keepAwake } from '../lib/wakeLock';
 import { editor, useEditor } from '../state/store';
 import { IOS, prepareStaleSounds, staleSoundClips } from './actions';
-import { Chips, Sheet, Toggle, num, secs } from './controls';
-import { Button, Progress } from './ck/controls';
+import { Chips, InHead, Sheet, Toggle, num, secs } from './controls';
+import { Button, IconButton, Progress } from './ck/controls';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
 import { useSheetGuard } from './controls';
@@ -215,7 +215,8 @@ export function ExportSheet() {
     <Sheet title={t('Export')}>
       {(phase.kind === 'setup' || phase.kind === 'done') && <InAppNotice />}
       {working && (
-        // One container from the first percent to the saved file: the film the export painted stays where it was.
+        // One container from the first percent to the saved file: the film the export painted stays in it. Where «Сохранить»
+        // is held at the bottom, «Файл готов» and what the file is come before the film when it is done (sheets.css).
         <div className="export-progress ck-work" data-film={filmed || undefined}>
           <Progress label={t('Export')} value={phase.kind === 'running' ? phase.progress : 1}>
             {filmed && Array.from({ length: FILM }, (_, k) => (
@@ -239,14 +240,21 @@ export function ExportSheet() {
           )}
           {phase.kind === 'done' && (
             <>
+              {/* Exporting again is a step back to the settings, so it is a chevron before the sheet's name, as far from
+                  «Готово» as the header allows: at the end of the sheet, under the held «Сохранить», an iPhone 15 showed it
+                  only after a scroll (L5 v1.9.7). A file not saved yet is guarded as «Готово» guards it (V-225). */}
+              <InHead back><IconButton label={t('Export again')} onClick={() => { if (editor().leaveSheet()) setPhase({ kind: 'setup' }); }}><ChevronLeft aria-hidden /></IconButton></InHead>
               <p className="ck-work-ready">{t('Ready: {mb} MB in {s} s', { mb: num(phase.result.blob.size / 1e6, 1), s: num(phase.result.seconds, 1) })}</p>
-              {made && <p className="ck-hint">{facts(made, duration, phase.result.fileName)}</p>}
+              {made && <p className="ck-hint ck-work-facts">{facts(made, duration, phase.result.fileName)}</p>}
               {phase.result.noSound && <Alert>{t('This browser cannot encode sound, so the file has no sound. Try Chrome or Safari.')}</Alert>}
-              {phase.quick && !IOS && <p className="ck-work-saved"><Check aria-hidden />{t('Saved to Downloads.')}</p>}
-              <div className="ck-work-actions" data-stack>
-                {phase.quick && !IOS && <Button icon={<Share aria-hidden />} onClick={() => save(phase.result)}>{t('Share')}</Button>}
-                <Button variant="plain" onClick={() => setPhase({ kind: 'setup' })}>{t('Export again')}</Button>
-              </div>
+              {phase.quick && !IOS && (
+                <>
+                  <p className="ck-work-saved"><Check aria-hidden />{t('Saved to Downloads.')}</p>
+                  <div className="ck-work-actions" data-stack>
+                    <Button icon={<Share aria-hidden />} onClick={() => save(phase.result)}>{t('Share')}</Button>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

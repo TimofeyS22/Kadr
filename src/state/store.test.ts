@@ -66,3 +66,24 @@ describe('editor history', () => {
     expect(s().future.length).toBe(0);
   });
 });
+
+describe('leaving a sheet that holds work (V-225)', () => {
+  beforeEach(() => { useEditor.setState({ sheetGuard: null, toasts: [], sheet: 'export' }); s().leaveSheet(); });
+
+  it('with no guard, leaving goes on at once', () => {
+    expect(s().leaveSheet()).toBe(true);
+    expect(s().toasts).toEqual([]);
+  });
+
+  it('a guard says what would be lost the first time; a second attempt means it (closing the sheet asks the same)', () => {
+    useEditor.setState({ sheetGuard: 'not saved' });
+    // A step back inside the sheet (the chevron of a ready export) warns...
+    expect(s().leaveSheet()).toBe(false);
+    expect(s().toasts.map((x) => x.text)).toEqual(['not saved']);
+    // ...and a second attempt right after it goes on, without a second warning.
+    expect(s().leaveSheet()).toBe(true);
+    expect(s().toasts.length).toBe(1);
+    // The next time the guard says it again.
+    expect(s().leaveSheet()).toBe(false);
+  });
+});

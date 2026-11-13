@@ -26,6 +26,12 @@
 .ck-panel-head h2 { flex: 1; min-width: 0; margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; font-size: var(--type-lg); font-weight: var(--weight-strong); line-height: var(--leading-tight); letter-spacing: -0.01em; outline: none; }
 .ck-panel-tools { flex: none; display: flex; }
 .ck-panel-tools:empty { display: none; }
+/* A step back inside the sheet (a ready file → the export settings) is a chevron before the name, as far from «Готово» as
+   the header allows. The header gives up its left margin so the chevron's stroke stands near the 16 px line of the words
+   below; the button's own room is the gap to the name. */
+.ck-panel-back { flex: none; display: flex; margin-right: calc(-1 * var(--space-2)); }
+.ck-panel-back:empty { display: none; }
+.ck-panel-head:has(> .ck-panel-back:not(:empty)) { padding-left: 0; }
 .ck-panel[data-scrolled] .ck-panel-head { box-shadow: inset 0 calc(-1 * var(--hairline)) var(--border-subtle); }
 /* «Готово» is a white word, not one more box: the header holds the name and the way out, nothing to weigh. */
 .ck-panel-head .ck-btn { flex: none; padding: 0 var(--space-3); background: none; box-shadow: none; color: var(--text-primary); }
@@ -225,6 +231,9 @@ textarea.ck-panel-text, textarea.ck-panel-script { resize: none; background: var
 }
 /* What scrolls under it fades out rather than being cut by a line through its words. */
 .ck-panel-foot::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--space-6); background: linear-gradient(transparent, var(--surface-raised)); pointer-events: none; }
+/* At the end of the scroll the last words stand above the fade, not in it: with the body's gap, the room before the held
+   foot is the fade's height (the facts of a done export sat in it at rest, L5 v1.9.7). */
+.ck-panel-body > :has(+ .ck-panel-foot) { margin-bottom: calc(var(--space-6) - var(--space-3)); }
 .ck-panel-foot .ck-btn-label { display: grid; gap: var(--hairline); }
 .ck-btn-sub { font-size: var(--type-xs); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
 /* What comes after the tap, under its button: quiet words, not a second action. */
@@ -267,9 +276,15 @@ textarea.ck-panel-text, textarea.ck-panel-script { resize: none; background: var
 .ck-work-left { grid-area: left; margin: 0; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .ck-work-left[data-wait] { color: var(--text-secondary); }
 .ck-work-ready { margin: 0; font-size: var(--type-lg); font-weight: var(--weight-strong); line-height: var(--leading-tight); font-variant-numeric: tabular-nums; }
-/* A short screen (an iPhone SE in Safari, 548 px): «Файл готов» comes before the film, so the state stays in view above the
-   held foot with its note; the film, a picture of what was made, may go under the fade instead (the art director, L5 v1.9.5). */
-@media (max-height: 680px) { .ck-work > .ck-work-ready { order: -1; } }
+/* Where «Сохранить» is held at the bottom (an iPhone; an export without quick save), the state comes before the film:
+   «Файл готов» and what the file is, whole, above the held foot with its note. The 46% sheet of an iPhone 15 did not hold
+   the film, the state and the facts over the foot, and the facts sat in its fade (L5 v1.9.7); on an iPhone SE it was the
+   state itself (L5 v1.9.5). The film, a picture of what was made, may go under the fade instead (the art director). */
+.ck-panel-body:has(> .ck-panel-foot) > .ck-work > :is(.ck-work-ready, .ck-work-facts) { order: -1; }
+/* Its first line then stands where every sheet's does, the body's 8 px under the header, and the film ends where the fade begins. */
+.ck-panel-body:has(> .ck-panel-foot) > .ck-work:has(> .ck-work-ready) { padding-top: 0; }
+/* What the file is belongs to «Файл готов»: one group, not one more row. */
+.ck-work-ready + .ck-work-facts { margin-top: calc(var(--space-1) - var(--space-3)); }
 .ck-work-saved { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--type-sm); color: var(--text-primary); }
 .ck-work-saved svg { flex: none; width: 20px; height: 20px; }
 .ck-work-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }

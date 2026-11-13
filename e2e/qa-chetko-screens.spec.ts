@@ -705,19 +705,62 @@ test('support at 375 px: the report of ?styles wraps inside the screen, no line 
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 'nothing scrolls sideways').toBeLessThanOrEqual(0);
 });
 
-test('export at 375×548 (an iPhone SE in Safari): «Файл готов» stays in view above the held foot and its note (L5, v1.9.5)', async ({ page }, info) => {
-  test.skip(!info.project.name.startsWith('iphone'), 'the held «Сохранить» and its note are the iPhone\'s: elsewhere the file is saved at once');
+// An iPhone SE in Safari (548) and an iPhone 15 (695), where the 46% sheet does not hold the done export whole.
+for (const [w, h] of [[375, 548], [393, 695]]) {
+  test(`export at ${w}×${h} on an iPhone: «Файл готов» and what the file is stand whole above the held foot and its note; back to the settings is a chevron before the name, guarded while the file is not saved (L5, v1.9.5 and v1.9.7)`, async ({ page }, info) => {
+    test.skip(!info.project.name.startsWith('iphone'), 'the held «Сохранить» and its note are the iPhone\'s: elsewhere the file is saved at once');
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: w, height: h });
+    await editorWithVideo(page);
+    await page.getByRole('button', { name: 'Экспорт' }).first().click();
+    const ready = panel(page).locator('.ck-work-ready');
+    await expect(ready).toBeVisible({ timeout: 90_000 });
+    const foot = (await panel(page).locator('.ck-panel-foot').boundingBox())!;
+    // The foot's fade is 24 px (--space-6) over its top: the state and the facts are above it, whole. On the iPhone 15
+    // the facts sat in it, pale as if broken (L5, v1.9.7).
+    for (const [name, el] of [['«Файл готов»', ready], ['what the file is', panel(page).locator('.ck-work-facts')]] as const) {
+      const r = (await el.boundingBox())!;
+      expect(r.y + r.height, `${name} above the fade of the held foot`).toBeLessThanOrEqual(foot.y - 24);
+    }
+    expect(foot.y + foot.height, 'the foot on screen').toBeLessThanOrEqual(h + 1);
+    await expect(panel(page).locator('.ck-foot-note')).toBeVisible();
+    // Export again is a step back to the settings: a chevron before the sheet's name, as far from «Готово» as the header
+    // allows, seen without a scroll (it was under the held «Сохранить»).
+    const again = panel(page).locator('.ck-panel-head .ck-panel-back').getByRole('button', { name: 'Экспортировать снова' });
+    const a = (await again.boundingBox())!, name = (await panel(page).locator('.ck-panel-head h2').boundingBox())!;
+    expect(a.width, 'a finger takes it').toBeGreaterThanOrEqual(44);
+    expect(a.height).toBeGreaterThanOrEqual(44);
+    expect(a.x + a.width, 'before the name').toBeLessThanOrEqual(name.x + 1);
+    expect(a.y + a.height, 'on screen').toBeLessThanOrEqual(h);
+    await expect(panel(page).locator('.ck-panel-body').getByRole('button', { name: /заново|снова/i }), 'only in the header').toHaveCount(0);
+    // The file is not saved yet: the first tap says so, as «Готово» does (V-225); the second means it.
+    await again.click();
+    await expect(page.locator('.toast', { hasText: 'Видео ещё не сохранено. Нажмите ещё раз, чтобы выбросить его.' })).toBeVisible();
+    await expect(ready, 'the file is still there').toBeVisible();
+    await again.click();
+    await expect(panel(page).getByRole('button', { name: /^Экспортировать видео/ }), 'back to the settings').toBeVisible();
+    await expect(again, 'the header holds it only while the file is ready').toHaveCount(0);
+  });
+}
+
+test('export at 393×695 where the file is saved at once: back to the settings is a chevron before the name, «Поделиться» on screen without a scroll', async ({ page }, info) => {
+  test.skip(info.project.name.startsWith('iphone'), 'an iPhone holds «Сохранить» at the bottom instead');
   test.setTimeout(120_000);
-  await page.setViewportSize({ width: 375, height: 548 });
+  await page.setViewportSize({ width: 393, height: 695 });
   await editorWithVideo(page);
   await page.getByRole('button', { name: 'Экспорт' }).first().click();
-  const ready = panel(page).locator('.ck-work-ready');
-  await expect(ready).toBeVisible({ timeout: 90_000 });
-  const foot = (await panel(page).locator('.ck-panel-foot').boundingBox())!, r = (await ready.boundingBox())!;
-  // The foot's fade is 24 px (--space-6) over its top: the state is above it, whole.
-  expect(r.y + r.height, '«Файл готов» above the fade of the held foot').toBeLessThanOrEqual(foot.y - 24);
-  expect(foot.y + foot.height, 'the foot on screen').toBeLessThanOrEqual(548 + 1);
-  await expect(panel(page).locator('.ck-foot-note')).toBeVisible();
+  await expect(panel(page).locator('.ck-work-ready')).toBeVisible({ timeout: 90_000 });
+  const again = panel(page).locator('.ck-panel-head .ck-panel-back').getByRole('button', { name: 'Экспортировать снова' });
+  await expect(again).toBeVisible();
+  const share = (await panel(page).getByRole('button', { name: 'Поделиться' }).boundingBox())!;
+  const sheet = (await panel(page).boundingBox())!;
+  expect(share.y + share.height, '«Поделиться» inside the sheet, not under its edge').toBeLessThanOrEqual(sheet.y + sheet.height + 1);
+  // No held foot here: the film stays where the export painted it, over «Файл готов».
+  const film = (await panel(page).locator('.ck-work .ck-progress').boundingBox())!, ready = (await panel(page).locator('.ck-work-ready').boundingBox())!;
+  expect(film.y, 'the film first').toBeLessThan(ready.y);
+  // Saved already: nothing is lost, one tap goes back.
+  await again.click();
+  await expect(panel(page).getByRole('button', { name: /^Экспортировать видео/ }), 'back to the settings').toBeVisible();
 });
 
 for (const height of [812, 667]) {
@@ -738,6 +781,9 @@ for (const height of [812, 667]) {
       expect(b.height).toBeGreaterThanOrEqual(44);
       await expect(go.locator('.ck-btn-sub'), 'what it makes is the second line of the button').toHaveText(/^\d+×\d+ · \d+(,\d)? с · \d+ к\/с · около \d+ МБ$/);
     }
+    // At the end of the scroll the last of the settings stands above the foot's 24 px fade, not in it (L5, v1.9.7).
+    const [last, footTop] = await body.evaluate((b) => [b.querySelector(':scope > :has(+ .ck-panel-foot)')!.getBoundingClientRect().bottom, b.querySelector('.ck-panel-foot')!.getBoundingClientRect().top]);
+    expect(last, 'the last setting above the fade at the end of the scroll').toBeLessThanOrEqual(footTop - 24 + 1);
     const white = await whiteFilled(page);
     expect(white.length, 'one white button: the export').toBe(1);
     expect(white[0]).toMatch(/^Экспортировать видео/);

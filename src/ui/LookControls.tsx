@@ -1,14 +1,13 @@
 // What the colour and effect sheets share: hold to see the clip without its look, and give the look to every piece.
 import { Contrast, CopyPlus } from 'lucide-react';
-import { useContext, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect } from 'react';
 import { applyLookToTrack, findClip, type LookPart } from '../core/timeline';
 import { player } from '../engine/player';
 import { t } from '../lib/i18n';
 import { useEditor } from '../state/store';
 import type { LookClip } from './lookTiles';
 import { Button, IconButton } from './ck/controls';
-import { SheetHead } from './controls';
+import { InHead } from './controls';
 
 function BeforeAfter({ clip }: { clip: LookClip }) {
   const hold = (on: boolean) => player.showOriginal(on ? clip.id : null);
@@ -52,10 +51,9 @@ function ApplyToAll({ clip, parts }: { clip: LookClip; parts: readonly LookPart[
  * of a 373 px sheet as two boxes over the tiles (the art director of Ч4 release 5).
  */
 export function LookActions({ clip, parts }: { clip: LookClip; parts: readonly LookPart[] }) {
-  const head = useContext(SheetHead);
   return (
     <>
-      {head && createPortal(<BeforeAfter clip={clip} />, head)}
+      <InHead><BeforeAfter clip={clip} /></InHead>
       <div className="look-actions ck-look-actions"><ApplyToAll clip={clip} parts={parts} /></div>
     </>
   );

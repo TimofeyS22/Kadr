@@ -1,5 +1,6 @@
 import { Diamond, Minus, Pipette, Plus, RotateCcw } from 'lucide-react';
-import { Children, Fragment, createContext, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactElement, type ReactNode } from 'react';
+import { Children, Fragment, createContext, isValidElement, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactElement, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { labelsFor, specFor } from '../core/scale';
 import { Scale } from './ck/Scale';
 import { player } from '../engine/player';
@@ -33,12 +34,22 @@ export function useSheetGuard(message: string | null): void {
  * (audit UI-7). It is not modal: the frame, Undo and play stay in reach while it is open. It takes the focus when it
  * opens (its name is read), Escape closes it (Editor.tsx) and the focus goes back to the tool that opened it.
  */
-/** The header of the open sheet, for a control of its body that belongs next to «Готово» (Before / after). */
-export const SheetHead = createContext<HTMLElement | null>(null);
+/** The header of the open sheet: `tools`, next to «Готово», for a control of the picture (Before / after); `back`, before
+ *  the name, for a step back inside the sheet (from a ready file to the export settings). */
+const SheetHead = createContext<{ tools: HTMLElement | null; back: HTMLElement | null }>({ tools: null, back: null });
+
+/** What a sheet's body puts in its header: next to «Готово», or before the name with `back`. */
+export function InHead({ back, children }: { back?: boolean; children: ReactNode }) {
+  const head = useContext(SheetHead);
+  const el = back ? head.back : head.tools;
+  return el && createPortal(children, el);
+}
 
 export function Sheet({ title, children }: { title: string; children: ReactNode }) {
   const close = () => { useEditor.getState().closeSheet(); };
-  const [head, setHead] = useState<HTMLElement | null>(null);
+  const [tools, setTools] = useState<HTMLElement | null>(null);
+  const [back, setBack] = useState<HTMLElement | null>(null);
+  const head = useMemo(() => ({ tools, back }), [tools, back]);
   // Swipe the header down to close, like the system sheets (docs/09 Q2). The sheet moves through its style, not React
   // state: the bodies are heavy and the finger needs 60 FPS.
   const ref = useRef<HTMLElement>(null);
@@ -113,8 +124,9 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
   return (
     <section ref={ref} className="sheet ck ck-panel" role="dialog" aria-label={t(title)}>
       <header className="sheet-head ck-panel-head" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+        <span ref={setBack} className="ck-panel-back" />
         <h2 id={id} ref={heading} tabIndex={-1}>{t(title)}</h2>
-        <span ref={setHead} className="ck-panel-tools" />
+        <span ref={setTools} className="ck-panel-tools" />
         <Button onClick={close}>{t('Done')}</Button>
       </header>
       {/* A line under the header once the body has scrolled under it. */}

@@ -75,6 +75,9 @@ export interface EditorState {
   sheetGuard: string | null;
   /** An export is running: it renders the project as it was when it began, so nothing may look as if it changed it. */
   locked: boolean;
+  /** Whether what the open sheet holds may be left (closed, or a step back inside it): false the first time a guard is up,
+   *  when it says what would be lost; a second attempt within a few seconds means it. */
+  leaveSheet(): boolean;
   /** The person closes the sheet (Done, a swipe, Esc): false when it stayed open to say what would be lost. */
   closeSheet(): boolean;
   setTime(t: number): void;
@@ -89,7 +92,7 @@ export interface EditorState {
 }
 
 let toastId = 0;
-/** A second close within this long of the warning means it (see closeSheet). */
+/** A second attempt within this long of the warning means it (see leaveSheet). */
 const GUARD_MS = 4000;
 let warnedAt = -Infinity;
 
@@ -163,7 +166,7 @@ export const useEditor = create<EditorState>()((set, get) => ({
   openSheet: (sheet, transitionFor) => set({ sheet, transitionFor: transitionFor ?? null }),
   sheetGuard: null,
   locked: false,
-  closeSheet: () => {
+  leaveSheet: () => {
     const guard = get().sheetGuard;
     if (guard && performance.now() - warnedAt > GUARD_MS) {
       warnedAt = performance.now();
@@ -171,6 +174,10 @@ export const useEditor = create<EditorState>()((set, get) => ({
       return false;
     }
     warnedAt = -Infinity;
+    return true;
+  },
+  closeSheet: () => {
+    if (!get().leaveSheet()) return false;
     // A field still in focus saves on blur, and an element taken away never blurs: a corrected line was lost (audit V-217).
     (document.activeElement as HTMLElement | null)?.blur?.();
     set({ sheet: null, transitionFor: null });
