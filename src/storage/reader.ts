@@ -89,17 +89,20 @@ export function leasedReader(assetId: string, first: StoredMedia, open: () => Pr
   /** A lease for the one that died; reads that failed together share it. */
   const renew = (dead: StoredMedia): Promise<StoredMedia> => {
     if (lease !== dead) return Promise.resolve(lease);
-    return (renewing ??= (async () => {
-      try {
-        const fresh = await open();
-        if (!fresh) throw new MediaMissing();
-        if (fresh.size !== first.size) throw new MediaReadError(`the stored file is ${fresh.size} bytes now, not ${first.size}`);
-        lease = fresh;
-        return fresh;
-      } finally {
-        renewing = null;
-      }
-    })());
+    if (renewing) return renewing;
+    const made = (async () => {
+      // Counted where the file is really opened again: reads that failed together share one new lease and one count.
+      if (!allowRenewal(assetId, now())) throw new MediaReadError('too many new leases in a minute');
+      const fresh = await open();
+      if (!fresh) throw new MediaMissing();
+      if (fresh.size !== first.size) throw new MediaReadError(`the stored file is ${fresh.size} bytes now, not ${first.size}`);
+      lease = fresh;
+      return fresh;
+    })();
+    renewing = made;
+    // Let go once settled, after it was set: a refusal made before the first await must not stay as the answer.
+    made.then(() => undefined, () => undefined).finally(() => { if (renewing === made) renewing = null; });
+    return made;
   };
 
   return {
@@ -118,16 +121,18 @@ export function leasedReader(assetId: string, first: StoredMedia, open: () => Pr
           if (isStorageError(e)) throw e;
           if (!leaseDied(e)) throw e; // a range outside the file or a missing chunk is not cured by a new lease
           firstError ??= e;
-          const spent = attempt >= RENEW_PAUSES_MS.length;
-          if (spent || !allowRenewal(assetId, now())) {
+          if (attempt >= RENEW_PAUSES_MS.length) {
             deps.report?.({ assetId, healed: false, attempts: attempt, error: nameOf(firstError) });
-            throw new MediaReadError(spent ? 'new leases did not read either' : 'too many new leases in a minute', { cause: firstError });
+            throw new MediaReadError('new leases did not read either', { cause: firstError });
           }
           await sleep(RENEW_PAUSES_MS[attempt]);
           try {
             used = await renew(used);
           } catch (r) {
-            if (isStorageError(r)) { deps.report?.({ assetId, healed: false, attempts: attempt + 1, error: nameOf(firstError) }); throw r; }
+            if (isStorageError(r)) {
+              deps.report?.({ assetId, healed: false, attempts: attempt + 1, error: nameOf(firstError) });
+              throw r;
+            }
             if (!leaseDied(r)) throw r;
             // The storage itself failed to answer: the next turn tries again with the same dead lease.
           }

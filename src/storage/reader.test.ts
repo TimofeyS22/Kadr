@@ -104,6 +104,17 @@ describe('a stored file read through the door', () => {
     expect(await later.read(0, 10)).toEqual(BYTES.slice(0, 10));
   });
 
+  it('reads that fail together count once against the fuse, and a tripped fuse does not stick past its minute', async () => {
+    let opened = 0, clock = 1000;
+    const open = async () => { opened++; return lease(3); }; // every lease reads three times, then dies
+    const r = leasedReader('a', lease(0), open, { ...deps, now: () => clock });
+    for (let i = 0; i < RENEWALS_PER_MINUTE; i++) await Promise.all([r.read(0, 10), r.read(10, 20), r.read(20, 30)]);
+    expect(opened, 'one new lease for three reads each time').toBe(RENEWALS_PER_MINUTE);
+    await expect(Promise.all([r.read(0, 10), r.read(10, 20), r.read(20, 30)])).rejects.toBeInstanceOf(MediaReadError);
+    clock += 61_000;
+    expect(await r.read(0, 10)).toEqual(BYTES.slice(0, 10));
+  });
+
   it('a Blob lease is read in slices, and a dead Blob is replaced too', async () => {
     class DeadBlob extends Blob {
       override slice(): Blob { return { arrayBuffer: () => Promise.reject(gone()) } as unknown as Blob; }
