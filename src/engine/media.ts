@@ -8,7 +8,8 @@ import { correctPixels, decodedAs709, hdrTransfer, sdMatrix, type Hdr } from './
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
 import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
-import { getBlob, getPeaks, openMedia, putPeaks } from '../storage/db';
+import { getBlob, getPeaks, openMedia, openReader, putPeaks } from '../storage/db';
+import { isStorageError } from '../storage/reader';
 import { ResilientSink, playableAudioTrack, type SoundSink } from './sound';
 import { within } from '../lib/limits';
 import { IOS } from '../lib/device';
@@ -263,6 +264,9 @@ class VideoStream {
       } catch (e) {
         if (this.closed) return null;
         if ((e as Error)?.name === 'AbortError') throw e;
+        // The file's bytes could not be read even with a new lease: a new decoder would read the same nothing, and the
+        // person would be told the decoder stopped (S-1-13). It goes up as what it is.
+        if (isStorageError(e)) throw e;
         first ??= e;
         console.warn(`Video decoding failed (attempt ${attempt + 1}), restarting the decoder`, e);
         await this.reset();
@@ -371,8 +375,9 @@ export class MediaPool {
     let h = this.handles.get(assetId);
     if (!h) {
       h = (async () => {
-        // Not a whole Blob: in a private tab that is the file put together in memory (audit V-253).
-        const media = await openMedia(assetId);
+        // Read by the asset's id through the door, which replaces a Blob that stops reading (docs/19, S-1-13). Not a
+        // whole Blob: in a private tab that is the file put together in memory (audit V-253).
+        const media = await openReader(assetId);
         if (!media) throw new MediaError('Media file is missing from this device');
         const input = openInput(media);
         try {
@@ -586,7 +591,8 @@ export function waveform(assetId: string): Promise<Float32Array> {
     p = (async () => {
       const stored = await getPeaks(assetId);
       if (stored) return stored;
-      const media = await openMedia(assetId);
+      // Read right after an import, as a camera take's pieces go (S-1-13): through the door that replaces a dead Blob.
+      const media = await openReader(assetId);
       if (!media) return new Float32Array();
       const input = openInput(media);
       try {

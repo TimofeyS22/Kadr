@@ -852,6 +852,7 @@ export const RU: Record<string, string> = {
   'A GIF comes in as a still picture: its first frame.': 'GIF добавляется как неподвижная картинка: его первый кадр.',
   '“{name}” ends with the video: {kept} s of {total} s. Drag the end of the clip to make it longer.': '«{name}» заканчивается вместе с видео: {kept} с из {total} с. Чтобы удлинить, потяните край клипа.',
   'This file can no longer be read. It may have been moved or deleted. Add it again.': 'Этот файл больше не читается: возможно, его переместили или удалили. Добавьте его снова.',
+  'This file could not be read from the storage of this device. Reload the page; if that does not help, add the file again.': 'Файл не прочитался из памяти устройства. Перезагрузите страницу, а если не поможет, добавьте файл снова.',
   'This device could not process the video. Close other apps and try again.': 'Устройство не смогло обработать видео. Закройте другие приложения и попробуйте снова.',
   'restored': 'восстановлено',
   'A camera recording that was cut short is back in the project.': 'Запись с камеры, которая оборвалась, вернулась в проект.',

@@ -9,6 +9,8 @@ export const perf = {
   longTasks: [] as number[],
   /** Media kept in chunks (a private tab): the most chunks held in memory at once, and reads of a chunk from storage. */
   chunks: { peak: 0, loads: 0 },
+  /** Stored media read through the door (docs/19 H5): dead leases replaced, and reads that failed even so. */
+  leases: { renewed: 0, failed: 0 },
 };
 
 export function mark(name: string): void {
