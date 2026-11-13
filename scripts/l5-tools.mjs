@@ -90,7 +90,20 @@ const WATCH = `if (!window.__l5) {
   const slice = Blob.prototype.slice;
   Blob.prototype.slice = function (...a) { const s = slice.apply(this, a); tags.set(s, tags.get(this) || ('memory size=' + this.size)); return s; };
   const ab = Blob.prototype.arrayBuffer;
-  Blob.prototype.arrayBuffer = function () { const b = this; return ab.call(b).catch((e) => { note('read ' + e.name + ' of ' + (tags.get(b) || 'untagged size=' + b.size) + ' @' + at()); throw e; }); };
+  // How long a stored file stays unreadable (S-1-13): from its first failed read, a fresh read of its record every
+  // 250 ms until one reads, for 30 s at most. The door's own new leases wait 50 and 250 ms.
+  window.__l5.revive = {};
+  const probe = (key) => {
+    if (!key.startsWith('b:') || window.__l5.revive[key]) return;
+    const t0 = at();
+    window.__l5.revive[key] = 'dead';
+    const tick = () => { const o = indexedDB.open('kadr'); o.onsuccess = () => { try { const r = o.result.transaction('kv').objectStore('kv').get(key);
+      r.onsuccess = () => { o.result.close(); const b = r.result; if (!(b instanceof Blob)) { window.__l5.revive[key] = 'gone after ' + (at() - t0) + ' ms'; return; }
+        ab.call(slice.call(b, 0, 8)).then(() => { window.__l5.revive[key] = 'readable after ' + (at() - t0) + ' ms'; }, () => { if (at() - t0 < 30000) setTimeout(tick, 250); else window.__l5.revive[key] = 'dead after 30 s'; }); };
+      } catch (e) { o.result.close(); window.__l5.revive[key] = 'probe ' + e.name; } }; };
+    tick();
+  };
+  Blob.prototype.arrayBuffer = function () { const b = this; return ab.call(b).catch((e) => { const tag = tags.get(b); note('read ' + e.name + ' of ' + (tag || 'untagged size=' + b.size) + ' @' + at()); if (tag) probe(tag.split(' ')[0]); throw e; }); };
   if (window.VideoDecoder) {
     const VD = window.VideoDecoder;
     window.VideoDecoder = class extends VD {
@@ -431,6 +444,8 @@ const SCENARIOS = {
       await sleep(Number(process.env.S1_PAUSE ?? 4000));
       takes.push({ take: k + 1, got, recordedMs: Date.now() - t0, said: await js('return window.__l5.toasts.slice()') });
     }
+    // Which takes got their film strip (a strip that failed stays empty until it is drawn again), and when the dead files read again.
+    const strips = { clips: await count('.tl-row.main .clip-video'), thumbs: await js("return Object.keys(window.__kadrPerf.marks).filter((k) => k.startsWith('thumbs:')).length") };
     // What Kadr wrote down about each error it showed (lib/errorLog: kind, where, message; nothing personal).
     const log = await jsAsync(`const done = arguments[arguments.length - 1]; const o = indexedDB.open('kadr-log');
       o.onsuccess = () => { try { const r = o.result.transaction('log').objectStore('log').getAll(); r.onsuccess = () => done(JSON.stringify(r.result).slice(-1500)); r.onerror = () => done('?'); } catch (e) { done(String(e)); } };
@@ -451,7 +466,7 @@ const SCENARIOS = {
     const lost = await js("return window.__l5.warns.filter((w) => /IndexedDB connection lost|server lost|connection/i.test(w)).slice(0, 4)");
     // Dead Blobs the door replaced since v1.9.6 (docs/19 H5): the trigger still fires, and is cured without a word.
     const leases = await js('return window.__kadrPerf && window.__kadrPerf.leases');
-    return { kept: await js('return window.__l5.kept'), takes, afterPlay: playing, file: p, black, log, canary, lost, leases, warns: await js('return window.__l5.warns.slice(-4)'), diag: await js('return window.__l5.diag.slice(0, 6)') };
+    return { kept: await js('return window.__l5.kept'), takes, afterPlay: playing, file: p, black, log, canary, lost, leases, strips, revive: await js('return window.__l5.revive'), warns: await js('return window.__l5.warns.slice(-4)'), diag: await js('return window.__l5.diag.slice(0, 6)') };
   },
   // One file of the S-1 batch on its own (S1_FILE=tiny_2x2|huge_8k|yuv444|mp3_in): which one, if any, takes the tab down.
   's1-one': async () => {
