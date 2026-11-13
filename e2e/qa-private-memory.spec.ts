@@ -17,6 +17,7 @@ type Watch = { __bufferBlobMax: number; __kadrPerf: { marks: Record<string, numb
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('kadr.tips', '99');
+    localStorage.setItem('kadr.iosFormatCard.v1', '1'); // the iPhone's "Videos in seconds" card would take the Media tap (D-10)
     localStorage.setItem('kadr.locale', 'en');
     localStorage.setItem('kadr.hint.move', '1');
     localStorage.setItem('kadr.iosVideoTip.v3', '1');

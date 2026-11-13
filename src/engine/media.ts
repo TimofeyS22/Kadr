@@ -7,8 +7,10 @@ import { openInput } from './source';
 import { correctPixels, decodedAs709, hdrTransfer, sdMatrix, type Hdr } from './hdr';
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
-import { renderThumbs, type ThumbJob, type ThumbReply } from './thumbs.worker';
-import { getBlob, getPeaks, openMedia, putPeaks } from '../storage/db';
+import { renderThumbs, type ThumbIn, type ThumbJob, type ThumbPost, type ThumbReply } from './thumbs.worker';
+import { getBlob, getPeaks, openReader, putPeaks } from '../storage/db';
+import type { ChunkedMedia } from '../storage/chunks';
+import { isStorageError } from '../storage/reader';
 import { ResilientSink, playableAudioTrack, type SoundSink } from './sound';
 import { within } from '../lib/limits';
 import { IOS } from '../lib/device';
@@ -263,6 +265,9 @@ class VideoStream {
       } catch (e) {
         if (this.closed) return null;
         if ((e as Error)?.name === 'AbortError') throw e;
+        // The file's bytes could not be read even with a new lease: a new decoder would read the same nothing, and the
+        // person would be told the decoder stopped (S-1-13). It goes up as what it is.
+        if (isStorageError(e)) throw e;
         first ??= e;
         console.warn(`Video decoding failed (attempt ${attempt + 1}), restarting the decoder`, e);
         await this.reset();
@@ -371,8 +376,9 @@ export class MediaPool {
     let h = this.handles.get(assetId);
     if (!h) {
       h = (async () => {
-        // Not a whole Blob: in a private tab that is the file put together in memory (audit V-253).
-        const media = await openMedia(assetId);
+        // Read by the asset's id through the door, which replaces a Blob that stops reading (docs/19, S-1-13). Not a
+        // whole Blob: in a private tab that is the file put together in memory (audit V-253).
+        const media = await openReader(assetId);
         if (!media) throw new MediaError('Media file is missing from this device');
         const input = openInput(media);
         try {
@@ -521,21 +527,28 @@ export function forgetThumbs(): void {
 
 let thumbWorker: Worker | null | undefined;
 let nextJob = 0;
-const waiting = new Map<number, { out: Thumb[]; resolve: (t: Thumb[]) => void; reject: (e: Error) => void }>();
+const waiting = new Map<number, { out: Thumb[]; media: ChunkedMedia; resolve: (t: Thumb[]) => void; reject: (e: Error) => void }>();
 
 /** The shared thumbnail worker, or null where workers can't decode (then thumbnails render on this thread). */
 function worker(): Worker | null {
   if (thumbWorker !== undefined) return thumbWorker;
   try {
     if (typeof OffscreenCanvas === 'undefined' || typeof VideoDecoder === 'undefined') throw new Error('no worker decoding');
-    thumbWorker = new Worker(new URL('./thumbs.worker.ts', import.meta.url), { type: 'module' });
-    thumbWorker.onmessage = (e: MessageEvent<ThumbReply>) => {
+    const wk = (thumbWorker = new Worker(new URL('./thumbs.worker.ts', import.meta.url), { type: 'module' }));
+    const answer = (m: ThumbIn, transfer: Transferable[] = []) => wk.postMessage(m, transfer);
+    wk.onmessage = (e: MessageEvent<ThumbReply>) => {
       const r = e.data, w = waiting.get(r.id);
+      if ('read' in r) {
+        // The worker reads the job's file through this thread's door: bytes cross, a Blob never does (docs/19 H8).
+        if (!w) { answer({ read: r.read, error: 'The thumbnail job is gone' }); return; }
+        w.media.read(r.start, r.end).then((b) => answer({ read: r.read, bytes: b.buffer }, [b.buffer]), (err: unknown) => answer({ read: r.read, error: String(err) }));
+        return;
+      }
       if (!w) return;
       if ('bmp' in r) w.out.push({ t: r.t, bmp: r.bmp });
       else { waiting.delete(r.id); if (r.error) w.reject(new Error(r.error)); else w.resolve(w.out); }
     };
-    thumbWorker.onerror = () => { thumbWorker = null; for (const w of waiting.values()) w.reject(new Error('thumbnail worker failed')); waiting.clear(); };
+    wk.onerror = () => { thumbWorker = null; for (const w of waiting.values()) w.reject(new Error('thumbnail worker failed')); waiting.clear(); };
   } catch {
     thumbWorker = null;
   }
@@ -546,21 +559,23 @@ export function thumbnails(assetId: string, duration: number, height = 96): Prom
   let p = thumbCache.get(assetId);
   if (!p) {
     p = (async () => {
-      const media = await openMedia(assetId);
+      // By the asset's id through the door, on this thread: a Blob that stops reading is replaced (S-1-13).
+      const media = await openReader(assetId);
       if (!media) return [];
       if (media.type.startsWith('image/')) {
-        const blob = media instanceof Blob ? media : await getBlob(assetId); // a photo is decoded from a whole Blob
+        const blob = await getBlob(assetId); // a photo is decoded from a whole Blob
         if (!blob) return [];
         // Resize options are not supported everywhere (older Safari); fall back to full size.
         const bmp = await createImageBitmap(blob, { resizeHeight: height, resizeQuality: 'medium' }).catch(() => createImageBitmap(blob));
         return [{ t: 0, bmp }];
       }
       const job: ThumbJob = { id: ++nextJob, media, duration, height, count: Math.min(40, Math.max(2, Math.ceil(duration / 1.5))) };
-      // A file kept in chunks is read on this thread, through its storage and its two-chunk cache: a reader cannot be
-      // posted, and a second cache in the worker would double what a private tab holds (audit V-253).
-      const w = media instanceof Blob ? worker() : null;
+      // The worker decodes; the bytes it asks for are read here, so a file kept in chunks shares this thread's two-chunk
+      // cache and is not cached twice (audit V-253).
+      const w = worker();
+      const post: ThumbPost = { id: job.id, size: media.size, type: media.type, duration, height, count: job.count };
       const out = w
-        ? await within(new Promise<Thumb[]>((resolve, reject) => { waiting.set(job.id, { out: [], resolve, reject }); w.postMessage(job); }), THUMBS_MS, () => {
+        ? await within(new Promise<Thumb[]>((resolve, reject) => { waiting.set(job.id, { out: [], media, resolve, reject }); w.postMessage({ job: post } satisfies ThumbIn); }), THUMBS_MS, () => {
           // A decoder in the worker hung: the worker goes (with what it holds), the strip retries on its next showing.
           if (thumbWorker === w) { w.terminate(); thumbWorker = undefined; }
           for (const x of waiting.values()) x.reject(new Error('thumbnails took too long'));
@@ -586,7 +601,8 @@ export function waveform(assetId: string): Promise<Float32Array> {
     p = (async () => {
       const stored = await getPeaks(assetId);
       if (stored) return stored;
-      const media = await openMedia(assetId);
+      // Read right after an import, as a camera take's pieces go (S-1-13): through the door that replaces a dead Blob.
+      const media = await openReader(assetId);
       if (!media) return new Float32Array();
       const input = openInput(media);
       try {

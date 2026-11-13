@@ -7,6 +7,8 @@ import type { AspectId, Project } from '../core/types';
 import { perf } from '../lib/perf';
 import { cacheGate } from './bfcache';
 import { CHUNK, ChunkCache, HELD_CHUNKS, chunkedMedia, type Chunked, type StoredMedia } from './chunks';
+import { track } from '../lib/telemetry';
+import { leasedReader, type LeaseEvent, type MediaReader } from './reader';
 
 /**
  * The 'kadr'/'kv' store, opened again when the browser drops the connection. WebKit drops it while the page is in the
@@ -281,6 +283,23 @@ export async function openMedia(assetId: string): Promise<StoredMedia | undefine
   if (direct) return direct;
   const meta = await chunkedMeta(assetId);
   return meta && chunkedMedia(assetId, meta, (i) => get<ArrayBuffer>(`c:${assetId}:${i}`, store), held);
+}
+
+/** A lease replaced or a read that failed even so: counted, never with content (docs/19 H5). */
+function leaseReport(e: LeaseEvent): void {
+  if (e.healed) perf.leases.renewed++;
+  else perf.leases.failed++;
+  track('media_lease', { healed: e.healed, attempts: e.attempts, error: e.error });
+  console.warn(e.healed ? 'A stored media file stopped reading; it was opened again' : 'A stored media file could not be read even when opened again', e);
+}
+
+/**
+ * A stored file to decode through the one door (docs/19 ADR-М1): it reads by the asset's id and replaces the Blob it
+ * holds when that stops reading (S-1-13). Undefined when the file is not stored.
+ */
+export async function openReader(assetId: string): Promise<MediaReader | undefined> {
+  const media = await openMedia(assetId);
+  return media && leasedReader(assetId, media, () => openMedia(assetId), { report: leaseReport });
 }
 
 /**
