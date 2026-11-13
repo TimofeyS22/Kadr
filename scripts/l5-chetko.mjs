@@ -119,17 +119,113 @@ try {
   await tap('Нет');
   await done();
   await sleep(500);
+  const back = async () => { await js("const c = document.querySelector('[aria-label=\"Назад: закрыть инструменты\"]'); if (c) c.click();"); await sleep(500); };
+  // Each part of releases 8–12 on its own: one that cannot run is a red line, and the rest still run.
+  const part = async (name, fn) => { try { await fn(); } catch (e) { check(name, false, String(e.message || e).slice(0, 200)); } };
+  // A finger held on an element at (fx, fy) of its box, moved by dy; it stays down until `lift`.
+  const hold = (css, fx, fy, dy = 0) => js(`const el = document.querySelector(arguments[0]); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect();
+    const x = r.left + r.width * arguments[1], y = r.top + r.height * arguments[2];
+    const ev = (type, yy, buttons) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: yy, pointerId: 11, pointerType: 'touch', isPrimary: true, button: 0, buttons });
+    el.dispatchEvent(ev('pointerdown', y, 1)); for (let i = 1; i <= 6; i++) el.dispatchEvent(ev('pointermove', y + (arguments[3] * i) / 6, 1)); return true;`, css, fx, fy, dy);
+  const lift = (css) => js("const el = document.querySelector(arguments[0]); if (el) el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 11, pointerType: 'touch', isPrimary: true }));", css);
+
+  // ---- release 8: a plain toast on the phone is a dark plate, not white words on the video ----
+  await back();
+  await part('toast: a plain toast is a dark plate', async () => {
+    await js("localStorage.removeItem('kadr.hint.move')");
+    await waitFor('«Текст»', () => tool('Текст'), 10_000);
+    const x = await waitFor('the toast', () => js("const e = document.querySelector('.toast.info'); if (!e) return null; const s = getComputedStyle(e); return { bg: s.backgroundColor, pad: parseFloat(s.paddingTop), text: e.textContent.slice(0, 48) };"), 10_000);
+    check('toast: a plain toast is a dark plate with room round its words', x.bg !== 'rgba(0, 0, 0, 0)' && x.pad >= 12, JSON.stringify(x));
+    await shot('toast');
+  });
+  // The text sheet's styles are drawn as tiles by the phone (the toast's shot caught them black, before their first draw).
+  await part('text styles: the tiles', async () => {
+    await sleep(2500);
+    const tl = await js(`const vis = [...document.querySelectorAll('.sheet .ck-ptile-art canvas')].filter((c) => { const r = c.getBoundingClientRect(); return r.width > 0 && r.right > 0 && r.left < innerWidth && r.bottom > 0 && r.top < innerHeight; });
+      const drawn = vis.filter((c) => { try { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 0; i < d.length; i += 16) if (d[i] + d[i + 1] + d[i + 2] > 120) return true; } catch { /* a WebGL canvas */ } return false; }).length;
+      return { seen: vis.length, drawn };`);
+    check('text styles: the tiles in view are drawn by the phone (letters on the black)', tl.seen > 0 && tl.drawn === tl.seen, JSON.stringify(tl));
+    await shot('text-styles');
+  });
+
+  // ---- release 11: the spectrum's loupe drawn by the phone, in view at the top edge of the field too ----
+  await part('spectrum: the loupe', async () => {
+    await waitFor('the text sheet', () => js("const b = document.querySelector('.sheet [data-tool=spectrum]'); if (!b) return false; b.scrollIntoView({ block: 'center' }); b.click(); return true;"), 10_000);
+    await waitFor('the spectrum', () => js("return !!document.querySelector('.sheet .ck-spectrum-field')"), 10_000);
+    const loupe = async (fy) => {
+      await hold('.sheet .ck-spectrum-field', 0.6, fy);
+      await sleep(400);
+      return js(`const l = document.querySelector('.ck-loupe'), c = l && l.querySelector('canvas'); if (!c) return null; const r = l.getBoundingClientRect();
+        const d = c.getContext('2d').getImageData(Math.floor(c.width / 2) - 12, Math.floor(c.height / 2) - 12, 1, 1).data;
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), vh: innerHeight, vw: innerWidth, pixel: [d[0], d[1], d[2], d[3]], code: document.querySelector('.sheet .ck-spectrum-code').value };`);
+    };
+    const mid = await loupe(0.5);
+    await shot('spectrum');
+    await lift('.sheet .ck-spectrum-field');
+    const top = await loupe(0.02);
+    await lift('.sheet .ck-spectrum-field');
+    const inView = (l) => l && l.top >= 0 && l.bottom <= l.vh && l.left >= 0 && l.right <= l.vw;
+    check('spectrum: the loupe is drawn by the phone and in view', !!mid && mid.pixel[3] > 0 && inView(mid), JSON.stringify(mid));
+    check('spectrum: at the top edge of the field the loupe stays in view', inView(top), JSON.stringify(top));
+    await js("const b = document.querySelector('.sheet [data-tool=spectrum]'); if (b) b.click();");
+  });
+  await done();
+  await sleep(500);
+
+  // ---- release 11: the speed curve to a finger — a touch in a point's column takes it, its value shows while held ----
+  await back();
+  await part('curve: a finger on a point', async () => {
+    await js("const el = document.querySelector('.tl-row.main .clip'), r = el.getBoundingClientRect(); const at = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, pointerId: 7, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1 }; el.dispatchEvent(new PointerEvent('pointerdown', at)); el.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 })); el.click();");
+    await waitFor('the clip selected', () => js("return !!document.querySelector('.tl-row.main .clip.sel')"), 10_000);
+    await waitFor('«Скорость»', () => tool('Скорость'), 10_000);
+    await tap('Кривая');
+    await waitFor('the curve', () => js("return !!document.querySelector('.sheet .ck-curve')"), 10_000);
+    const dots = await js("return document.querySelectorAll('.sheet .ck-curve-dot').length");
+    // The middle point's column, a finger 1/5 of the height up: the value changes only as the finger moves.
+    const col = await js("const s = document.querySelector('.sheet .ck-curve'), d = [...s.querySelectorAll('.ck-curve-dot')], m = d[Math.floor(d.length / 2)], r = s.getBoundingClientRect(), b = m.getBoundingClientRect(); return [(b.left + b.width / 2 - r.left) / r.width, (b.top + b.height / 2 - r.top) / r.height];");
+    await hold('.sheet .ck-curve', col[0] + 0.03, col[1], -24);
+    await sleep(400);
+    const v = await js("const d = [...document.querySelectorAll('.sheet .ck-curve-dot')]; return { held: document.querySelector('.sheet .ck-curve-value')?.textContent ?? null, point: d[Math.floor(d.length / 2)].getAttribute('aria-valuetext') };");
+    await shot('curve');
+    await lift('.sheet .ck-curve');
+    check('curve: a finger near a point takes it and its value shows while held', dots > 0 && !!v.held && v.held.trim().endsWith('×'), `${dots} points; held ${v.held}; the point says ${v.point}`);
+    await tap('Обычная');
+  });
+  await done();
+  await sleep(500);
+
+  // ---- release 10: the music library and the stickers on the phone's screen ----
+  await back();
+  await part('music: the library', async () => {
+    await waitFor('«Музыка»', () => tool('Музыка'), 10_000);
+    const m = await waitFor('the tracks', () => js("const rows = [...document.querySelectorAll('.sheet .ck-track')]; if (!rows.length) return null; const r = rows[0].getBoundingClientRect(), b = rows[0].querySelector('.ck-listen').getBoundingClientRect(); return { rows: rows.length, row: Math.round(r.height), listen: [Math.round(b.width), Math.round(b.height)], sideways: document.querySelector('.sheet .ck-panel-body').scrollWidth > document.querySelector('.sheet .ck-panel-body').clientWidth };"), 20_000);
+    check('music: tracks are rows 56 px with a listen button 44 px, nothing sideways', m.rows > 0 && m.row >= 56 && m.listen[0] >= 44 && m.listen[1] >= 44 && !m.sideways, JSON.stringify(m));
+    await shot('music');
+  });
+  await done();
+  await sleep(500);
+  await back();
+  await part('stickers', async () => {
+    if (!(await tool('Стикеры'))) { await tap('Все'); await tap('Стикеры'); }
+    const s = await waitFor('the stickers', () => js("const t = [...document.querySelectorAll('.sheet .ck-sticker')]; if (!t.length) return null; const r = t[0].getBoundingClientRect(); return { tiles: t.length, size: [Math.round(r.width), Math.round(r.height)] };"), 10_000);
+    check('stickers: square tiles at least 44 px', s.tiles > 0 && s.size[0] >= 44 && Math.abs(s.size[0] - s.size[1]) <= 1, JSON.stringify(s));
+    await shot('stickers');
+  });
+  await done();
+  await sleep(500);
 
   // ---- release 6: the export's film of the file's own frames, on the phone's encoder ----
-  await js("const c = document.querySelector('[aria-label=\"Назад: закрыть инструменты\"]'); if (c) c.click();");
-  await sleep(500);
+  await back();
   await tap('Экспорт');
   const seen = [];
   const t0 = Date.now();
   await waitFor('the file', async () => {
+    // The percent and the film are read in one call, as one look of the screen: read apart, a phone's export (55% a second
+    // on v1.9.5) ran a slot ahead between the two round trips and the film seemed to lead the percent (L5, 2026-11-13).
     const s = await js(`const bar = document.querySelector('.sheet .ck-work [role=progressbar]');
-      return { pct: bar ? Number(bar.getAttribute('aria-valuenow')) : null, ready: !!document.querySelector('.sheet .ck-work-ready'), failed: !!document.querySelector('.sheet .error-text') };`);
-    if (s.pct !== null && !s.ready) seen.push([s.pct, await painted('.sheet .ck-work-frame')]);
+      const n = [...document.querySelectorAll('.sheet .ck-work-frame')].filter((c) => { try { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 16) if (d[i]) return true; } catch { /* a WebGL canvas */ } return false; }).length;
+      return { pct: bar ? Number(bar.getAttribute('aria-valuenow')) : null, n, ready: !!document.querySelector('.sheet .ck-work-ready'), failed: !!document.querySelector('.sheet .error-text') };`);
+    if (s.pct !== null && !s.ready) seen.push([s.pct, s.n]);
     if (seen.length === 3) await shot('export-running');
     if (s.failed) throw new Error('the export failed: ' + await js("return document.querySelector('.sheet .error-text').textContent"));
     return s.ready;
@@ -143,6 +239,29 @@ try {
   await shot('export-done');
   result.errors = await js('return window.__errs || []');
   check('no page errors', result.errors.length === 0, result.errors.join(' | '));
+
+  // ---- release 12: the screens for support on the phone — ?diag and ?styles, on the system, nothing sideways ----
+  const page = URL_.replace(/[?#].*$/, '');
+  await part('diag', async () => {
+    await call('POST', `${S}/url`, { url: `${page}?diag` });
+    const d = await waitFor('?diag', () => js("const h = document.querySelector('.ck-diag h1'); return h && { title: h.textContent.trim(), sideways: document.documentElement.scrollWidth > innerWidth };"), 30_000);
+    check('diag: the page is on the system, nothing scrolls sideways', !d.sideways, JSON.stringify(d));
+    await shot('diag');
+  });
+  await part('styles', async () => {
+    await call('POST', `${S}/url`, { url: `${page}?styles` });
+    await waitFor('?styles', () => js("return document.querySelectorAll('.ck-thumbs canvas').length > 0"), 30_000);
+    // The page adds its drawings as it makes them: count when the number has stopped growing, in one look.
+    let last = -1;
+    await waitFor('every drawing', async () => { const n = await js("return document.querySelectorAll('.ck-thumbs canvas').length"); const still = n === last; last = n; if (!still) await sleep(2000); return still; }, 120_000);
+    const st = await js(`const all = [...document.querySelectorAll('.ck-thumbs canvas')];
+      const drawn = all.filter((c) => { try { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 16) if (d[i]) return true; } catch { /* a WebGL canvas */ } return false; }).length;
+      const pre = document.querySelector('[data-testid=styles-summary]');
+      return { n: all.length, drawn, sideways: document.documentElement.scrollWidth > innerWidth, cut: pre ? pre.scrollWidth > pre.clientWidth + 1 : null };`);
+    check('styles: the phone draws every template, nothing scrolls sideways', st.n > 0 && st.drawn === st.n && !st.sideways, `${st.drawn} of ${st.n} drawn; sideways ${st.sideways}`);
+    check('styles: the report wraps inside the screen, no line is cut at its edge', st.cut === false, `cut ${st.cut}`);
+    await shot('styles');
+  });
 } catch (e) {
   result.failed = String(e.message || e);
   console.error(`L5: ${result.failed}`);

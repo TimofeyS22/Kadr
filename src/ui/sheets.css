@@ -227,6 +227,8 @@ textarea.ck-panel-text, textarea.ck-panel-script { resize: none; background: var
 .ck-panel-foot::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--space-6); background: linear-gradient(transparent, var(--surface-raised)); pointer-events: none; }
 .ck-panel-foot .ck-btn-label { display: grid; gap: var(--hairline); }
 .ck-btn-sub { font-size: var(--type-xs); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
+/* What comes after the tap, under its button: quiet words, not a second action. */
+.ck-foot-note { margin: var(--space-2) 0 0; font-size: var(--type-xs); line-height: var(--leading-text); color: var(--text-secondary); text-align: center; }
 /* A sheet with a held action, or a question to answer, keeps them at its bottom in the thumb's reach: the sheet does not
    shrink while open, and the button stood wherever the content ended (the art director, release 6). */
 .ck-panel-body:has(> .ck-panel-foot), .ck-panel-body:has(> .ck-ask) { display: flex; flex-direction: column; }
@@ -265,6 +267,9 @@ textarea.ck-panel-text, textarea.ck-panel-script { resize: none; background: var
 .ck-work-left { grid-area: left; margin: 0; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .ck-work-left[data-wait] { color: var(--text-secondary); }
 .ck-work-ready { margin: 0; font-size: var(--type-lg); font-weight: var(--weight-strong); line-height: var(--leading-tight); font-variant-numeric: tabular-nums; }
+/* A short screen (an iPhone SE in Safari, 548 px): «Файл готов» comes before the film, so the state stays in view above the
+   held foot with its note; the film, a picture of what was made, may go under the fade instead (the art director, L5 v1.9.5). */
+@media (max-height: 680px) { .ck-work > .ck-work-ready { order: -1; } }
 .ck-work-saved { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--type-sm); color: var(--text-primary); }
 .ck-work-saved svg { flex: none; width: 20px; height: 20px; }
 .ck-work-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }

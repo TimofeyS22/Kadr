@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Check, CircleAlert, Share } from 'lucide-react';
 import { estimateMb, exportCost, exportDefaults, exportNotes, exportSource, isFast } from '../core/exportDefaults';
 import { projectDuration } from '../core/timeline';
@@ -243,7 +243,6 @@ export function ExportSheet() {
               {made && <p className="ck-hint">{facts(made, duration, phase.result.fileName)}</p>}
               {phase.result.noSound && <Alert>{t('This browser cannot encode sound, so the file has no sound. Try Chrome or Safari.')}</Alert>}
               {phase.quick && !IOS && <p className="ck-work-saved"><Check aria-hidden />{t('Saved to Downloads.')}</p>}
-              {phase.quick && IOS && <p className="ck-hint">{t('iPhone saves to Photos through the share sheet: tap Save, then “Save Video”.')}</p>}
               <div className="ck-work-actions" data-stack>
                 {phase.quick && !IOS && <Button icon={<Share aria-hidden />} onClick={() => save(phase.result)}>{t('Share')}</Button>}
                 <Button variant="plain" onClick={() => setPhase({ kind: 'setup' })}>{t('Export again')}</Button>
@@ -255,7 +254,8 @@ export function ExportSheet() {
       {/* Where the file still has to be saved (iPhone, an export without quick save), «Сохранить» is held at the bottom of
           the sheet: on an iPhone 15 the film, the facts and the note about Photos pushed it half under the sheet's edge (L5). */}
       {phase.kind === 'done' && !(phase.quick && !IOS) && (
-        <Foot lead={lead} disabled={false} onClick={() => save(phase.result)}>{phase.quick ? t('Save') : t('Save / Share')}</Foot>
+        <Foot lead={lead} disabled={false} onClick={() => save(phase.result)}
+          note={phase.quick && IOS ? t('Then “Save Video” in the menu, and the video is in Photos.') : undefined}>{phase.quick ? t('Save') : t('Save / Share')}</Foot>
       )}
       {phase.kind === 'setup' && (
         <Chips options={Object.keys(FORMATS) as Format[]} value={format} onChange={setFormat} render={(f) => t(FORMATS[f])} even />
@@ -353,10 +353,14 @@ function Alert({ children }: { children: ReactNode }) {
  * The sheet's one action, held at the bottom of the sheet (seen without scrolling, in the same place for every format),
  * with what it will make as its second line.
  */
-function Foot({ lead, sum, disabled, onClick, children }: { lead: 'primary' | 'quiet'; sum?: string; disabled: boolean; onClick: () => void; children: ReactNode }) {
+function Foot({ lead, sum, note, disabled, onClick, children }: { lead: 'primary' | 'quiet'; sum?: string; note?: string; disabled: boolean; onClick: () => void; children: ReactNode }) {
+  const noteId = useId();
   return (
     <div className="ck-panel-foot">
-      <Button variant={lead} size="large" disabled={disabled} onClick={onClick}>{children}{sum && <small className="ck-btn-sub">{sum}</small>}</Button>
+      <Button variant={lead} size="large" disabled={disabled} onClick={onClick} aria-describedby={note ? noteId : undefined}>{children}{sum && <small className="ck-btn-sub">{sum}</small>}</Button>
+      {/* What comes after the tap, under the button it belongs to: in the body, on an iPhone 15, the note on Photos was
+          half under the fade of this foot (L5, v1.9.5). */}
+      {note && <p id={noteId} className="ck-foot-note">{note}</p>}
     </div>
   );
 }

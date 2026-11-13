@@ -235,8 +235,10 @@ export function StylesCheck() {
   return (
     <main className="diag ck-diag">
       <h1>Kadr: templates</h1>
-      <pre data-testid="styles-summary">{text}</pre>
-      <Button onClick={() => void navigator.clipboard?.writeText(`${text}\n${report.rows.map((r) => `${r.kind} ${r.id} ${r.lang} ${BACKGROUNDS.map((b) => r.edge[b]).join(' ')} ${r.ms} ${r.msPreview}`).join('\n')}`)}>Copy report</Button>
+      <pre className="ck-diag-report" data-testid="styles-summary">{text}</pre>
+      <div className="ck-diag-actions">
+        <Button onClick={() => void navigator.clipboard?.writeText(`${text}\n${report.rows.map((r) => `${r.kind} ${r.id} ${r.lang} ${BACKGROUNDS.map((b) => r.edge[b]).join(' ')} ${r.ms} ${r.msPreview}`).join('\n')}`)}>Copy report</Button>
+      </div>
       <div ref={thumbs} className="styles-thumbs ck-thumbs" />
     </main>
   );

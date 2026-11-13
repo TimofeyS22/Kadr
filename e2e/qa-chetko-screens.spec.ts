@@ -682,10 +682,42 @@ test('export: the file\'s own frames come out between two marks as far as it is 
     const sheet = (await panel(page).boundingBox())!;
     expect(save.y + save.height, 'the save button is whole inside the sheet').toBeLessThanOrEqual(sheet.y + sheet.height + 1);
     expect(save.y + save.height).toBeLessThanOrEqual(812);
+    // What comes after the tap is under the button, whole: in the body it was half under the foot's fade (L5, v1.9.5).
+    const note = panel(page).locator('.ck-foot-note');
+    await expect(note).toHaveText('Затем «Сохранить видео» в меню — и ролик в «Фото».');
+    const n = (await note.boundingBox())!;
+    expect(n.y, 'the note is under the save button').toBeGreaterThanOrEqual(save.y + save.height);
+    expect(n.y + n.height, 'and whole inside the sheet').toBeLessThanOrEqual(sheet.y + sheet.height + 1);
+    await expect(panel(page).getByRole('button', { name: 'Сохранить', exact: true }), 'a screen reader hears it on the button').toHaveAccessibleDescription('Затем «Сохранить видео» в меню — и ролик в «Фото».');
   } else {
     await expect(work.getByText('Сохранено в «Загрузки».')).toBeVisible();
+    await expect(panel(page).locator('.ck-foot-note'), 'saved already: nothing to do after a tap').toHaveCount(0);
     expect(await whiteFilled(page), 'saved already: no white button asks to save it again').toEqual([]);
   }
+});
+
+test('support at 375 px: the report of ?styles wraps inside the screen, no line cut at its edge (L5, v1.9.5)', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('./?styles');
+  const pre = page.getByTestId('styles-summary');
+  await expect(pre).toContainText('Kadr ');
+  expect(await pre.evaluate((p) => p.scrollWidth - p.clientWidth), 'nothing of a line is cut').toBeLessThanOrEqual(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 'nothing scrolls sideways').toBeLessThanOrEqual(0);
+});
+
+test('export at 375×548 (an iPhone SE in Safari): «Файл готов» stays in view above the held foot and its note (L5, v1.9.5)', async ({ page }, info) => {
+  test.skip(!info.project.name.startsWith('iphone'), 'the held «Сохранить» and its note are the iPhone\'s: elsewhere the file is saved at once');
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 375, height: 548 });
+  await editorWithVideo(page);
+  await page.getByRole('button', { name: 'Экспорт' }).first().click();
+  const ready = panel(page).locator('.ck-work-ready');
+  await expect(ready).toBeVisible({ timeout: 90_000 });
+  const foot = (await panel(page).locator('.ck-panel-foot').boundingBox())!, r = (await ready.boundingBox())!;
+  // The foot's fade is 24 px (--space-6) over its top: the state is above it, whole.
+  expect(r.y + r.height, '«Файл готов» above the fade of the held foot').toBeLessThanOrEqual(foot.y - 24);
+  expect(foot.y + foot.height, 'the foot on screen').toBeLessThanOrEqual(548 + 1);
+  await expect(panel(page).locator('.ck-foot-note')).toBeVisible();
 });
 
 for (const height of [812, 667]) {
@@ -908,10 +940,13 @@ test('toasts: a failure is a dark plate with a white ring and a sign, never red,
   // A plain toast is a plate too, not bare words over the video (found by eye after release 8: it had lost its ground).
   await close.click();
   await page.evaluate(() => localStorage.removeItem('kadr.hint.move')); // the hint on moving a text, said once
+  // The hint stays 3 s, and a loaded Mac may spend them drawing the text sheet's tiles: its look is read as it appears.
+  const seen = page.evaluate(() => new Promise<[string, number]>((res) => {
+    const look = () => { const e = document.querySelector('.toast.info'); if (!e) return false; const s = getComputedStyle(e); res([s.backgroundColor, parseFloat(s.paddingTop)]); return true; };
+    if (!look()) new MutationObserver((_, o) => { if (look()) o.disconnect(); }).observe(document.body, { childList: true, subtree: true });
+  }));
   await page.locator('.toolbar .tool', { hasText: /^Текст$/ }).click();
-  const info = page.locator('.toast.info').first();
-  await expect(info).toBeVisible();
-  const [ground, pad] = await info.evaluate((e) => [getComputedStyle(e).backgroundColor, parseFloat(getComputedStyle(e).paddingTop)] as const);
+  const [ground, pad] = await seen;
   expect(ground, 'a ground of its own').not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
   expect(pad).toBeGreaterThanOrEqual(12);
   await page.evaluate(() => { (window as unknown as { __toastErrors?: string[] }).__toastErrors = []; });

@@ -72,7 +72,7 @@ export const RU: Record<string, string> = {
   'Cancel': 'Отмена',
   'Settings': 'Настройки',
   'Saved to Downloads.': 'Сохранено в «Загрузки».',
-  'iPhone saves to Photos through the share sheet: tap Save, then “Save Video”.': 'В «Фото» iPhone сохраняет через меню «Поделиться»: нажмите «Сохранить», затем «Сохранить видео».',
+  'Then “Save Video” in the menu, and the video is in Photos.': 'Затем «Сохранить видео» в меню — и ролик в «Фото».',
   'Create again…': 'Создать заново…',
   'Back': 'Назад',
 
