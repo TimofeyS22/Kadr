@@ -2,7 +2,8 @@
 // the nine pairs on a Russian text one after another (each drawn, its faces loaded, the time from the tap to the settled
 // frame), «Line 2» set in another face, «Swap lines» and its undo, and then WYSIWYG on a cold page — the project opened
 // again with none of the pair's faces loaded and exported first: the file's frame against the preview's (Ш7).
-// The control must be red: the preview before the pair against the same frame of the file.
+// The control must be red: the preview before the pair against the same frame of the file. Ш8: the delay of a letter
+// typed in a pair against one face (its control holds the page 50 ms a letter).
 //   node scripts/l5-pairs.mjs [site URL]     (phone: unlocked, Auto-Lock Never, Web Inspector and Remote Automation on)
 // Env: L5_UDID picks a phone, L5_OUT the folder for pictures and run.json. Taps are click() in the page, not fingers;
 // the file is checked on the Mac instead of the share sheet (as in scripts/l5-iphone.mjs).
@@ -73,6 +74,8 @@ const tapIn = (css, name) => js(`const el = [...document.querySelectorAll(argume
 const shot = async (name) => { const f = join(OUT, `${name}.png`); writeFileSync(f, Buffer.from(await call('GET', `${S}/screenshot`), 'base64')); return f; };
 const seek = (t) => js('document.querySelector(".tl-scroll").scrollLeft = arguments[0];', Math.round(t * 60));
 const field = () => js("return document.querySelector('.sheet textarea')?.value ?? null");
+const setText = (v) => js(`const f = document.querySelector('.sheet textarea');
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(f, arguments[0]); f.dispatchEvent(new Event('input', { bubbles: true }));`, v);
 
 const WATCH = `if (!window.__l5) {
   window.__l5 = { errors: [], toasts: [], blob: null, draws: [] };
@@ -137,6 +140,54 @@ async function stillPreview(name) {
   throw new Error(`${name}: the preview did not hold still`);
 }
 
+/**
+ * Ш8, the delay of a letter: each letter is put into the text field from the page (an input event, not the keyboard:
+ * the keyboard's own path is the same with or without a pair) and the time to the first draw of the preview after it
+ * is taken, 250 ms apart. `where`: 'end' types at the end of the text (the support line of a pair), 'line1' at the end
+ * of the first line (its accent). `busyMs` > 0 is the control: the page is held that long on every letter. The text is
+ * given back afterwards. Also counted: draws in a quiet 600 ms before (a draw loop would make the first draw meaningless).
+ */
+const TYPE = `const [letters, where, busyMs, done] = [arguments[0], arguments[1], arguments[2], arguments[arguments.length - 1]];
+  const f = document.querySelector('.sheet textarea');
+  const set = (v) => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(f, v); f.dispatchEvent(new Event('input', { bubbles: true })); };
+  const start = f.value, quiet = window.__l5.draws.length;
+  const spin = () => { const e = performance.now() + busyMs; while (performance.now() < e); };
+  setTimeout(() => {
+    const idle = window.__l5.draws.length - quiet, first = [], last = [], handler = [];
+    if (busyMs) f.addEventListener('input', spin, true);
+    let i = 0;
+    const next = () => {
+      if (i === letters.length) {
+        if (busyMs) f.removeEventListener('input', spin, true);
+        set(start);
+        return setTimeout(() => done({ idle, first, last, handler, text: f.value }), 400);
+      }
+      const c = letters[i++], v = f.value, cut = where === 'line1' ? v.indexOf('\\n') : -1;
+      const t = performance.now();
+      set(cut < 0 ? v + c : v.slice(0, cut) + c + v.slice(cut));
+      handler.push(Math.round((performance.now() - t) * 10) / 10);
+      setTimeout(() => {
+        const d = window.__l5.draws.filter((x) => x > t);
+        first.push(d.length ? Math.round((d[0] - t) * 10) / 10 : null); last.push(d.length ? Math.round((d.at(-1) - t) * 10) / 10 : null);
+        next();
+      }, 250);
+    };
+    next();
+  }, 600);`;
+const LETTERS = [...' и у моря на закате дня'];
+const p95 = (xs) => { const s = xs.filter((x) => x !== null).sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.ceil(0.95 * s.length) - 1)] : null; };
+const median = (xs) => { const s = xs.filter((x) => x !== null).sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null; };
+async function typing(label, where, busyMs = 0) {
+  await seek(T);
+  await sleep(800);
+  const r = await jsAsync(TYPE, LETTERS, where, busyMs);
+  const missed = r.first.filter((x) => x === null).length;
+  const m = { label, where, busyMs, letters: LETTERS.length, missed, idleDraws: r.idle, firstMedianMs: median(r.first), firstP95Ms: p95(r.first),
+    lastP95Ms: p95(r.last), handlerP95Ms: p95(r.handler), textBack: r.text };
+  console.log(`     ${label} (${where}${busyMs ? `, +${busyMs} ms` : ''}): ${JSON.stringify(m)}`);
+  return { ...m, first: r.first };
+}
+
 const steps = [];
 const result = { url: URL_, started: new Date().toISOString(), replaced: 'sample project instead of Photos; taps are click() in the page; the file is read on the Mac instead of the share sheet' };
 async function step(name, fn) {
@@ -153,7 +204,7 @@ async function step(name, fn) {
   }
 }
 
-let failed = false;
+let failed = false, sh8Failed = false;
 try {
   await step('cold start with ?pairs', async () => {
     await call('POST', `${S}/url`, { url: URL_ });
@@ -185,10 +236,22 @@ try {
       const t = performance.now(); tool.click();
       const wait = () => document.querySelector('.sheet textarea') ? requestAnimationFrame(() => done(Math.round(performance.now() - t))) : setTimeout(wait, 5); wait();`);
     if (ms < 0) throw new Error('no text tool');
-    await js(`const f = document.querySelector('.sheet textarea');
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(f, arguments[0]); f.dispatchEvent(new Event('input', { bubbles: true }));`, TEXT);
+    await setText(TEXT);
     await sleep(800);
     return { sheetMs: ms };
+  });
+
+  // The same two lines a pair makes of the text, in the clip's own single face: the line the pairs are measured against.
+  result.typing = [];
+  await step('Ш8: a letter in one face', async () => {
+    await setText('Лето\nв городе');
+    await sleep(800);
+    const a = await typing('one face', 'end'), b = await typing('one face', 'line1');
+    result.typing.push(a, b);
+    await setText(TEXT);
+    await sleep(800);
+    if (a.missed || b.missed) throw new Error('a letter drew no frame');
+    return { endP95Ms: a.firstP95Ms, line1P95Ms: b.firstP95Ms };
   });
 
   await step('«Pairs»: the tiles draw', async () => {
@@ -229,6 +292,32 @@ try {
     if (failedFaces.length) throw new Error(`faces failed to load: ${failedFaces.join(', ')}`);
     const settled = result.pairs.map((p) => p.settledMs ?? 0).sort((a, b) => a - b);
     return { settledMedianMs: settled[Math.floor(settled.length / 2)], settledMaxMs: settled.at(-1), facesLoaded: faces.length };
+  });
+
+  // Ш8: a letter in a pair is drawn within 100 ms (p95) and no more than one frame (16.7 ms at 60 Hz) later than in one
+  // face, where by where. «Party» (a fitted accent at twice the size) and «Tender» (a script) are the heaviest to set.
+  // The control holds the page 50 ms on every letter and must break the second threshold.
+  await step('Ш8: a letter in a pair («Party», «Tender») against one face, and the control', async () => {
+    const one = Object.fromEntries(result.typing.map((x) => [x.where, x.firstP95Ms]));
+    const growth = (x) => +(x.firstP95Ms - one[x.where]).toFixed(1);
+    for (const name of ['Party', 'Tender']) {
+      await tapIn('.sheet [data-cat="pairs"] [role=radio]', name);
+      await sleep(1500);
+      for (const where of ['end', 'line1']) result.typing.push(await typing(name, where));
+    }
+    await tapIn('.sheet [data-cat="pairs"] [role=radio]', 'Party');
+    await sleep(1500);
+    const control = await typing('Party, control', 'end', 50);
+    result.typing.push(control);
+    const inPairs = result.typing.filter((x) => x.label === 'Party' || x.label === 'Tender');
+    if (inPairs.some((x) => x.missed)) throw new Error('a letter in a pair drew no frame');
+    const v = { oneFaceP95Ms: one, pairP95Ms: Math.max(...inPairs.map((x) => x.firstP95Ms)), worstGrowthMs: Math.max(...inPairs.map(growth)),
+      controlGrowthMs: growth(control) };
+    if (v.controlGrowthMs <= 16.7) throw new Error(`the control is not red: ${JSON.stringify(v)}`);
+    v.passed = v.pairP95Ms <= 100 && v.worstGrowthMs <= 16.7;
+    if (!v.passed) sh8Failed = true;
+    result.sh8 = v;
+    return v;
   });
 
   await step('«Tender»: line 2 in a serif, «Swap lines», undo', async () => {
@@ -312,6 +401,7 @@ try {
   const page = await js('return window.__l5');
   result.errors = { errors: page.errors, toasts: page.toasts };
   if (page.errors.length || page.toasts.length) { failed = true; console.log(`page errors: ${JSON.stringify(result.errors)}`); }
+  if (sh8Failed) { failed = true; console.log(`Ш8: a letter in a pair is late: ${JSON.stringify(result.sh8)}`); }
 } catch {
   failed = true;
 } finally {
