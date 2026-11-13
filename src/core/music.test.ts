@@ -18,6 +18,8 @@ describe('music library manifest', () => {
       expect(t.licenseUrl).toBe('https://creativecommons.org/publicdomain/zero/1.0/');
       expect(t.source, t.id).toMatch(/^https:\/\/freemusicarchive\.org\/music\//);
       expect(MOODS).toContain(t.mood);
+      // As a person writes it: «Orchid (LoFi, Nostalgic)», not «Orchid ( LoFi , Nostalgic )» (L5, 2026-11-13).
+      expect(t.title, t.id).toBe(t.title.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+([),])/g, '$1').trim());
       expect(t.duration).toBeGreaterThanOrEqual(90);
       expect(t.duration).toBeLessThanOrEqual(300);
       const file = join(dir, t.file);

@@ -10,6 +10,10 @@ Writes public/music/music.json. Re-runnable: downloads and encodes are cached.
 """
 import datetime, hashlib, json, os, re, subprocess, urllib.request
 
+# «Orchid ( LoFi , Nostalgic )» as a person writes it: no space inside brackets or before a comma (L5, 2026-11-13).
+def tidy(title):
+    return re.sub(r'\s+([),])', r'\1', re.sub(r'\(\s+', '(', re.sub(r'\s+', ' ', title))).strip()
+
 PER_MOOD = 6
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(ROOT, 'scripts', '.music-cache')
@@ -57,7 +61,7 @@ for s in sources:
         os.replace(tmp, m4a)
     count[s['mood']] = count.get(s['mood'], 0) + 1
     tracks.append({
-        'id': tid, 'title': re.sub(r'\.mp3$', '', s['title'], flags=re.I).strip(), 'artist': s['artist'], 'album': s['album'], 'mood': s['mood'],
+        'id': tid, 'title': tidy(re.sub(r'\.mp3$', '', s['title'], flags=re.I)), 'artist': s['artist'], 'album': s['album'], 'mood': s['mood'],
         'duration': round(duration(m4a), 2), 'file': f'tracks/{tid}.m4a', 'bytes': os.path.getsize(m4a),
         'license': 'CC0 1.0 Universal (public domain)', 'licenseUrl': 'https://creativecommons.org/publicdomain/zero/1.0/',
         'source': s['page'], 'verified': today,
