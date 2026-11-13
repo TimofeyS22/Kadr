@@ -226,7 +226,9 @@ try {
       const n = [...document.querySelectorAll('.sheet .ck-work-frame')].filter((c) => { try { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 16) if (d[i]) return true; } catch { /* a WebGL canvas */ } return false; }).length;
       return { pct: bar ? Number(bar.getAttribute('aria-valuenow')) : null, n, ready: !!document.querySelector('.sheet .ck-work-ready'), failed: !!document.querySelector('.sheet .error-text') };`);
     if (s.pct !== null && !s.ready) seen.push([s.pct, s.n]);
-    if (seen.length === 3) await shot('export-running');
+    // On the first look: a 720p export of the sample takes about 1.2 s on an iPhone 15, and by the third look the
+    // screenshot (a round trip of its own) caught the finished sheet (L5 v1.9.7: «running» and «done» were one picture).
+    if (seen.length === 1) await shot('export-running');
     if (s.failed) throw new Error('the export failed: ' + await js("return document.querySelector('.sheet .error-text').textContent"));
     return s.ready;
   }, 300_000);
