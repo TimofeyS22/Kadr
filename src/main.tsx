@@ -1,7 +1,7 @@
 import './fonts';
 import './ui/ckFont';
 import './ui/tokens.css';
-import './ui/styles.css';
+import './ui/base.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';

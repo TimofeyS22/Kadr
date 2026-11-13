@@ -6,6 +6,7 @@ import { Home } from './Home';
 import { t, useLocale } from '../lib/i18n';
 import { ErrorDetails } from './ErrorDetails';
 import { Button } from './ck/controls';
+import './ck/ck.css';
 import './stage.css';
 import { keepError } from '../lib/errorLog';
 

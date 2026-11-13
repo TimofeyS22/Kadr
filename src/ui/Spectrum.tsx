@@ -8,11 +8,22 @@ import { hexToHsl, hslToHex } from '../core/color';
 import type { Project } from '../core/types';
 import { t } from '../lib/i18n';
 import { editor } from '../state/store';
+import './detail.css';
 
 type HSL = { h: number; s: number; l: number };
 type Area = 'field' | 'sat';
 /** Loupe diameter (CSS px), how much it enlarges, and how far above the finger it floats. */
 const LOUPE = 84, ZOOM = 4, LIFT = 36;
+/**
+ * The edge kept inside a field and a strip (px): the ring of the point read (radius 18 with its edge) stays inside them
+ * at the extremes, never over the swatches or the next strip (the art director, Ч4 release 11). The end colours fill it.
+ */
+const INSET = 18;
+/** A stop at fraction f of the part between the insets. */
+const at = (f: number) => `calc(${INSET}px + (100% - ${2 * INSET}px) * ${f})`;
+/** The colours of the spectrum: content (every hue there is), drawn by the markup, not interface colours on tokens. */
+const HUES = `linear-gradient(to right, ${[0, 60, 120, 180, 240, 300, 360].map((h, i) => `hsl(${h} 100% 50%) ${at(i / 6)}`).join(', ')})`;
+const FIELD = `linear-gradient(to bottom, white ${at(0)}, hsl(0 0% 100% / 0) 50%, hsl(0 0% 0% / 0) 50%, black ${at(1)}), linear-gradient(hsl(0 0% 50% / var(--grey)), hsl(0 0% 50% / var(--grey))), ${HUES}`;
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 /** Below this saturation the field would be grey from edge to edge: it is drawn, and picks, in full colour. */
 const GREY = 0.05;
@@ -45,6 +56,8 @@ export function Spectrum({ value, label, onChange, onDone }: {
   const [loupe, setLoupe] = useState<{ x: number; y: number; area: Area; fx: number; fy: number; w: number; h: number } | null>(null);
   const hex = hslToHex(hsl.h, hsl.s, hsl.l);
   const [draft, setDraft] = useState<string | null>(null);
+  /** A typed code that is not a colour: the field says so instead of quietly going back (the art director, release 11). */
+  const [bad, setBad] = useState(false);
 
   // A colour chosen elsewhere (a swatch, the eyedropper) moves the spectrum there.
   useEffect(() => {
@@ -64,11 +77,12 @@ export function Spectrum({ value, label, onChange, onDone }: {
 
   const point = (e: RPointerEvent<HTMLDivElement>, area: Area) => {
     const r = (area === 'field' ? field : sat).current!.getBoundingClientRect();
-    const fx = clamp01((e.clientX - r.left) / r.width), fy = clamp01((e.clientY - r.top) / r.height);
+    const w = r.width - 2 * INSET, h = area === 'field' ? r.height - 2 * INSET : r.height;
+    const fx = clamp01((e.clientX - r.left - INSET) / w), fy = area === 'field' ? clamp01((e.clientY - r.top - INSET) / h) : 0.5;
     const next = colorAt(area, fx, fy, cur.current);
     setHsl(next);
     emit(hslToHex(next.h, next.s, next.l));
-    setLoupe({ x: r.left + fx * r.width, y: area === 'field' ? r.top + fy * r.height : r.top + r.height / 2, area, fx, fy, w: r.width, h: r.height });
+    setLoupe({ x: r.left + INSET + fx * w, y: area === 'field' ? r.top + INSET + fy * h : r.top + r.height / 2, area, fx, fy, w, h });
   };
   const handlers = (area: Area) => ({
     onPointerDown: (e: RPointerEvent<HTMLDivElement>) => {
@@ -109,6 +123,7 @@ export function Spectrum({ value, label, onChange, onDone }: {
   const typed = (text: string) => {
     setDraft(null);
     const c = read(text, cur.current);
+    setBad(!c);
     if (!c) return;
     setHsl(c);
     const col = hslToHex(c.h, c.s, c.l);
@@ -117,20 +132,21 @@ export function Spectrum({ value, label, onChange, onDone }: {
   };
 
   return (
-    <div className="spectrum" role="group" aria-label={t('Spectrum: {label}', { label })}>
-      <div ref={field} className="spectrum-field" style={{ '--grey': 1 - fieldS(hsl.s) } as CSSProperties} {...handlers('field')}
+    <div className="spectrum ck-spectrum" role="group" aria-label={t('Spectrum: {label}', { label })}>
+      <div ref={field} className="spectrum-field ck-spectrum-field" style={{ '--grey': 1 - fieldS(hsl.s), background: FIELD } as CSSProperties} {...handlers('field')}
         role="slider" tabIndex={0} aria-label={t('Color and brightness')} aria-valuemin={0} aria-valuemax={360} aria-valuenow={Math.round(hsl.h)}
         aria-valuetext={t('hue {h}°, brightness {l}%', { h: Math.round(hsl.h), l: Math.round(hsl.l * 100) })} onKeyDown={keys('field')}>
-        <i style={{ left: `${(hsl.h / 360) * 100}%`, top: `${(1 - hsl.l) * 100}%`, background: hex }} />
+        <i style={{ left: at(hsl.h / 360), top: at(1 - hsl.l), background: hex }} />
       </div>
-      <div ref={sat} className="spectrum-sat" style={{ '--full': `hsl(${hsl.h} 100% 50%)` } as CSSProperties} {...handlers('sat')} role="slider" tabIndex={0} aria-label={t('Saturation')}
+      <div ref={sat} className="spectrum-sat ck-spectrum-sat" style={{ background: `linear-gradient(to right, hsl(0 0% 50%), hsl(${hsl.h} 100% 50%))` }} {...handlers('sat')} role="slider" tabIndex={0} aria-label={t('Saturation')}
         aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(hsl.s * 100)} onKeyDown={keys('sat')}>
-        <i style={{ left: `${hsl.s * 100}%`, background: hslToHex(hsl.h, hsl.s, 0.5) }} />
+        {/* The colour itself, as on the field: at white or black the strip changes nothing, and its point says so. */}
+        <i style={{ left: at(hsl.s), background: hex }} />
       </div>
-      <div className="spectrum-foot">
-        <span className="spectrum-chip" style={{ background: hex }} aria-hidden />
-        <input className="spectrum-code" value={draft ?? hex} maxLength={7} spellCheck={false} autoCapitalize="none" autoCorrect="off"
-          aria-label={t('Color code')} onChange={(e) => setDraft(e.target.value)} onBlur={(e) => typed(e.target.value)}
+      <div className="spectrum-foot ck-spectrum-foot">
+        <span className="spectrum-chip ck-spectrum-chip" style={{ background: hex }} aria-hidden />
+        <input className="spectrum-code ck-input ck-spectrum-code" value={draft ?? hex} maxLength={7} spellCheck={false} autoCapitalize="none" autoCorrect="off"
+          aria-label={t('Color code')} aria-invalid={bad || undefined} onChange={(e) => { setBad(false); setDraft(e.target.value); }} onBlur={(e) => typed(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
       </div>
       {loupe && createPortal(<Loupe {...loupe} hsl={hsl} />, document.body)}
@@ -169,7 +185,7 @@ function Loupe({ x, y, area, fx, fy, w, h, hsl }: { x: number; y: number; area: 
   const top = above ? y - LIFT - LOUPE : y - LOUPE / 2;
   const picked = hslToHex(hsl.h, hsl.s, hsl.l);
   return (
-    <div className="color-loupe" aria-hidden style={{ left: Math.max(8, Math.min(window.innerWidth - LOUPE - 8, left)), top, width: LOUPE, height: LOUPE }}>
+    <div className="color-loupe ck-loupe" aria-hidden style={{ left: Math.max(8, Math.min(window.innerWidth - LOUPE - 8, left)), top, width: LOUPE, height: LOUPE }}>
       <canvas ref={canvas} />
       <i style={{ borderColor: picked }} />
     </div>

@@ -38,6 +38,7 @@ import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
 import { TRANSITION_LABELS } from './transitionNames';
 import './sheets.css';
+import './catalog.css';
 import { Button } from './ck/controls';
 
 function useSelected(): Clip | null {
@@ -250,7 +251,7 @@ function TransformBody({ clip }: { clip: Clip }) {
       </Values>
       <p className="ck-hint">{t('Tap ◆ to add a keyframe at the playhead. When a property has keyframes, changes create keyframes.')}</p>
       {(clip.kind === 'video' || clip.kind === 'image') && (
-        <div className="flip-row">
+        <div className="flip-row ck-pair">
           <Button aria-pressed={!!clip.flipX} icon={<TrianglesCenterlineDashedVertical aria-hidden="true" />} onClick={() => toggleFlip('x')}>{t('Mirror')}</Button>
           <Button aria-pressed={!!clip.flipY} icon={<TrianglesCenterlineDashedHorizontal aria-hidden="true" />} onClick={() => toggleFlip('y')}>{t('Upside down')}</Button>
         </div>

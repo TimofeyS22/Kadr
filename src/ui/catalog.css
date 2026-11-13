@@ -1,0 +1,59 @@
+/* What is picked from a set, on the Chetko system (docs/17 Ч4, release 10): the music library, the sound effects, the
+   stickers, the beat, the layers, the mirror pair and the areas of «Скрыть лица». Every value comes from tokens.css;
+   the drift test reads this file. `music-list`, `music-row` (and its `on`), `music-meta`, `sfx-grid`, `sfx`, `sfx-add`,
+   `sfx-play`, `beat-bpm`, `inline-progress`, `layer-moves`, `sticker-grid`, `sticker`, `flip-row` and `privacy-area`
+   stay in the markup as hooks for the tests. */
+
+/* ---- the music library: a row is listen · name and what it is · add; the one playing is held on a sunk ground ---- */
+.ck-tracks { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.ck-track {
+  display: grid; grid-template-columns: var(--touch) minmax(0, 1fr) var(--touch); align-items: center; gap: var(--space-2);
+  min-height: 56px; padding: var(--space-1); border-radius: var(--radius-control);
+}
+.ck-track[data-on] { background: var(--surface-panel); }
+.ck-track-meta { display: grid; gap: var(--space-1); min-width: 0; }
+.ck-track-meta b, .ck-track-meta small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ck-track-meta b { font-size: var(--type-md); font-weight: var(--weight-medium); color: var(--text-primary); }
+.ck-track-meta small { font-size: var(--type-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+/* Listening is a round button of its own: the play of a track is not the play of the project. While a track plays, its
+   listen button is ringed — what is on — and its «+» becomes the white one: the one main action of the sheet is to add
+   what is heard (DESIGN.md §5; the art director, release 10). */
+.ck-track .ck-listen { border-radius: 50%; background: var(--surface-panel); }
+.ck-track[data-on] .ck-listen { box-shadow: inset 0 0 0 2px var(--mark-was); }
+.ck-track[data-on] > .ck-ib:last-child { border-radius: 50%; background: var(--action-primary); color: var(--text-on-action); }
+
+/* ---- sound effects: a tile is its name (a tap adds it) and a quiet button to listen first ---- */
+.ck-sounds { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2); }
+.ck-sound { display: flex; align-items: center; min-width: 0; border-radius: var(--radius-control); background: var(--surface-panel); }
+.ck-sound-add {
+  flex: 1; min-width: 0; min-height: 48px; padding: var(--space-2) 0 var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-control); background: none;
+  color: var(--text-primary); font: inherit; font-size: var(--type-sm); font-weight: var(--weight-strong); line-height: var(--leading-tight); text-align: left; cursor: pointer;
+  overflow-wrap: anywhere; hyphens: auto; /* «Сердцебиение» goes to a second line, not to «Сердцебие…» */
+}
+.ck-sound .ck-ib { color: var(--text-secondary); }
+.ck-sound-add:focus-visible, .ck-sticker:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+
+/* ---- stickers: a tile 52 px, the picture is the name ---- */
+.ck-stickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: var(--space-2); }
+.ck-sticker {
+  aspect-ratio: 1; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-control); background: var(--surface-panel);
+  font-size: var(--type-xl); line-height: 1; cursor: pointer; transition: scale var(--dur-press) var(--ease-soft);
+}
+.ck-sticker:active { scale: 0.92; }
+/* A group's name stands apart from its tiles. */
+.ck-panel-body section:has(> .ck-stickers) { display: grid; gap: var(--space-2); }
+.ck-panel-body section:has(> .ck-stickers) > h3 { margin: 0; }
+
+/* ---- the beat: the tempo found, as a large figure that does not jump ---- */
+.ck-bpm { display: flex; align-items: baseline; gap: var(--space-2); margin: 0; color: var(--text-secondary); font-size: var(--type-sm); }
+.ck-bpm b { font-size: var(--type-xl); font-weight: var(--weight-heavy); color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+/* ---- pairs and rows of actions: equal widths, a long name goes to a second line rather than to «…» ---- */
+.ck-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.ck-three { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+.ck-three > .ck-btn { padding-inline: var(--space-2); }
+.ck-pair > .ck-btn, .ck-three > .ck-btn { white-space: normal; text-align: center; }
+.ck-pair .ck-btn-label, .ck-three .ck-btn-label { line-height: var(--leading-tight); }
+/* An area of «Скрыть лица»: its values and its «Удалить» apart from the next area by a line. */
+.ck-area { display: grid; gap: var(--space-2); padding-top: var(--space-3); border-top: var(--hairline) solid var(--border-subtle); }
+.ck-area > h3 { margin: 0; }

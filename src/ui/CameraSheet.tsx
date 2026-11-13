@@ -1,6 +1,6 @@
 // Camera with a teleprompter (v0.6): record yourself reading a script; the clip lands on the main track at the
 // playhead. The camera and microphone are on only while this screen is open (every track is stopped on close).
-import { FlipHorizontal2, Pencil, Square, X } from 'lucide-react';
+import { CircleAlert, Pencil, SwitchCamera, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { player } from '../engine/player';
 import { t } from '../lib/i18n';
@@ -8,7 +8,10 @@ import { errorMessage, track } from '../lib/telemetry';
 import { editor } from '../state/store';
 import { addFiles } from './actions';
 import { TakeWriter } from '../storage/db';
-import { Slider } from './controls';
+import { Slider, Values } from './controls';
+import { Button, IconButton } from './ck/controls';
+import { Field } from './ck/Field';
+import './capture.css';
 import { formatTime } from './format';
 import { useHoldUpdates } from '../lib/update';
 import { within } from '../lib/limits';
@@ -195,6 +198,7 @@ export function CameraSheet() {
     rec.current = null;
     track('camera_recording_empty', { seconds: Math.round(elapsed) });
     editor().toast(said, 'error');
+    if (prompter.current) prompter.current.scrollTop = 0; // the script waits at its start for the next take, not scrolled away
     setState('ready');
   }
 
@@ -232,40 +236,57 @@ export function CameraSheet() {
   const recording = state === 'recording';
 
   return (
-    <section className="camera" role="dialog" aria-label={t('Camera')}>
-      <video ref={video} className={`camera-video ${facing === 'user' ? 'mirror' : ''}`} muted playsInline autoPlay />
+    // Chetko (Ч4 release 9): black round the picture, white buttons on solid rounds, the record button white — red is for
+    // deleting only (DESIGN.md §2.3). The old class names stay as hooks for the tests and the L5 scripts.
+    <section className="camera ck-cam" role="dialog" aria-label={t('Camera')}>
+      <video ref={video} className="camera-video ck-cam-video" data-mirror={facing === 'user' ? true : undefined} muted playsInline autoPlay />
       {script && (
-        <div ref={prompter} className="prompter" style={{ fontSize: size }} aria-label={t('Teleprompter')}>
-          <p>{script}</p>
+        // The plate is as tall as four lines of the script, not a third of the screen over the face; the words scroll
+        // inside it and fade at its edges (the art director, release 9).
+        <div className="prompter ck-prompter">
+          <div ref={prompter} className="ck-prompter-text" style={{ fontSize: size }} aria-label={t('Teleprompter')}>
+            <p>{script}</p>
+          </div>
         </div>
       )}
-      {state === 'countdown' && <div className="countdown" aria-live="assertive">{count}</div>}
-      {state === 'error' && <p className="camera-error" role="alert">{error}</p>}
-      {state === 'saving' && <p className="camera-error">{t('Saving the recording…')}</p>}
+      {state === 'countdown' && <div className="countdown ck-countdown" aria-live="assertive">{count}</div>}
+      {state === 'error' && <p className="camera-error ck-cam-note" role="alert"><CircleAlert aria-hidden />{error}</p>}
+      {state === 'saving' && <p className="camera-error ck-cam-note" role="status">{t('Saving the recording…')}</p>}
       {editing && (
-        <div className="script-editor">
-          <textarea value={script} placeholder={t('Paste or type what you want to say')} aria-label={t('Script')}
-            onChange={(e) => { setScript(e.target.value); save(SCRIPT_KEY, e.target.value); }} />
-          <Slider label={t('Scroll speed')} value={speed} min={0.3} max={3} step={0.1} format={(v) => `${v.toFixed(1)}×`} reset={1}
-            onChange={(v) => { setSpeed(v); save(`${SCRIPT_KEY}.speed`, String(v)); }} />
-          <Slider label={t('Text size')} value={size} min={16} max={48} step={1} format={(v) => `${v}`} reset={26}
-            onChange={(v) => { setSize(v); save(`${SCRIPT_KEY}.size`, String(v)); }} />
-          <button className="btn" disabled={!script || state !== 'ready'} aria-pressed={previewing}
+        <div className="script-editor ck-script">
+          <Field label={t('Script to read')} multiline rows={4} value={script} placeholder={t('Paste or type what you want to say')}
+            onChange={(v) => { setScript(v); save(SCRIPT_KEY, v); }} />
+          <Values label={t('Speed and size')}>
+            <Slider label={t('Scroll speed')} value={speed} min={0.3} max={3} step={0.1} format={(v) => `${v.toFixed(1)}×`} reset={1}
+              onChange={(v) => { setSpeed(v); save(`${SCRIPT_KEY}.speed`, String(v)); }} />
+            <Slider label={t('Text size')} value={size} min={16} max={48} step={1} format={(v) => `${v}`} reset={26}
+              onChange={(v) => { setSize(v); save(`${SCRIPT_KEY}.size`, String(v)); }} />
+          </Values>
+          <Button disabled={!script || state !== 'ready'} aria-pressed={previewing}
             onClick={() => { if (previewing && prompter.current) prompter.current.scrollTop = 0; setPreviewing((x) => !x); }}>
             {previewing ? t('Stop the test') : t('Test the speed')}
-          </button>
+          </Button>
         </div>
       )}
-      <div className="camera-bar">
-        <button className="icon-btn" onClick={close} disabled={state === 'saving'} aria-label={t('Close camera')}><X size={24} /></button>
-        <button className="icon-btn" onClick={() => { setEditing((e) => !e); setPreviewing(false); }} disabled={recording || state === 'countdown'} aria-pressed={editing} aria-label={t('Edit script')}><Pencil size={22} /></button>
+      <div className="camera-bar ck-cam-bar">
+        <div className="ck-cam-side">
+          {/* Not while a take runs or is counted in: one tap must not throw a take away (DESIGN.md §2.6). */}
+          <IconButton hook="icon-btn" label={t('Close camera')} onClick={close} disabled={state === 'saving' || state === 'countdown' || recording}><X aria-hidden /></IconButton>
+          <IconButton label={t('Edit script')} onClick={() => { setEditing((e) => !e); setPreviewing(false); }} disabled={recording || state === 'countdown'} aria-pressed={editing}><Pencil aria-hidden /></IconButton>
+        </div>
         {recording ? (
-          <button className="rec-btn on" onClick={() => void stop()} aria-label={t('Stop recording')}><Square size={26} fill="currentColor" /></button>
+          <button type="button" className="rec-btn on ck-rec" data-on onClick={() => void stop()} aria-label={t('Stop recording')} />
+        ) : state === 'countdown' ? (
+          // 3, 2, 1 can be stopped with the same button, as the phone's own timer: the square, back to ready.
+          <button type="button" className="rec-btn on ck-rec" data-on onClick={() => { setCount(3); setState('ready'); }} aria-label={t('Cancel the countdown')} />
         ) : (
-          <button className="rec-btn" onClick={start} disabled={state !== 'ready'} aria-label={t('Start recording')}><span className="rec-dot" /></button>
+          <button type="button" className="rec-btn ck-rec" onClick={start} disabled={state !== 'ready'} aria-label={t('Start recording')} />
         )}
-        <span className="rec-time">{recording ? formatTime(elapsed) : ''}</span>
-        <button className="icon-btn" onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))} disabled={recording || state === 'countdown'} aria-label={t('Switch camera')}><FlipHorizontal2 size={22} /></button>
+        {/* The time is there before the take: this camera records video. While the take runs, its «now» mark beats. */}
+        {(state === 'ready' || state === 'countdown' || recording) && <span className="rec-time ck-rec-time" data-on={recording || undefined}>{formatTime(recording ? elapsed : 0)}</span>}
+        <div className="ck-cam-side">
+          <IconButton label={t('Switch camera')} onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))} disabled={recording || state === 'countdown'}><SwitchCamera aria-hidden /></IconButton>
+        </div>
       </div>
     </section>
   );

@@ -335,3 +335,7 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
 /* A tab whose parameter was changed: a small white mark after its name. */
 /* «Changed» is the mark a tool on the ribbon has: a short white upright, not a dot that reads as «unread». */
 .ck-tab-note { display: inline-block; width: 2px; height: 12px; margin-left: var(--space-2); vertical-align: -1px; background: var(--mark-was); }
+
+/* ---- a few quiet words that explain (a sheet, ?diag, the error screen) ---- */
+.ck-hint { margin: 0; font-size: var(--type-sm); line-height: var(--leading-text); color: var(--text-secondary); text-wrap: pretty; }
+.ck-hint[data-lead] { color: var(--text-primary); }

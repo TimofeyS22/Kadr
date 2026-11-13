@@ -374,7 +374,7 @@ export function Swatches({ value, onChange, label, from }: {
         {/* Any colour (v1.6.2): our own spectrum with a loupe, the same on every phone, instead of the system picker. */}
         <button type="button" className="swatch custom ck-swatch" data-tool="spectrum" onClick={() => setSpectrum((o) => !o)} aria-expanded={spectrum}
           aria-label={t('Spectrum: {label}', { label })}>
-          <i />
+          <i style={{ background: 'conic-gradient(hsl(0 100% 60%), hsl(45 100% 60%), hsl(140 70% 50%), hsl(175 70% 50%), hsl(210 100% 60%), hsl(270 100% 65%), hsl(320 100% 65%), hsl(0 100% 60%))' }} />
         </button>
         {BASIC_COLORS.map(swatch)}
         <span className="ck-swatch-sep" aria-hidden />

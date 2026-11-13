@@ -1,4 +1,4 @@
-import { ArchiveRestore, ChevronRight, Clapperboard, Download, Lock, Pencil, Plus, Smartphone, Sparkles, Trash2, X } from 'lucide-react';
+import { ArchiveRestore, ChevronRight, CircleAlert, Clapperboard, Download, Lock, Pencil, Plus, Smartphone, Sparkles, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { produce } from 'immer';
 import { ASPECTS, createProject } from '../core/defaults';
@@ -394,8 +394,8 @@ export function Home() {
         {inAppNotice.shown && <InAppNotice onDismiss={inAppNotice.dismiss} />}
 
         {!supported && (
-          <div className="banner error">
-            {t('This browser can’t edit video yet. Use a current Chrome, Edge or Safari 26+ (iPhone: iOS 26+).')}
+          <div className="banner error ck-banner" role="alert">
+            <CircleAlert aria-hidden />{t('This browser can’t edit video yet. Use a current Chrome, Edge or Safari 26+ (iPhone: iOS 26+).')}
           </div>
         )}
 

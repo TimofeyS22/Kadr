@@ -1,0 +1,114 @@
+/* Recording on the Chetko system (docs/17 Ч4, release 9): the camera with its teleprompter, and the voice-over in its
+   sheet. DESIGN.md §2: round the picture only black and white; red is for deleting only, so the record button is white —
+   a disc in a ring that becomes a square to stop — and the time of a take stands over it from the start, so it reads as
+   video, not a photo; what runs now is marked with the
+   signal, as the edge of an export is. Every value comes from tokens.css; the drift test reads this file. `camera`,
+   `camera-video`, `prompter`, `countdown`, `camera-error`, `script-editor`, `camera-bar`, `rec-btn`, `rec-time`,
+   `recorder`, `meter` (and its `clip`) and `clip-warn` stay in the markup as hooks for the tests. */
+
+/* ---- the camera: the whole screen, black round the picture ---- */
+.ck-cam { position: fixed; inset: 0; z-index: var(--z-over-old); display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--surface-field); color: var(--text-primary); }
+.ck-cam-video { grid-row: 1 / -1; grid-column: 1; width: 100%; height: 100%; object-fit: cover; }
+.ck-cam-video[data-mirror] { transform: scaleX(-1); }
+
+/* The script stands at the top, by the lens, so the eyes read it while they look into the camera. A solid plate: words
+   over a moving, often light picture are read only on a ground of their own. Four lines tall, not a third of the screen
+   over the face; the words scroll inside and fade at its edges, and the last line can scroll up to the top. */
+.ck-prompter {
+  position: absolute; left: var(--space-3); right: var(--space-3); top: calc(var(--space-3) + env(safe-area-inset-top, 0px)); z-index: var(--z-mark);
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-control); background: var(--surface-panel); color: var(--text-primary);
+}
+.ck-prompter-text {
+  max-height: 4lh; overflow: hidden; font-weight: var(--weight-strong); line-height: var(--leading-tight); white-space: pre-wrap;
+  -webkit-mask-image: linear-gradient(transparent, black var(--space-3), black calc(100% - var(--space-3)), transparent);
+  mask-image: linear-gradient(transparent, black var(--space-3), black calc(100% - var(--space-3)), transparent);
+}
+.ck-prompter-text p { margin: 0 0 3lh; }
+
+/* 3, 2, 1 in the middle of the picture, on a round plate of its own: big, and readable on a light wall too. */
+.ck-countdown {
+  position: absolute; left: 50%; top: 50%; z-index: var(--z-mark); translate: -50% -50%; width: calc(var(--touch) * 2.5); height: calc(var(--touch) * 2.5);
+  display: grid; place-items: center; border-radius: 50%; background: var(--surface-panel); color: var(--text-primary);
+  font-size: var(--type-display); font-weight: var(--weight-heavy); font-variant-numeric: tabular-nums; pointer-events: none;
+}
+
+/* What went wrong, or «Сохраняю запись…»: words on a plate in the middle; a failure has its sign. */
+.ck-cam-note {
+  position: absolute; left: var(--space-4); right: var(--space-4); top: 40%; z-index: var(--z-mark); margin: 0;
+  display: flex; gap: var(--space-2); align-items: flex-start; justify-content: center; padding: var(--space-3) var(--space-4); border-radius: var(--radius-control);
+  background: var(--surface-raised); color: var(--text-primary); font-size: var(--type-md); line-height: var(--leading-text); text-align: center;
+}
+.ck-cam-note > svg { flex: none; width: 20px; height: 20px; margin-top: var(--hairline); }
+
+/* The script, its speed and size: a panel of the system over the picture, above the bar, scrolled when long. */
+.ck-script {
+  position: absolute; left: var(--space-3); right: var(--space-3); bottom: calc(76px + 3 * var(--space-3) + env(safe-area-inset-bottom, 0px)); z-index: var(--z-mark);
+  display: grid; gap: var(--space-3); max-height: calc(60dvh - 76px - 3 * var(--space-3)); overflow-y: auto; padding: var(--space-4); border-radius: var(--radius-sheet);
+  background: var(--surface-raised); color: var(--text-primary);
+}
+.ck-script .ck-input { min-height: 16dvh; resize: vertical; }
+/* The Scale lies on the panel itself, not on a third ground with square edges inside the rounded one. */
+.ck-script .ck-scale { background: none; }
+
+/* The bar: close and the script on the left, the record button in the middle under the thumb, the flip on the right;
+   the time of a take over the button. Its ground darkens to black, so white buttons hold on any picture. */
+.ck-cam-bar {
+  position: relative; grid-row: 2; grid-column: 1; z-index: var(--z-mark); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom, 0px)); background: linear-gradient(transparent, var(--scrim) 40%);
+}
+.ck-cam-side { display: flex; align-items: center; gap: var(--space-2); }
+.ck-cam-side:last-child { justify-content: flex-end; }
+/* Buttons over the picture: a solid dark round, so a white wall behind does not take the icon away. */
+.ck-cam .ck-ib { border-radius: 50%; background: var(--surface-panel); color: var(--text-primary); }
+.ck-cam .ck-ib:disabled { color: var(--text-disabled); }
+.ck-cam .ck-ib[aria-pressed='true'] { background: var(--surface-raised); box-shadow: inset 0 0 0 2px var(--text-primary); }
+
+/* ---- the record button (the camera and the voice-over): a white disc in a white ring; recording, a square to stop ---- */
+.ck-rec {
+  position: relative; width: 76px; height: 76px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: var(--text-on-action); cursor: pointer; touch-action: manipulation;
+  box-shadow: inset 0 0 0 4px var(--mark-was), 0 0 0 var(--hairline) var(--mark-edge);
+}
+.ck-rec::before {
+  content: ''; position: absolute; inset: 10px; border-radius: 50%; background: var(--action-primary);
+  transition: inset var(--dur-snap) var(--ease-out), border-radius var(--dur-snap) var(--ease-out);
+}
+.ck-rec > svg { position: relative; width: 28px; height: 28px; }
+.ck-rec[data-on]::before { inset: 24px; border-radius: var(--radius-clip); }
+.ck-rec:active:not(:disabled) { scale: 0.94; }
+.ck-rec:disabled { cursor: default; box-shadow: inset 0 0 0 4px var(--text-disabled); }
+.ck-rec:disabled::before { background: var(--text-disabled); }
+.ck-rec:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 4px; }
+
+/* The time of the take: white figures that do not jump. While it runs, the mark of «now» stands before them — the
+   system's mark, as on the Scale and the export (DESIGN.md §2.2), not a round REC dot; it beats while the take goes. Its
+   place is kept when it is not lit, so the figures do not move when it lights. */
+.ck-rec-time { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--touch); font-size: var(--type-lg); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.ck-rec-time::before { content: ''; width: var(--mark-width); height: 14px; border-radius: var(--radius-clip); background: transparent; }
+.ck-rec-time[data-on]::before { background: var(--signal); }
+@media (prefers-reduced-motion: no-preference) {
+  .ck-rec-time[data-on]::before { animation: ck-now-beat calc(var(--dur-undo) * 5) var(--ease-soft) infinite alternate; }
+}
+@keyframes ck-now-beat { to { opacity: 0.4; } }
+/* Over the record button, in the middle, as on the phone's own camera: the button never moves from under the thumb. */
+.ck-cam-bar > .ck-rec-time {
+  position: absolute; left: 50%; bottom: calc(100% - var(--space-2)); translate: -50% 0; min-height: 0; padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-control); background: var(--surface-panel);
+}
+
+/* ---- the voice-over in its sheet ---- */
+.ck-voice { display: grid; justify-items: center; gap: var(--space-4); padding: var(--space-2) 0 var(--space-3); }
+/* The hint and «too loud» take turns in one place two lines tall: the sheet and the frame above it never jump while a
+   voice is recorded (the art director, release 9). */
+.ck-voice-note { display: grid; place-items: center; min-height: calc(2lh); margin: 0; font-size: var(--type-sm); line-height: var(--leading-text); text-align: center; }
+.ck-voice-note .ck-hint { margin: 0; }
+.ck-voice .ck-rec-time { font-size: var(--type-xl); }
+
+/* How loud the voice is now (a bar) and was a moment ago (a white mark). Too loud is said in words with a sign, and the
+   bar turns white over its whole length: no red, which is for deleting. */
+.ck-meter { position: relative; width: 100%; height: var(--space-2); overflow: hidden; border-radius: var(--radius-clip); background: var(--border-subtle); }
+.ck-meter > div { height: 100%; background: var(--text-secondary); transition: width var(--dur-press) linear; }
+.ck-meter > i { position: absolute; top: 0; bottom: 0; width: var(--mark-fine); translate: -50% 0; background: var(--mark-was); }
+.ck-meter[data-clip] > div { background: var(--text-primary); }
+.ck-loud { display: flex; align-items: flex-start; justify-content: center; gap: var(--space-2); margin: 0; color: var(--text-primary); font-weight: var(--weight-strong); }
+.ck-loud > svg { flex: none; width: 18px; height: 18px; margin-top: var(--hairline); }

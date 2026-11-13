@@ -9,6 +9,7 @@ import { addLibraryTrack, loadManifest, musicUrl } from './actions';
 import { Chips } from './controls';
 import { formatTime } from './format';
 import { IconButton } from './ck/controls';
+import './catalog.css';
 
 export const MOOD_LABEL: Record<Mood | 'all', string> = {
   all: 'All', lofi: 'Lo-fi', energetic: 'Energetic', phonk: 'Phonk', cinematic: 'Cinematic',
@@ -20,6 +21,7 @@ export function MusicBody() {
   const [error, setError] = useState('');
   const [mood, setMood] = useState<Mood | 'all'>('all');
   const [playing, setPlaying] = useState<string | null>(null);
+  const [heard, setHeard] = useState(0);
   const audio = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -27,13 +29,14 @@ export function MusicBody() {
     return () => { audio.current?.pause(); audio.current = null; };
   }, []);
 
-  const stop = () => { audio.current?.pause(); audio.current = null; setPlaying(null); };
+  const stop = () => { audio.current?.pause(); audio.current = null; setPlaying(null); setHeard(0); };
   const preview = (tr: LibraryTrack) => {
     if (playing === tr.id) { stop(); return; }
     stop();
     player.pause();
     const a = new Audio(musicUrl(tr.file));
-    a.onended = () => setPlaying(null);
+    a.onended = () => { setPlaying(null); setHeard(0); };
+    a.ontimeupdate = () => setHeard(a.currentTime); // how far the one playing is (DESIGN.md §2.8: state is seen)
     void a.play().catch(() => setPlaying(null));
     audio.current = a;
     setPlaying(tr.id);
@@ -45,16 +48,16 @@ export function MusicBody() {
   return (
     <>
       <Chips options={['all', ...MOODS] as const} value={mood} scroll label={t('Mood')} render={(m) => t(MOOD_LABEL[m])} onChange={setMood} />
-      <ul className="music-list">
+      <ul className="music-list ck-tracks">
         {list.map((tr) => (
-          <li key={tr.id} className={`music-row ${playing === tr.id ? 'on' : ''}`}>
-            <button className="icon-btn" onClick={() => preview(tr)}
-              aria-label={playing === tr.id ? t('Stop {title}', { title: tr.title }) : t('Listen to {name}', { name: tr.title })}>
-              {playing === tr.id ? <Square size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
-            </button>
-            <div className="music-meta">
+          <li key={tr.id} className={`music-row ck-track ${playing === tr.id ? 'on' : ''}`} data-on={playing === tr.id || undefined}>
+            <IconButton hook="ck-listen" aria-pressed={playing === tr.id} onClick={() => preview(tr)}
+              label={playing === tr.id ? t('Stop {title}', { title: tr.title }) : t('Listen to {name}', { name: tr.title })}>
+              {playing === tr.id ? <Square aria-hidden fill="currentColor" /> : <Play aria-hidden fill="currentColor" />}
+            </IconButton>
+            <div className="music-meta ck-track-meta">
               <b>{tr.title}</b>
-              <small>{tr.artist} · {formatTime(tr.duration, false)}{tr.bpm ? ` · ${Math.round(tr.bpm)} ${t('BPM')}` : ''}</small>
+              <small>{tr.artist} · {playing === tr.id ? `${formatTime(heard, false)} / ${formatTime(tr.duration, false)}` : formatTime(tr.duration, false)}{tr.bpm ? ` · ${Math.round(tr.bpm)} ${t('BPM')}` : ''}</small>
             </div>
             {/* «+», not a column of «Добавить» boxes that cut the names short (the art director of Ч4 release 5). */}
             <IconButton label={t('Add {name} at the playhead', { name: tr.title })} onClick={() => { stop(); void addLibraryTrack(tr); }}><Plus aria-hidden="true" /></IconButton>

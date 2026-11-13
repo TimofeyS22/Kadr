@@ -1,0 +1,65 @@
+/* The fine settings, on the Chetko system (docs/17 Ч4, release 11): any colour on the spectrum with its loupe, the speed
+   curve, the lines of captions and the edit by text. Every value of the interface comes from tokens.css; the drift test
+   reads this file. The colours of the spectrum itself are content — every hue there is — so the markup draws them.
+   `spectrum*`, `color-loupe`, `curve*`, `caption-list`, `caption-row`, `cut-text`, `words` and `word` (and its `cut`)
+   stay in the markup as hooks for the tests. */
+
+/* ---- any colour: brightness × hue in a field, saturation on a strip, the code to type; the finger has a loupe ---- */
+.ck-spectrum { display: grid; gap: var(--space-2); padding: var(--space-2) 0 var(--space-1); }
+.ck-spectrum-field, .ck-spectrum-sat { position: relative; border-radius: var(--radius-control); touch-action: none; box-shadow: inset 0 0 0 var(--hairline) var(--image-outline); }
+.ck-spectrum-field { height: 172px; cursor: crosshair; }
+.ck-spectrum-sat { height: var(--touch); cursor: ew-resize; }
+/* The point read is the colour itself in a white ring with a dark edge, as every mark on a picture. */
+.ck-spectrum-field i, .ck-spectrum-sat i {
+  position: absolute; width: 28px; height: 28px; translate: -50% -50%; border-radius: 50%; pointer-events: none;
+  box-shadow: 0 0 0 3px var(--mark-was), 0 0 0 4px var(--mark-edge);
+}
+.ck-spectrum-sat i { top: 50%; }
+.ck-spectrum-field:focus-visible, .ck-spectrum-sat:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-spectrum-foot { display: flex; align-items: center; gap: var(--space-2); }
+.ck-spectrum-chip { flex: none; width: calc(var(--touch) + var(--space-1)); height: calc(var(--touch) + var(--space-1)); border-radius: var(--radius-control); box-shadow: inset 0 0 0 var(--hairline) var(--image-outline); }
+/* The code in the type of the interface: one face (DESIGN.md §3), figures that do not jump. */
+.ck-spectrum-code { flex: 1; min-width: 0; font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; text-transform: lowercase; }
+/* Not a colour: the white ring of a field that is wrong (ck-field[data-invalid]); the colour stays as it was. */
+.ck-spectrum-code[aria-invalid='true'] { box-shadow: inset 0 0 0 2px var(--text-primary); }
+
+/* Over the finger, above everything: the colours round it, larger, the one picked ringed in the middle. */
+.ck-loupe {
+  position: fixed; z-index: var(--z-over-old); overflow: hidden; border-radius: 50%; pointer-events: none;
+  box-shadow: 0 0 0 3px var(--mark-was), 0 0 0 4px var(--mark-edge), 0 var(--space-2) var(--space-6) var(--scrim);
+}
+.ck-loupe canvas { display: block; width: 100%; height: 100%; }
+.ck-loupe i {
+  position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; translate: -50% -50%; border: 3px solid; border-radius: 50%;
+  box-shadow: 0 0 0 var(--hairline) var(--mark-was), 0 0 0 2px var(--mark-edge);
+}
+
+/* ---- the speed curve: the line of the speed, white, over the lines of 0.5×, 1× and 4×; its points are white marks ---- */
+.ck-curve { display: block; width: 100%; max-width: 420px; height: auto; margin: var(--space-1) 0; border-radius: var(--radius-control); background: var(--surface-panel); touch-action: none; }
+.ck-curve-grid { stroke: var(--border-subtle); stroke-width: 1; }
+.ck-curve-one { stroke: var(--text-secondary); stroke-width: 1; stroke-dasharray: 4 4; }
+.ck-curve-label { fill: var(--text-secondary); font-size: var(--type-xs); font-variant-numeric: tabular-nums; }
+.ck-curve-line { fill: none; stroke: var(--mark-was); stroke-width: 2.5; stroke-linejoin: round; }
+.ck-curve-dot { fill: var(--mark-was); stroke: var(--mark-edge); stroke-width: 1.5; cursor: ns-resize; }
+.ck-curve-dot:focus-visible { outline: none; stroke: var(--text-primary); stroke-width: 8; stroke-opacity: 0.4; }
+/* The value of the point a finger holds: the digit of a value, in the signal colour. */
+.ck-curve-value { fill: var(--signal); font-size: var(--type-sm); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; pointer-events: none; }
+
+/* ---- the lines of captions: when, then the words to correct ---- */
+.ck-lines { display: grid; gap: var(--space-2); }
+.ck-line { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: var(--space-2); }
+.ck-line > span { font-size: var(--type-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* ---- edit by text: the words of the speech; a word to cut is struck through in red, as everything that deletes ---- */
+.ck-cut { display: grid; gap: var(--space-3); margin-top: var(--space-2); }
+.ck-cut > h3 { margin: 0; }
+.ck-words { display: flex; flex-wrap: wrap; gap: var(--space-1); } /* no scroll of its own inside the sheet's scroll */
+.ck-word {
+  min-height: var(--touch); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-control); background: none;
+  color: var(--text-primary); font: inherit; font-size: var(--type-sm); cursor: pointer;
+}
+.ck-word[aria-pressed='true'] { color: var(--action-danger); text-decoration: line-through; box-shadow: inset 0 0 0 var(--hairline) var(--action-danger); }
+.ck-word:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ck-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.ck-cut-go { display: grid; }
+.ck-cut-go .ck-btn { font-variant-numeric: tabular-nums; }

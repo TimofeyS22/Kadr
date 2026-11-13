@@ -503,7 +503,7 @@ function Coach({ hold }: { hold: boolean }) {
   if (seen >= TIPS.length || !hasClips || sheet || hold) return null;
   const next = () => { const n = seen + 1; setSeen(n); try { localStorage.setItem('kadr.tips', String(n)); } catch { /* ignore */ } };
   return (
-    <div className="coach" role="note">
+    <div className="coach ck-coach" role="note">
       <div className="ck ck-editor-tip">
         <span>{t(TIPS[seen])}</span>
         <Button onClick={next}>{seen + 1 < TIPS.length ? t('Next') : t('Got it')}</Button>

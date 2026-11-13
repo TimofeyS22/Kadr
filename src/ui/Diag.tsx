@@ -7,6 +7,7 @@ import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
 import type { DiagAsk } from '../engine/diag.worker';
 import { errorLog } from '../lib/errorLog';
+import { Button } from './ck/controls';
 
 type Rows = [string, string][];
 const SR = 16000;
@@ -232,23 +233,23 @@ export function Diag() {
   };
 
   return (
-    <div className="diag">
+    <div className="diag ck-diag">
       <h1>{t('Diagnostics')}</h1>
-      <p className="hint">{t('What this device can do for Kadr. Nothing is sent anywhere: copy the report and send it yourself.')}</p>
-      <div className="diag-actions">
-        <button className="btn primary" onClick={() => void copy()} disabled={!!busy}>{copied ? t('Copied') : t('Copy report')}</button>
-        <button className="btn" onClick={() => void all()} disabled={!!busy}>{t('Check again')}</button>
+      <p className="ck-hint">{t('What this device can do for Kadr. Nothing is sent anywhere: copy the report and send it yourself.')}</p>
+      <div className="diag-actions ck-diag-actions">
+        <Button variant="primary" onClick={() => void copy()} disabled={!!busy}>{copied ? t('Copied') : t('Copy report')}</Button>
+        <Button onClick={() => void all()} disabled={!!busy}>{t('Check again')}</Button>
       </div>
       <h2>{t('Speech models')}</h2>
-      <p className="hint">{t('Each downloads once and reads 10 seconds of Russian speech. Speech sample: SOVA RuDevices, CC BY 4.0.')}</p>
-      <div className="diag-actions">
+      <p className="ck-hint">{t('Each downloads once and reads 10 seconds of Russian speech. Speech sample: SOVA RuDevices, CC BY 4.0.')}</p>
+      <div className="diag-actions ck-diag-actions">
         {(['tiny', 'base', 'ru-fast', 'ru'] as const).map((m) => (
-          <button key={m} className="btn" disabled={!!busy} onClick={() => void model(m)}>{t(ASR_MODELS[m].label)}, {ASR_MODELS[m].mb} MB</button>
+          <Button key={m} disabled={!!busy} onClick={() => void model(m)}>{t(ASR_MODELS[m].label)}, {t('{n} MB', { n: ASR_MODELS[m].mb })}</Button>
         ))}
       </div>
-      {busy && <p className="hint" role="status">{t('Checking: {step}…', { step: busy })}</p>}
-      <pre className="diag-report" aria-label={t('Report')}>{report}</pre>
-      <a className="btn" href={import.meta.env.BASE_URL}>{t('Back to Kadr')}</a>
+      {busy && <p className="ck-hint" role="status">{t('Checking: {step}…', { step: busy })}</p>}
+      <pre className="diag-report ck-diag-report" aria-label={t('Report')}>{report}</pre>
+      <a className="ck-btn ck-quiet" href={import.meta.env.BASE_URL}>{t('Back to Kadr')}</a>
     </div>
   );
 }

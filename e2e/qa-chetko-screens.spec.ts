@@ -916,3 +916,107 @@ test('toasts: a failure is a dark plate with a white ring and a sign, never red,
   expect(pad).toBeGreaterThanOrEqual(12);
   await page.evaluate(() => { (window as unknown as { __toastErrors?: string[] }).__toastErrors = []; });
 });
+
+// ---- release 9: recording ----
+/** A camera and a microphone that work headless: a picture only when one is asked for, a tone as the voice. */
+async function fakeMedia(page: Page) {
+  await page.addInitScript(() => {
+    MediaDevices.prototype.getUserMedia = async function (want?: MediaStreamConstraints) {
+      const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
+      const g = c.getContext('2d')!;
+      let f = 0;
+      setInterval(() => { g.fillStyle = '#eee'; g.fillRect(0, 0, 640, 360); g.fillStyle = `hsl(${(f++ * 7) % 360} 70% 50%)`; g.fillRect(0, 0, 640, 20); }, 33);
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const dest = ctx.createMediaStreamDestination();
+      osc.connect(dest);
+      osc.start();
+      return new MediaStream([...(want?.video ? c.captureStream(30).getVideoTracks() : []), ...dest.stream.getAudioTracks()]);
+    };
+  });
+}
+const darkRound = (c: number[]) => neutral(c) && Math.max(...c) < 80;
+const signal = ([r, g, b]: number[]) => r > 200 && g > 170 && b < 120;
+
+test('camera: black round the picture; white icons on dark rounds 44 px; the record button white, never red, and held under the thumb while a take runs', async ({ page }) => {
+  await fakeMedia(page);
+  await sampleEditor(page);
+  await page.getByRole('button', { name: 'Камера', exact: true }).first().click();
+  const cam = page.getByRole('dialog', { name: 'Камера' });
+  await expect(cam).toBeVisible();
+  expect(await rgbOf(cam, 'backgroundColor'), 'DESIGN.md §2.1: black round the picture').toEqual([0, 0, 0]);
+  for (const name of ['Закрыть камеру', 'Сценарий телесуфлёра', 'Сменить камеру']) {
+    const b = cam.getByRole('button', { name });
+    const box = (await b.boundingBox())!;
+    expect(Math.min(box.width, box.height), name).toBeGreaterThanOrEqual(44);
+    const bg = await rgbOf(b, 'backgroundColor');
+    expect(darkRound(bg), `${name}: a solid dark round, so a light wall does not take the icon: ${bg}`).toBe(true);
+  }
+  const start = cam.getByRole('button', { name: 'Начать запись' });
+  await expect(start).toBeEnabled({ timeout: 10_000 });
+  const disc = await rgbOf(start, 'backgroundColor', '::before');
+  expect(neutral(disc) && Math.min(...disc) > 230, `DESIGN.md §2.3: the record button is white, red is for deleting: ${disc}`).toBe(true);
+  const at = (await start.boundingBox())!;
+  expect(Math.abs(at.x + at.width / 2 - 375 / 2), 'in the middle, under the thumb').toBeLessThan(2);
+  expect(at.y, 'in the lower fifth').toBeGreaterThan(812 * 0.8);
+  // The script: a named field; its speed and size as tabs over one Scale; read on a solid dark plate by the lens.
+  await cam.getByRole('button', { name: 'Сценарий телесуфлёра' }).click();
+  await cam.getByRole('textbox', { name: 'Текст для суфлёра' }).fill('Привет! Это проверка суфлёра.\nВторая строка.');
+  await expect(cam.getByRole('tab')).toHaveText(['Скорость прокрутки', 'Размер текста']);
+  await expect(cam.getByRole('slider', { name: 'Скорость прокрутки', exact: true })).toHaveAttribute('aria-valuenow', '1');
+  const plate = cam.locator('.ck-prompter');
+  expect(darkRound(await rgbOf(plate, 'backgroundColor')), 'a solid plate').toBe(true);
+  const pb = (await plate.boundingBox())!;
+  expect(pb.y, 'at the top, by the lens').toBeLessThan(60);
+  expect(pb.height, 'four lines, not a third of the screen over the face').toBeLessThan(812 * 0.25);
+  // The time is there before the take, so the camera reads as video; its «now» mark is not lit yet.
+  await expect(cam.locator('.rec-time')).toHaveText(/^0:00/);
+  // 3, 2, 1 is stopped by the same button, and closing is not offered while a take is counted in or runs.
+  await start.click();
+  await cam.getByRole('button', { name: 'Отменить отсчёт' }).click();
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(cam.getByRole('button', { name: 'Закрыть камеру' })).toBeDisabled();
+  // A take: the disc becomes a square to stop in the same place; the time runs over it with the signal mark of «now».
+  const stop = cam.getByRole('button', { name: 'Остановить запись' });
+  await expect(stop).toBeVisible({ timeout: 10_000 });
+  const now = (await stop.boundingBox())!;
+  expect(Math.abs(now.x - at.x) + Math.abs(now.y - at.y), 'the button does not move from under the thumb').toBeLessThan(1);
+  const time = cam.locator('.rec-time');
+  await expect(time).toHaveText(/^0:0\d/);
+  const tb = (await time.boundingBox())!;
+  expect(tb.y + tb.height, 'the time stands over the button').toBeLessThanOrEqual(now.y + 1);
+  expect(signal(await rgbOf(time, 'backgroundColor', '::before')), 'the mark of «now»').toBe(true);
+  await page.waitForTimeout(1500);
+  await stop.click();
+  await expect(cam).toHaveCount(0, { timeout: 30_000 });
+});
+
+test('voice-over: the same white record button; the level is a grey bar with a white mark, too loud turns it white — never red', async ({ page }) => {
+  await fakeMedia(page);
+  await sampleEditor(page);
+  await page.getByRole('button', { name: 'Запись', exact: true }).first().click();
+  await expect(panel(page)).toBeVisible();
+  const start = panel(page).getByRole('button', { name: 'Начать запись' });
+  const disc = await rgbOf(start, 'backgroundColor', '::before');
+  expect(neutral(disc) && Math.min(...disc) > 230, `white, not red: ${disc}`).toBe(true);
+  expect((await start.boundingBox())!.width).toBeGreaterThanOrEqual(44);
+  const meter = panel(page).locator('.meter');
+  // The peak mark is drawn only once there is a peak; here one stands in for it, to read its colour.
+  await meter.evaluate((e) => { if (!e.querySelector('i')) e.append(Object.assign(document.createElement('i'), { className: 'hold' })); });
+  const parts = async () => [await rgbOf(meter.locator('> div'), 'backgroundColor'), await rgbOf(meter.locator('> i'), 'backgroundColor')];
+  const [bar, mark] = await parts();
+  expect(neutral(bar) && neutral(mark) && Math.min(...mark) > 230, `a grey bar and a white mark: ${bar} / ${mark}`).toBe(true);
+  await meter.evaluate((e) => e.setAttribute('data-clip', ''));
+  const [loud, loudMark] = await parts();
+  expect(neutral(loud) && Math.min(...loud) > 230 && neutral(loudMark), `too loud is white, not red: ${loud} / ${loudMark}`).toBe(true);
+  await meter.evaluate((e) => e.removeAttribute('data-clip'));
+  const before = await page.locator('.tl-row.audio .clip').count();
+  await start.click();
+  const stop = panel(page).getByRole('button', { name: 'Остановить запись' });
+  await expect(stop).toBeVisible({ timeout: 15_000 });
+  expect(signal(await rgbOf(panel(page).locator('.rec-time'), 'backgroundColor', '::before')), 'the mark of «now»').toBe(true);
+  await page.waitForTimeout(1200);
+  await stop.click();
+  await expect(page.locator('.tl-row.audio .clip')).toHaveCount(before + 1, { timeout: 30_000 });
+});

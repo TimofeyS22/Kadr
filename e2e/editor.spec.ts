@@ -572,7 +572,7 @@ test('music: beat detection, cut to the beat, ducking, export', async ({ page },
   await page.getByRole('button', { name: 'Find the beat' }).click();
   await expect(page.getByText('BPM')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('.beat-bpm b')).toHaveText(/^(119|120|121)$/);
-  await page.getByRole('radio', { name: 'every beat' }).click();
+  await page.getByRole('button', { name: 'Every beat', exact: true }).click();
   await expect(page.getByText(/cuts now land on the beat/)).toBeVisible();
   await page.getByRole('button', { name: 'Done' }).click();
   await page.locator('.tl-row.audio .clip').first().click();
@@ -1623,7 +1623,11 @@ test('teleprompter: visible while editing the script, size applies live, speed c
   await page.getByRole('textbox', { name: 'Script' }).fill(Array.from({ length: 30 }, (_, i) => `Line number ${i + 1} of the script.`).join('\n'));
   const prompter = page.getByLabel('Teleprompter');
   await expect(prompter).toBeVisible(); // not hidden behind the editor any more
-  await page.getByRole('slider', { name: 'Text size' }).fill('40');
+  // On the Scale since Ч4 release 9: «Размер текста» is a tab; the Scale takes keys, a step of 1 from 16.
+  await page.getByRole('tab', { name: /^Text size/ }).click();
+  const sizeScale = page.getByRole('slider', { name: 'Text size', exact: true });
+  await sizeScale.press('Home');
+  for (let i = 16; i < 40; i++) await sizeScale.press('ArrowRight');
   await expect.poll(() => prompter.evaluate((el) => getComputedStyle(el).fontSize)).toBe('40px');
   await expect(page.getByRole('button', { name: 'Start recording' })).toBeEnabled({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Test the speed' }).click();
@@ -2945,7 +2949,7 @@ test('history and persistence, overlays, sound and captions: text style, sticker
   await h.act('cut to the beat', async () => {
     await selectClip(page, page.locator('.tl-row.audio .clip').first());
     await tool(page, 'Beat').click();
-    await page.getByRole('radio', { name: 'every beat' }).click();
+    await page.getByRole('button', { name: 'Every beat', exact: true }).click();
     await expect(page.getByText(/cuts now land on the beat/)).toBeVisible();
     await page.getByRole('button', { name: 'Done' }).click();
   });
@@ -4893,15 +4897,18 @@ test('colour spectrum: every colour at once, a saturation strip, a loupe above t
   const field = spectrum.getByRole('slider', { name: 'Color and brightness' });
   await field.scrollIntoViewIfNeeded();
   const r = (await field.boundingBox())!;
+  // Since Ч4 release 11 the field keeps 18 px at its edges for the ring of the point read: a fraction is of what is inside.
+  const IN = 18;
+  const at = (fx: number, fy: number) => [r.x + IN + fx * (r.width - 2 * IN), r.y + IN + fy * (r.height - 2 * IN)] as const;
   // White is at the top of the field, whatever colour is across it. Drag to a colour.
-  await page.mouse.move(r.x + 0.2 * r.width, r.y + 0.2 * r.height);
+  await page.mouse.move(...at(0.2, 0.2));
   await page.mouse.down();
-  await page.mouse.move(r.x + 0.8 * r.width, r.y + 0.3 * r.height, { steps: 8 });
+  await page.mouse.move(...at(0.8, 0.3), { steps: 8 });
   const loupe = page.locator('.color-loupe');
   await expect(loupe).toBeVisible();
   const lb = (await loupe.boundingBox())!;
-  expect(lb.y + lb.height, 'the loupe floats above the finger').toBeLessThan(r.y + 0.3 * r.height - 20);
-  expect(Math.abs(lb.x + lb.width / 2 - (r.x + 0.8 * r.width)), 'centred over it').toBeLessThan(2);
+  expect(lb.y + lb.height, 'the loupe floats above the finger').toBeLessThan(at(0.8, 0.3)[1] - 20);
+  expect(Math.abs(lb.x + lb.width / 2 - at(0.8, 0.3)[0]), 'centred over it').toBeLessThan(2);
   // Its middle shows the colour picked, enlarged.
   const middle = await loupe.locator('canvas').evaluate((c: HTMLCanvasElement) => [...c.getContext('2d')!.getImageData(c.width >> 1, c.height >> 1, 1, 1).data].slice(0, 3));
   await page.mouse.up();
@@ -4918,7 +4925,7 @@ test('colour spectrum: every colour at once, a saturation strip, a loupe above t
   // What the field paints is what it picks: a third of the way across, halfway down, is pure green.
   const canvasless = await field.screenshot();
   expect(canvasless.length, 'the field is painted').toBeGreaterThan(1000);
-  await page.mouse.click(r.x + r.width / 3, r.y + r.height / 2);
+  await page.mouse.click(...at(1 / 3, 0.5));
   const green = await code.inputValue();
   hexRgb(green).forEach((v, i) => expect(Math.abs(v - [0, 255, 0][i]), `green ${green}`).toBeLessThan(14));
   // The strip takes it towards grey.

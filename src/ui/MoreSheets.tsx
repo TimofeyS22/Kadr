@@ -9,10 +9,11 @@ import { SFX, renderSfx } from '../engine/sfx';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { addSfx, editClip } from './actions';
-import { Chips, Slider, Toggle, Values, pct, secs, useSheetGuard } from './controls';
+import { Slider, Toggle, Values, pct, secs, useSheetGuard } from './controls';
 import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
-import { Button } from './ck/controls';
+import { Button, IconButton, Progress } from './ck/controls';
+import './catalog.css';
 import { useLookTiles } from './lookTiles';
 import { Tiles } from './ck/choice';
 
@@ -152,11 +153,11 @@ export function SfxBody() {
   }
   return (
     <>
-      <div className="sfx-grid">
+      <div className="sfx-grid ck-sounds">
         {SFX.map((s) => (
-          <div key={s.id} className="sfx">
-            <button className="sfx-add" onClick={() => void addSfx(s.id)} aria-label={t('Add {name} at the playhead', { name: t(s.name) })}>{t(s.name)}</button>
-            <button className="icon-btn sfx-play" onClick={() => void preview(s.id)} aria-label={t('Listen to {name}', { name: t(s.name) })}><Play size={16} /></button>
+          <div key={s.id} className="sfx ck-sound">
+            <button type="button" className="sfx-add ck-sound-add" onClick={() => void addSfx(s.id)} aria-label={t('Add {name} at the playhead', { name: t(s.name) })}>{t(s.name)}</button>
+            <IconButton hook="sfx-play" onClick={() => void preview(s.id)} label={t('Listen to {name}', { name: t(s.name) })}><Play aria-hidden fill="currentColor" /></IconButton>
           </div>
         ))}
       </div>
@@ -204,9 +205,11 @@ export function BeatsBody({ clip }: { clip: AudioClip }) {
 
   if (busy !== null) {
     return (
-      <div className="inline-progress">
-        <span>{t('Listening for the beat… {p}%', { p: Math.round(busy * 100) })}</span>
-        <Button onClick={() => abort.current?.abort()}>{t('Cancel')}</Button>
+      // The long work of a sheet, as everywhere since Ч4 release 6: what is going on, the bar between two marks, a way out.
+      <div className="inline-progress ck-work">
+        <p className="ck-work-label">{t('Listening for the beat… {p}%', { p: Math.round(busy * 100) })}</p>
+        <Progress label={t('Find the beat')} value={busy} />
+        <div className="ck-work-actions"><Button onClick={() => abort.current?.abort()}>{t('Cancel')}</Button></div>
       </div>
     );
   }
@@ -220,9 +223,12 @@ export function BeatsBody({ clip }: { clip: AudioClip }) {
   }
   return (
     <>
-      <p className="beat-bpm"><b>{Math.round(grid.bpm)}</b> {t('BPM')}</p>
+      <p className="beat-bpm ck-bpm"><b>{Math.round(grid.bpm)}</b> {t('BPM')}</p>
       <h3>{t('Cut the main track on')}</h3>
-      <Chips options={[1, 2, 4] as const} value={null} render={(n) => (n === 1 ? t('every beat') : t('every {n} beats', { n }))} onChange={cut} />
+      {/* Three actions that cut the track, not a choice: three buttons of one width, none cut at the edge (the art director, release 10). */}
+      <div className="ck-three">
+        {([1, 2, 4] as const).map((n) => <Button key={n} onClick={() => cut(n)}>{n === 1 ? t('Every beat') : n === 2 ? t('Every 2nd beat') : t('Every 4th beat')}</Button>)}
+      </div>
       <p className="ck-hint">{t('Edges of clips also snap to the beat marks when you trim or move them.')}</p>
       <Button onClick={() => void detect()}>{t('Detect again')}</Button>
     </>
@@ -255,7 +261,7 @@ export function LayersBody({ clip }: { clip: Clip }) {
       <p className="ck-hint" role="status">
         {alone ? t('Nothing else is on screen with this clip.') : t('Over it: {above}. Under it: {below}.', { above: place.above, below: place.below })}
       </p>
-      <div className="layer-moves">
+      <div className="layer-moves ck-pair">
         {LAYER_MOVES.map(({ dir, label, icon: Icon }) => (
           <Button key={dir} icon={<Icon aria-hidden="true" />} disabled={dir === 'front' || dir === 'up' ? !place.above : !place.below} onClick={() => move(dir)}>
             {t(label)}
