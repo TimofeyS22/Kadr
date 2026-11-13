@@ -1,0 +1,91 @@
+
+Running 3 tests using 1 worker
+
+  ✘  1 [iphone-webkit] › e2e/qa-captions-honest.spec.ts:43:1 › captions in Russian: the model downloads once and the screen says so; a part made again keeps the corrected rest; the word under the playhead is marked (2.9m)
+  ✘  2 [iphone-webkit] › e2e/qa-captions-honest.spec.ts:123:1 › Russian speech under music is taken for Russian by the Russian model itself: Whisper is never asked (5.0m)
+  ✘  3 [iphone-webkit] › e2e/qa-captions-honest.spec.ts:170:1 › a caption template tile is never empty while its demo loops, and the tiles do not all restart together (22.7s)
+
+
+  1) [iphone-webkit] › e2e/qa-captions-honest.spec.ts:43:1 › captions in Russian: the model downloads once and the screen says so; a part made again keeps the corrected rest; the word under the playhead is marked 
+
+    Error: expect(received).toContain(expected) // indexOf
+
+    Expected value: "Скачиваем модель речи: 132 МБ, один раз…"
+    Received array: ["Один раз скачается 132 МБ, после этого субтитры работают без интернета.", "Готовимся…", "Загружаем модель речи (132 МБ, один раз)…", "Готовим звук…", "Ищем речь…", "Распознаём речь…"]
+
+      55 |   await expect(page.locator('.caption-row').first()).toBeVisible({ timeout: 400_000 });
+      56 |   const first = await said(page);
+    > 57 |   expect(first).toContain(`Скачиваем модель речи: ${mb} МБ, один раз…`);
+         |                 ^
+      58 |   expect(first).toContain('Запускаем модель речи (она уже на устройстве)…');
+      59 |   expect(first.indexOf('Запускаем модель речи (она уже на устройстве)…')).toBeGreaterThan(first.indexOf(`Скачиваем модель речи: ${mb} МБ, один раз…`));
+      60 |   expect(requests.length).toBeGreaterThan(0);
+        at /Users/timofejsemikin/Developer/kadr/e2e/qa-captions-honest.spec.ts:57:17
+
+    Error Context: ../../../../private/tmp/claude-501/-Users-timofejsemikin-Developer-kadr/c909e203-bc40-4dfe-be2e-128e5d309047/scratchpad/pw-honest-base/qa-captions-honest-caption-15f0e-nder-the-playhead-is-marked-iphone-webkit/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../private/tmp/claude-501/-Users-timofejsemikin-Developer-kadr/c909e203-bc40-4dfe-be2e-128e5d309047/scratchpad/pw-honest-base/qa-captions-honest-caption-15f0e-nder-the-playhead-is-marked-iphone-webkit/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../private/tmp/claude-501/-Users-timofejsemikin-Developer-kadr/c909e203-bc40-4dfe-be2e-128e5d309047/scratchpad/pw-honest-base/qa-captions-honest-caption-15f0e-nder-the-playhead-is-marked-iphone-webkit/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [iphone-webkit] › e2e/qa-captions-honest.spec.ts:123:1 › Russian speech under music is taken for Russian by the Russian model itself: Whisper is never asked 
+
+    Error: expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  ["Один раз скачается 132 МБ, после этого субтитры работают без интернета.Скачать и сделать субтитрыНе сейчас", "Это не похоже на русскую речь: её прочитает другая модель. Один раз скачается 77 МБ, после этого субтитры работают без интернета.Скачать и сделать субтитрыНе сейчас"]
+
+      133 |   }).toPass({ timeout: 500_000 });
+      134 |   // One question, about the Russian model; before docs/20 a second one followed, for Whisper base: "77 МБ".
+    > 135 |   expect(asked).toHaveLength(1);
+          |                 ^
+      136 |   expect(asked[0]).not.toContain('77 МБ');
+      137 |   expect(requests.filter((u) => /whisper/i.test(u))).toEqual([]);
+      138 |   expect((await said(page)).join(' | ')).not.toContain('77 МБ');
+        at /Users/timofejsemikin/Developer/kadr/e2e/qa-captions-honest.spec.ts:135:17
+
+    Error Context: ../../../../private/tmp/claude-501/-Users-timofejsemikin-Developer-kadr/c909e203-bc40-4dfe-be2e-128e5d309047/scratchpad/pw-honest-base/qa-captions-honest-Russian-5b9a6-self-Whisper-is-never-asked-iphone-webkit/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../private/tmp/claude-501/-Users-timofejsemikin-Developer-kadr/c909e203-bc40-4dfe-be2e-128e5d309047/scratchpad/pw-honest-base/qa-captions-honest-Russian-5b9a6-self-Whisper-is-never-asked-iphone-webkit/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../private/tmp/claude-501/-Users-timofejsemikin-Developer-kadr/c909e203-bc40-4dfe-be2e-128e5d309047/scratchpad/pw-honest-base/qa-captions-honest-Russian-5b9a6-self-Whisper-is-never-asked-iphone-webkit/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [iphone-webkit] › e2e/qa-captions-honest.spec.ts:170:1 › a caption template tile is never empty while its demo loops, and the tiles do not all restart together 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 29
+
+      190 |   expect(seen.tiles).toBeGreaterThanOrEqual(4);
+      191 |   expect(seen.samples).toBeGreaterThan(60);
+    > 192 |   expect(seen.allEmpty).toBe(0);
+          |                         ^
+      193 |   expect(seen.empty).toBe(0);
+      194 | });
+      195 |
+        at /Users/timofejsemikin/Developer/kadr/e2e/qa-captions-honest.spec.ts:192:25
+
+    Error Context: ../../../../private/tmp/claude-501/-Users-timofejsemikin-Developer-kadr/c909e203-bc40-4dfe-be2e-128e5d309047/scratchpad/pw-honest-base/qa-captions-honest-a-capti-0f546-do-not-all-restart-together-iphone-webkit/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../private/tmp/claude-501/-Users-timofejsemikin-Developer-kadr/c909e203-bc40-4dfe-be2e-128e5d309047/scratchpad/pw-honest-base/qa-captions-honest-a-capti-0f546-do-not-all-restart-together-iphone-webkit/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../private/tmp/claude-501/-Users-timofejsemikin-Developer-kadr/c909e203-bc40-4dfe-be2e-128e5d309047/scratchpad/pw-honest-base/qa-captions-honest-a-capti-0f546-do-not-all-restart-together-iphone-webkit/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [iphone-webkit] › e2e/qa-captions-honest.spec.ts:43:1 › captions in Russian: the model downloads once and the screen says so; a part made again keeps the corrected rest; the word under the playhead is marked 
+    [iphone-webkit] › e2e/qa-captions-honest.spec.ts:123:1 › Russian speech under music is taken for Russian by the Russian model itself: Whisper is never asked 
+    [iphone-webkit] › e2e/qa-captions-honest.spec.ts:170:1 › a caption template tile is never empty while its demo loops, and the tiles do not all restart together 

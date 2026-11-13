@@ -41,7 +41,7 @@ export function learnPace(model: AsrModel, seconds: number, took: Record<string,
 }
 
 /** Phase of a speech job → its stage on the bar. */
-export const speechStage = (phase: 'download' | 'prepare' | 'listen' | 'transcribe'): string => (phase === 'download' ? 'model' : phase);
+export const speechStage = (phase: 'download' | 'load' | 'prepare' | 'listen' | 'transcribe'): string => (phase === 'download' || phase === 'load' ? 'model' : phase);
 
 /** The bar itself: redrawn every frame from the pace, without re-rendering the sheet around it. */
 export function PaceBar({ pace }: { pace: MutableRefObject<Pace | null> }) {

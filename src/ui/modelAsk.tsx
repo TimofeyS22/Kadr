@@ -44,6 +44,7 @@ export function useModelAsk(): { asked: ModelDownload | null; ask: (d: ModelDown
 const WHY: Record<NonNullable<ModelDownload['why']>, string> = {
   language: 'This does not sound like Russian speech: another speech model will read it.',
   memory: 'That speech model did not fit in this device’s memory: a smaller one is needed.',
+  russian: 'This is Russian speech: the Russian speech model reads it with far fewer mistakes.',
 };
 
 /** `yes`: the words of the button that agrees, for the job this sheet does ("Download and make captions"). */

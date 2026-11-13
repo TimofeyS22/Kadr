@@ -20,6 +20,9 @@ export const TOKEN_PAIRS: TokenPair[] = [
   { fg: '--text-primary', bg: '--track-audio', min: 4.5, what: 'Подпись на куске звука' },
   { fg: '--text-primary', bg: '--track-caption', min: 4.5, what: 'Подпись на куске субтитров' },
   { fg: '--mark-was', bg: '--track-audio', min: 3, what: 'Метки выбранного куска на дорожке' },
+  { fg: '--text-primary', bg: '--border-subtle', min: 4.5, what: 'Слово под иглой в строке субтитров' },
+  { fg: '--mark-was', bg: '--border-subtle', min: 3, what: 'Черта под словом под иглой' },
+  { fg: '--mark-was', bg: '--surface-raised', min: 3, what: 'Метки участка для субтитров на листе' },
   { fg: '--tick-major', bg: '--surface-panel', min: 3, what: 'Крупные деления шкалы' },
   { fg: '--tick-minor', bg: '--surface-panel', min: 3, what: 'Мелкие деления шкалы' },
 ];

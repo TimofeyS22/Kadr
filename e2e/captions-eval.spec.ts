@@ -5,7 +5,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const texts = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'eval', 'texts.json'), 'utf8')) as Record<string, string>;
-const models = (process.env.EVAL_MODELS ?? 'tiny,base,small,ru,ru-fast').split(',');
+// EVAL_PATH=default (docs/20 С5): the path of a finger — one tap on Captions, nothing chosen, the interface in
+// EVAL_LOCALE (ru by default) — instead of a model and a language picked by hand. The number people get.
+const byDefault = process.env.EVAL_PATH === 'default';
+const locale = process.env.EVAL_LOCALE ?? (byDefault ? 'ru' : 'en');
+const models = byDefault ? [`default-${locale}`] : (process.env.EVAL_MODELS ?? 'tiny,base,small,ru,ru-fast').split(',');
 const samples = (process.env.EVAL_SAMPLES ?? 'ru,ru_music,en,en_music,ru_live,ru_live_music').split(',');
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
 
@@ -38,7 +42,7 @@ test.afterAll(() => {
  * qa-model-consent.spec.ts), until the captions are on the timeline.
  */
 async function untilCaptions(page: Page, timeout: number) {
-  const yes = page.getByRole('button', { name: 'Download and make captions', exact: true });
+  const yes = page.getByRole('button', { name: /^(Download and make captions|Скачать и сделать субтитры)$/ });
   await expect(async () => {
     if (await yes.isVisible()) await yes.click();
     await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 1000 });
@@ -57,33 +61,37 @@ for (const model of models) for (const sample of samples) {
       await page?.context().close();
       page = await (await browser.newContext({ baseURL: test.info().project.use.baseURL })).newPage();
       await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.locale', 'en'); });
+      if (locale !== 'en') await page.addInitScript((l) => localStorage.setItem('kadr.locale', l), locale);
       pageModel = model;
     }
+    const ru = locale === 'ru';
     await page.goto('./');
-    await page.getByRole('button', { name: 'New project' }).click();
+    await page.getByRole('button', { name: ru ? 'Новый проект' : 'New project' }).click();
     await page.locator('.aspect-card', { hasText: '9:16' }).click();
     const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: 'Media', exact: true }).click();
+    await page.getByRole('button', { name: ru ? 'Медиа' : 'Media', exact: true }).click();
     await (await chooser).setFiles(path.join(import.meta.dirname, '..', 'fixtures', `eval_${sample}.mp4`));
     await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
-    await page.getByRole('button', { name: 'Close tools' }).click();
-    await page.getByRole('button', { name: 'Captions', exact: true }).click();
-    // The tool starts with the defaults (v1.3), or asks first when their model is not on the device (V-181): either
-    // way, on to the settings.
-    await page.getByRole('button', { name: 'Settings' }).or(page.getByRole('button', { name: 'Not now', exact: true })).click();
-    await page.getByRole('combobox', { name: 'Language' }).selectOption(lang === 'ru' ? 'russian' : 'english');
-    const chip = { tiny: 'Fast', base: 'Accurate', small: 'Most accurate', ru: 'Russian speech', 'ru-fast': 'Russian speech, compact' }[model];
-    await page.locator('.sheet .chip', { hasText: new RegExp(`${chip},`) }).first().click();
+    await page.getByRole('button', { name: ru ? 'Закрыть инструменты' : 'Close tools' }).click();
     const t0 = Date.now();
-    await page.getByRole('button', { name: 'Create captions' }).click();
+    await page.getByRole('button', { name: ru ? 'Субтитры' : 'Captions', exact: true }).click();
+    if (!byDefault) {
+      // The tool starts with the defaults (v1.3), or asks first when their model is not on the device (V-181): either
+      // way, on to the settings.
+      await page.getByRole('button', { name: 'Settings' }).or(page.getByRole('button', { name: 'Not now', exact: true })).click();
+      await page.getByRole('combobox', { name: 'Language' }).selectOption(lang === 'ru' ? 'russian' : 'english');
+      const chip = { tiny: 'Fast', base: 'Accurate', small: 'Most accurate', ru: 'Russian speech', 'ru-fast': 'Russian speech, compact' }[model];
+      await page.locator('.sheet .chip', { hasText: new RegExp(`^${chip}, (\\d+ MB|on this device)$`) }).first().click();
+      await page.getByRole('button', { name: 'Create captions' }).click();
+    }
     await untilCaptions(page, 840_000);
     const seconds = (Date.now() - t0) / 1000;
-    if (!(await page.locator('.sheet').isVisible())) await page.getByRole('button', { name: 'Edit captions', exact: true }).click();
+    if (!(await page.locator('.sheet').isVisible())) await page.getByRole('button', { name: ru ? 'Субтитры' : 'Edit captions', exact: true }).click();
     const dl = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Save as .srt' }).click();
+    await page.getByRole('button', { name: ru ? 'Сохранить .srt' : 'Save as .srt' }).click();
     const srt = fs.readFileSync(await (await dl).path()!, 'utf8');
     const hyp = srt.split('\n').filter((l) => l && !/^\d+$/.test(l) && !l.includes('-->')).join(' ');
-    const r = wer(norm(texts[sample.replace(/_(music|loud)$/, '')] ?? texts[lang]), norm(hyp));
+    const r = wer(norm(texts[sample.replace(/_(music|loud|quiet)$/, '')] ?? texts[lang]), norm(hyp));
     rows.push(`| ${model} | ${sample} | ${(r.wer * 100).toFixed(1)}% | ${(r.coverage * 100).toFixed(1)}% | ${seconds.toFixed(0)} |`);
     fs.writeFileSync(test.info().outputPath('captions.txt'), hyp);
   });

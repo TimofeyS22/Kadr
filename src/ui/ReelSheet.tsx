@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MOODS, type Mood } from '../core/music';
 import { player } from '../engine/player';
 import { CAPTION_CATEGORIES, CAPTION_PRESETS } from '../core/presets';
-import { CAPTION_LANGUAGES, defaultAsrModel, type DownloadConsent } from '../engine/captions';
+import { CAPTION_LANGUAGES, startingModel, type DownloadConsent } from '../engine/captions';
 import { formatTime } from './format';
 import { t } from '../lib/i18n';
 import { errorMessage, track } from '../lib/telemetry';
@@ -24,9 +24,10 @@ const KEY = 'kadr.reel';
 function loadOptions(): ReelOptions {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<ReelOptions> | null;
-    // The model has no control here: always the default for this interface language (GigaAM for Russian, v1.4).
-    return { ...DEFAULT_REEL, ...saved, model: defaultAsrModel() };
-  } catch { return { ...DEFAULT_REEL, model: defaultAsrModel() }; }
+    // The model has no control here: always the one that reads the speech's language best (docs/20 ADR-С2). Before, it
+    // came from the interface language, and Russian speech in an English interface was read by Whisper base.
+    return { ...DEFAULT_REEL, ...saved, model: 'auto' };
+  } catch { return { ...DEFAULT_REEL, model: 'auto' }; }
 }
 const saveOptions = (o: ReelOptions) => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch { /* storage blocked */ } };
 
@@ -73,7 +74,8 @@ export function ReelBody() {
       setPhase({ kind: 'running', label: t('Getting ready…') });
       const p = editor().project;
       const seconds = p ? projectDuration(p) : 0;
-      const stages = speechStages(opts.model, seconds, { pauses: true, music: !!opts.music });
+      const starts = startingModel(opts.model, opts.language || null);
+      const stages = speechStages(starts, seconds, { pauses: true, music: !!opts.music });
       pace.current = startPace(reelUsesSpeech(opts) ? stages : stages.filter((s) => s.id === 'pauses' || s.id === 'music'), performance.now());
       // A model that takes over later is asked about when it is needed; the wait for that answer is not this device's pace.
       const consent: DownloadConsent = { agreed: first?.model, ask: (d) => { waited = true; return ask(d); } };
@@ -81,7 +83,7 @@ export function ReelBody() {
         if (pace.current) reportPace(pace.current, stage, f, performance.now());
         if (l !== label) { label = l; setPhase({ kind: 'running', label: l }); }
       }, ac.signal, consent);
-      if (pace.current && !waited) learnPace(opts.model, seconds, finishPace(pace.current, performance.now()));
+      if (pace.current && !waited) learnPace(starts, seconds, finishPace(pace.current, performance.now()));
       setPhase({ kind: 'done', report });
     } catch (e) {
       setPhase({ kind: 'setup' });

@@ -26,7 +26,8 @@ export type AsrRequest =
   | { type: 'vad'; id: number; audio: Float32Array }
   | { type: 'heap'; id: number };
 export type AsrResponse =
-  | { type: 'download'; id: number; loaded: number; total: number }
+  /** `fetched`: bytes that came from the network in this load; the rest of `loaded` the device kept already. */
+  | { type: 'download'; id: number; loaded: number; total: number; fetched: number }
   | { type: 'ready'; id: number }
   | { type: 'result'; id: number; words: { t0: number; t1: number; text: string }[]; confidence?: number; chars?: number }
   | { type: 'vad'; id: number; probs: Float32Array }
@@ -127,15 +128,20 @@ let fileProgress: ((file: string, loaded: number, total: number) => void) | null
 
 /** Reports the download of a model's files as one total, as the answer to load request `id`. */
 function downloadProgress(id: number) {
-  const files = new Map<string, { loaded: number; total: number }>();
-  const report = (p: { status: string; file?: string; loaded?: number; total?: number }) => {
+  const files = new Map<string, { loaded: number; total: number; kept: number; parts: boolean }>();
+  /**
+   * `parts`: a large file, coming part by part. Its first report says how much of it the device keeps (ensureFile):
+   * that much is not fetched. Small files (configs, vocabularies) are not counted as fetched: a few kilobytes.
+   */
+  const report = (p: { status: string; file?: string; loaded?: number; total?: number }, parts = false) => {
     if (p.status !== 'progress' || !p.file) return;
-    files.set(p.file, { loaded: p.loaded ?? 0, total: p.total ?? 0 });
-    let loaded = 0, total = 0;
-    for (const f of files.values()) { loaded += f.loaded; total += f.total; }
-    post({ type: 'download', id, loaded, total });
+    const kept = files.get(p.file)?.kept ?? (parts ? p.loaded ?? 0 : 0);
+    files.set(p.file, { loaded: p.loaded ?? 0, total: p.total ?? 0, kept, parts });
+    let loaded = 0, total = 0, fetched = 0;
+    for (const f of files.values()) { loaded += f.loaded; total += f.total; if (f.parts) fetched += Math.max(0, f.loaded - f.kept); }
+    post({ type: 'download', id, loaded, total, fetched });
   };
-  fileProgress = (file, loaded, total) => report({ status: 'progress', file, loaded, total });
+  fileProgress = (file, loaded, total) => report({ status: 'progress', file, loaded, total }, true);
   // transformers.js reads a large file again from its kept parts: counted once, under the part loader's name.
   return (p: { status: string; file?: string; loaded?: number; total?: number }) => { if (!p.file || !isModelFileName(p.file)) report(p); };
 }

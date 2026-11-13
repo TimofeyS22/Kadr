@@ -67,7 +67,7 @@ for (const s of SAMPLES) {
     await page.getByRole('button', { name: 'Settings' }).or(page.getByRole('button', { name: 'Not now', exact: true })).click();
     await page.getByRole('combobox', { name: 'Language' }).selectOption({ label: 'Auto' });
     // EVAL_MODEL='Russian speech, compact' (a chip's label): detection as it runs with that model chosen.
-    if (process.env.EVAL_MODEL) await page.locator('.sheet .chip', { hasText: new RegExp(`^${process.env.EVAL_MODEL}, \\d+ MB$`) }).click();
+    if (process.env.EVAL_MODEL) await page.locator('.sheet .chip', { hasText: new RegExp(`^${process.env.EVAL_MODEL}, (\\d+ MB|on this device)$`) }).click();
     await page.getByRole('button', { name: 'Create captions' }).click();
     await untilCaptions(page, 540_000);
     const toast = page.locator('.toast', { hasText: 'Speech language:' });

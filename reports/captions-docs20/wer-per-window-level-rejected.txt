@@ -1,0 +1,6 @@
+ru-fast  ru_live            8.5%
+ru-fast  ru_live_music     44.8%
+ru-fast  ru_live_quiet      7.9%
+ru-fast  ru_loud           18.2%
+ru       ru_live            7.3%
+ru       ru_live_music     20.6%

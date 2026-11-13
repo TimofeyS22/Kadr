@@ -2,6 +2,7 @@
 // renderer as the video (ui/tiles.ts), so it shows exactly what the template gives. Made for one hand at 375 px: the
 // strip scrolls sideways under the thumb, a category tap jumps to its first template.
 import { useEffect, useRef, useState } from 'react';
+import { demoPhase } from '../core/captionDemo';
 import { t } from '../lib/i18n';
 
 export interface PickerItem { id: string; name: string; cat: string; /** Shown after the name, e.g. a value. */ note?: string }
@@ -41,6 +42,8 @@ export function StylePicker<T extends PickerItem>({ items, categories, value, on
     const root = strip.current;
     if (!root || !draw) return;
     const byId = new Map(items.map((it) => [it.id, it]));
+    // Neighbours start their loops apart (core/captionDemo): the strip never blinks as one (the owner, 2026-11-13).
+    const phase = new Map(items.map((it, i) => [it.id, demoPhase(i, DEMO_LOOP_S)]));
     const still = !animated || matchMedia('(prefers-reduced-motion: reduce)').matches;
     const visible = new Set<HTMLCanvasElement>();
     const paint = (c: HTMLCanvasElement, now: number) => {
@@ -49,7 +52,7 @@ export function StylePicker<T extends PickerItem>({ items, categories, value, on
       const dpr = Math.min(3, devicePixelRatio || 1);
       const w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
       if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
-      draw(it, c, still ? DEMO_STILL_S : (now / 1000) % DEMO_LOOP_S, () => paint(c, performance.now()));
+      draw(it, c, still ? DEMO_STILL_S : (now / 1000 + (phase.get(it.id) ?? 0)) % DEMO_LOOP_S, () => paint(c, performance.now()));
     };
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {

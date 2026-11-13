@@ -60,6 +60,8 @@ fs.rmSync(tmp, { recursive: true, force: true });
 
 const textsFile = path.join(root, 'e2e/eval/texts.json');
 const texts = JSON.parse(fs.readFileSync(textsFile, 'utf8'));
+// The same speech 26 dB quieter (docs/20 ADR-С7): a phone held far from the speaker. The reference is ru_live's.
+execFileSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', path.join(fx, 'eval_ru_live.mp4'), '-af', 'volume=-26dB', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', path.join(fx, 'eval_ru_live_quiet.mp4')]);
 texts.ru_live = picked.map((p) => p.text).join(' ');
 fs.writeFileSync(textsFile, `${JSON.stringify(texts, null, 2)}\n`);
 console.log(`live speech: ${picked.length} utterances, ${Number(d).toFixed(1)} s, ${texts.ru_live.split(' ').length} words`);

@@ -45,6 +45,22 @@ export function captionAt(c: Pick<CaptionClip, 'words' | 'wordsPerPage'>, t: num
 }
 
 /**
+ * Where the playhead stands in a caption's text at clip-local time `t` (the owner, 2026-11-13: «слово, на котором
+ * остановили просмотр, должно подсвечиваться»): the line (`page`), the word in it, and the word's place among all the
+ * clip's words (`index`). Between words and after the last one it is the word said last; before the first, the first:
+ * there is always a place to show, whatever the moment. Null for a caption without words.
+ */
+export function captionCursor(c: Pick<CaptionClip, 'words' | 'wordsPerPage'>, t: number): { page: number; word: number; index: number } | null {
+  const pages = captionPages(c.words, Math.max(1, c.wordsPerPage));
+  if (!pages.length) return null;
+  let page = 0, before = 0;
+  for (let i = 1; i < pages.length && pages[i][0].t0 <= t; i++) { before += pages[i - 1].length; page = i; }
+  let word = 0;
+  for (let i = 1; i < pages[page].length && pages[page][i].t0 <= t; i++) word = i;
+  return { page, word, index: before + word };
+}
+
+/**
  * A caption line's first word with a small first letter (v1.6, the owner: "a line should start with a small letter,
  * not a capital"). Recognizers start sentences with capitals, and a line is rarely a sentence. Abbreviations ("МГУ",
  * "NASA") and the English "I" keep theirs; quotes and brackets before the letter stay.
@@ -365,4 +381,57 @@ export function captionSource(p: Project): Project {
   const tracks = p.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => !background(c)) }));
   const voice = tracks.some((t) => !t.muted && t.clips.some((c) => (c.kind === 'video' || c.kind === 'audio') && !c.muted && !!p.assets[c.assetId]?.hasAudio));
   return voice ? { ...p, tracks } : p;
+}
+
+// ---------- Captions for parts of the video (the owner, 2026-11-13; docs/20 ADR-С6) ----------
+
+/** Stretches of the timeline in seconds: in order, not touching, inside [0, duration], none shorter than `min`. */
+export function normalizeRanges(ranges: readonly (readonly [number, number])[], duration: number, min = 0.1): [number, number][] {
+  const inside = ranges
+    .map(([a, b]): [number, number] => [Math.max(0, Math.min(a, b)), Math.min(duration, Math.max(a, b))])
+    .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && b - a >= min)
+    .sort((x, y) => x[0] - y[0]);
+  const out: [number, number][] = [];
+  for (const r of inside) {
+    const last = out[out.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else out.push([...r]);
+  }
+  return out;
+}
+
+/** Seconds the ranges cover (normalized ranges). */
+export const rangesSeconds = (ranges: readonly (readonly [number, number])[]): number => ranges.reduce((n, [a, b]) => n + (b - a), 0);
+
+/** Segments cut to the ranges: speech found by the detector never reaches outside the part that was asked for. */
+export function clipToRanges(segments: readonly (readonly [number, number])[], ranges: readonly (readonly [number, number])[]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const [a, b] of segments) for (const [r0, r1] of ranges) {
+    const x = Math.max(a, r0), y = Math.min(b, r1);
+    if (y > x) out.push([x, y]);
+  }
+  return out.sort((x, y) => x[0] - y[0]);
+}
+
+const middleIn = (w: CaptionWord, ranges: readonly (readonly [number, number])[]) => { const m = (w.t0 + w.t1) / 2; return ranges.some(([a, b]) => m >= a && m < b); };
+
+/**
+ * Captions made again for parts of the video: inside `ranges` the `fresh` words replace what was there, outside them
+ * the `old` words stay as they were, corrections included. All times are timeline seconds.
+ */
+export function mergeCaptionWords(old: readonly CaptionWord[], fresh: readonly CaptionWord[], ranges: readonly (readonly [number, number])[]): CaptionWord[] {
+  return [...old.filter((w) => !middleIn(w, ranges)), ...fresh.filter((w) => middleIn(w, ranges))].sort((x, y) => x.t0 - y.t0);
+}
+
+/** The words of a caption clip that it shows, in timeline seconds. */
+export function clipWordsOnTimeline(c: Pick<CaptionClip, 'start' | 'duration' | 'words'>): CaptionWord[] {
+  return c.words.filter((w) => w.t0 < c.duration && w.t1 > 0).map((w) => ({ ...w, t0: w.t0 + c.start, t1: w.t1 + c.start }));
+}
+
+/** Puts `words` (timeline seconds) on a caption clip, as a new clip of the same look starts and ends with its words. */
+export function setClipWords(c: CaptionClip, words: readonly CaptionWord[]): void {
+  const start = Math.max(0, words[0]?.t0 ?? c.start);
+  c.start = start;
+  c.duration = words.length ? words[words.length - 1].t1 + 0.5 - start : c.duration;
+  c.words = words.map((w) => ({ ...w, t0: w.t0 - start, t1: w.t1 - start }));
 }

@@ -250,6 +250,19 @@ export async function missingBytes(repo: string): Promise<number> {
   return missing;
 }
 
+/**
+ * Asks the browser to keep this site's data when the device runs low on space (navigator.storage.persist): without
+ * it the model parts are "best effort" and may be evicted, and the next captions would download 130–225 MB again
+ * (docs/20 ADR-С1). Asked once, when a download the person agreed to starts; Safari and Chromium answer without a
+ * prompt. The answer changes nothing here: a model that is gone is seen as missing and asked about again.
+ */
+let keptAsked = false;
+export async function keepModelsThroughPressure(): Promise<boolean> {
+  if (keptAsked || typeof navigator === 'undefined' || !navigator.storage?.persist) return false;
+  keptAsked = true;
+  try { return (await navigator.storage.persisted()) || (await navigator.storage.persist()); } catch { return false; }
+}
+
 /** An older Kadr's whole copy of the file is in transformers.js's cache (has() first: looking must not create it). */
 async function keptWhole(key: string, f: ModelFile): Promise<boolean> {
   if (typeof caches === 'undefined' || !(await caches.has(LEGACY).catch(() => false))) return false;

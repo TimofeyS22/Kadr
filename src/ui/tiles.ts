@@ -1,14 +1,15 @@
 // Live previews for the template pickers (v1.5), drawn by the same code as the video: buildFrame's caption and text
 // layers and the TextRasterizer. A tile shows the template on a demo phrase in the interface language.
+import { demoCaptionTime, demoCaptionWords, demoSettledTimes } from '../core/captionDemo';
 import { createCaptionClip, createProject, createTextClip } from '../core/defaults';
 import { visualLayer } from '../core/frame';
 import { splitForPair, type FontPair } from '../core/pairs';
 import type { CaptionPreset } from '../core/presets';
 import { PLACEHOLDERS } from '../core/previewWord';
-import type { CaptionClip, TextClip, TextStyle } from '../core/types';
+import type { CaptionClip, CaptionWord, TextClip, TextStyle } from '../core/types';
 import { ensureFont, fontCss, lookStyle, TextRasterizer, type Drawable } from '../engine/text';
 import { useLocale } from '../lib/i18n';
-import { DEMO_LOOP_S, type TileDraw } from './picker';
+import type { TileDraw } from './picker';
 
 /** The demo frame a template is drawn for (9:16, a third of 1080p: sharp enough for a 104 px tile). */
 const W = 360, H = 640;
@@ -51,36 +52,36 @@ function put(canvas: HTMLCanvasElement, d: Drawable | null, fit: number, layer?:
 
 // ---------- Captions ----------
 
-/** Three words, 0.45 s each, after a short pause: the loop shows the line (or each word) coming in again. */
-const LEAD = 0.3;
+/** Three words, then the settled line held to the end of the loop: a tile is never empty (core/captionDemo). */
 const demoWords = () => (useLocale.getState().locale === 'ru' ? ['Смотри', 'до', 'конца'] : ['Wait', 'for', 'it']);
-const clips = new Map<string, { clip: CaptionClip; w: number; h: number }>();
+const clips = new Map<string, { clip: CaptionClip; words: CaptionWord[]; w: number; h: number }>();
 
-function demo(pr: CaptionPreset): { clip: CaptionClip; w: number; h: number } {
-  const words = demoWords();
-  const key = `${pr.id}|${words.join(' ')}`;
+function demo(pr: CaptionPreset): { clip: CaptionClip; words: CaptionWord[]; w: number; h: number } {
+  const texts = demoWords();
+  const key = `${pr.id}|${texts.join(' ')}`;
   let c = clips.get(key);
   if (!c) {
-    const clip = createCaptionClip(words.map((text, i) => ({ t0: LEAD + i * 0.5, t1: LEAD + i * 0.5 + 0.45, text })), pr);
+    const words = demoCaptionWords(texts);
+    const clip = createCaptionClip(words, pr);
     // One size for the whole loop, from the largest settled line, so the text never jumps between words.
     let w = 1, h = 1;
-    for (let at = 0.44; at < DEMO_LOOP_S - LEAD; at += 0.5) {
+    for (const at of demoSettledTimes(words)) {
       const l = visualLayer(project, clip, clip.start + at);
       const d = l.source.kind === 'caption' ? raster.getCaption({ ...l.source, enter: 1, fill: 1, shown: l.source.words.length }, W, H) : null;
       if (d) { w = Math.max(w, d.w); h = Math.max(h, d.h); }
     }
-    c = { clip, w, h };
+    c = { clip, words, w, h };
     clips.set(key, c);
   }
   return c;
 }
 
-/** A caption template on its demo phrase at demo time `time`, as the video draws it (motion, highlight, karaoke). */
+/** A caption template on its demo phrase at loop time `time`, as the video draws it (motion, highlight, karaoke). */
 export const drawCaptionTile: TileDraw<CaptionPreset> = (pr, canvas, time, redraw) => {
-  const words = demoWords();
-  if (!fontReady(pr.style, words.join(' '), redraw)) { put(canvas, null, 0); return; }
-  const { clip, w, h } = demo(pr);
-  const layer = visualLayer(project, clip, time);
+  const texts = demoWords();
+  if (!fontReady(pr.style, texts.join(' '), redraw)) { put(canvas, null, 0); return; }
+  const { clip, words, w, h } = demo(pr);
+  const layer = visualLayer(project, clip, clip.start + demoCaptionTime(time, words));
   const d = layer.source.kind === 'caption' ? raster.getCaption(layer.source, W, H) : null;
   put(canvas, d, Math.min(0.88 / h, (0.9 * canvas.width) / canvas.height / w), layer, { x: clip.transform.x.v, y: clip.transform.y.v });
 };
