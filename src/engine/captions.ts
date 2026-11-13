@@ -340,6 +340,13 @@ export async function transcribeProject(
   }
 }
 
+/**
+ * The person said "not now" to the Russian model for Russian speech: not asked again while this page lives (DESIGN.md
+ * rule 7: nothing is pressed on anyone). The sheet still says the Russian model makes fewer mistakes, and it is one
+ * tap away under "Recognition".
+ */
+let russianDeclined = false;
+
 /** How many of the longest stretches of speech a Russian model reads before it says what language this is. */
 const EVIDENCE_WINDOWS = 3;
 
@@ -362,6 +369,7 @@ async function transcribeWith(
     if (agreed.has(m)) return true;
     const d = await download(m, why);
     if (d) {
+      if (why === 'russian' && russianDeclined) return false;
       if (!navigator.onLine) {
         if (why === 'russian') return false;
         // Offline before the first download: say what to do, not ask about a download that cannot start (docs/11 QA).
@@ -370,7 +378,7 @@ async function transcribeWith(
       const yes = await consent.ask(d);
       if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
       if (!yes) {
-        if (why === 'russian') return false;
+        if (why === 'russian') { russianDeclined = true; return false; }
         throw new DOMException('Cancelled', 'AbortError');
       }
     }

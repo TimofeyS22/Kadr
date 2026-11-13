@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
@@ -88,6 +88,16 @@ async function confirmDelete(page: Page) {
  * are in qa-model-consent.spec.ts). Every test starts with no model on the device, so the person says yes here…
  */
 const agreeToModel = (page: Page, yes = 'Download and make captions', timeout = 30_000) => page.getByRole('button', { name: yes, exact: true }).click({ timeout });
+/**
+ * docs/20 (ADR-С2): under the English interface a run starts with Whisper, and Russian speech brings one more
+ * question — the Russian model reads it with fewer mistakes. "Not now" keeps the model at work: the run goes on to
+ * `done` as it did before that question existed. (Yes is tested in qa-captions-honest.spec.ts.)
+ */
+async function keepWhisperForRussian(page: Page, done: Locator, timeout = 300_000) {
+  const ask = page.locator('.model-ask', { hasText: 'This is Russian speech' });
+  await expect(ask.or(done).first()).toBeVisible({ timeout });
+  if (await ask.isVisible()) await ask.getByRole('button', { name: 'Not now', exact: true }).click();
+}
 /** …or "Not now", which leaves the caption settings open (with a model on the device, "Settings" stops the run instead). */
 const notNow = (page: Page) => page.getByRole('button', { name: 'Not now', exact: true }).click({ timeout: 30_000 });
 
@@ -253,7 +263,13 @@ test('imports subtitles from an .srt file', async ({ page }) => {
 async function srtCaptions(page: Page) {
   await tool(page, 'Captions').click();
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Import .srt or .vtt' }).click();
+  // With sound in the project the tool starts by itself and asks about the speech model first (V-181): the settings,
+  // and the import, are behind "Not now". The question comes a moment after the sheet: whichever is there is answered.
+  const no = page.getByRole('button', { name: 'Not now', exact: true });
+  await expect(async () => {
+    if (await no.isVisible()) await no.click();
+    await page.getByRole('button', { name: 'Import .srt or .vtt' }).click({ timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
   await (await chooser).setFiles(fx('test.srt'));
   await expect(page.locator('.clip-caption')).toHaveCount(1);
 }
@@ -1646,6 +1662,7 @@ test('reel in one tap: from the home card to a shorter reel with captions, title
   await agreeToModel(page, 'Download and make the reel'); // it starts by itself: with the question, the first time
   const progress = sampleProgress(page, '.reel-done');
   const done = page.locator('.reel-done');
+  await keepWhisperForRussian(page, done);
   await expect(done).toBeVisible({ timeout: 300_000 }); // started by itself
   expectHonestProgress(await progress);
   await expect(done).toContainText('0:18');
@@ -1666,7 +1683,8 @@ test('reel in one tap: from the home card to a shorter reel with captions, title
   // Another language redoes the reel in it, once: the saved options keep "Auto".
   await lang.selectOption('english');
   await expect(done).toBeVisible({ timeout: 300_000 });
-  await expect(lang).toHaveValue('english');
+  // The old report may still be on screen for a moment after the choice: the new one is the one in English.
+  await expect(lang).toHaveValue('english', { timeout: 300_000 });
   await expect(done).not.toContainText('found by Kadr');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('kadr.reel') ?? '{}').language ?? '')).toBe('');
   // Undo all: back to the single untouched clip.
@@ -1676,6 +1694,7 @@ test('reel in one tap: from the home card to a shorter reel with captions, title
   await expect(page.locator('.tl-row.audio .clip')).toHaveCount(0);
   // Again, then check it in the editor and in the exported file.
   await page.getByRole('button', { name: 'Make the reel' }).click();
+  await keepWhisperForRussian(page, done); // Auto again: the same question, the same answer
   await expect(done).toBeVisible({ timeout: 300_000 });
   await page.getByRole('button', { name: 'Watch the reel' }).click();
   await expect(page.locator('.sheet')).toHaveCount(0);
@@ -1705,6 +1724,7 @@ test('reel in one tap: the preview, the photo and the file show the same reel, a
   await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
   await (await chooser).setFiles(fx('reel_ru.mp4'));
   await agreeToModel(page, 'Download and make the reel');
+  await keepWhisperForRussian(page, page.locator('.reel-done'));
   await expect(page.locator('.reel-done')).toBeVisible({ timeout: 300_000 });
   await page.getByRole('button', { name: 'Watch the reel' }).click();
   await page.getByRole('button', { name: 'Pause' }).click();

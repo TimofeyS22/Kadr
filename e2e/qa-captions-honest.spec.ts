@@ -139,7 +139,7 @@ test('Russian speech under music is taken for Russian by the Russian model itsel
   await expect(page.locator('.toast', { hasText: 'Язык речи: Русский' })).toBeVisible();
 });
 
-test('Auto in an English interface: Russian speech goes to the Russian model after one question; "Not now" keeps the model at work', async ({ page }) => {
+test('Auto in an English interface: Russian speech goes to the Russian model after one question; "Not now" keeps the model at work and is not asked again', async ({ page }) => {
   test.setTimeout(900_000);
   const requests = modelRequests(page);
   await open(page, 'en', 'eval_ru.mp4');
@@ -155,7 +155,18 @@ test('Auto in an English interface: Russian speech goes to the Russian model aft
   expect(requests.filter((u) => /gigaam|fastconformer/i.test(u))).toEqual([]);
   await expect(page.locator('.toast', { hasText: 'choose the Russian model' })).toBeVisible();
 
-  // Again, with a yes: the Russian model reads it, and every word of the first sentence is right.
+  // Again: after a "Not now" the question is not put again while the page lives (nothing is pressed on anyone).
+  await page.getByRole('button', { name: 'Create again…' }).click();
+  await page.getByRole('button', { name: 'Create captions' }).click();
+  await expect(page.getByRole('button', { name: 'Create again…' })).toBeVisible({ timeout: 400_000 });
+  expect(requests.filter((u) => /gigaam|fastconformer/i.test(u))).toEqual([]);
+
+  // A new visit, and a yes: the Russian model reads it, and every word of the first sentence is right.
+  await page.reload();
+  await expect(page.locator('.clip-caption')).toHaveCount(1);
+  const close = page.getByRole('button', { name: 'Close tools' });
+  if (await close.isVisible()) await close.click();
+  await page.getByRole('button', { name: 'Captions', exact: true }).click(); // the project has captions: their sheet
   await page.getByRole('button', { name: 'Create again…' }).click();
   await page.getByRole('button', { name: 'Create captions' }).click();
   await expect(ask).toContainText('This is Russian speech', { timeout: 400_000 });
