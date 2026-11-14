@@ -23,9 +23,6 @@ export const EXPLAINED_CONSOLE: { re: RegExp; why: string }[] = [
 
 const state = { pageErrors: [] as string[], console: [] as string[], network: [] as { method: string; url: string; body: number }[], blocked: [] as string[], expected: [] as RegExp[] };
 
-/** Patterns of console errors this test causes on purpose (a refused decoder, the network taken away). */
-export function expectedConsole(...re: RegExp[]) { state.expected.push(...re); }
-
 /** Registers the audits on every test of the spec file that calls it (privacy, page errors, error toasts, console). */
 export function audits(opts: { locale?: 'en' | 'ru'; quick?: boolean } = {}) {
   test.beforeEach(async ({ page }) => {
@@ -73,7 +70,6 @@ export function audits(opts: { locale?: 'en' | 'ru'; quick?: boolean } = {}) {
 
 export const tool = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
 export const sheet = (page: Page) => page.locator('.sheet');
-export const time = (page: Page) => page.locator('.time b').textContent();
 export const toastErrors = (page: Page) => page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0));
 /** Every toast shown so far on this page (info and errors). */
 export const toasts = (page: Page) => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts.slice());
@@ -183,103 +179,6 @@ export function grayAt(file: string, t: number, w = 108, h = 192): Buffer {
 
 /** Writes a note next to the test's results (numbers a reader of the run wants to see). */
 export const note = (info: TestInfo, name: string, text: string) => fs.writeFileSync(info.outputPath(name), text);
-
-// The preview tap of e2e/editor.spec.ts («WYSIWYG for sound»), shared here. Specs using it need
-// test.use({ bypassCSP: true, serviceWorkers: 'block' }) as that test does (the tap is test equipment).
-/**
- * Taps the preview mixer on the audio thread: an AudioWorklet sees every 128-sample render quantum of what the
- * realtime context sends to the speakers, numbered, and outputs silence. (A ScriptProcessor runs on the main
- * thread and repeats or drops blocks when it is busy — it made dropouts that were not in the preview.)
- */
-export async function tapPreviewSound(page: Page) {
-  const TAP = `
-    registerProcessor('tap', class extends AudioWorkletProcessor {
-      constructor() { super(); this.buf = new Float32Array(4096); this.n = 0; }
-      process(inputs) {
-        const ch = inputs[0];
-        for (let i = 0; i < 128; i++) this.buf[this.n + i] = ch.length > 1 ? (ch[0][i] + ch[1][i]) / 2 : ch.length ? ch[0][i] : 0;
-        this.n += 128;
-        if (this.n === 4096) { this.port.postMessage({ frame: currentFrame + 128 - 4096, d: this.buf }); this.buf = new Float32Array(4096); this.n = 0; }
-        return true;
-      }
-    });`;
-  await page.route('**/__tap-worklet.js', (r) => r.fulfill({ contentType: 'text/javascript', body: TAP }));
-  await page.addInitScript((code) => {
-    const blob = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-    const tap = { chunks: [] as { frame: number; d: Float32Array }[], rate: 0, error: '' };
-    (window as unknown as { __tap: typeof tap }).__tap = tap;
-    const connect = AudioNode.prototype.connect as (this: AudioNode, ...a: unknown[]) => AudioNode;
-    AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
-      const ctx = this.context;
-      if (args[0] instanceof AudioDestinationNode && ctx instanceof AudioContext && this instanceof GainNode) {
-        const master = this;
-        tap.rate = ctx.sampleRate;
-        void ctx.audioWorklet.addModule(new URL('__tap-worklet.js', location.href).href).catch(() => ctx.audioWorklet.addModule(blob)).then(() => {
-          const node = new AudioWorkletNode(ctx, 'tap');
-          node.port.onmessage = (e: MessageEvent<{ frame: number; d: Float32Array }>) => tap.chunks.push(e.data);
-          connect.call(master, node);
-          connect.call(node, ctx.destination);
-          (window as unknown as { __tapNode: AudioNode }).__tapNode = node;
-        }, (e: unknown) => { tap.error = String(e); });
-      }
-      return connect.apply(this, args);
-    } as typeof AudioNode.prototype.connect;
-  }, TAP);
-}
-
-/**
- * The preview, played from the start to the end in real time: what it sent to the speakers. A first short play wakes
- * the audio context (it starts suspended until a tap, which hides any delay); the measured play is the next one, as
- * most are. Right after its tap the page is kept busy for 0.8 s, as a phone is while it opens files and renders: the
- * sound must still start with the picture, not after.
- */
-export async function playPreviewSound(page: Page): Promise<{ played: Float32Array; rate: number }> {
-  // From the start: near the end the waking play would end before its Pause (a voice-over leaves the playhead there).
-  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
-  await page.waitForTimeout(300);
-  await page.getByRole('button', { name: 'Play', exact: true }).click();
-  await page.waitForTimeout(700);
-  await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
-  await page.waitForTimeout(300);
-  await page.evaluate(() => {
-    (window as unknown as { __tap: { chunks: unknown[] } }).__tap.chunks.length = 0;
-    window.addEventListener('click', (e) => { // after the app's own handler (React listens on its root)
-      // The path, not the target: React has already swapped the Play icon the tap landed on for Pause.
-      if (!e.composedPath().some((n) => n instanceof Element && n.classList.contains('play-btn'))) return;
-      (window as unknown as { __busy: number }).__busy = ((window as unknown as { __busy?: number }).__busy ?? 0) + 1;
-      const until = performance.now() + 800;
-      while (performance.now() < until) { /* busy */ }
-    });
-  });
-  await page.getByRole('button', { name: 'Play', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible({ timeout: 30_000 }); // stopped at the end
-  const { b64, rate, gaps, error, count } = await page.evaluate(() => {
-    const { chunks, rate } = (window as unknown as { __tap: { chunks: { frame: number; d: Float32Array }[]; rate: number } }).__tap;
-    let gaps = 0;
-    for (let k = 1; k < chunks.length; k++) if (chunks[k].frame !== chunks[k - 1].frame + 4096) gaps++;
-    const all = new Float32Array(chunks.length * 4096);
-    chunks.forEach((c, k) => all.set(c.d, k * 4096));
-    const u = new Uint8Array(all.buffer);
-    let s = '';
-    for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
-    return { b64: btoa(s), rate, gaps, error: (window as unknown as { __tap: { error: string } }).__tap.error, count: chunks.length };
-  });
-  expect(error, 'the tap worklet loads').toBe('');
-  expect(await page.evaluate(() => (window as unknown as { __busy?: number }).__busy), 'the page was kept busy after the tap').toBe(1);
-  expect(count, 'the tap heard the preview').toBeGreaterThan(0);
-  expect.soft(gaps, 'the tap saw every render quantum').toBe(0);
-  const tb = Buffer.from(b64, 'base64');
-  return { played: new Float32Array(tb.buffer, tb.byteOffset, tb.byteLength / 4), rate };
-}
-
-/** The exported sound at the preview's rate, (L + R) / 2 like the tap: ffmpeg's own `-ac 1` sums stereo at 0.707 each. */
-export async function exportedSound(file: string, rate: number): Promise<Float32Array> {
-  const { execFileSync } = await import('node:child_process');
-  const eb = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-af', 'pan=mono|c0=0.5*c0+0.5*c1', '-ar', String(rate), '-f', 'f32le', '-'], { maxBuffer: 64 << 20 });
-  return new Float32Array(eb.buffer, eb.byteOffset, eb.byteLength / 4);
-}
-
 
 /** Writes the open project back to IndexedDB with `edit` applied and opens it again (a crafted project, many cases). */
 export async function putProject<T>(page: Page, edit: (p: T) => void) {
