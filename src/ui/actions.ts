@@ -6,7 +6,7 @@ import { endWithVideo, fitTrack, type LibraryTrack, type MusicManifest } from '.
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
   clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, forwardIn, insertMain, isSound, mainTrack, mirrorPrivacyKeys, placeClip, projectDuration,
-  needsSoundJob, sourceTime, splitClip, SOUND_SYNC,
+  needsSoundJob, reversedSpan, sourceTime, splitClip, SOUND_SYNC,
 } from '../core/timeline';
 import type { Asset, CaptionClip, CaptionWord, Clip, ImageClip, Project, SoundClip, VideoClip } from '../core/types';
 import { deleteBlob, getBlob } from '../storage/db';
@@ -481,7 +481,7 @@ export async function reverseSelected(): Promise<void> {
     d.assets[rev.id] = rev;
     const g = findClip(d, clip.id);
     if (!g || g.clip.kind !== 'video') return;
-    g.clip.reversedFrom = { assetId: g.clip.assetId, in: g.clip.in };
+    g.clip.reversedFrom = { assetId: g.clip.assetId, in: g.clip.in, span: reversedSpan(d, g.clip) };
     g.clip.assetId = rev.id;
     g.clip.in = 0;
     delete g.clip.audioAssetId;

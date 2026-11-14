@@ -125,8 +125,9 @@ interface ClipBase { id: string; start: number; duration: number }
 interface Visual { transform: Transform; blend: BlendMode; transitionIn?: Transition }
 interface MediaRef {
   assetId: string; in: number; speed: number;
-  /** Set on a reversed clip so it can be turned back. */
-  reversedFrom?: { assetId: string; in: number };
+  /** Set on a reversed clip so it can be turned back: the forward video, where the reversed range starts in it and, since
+   *  SW-C-2, how long that range is (the reversed file can come out a frame longer than it). */
+  reversedFrom?: { assetId: string; in: number; span?: number };
   /** Speed ramp: multipliers of `speed` along the source range (see core/speed.ts). */
   curve?: number[];
 }

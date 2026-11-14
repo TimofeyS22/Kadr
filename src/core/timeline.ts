@@ -169,8 +169,17 @@ function mapClipAnims(c: Clip, fn: (t: number) => number): void {
  */
 export function forwardIn(p: Project, c: MediaClip): number | null {
   if (!c.reversedFrom || !p.assets[c.reversedFrom.assetId]) return null;
-  const rev = p.assets[c.assetId];
-  return r6(c.reversedFrom.in + Math.max(0, (rev?.duration ?? 0) - c.in - sourceSpan(c)));
+  // The length of the reversed range, not of the reversed file: in Chromium the file came out a frame longer than the
+  // range, and the clip came back a frame late (SW-C-2). Projects reversed before the range was kept use the file's length.
+  const { span } = c.reversedFrom;
+  const range = span !== undefined && Number.isFinite(span) && span > 0 ? span : p.assets[c.assetId]?.duration ?? 0;
+  return r6(c.reversedFrom.in + Math.max(0, range - c.in - sourceSpan(c)));
+}
+
+/** The forward range a reverse turns around, in seconds: as `engine/reverse` takes it, never past the end of the file. */
+export function reversedSpan(p: Project, c: MediaClip): number {
+  const end = Math.min(p.assets[c.assetId]?.duration ?? Infinity, c.in + sourceSpan(c));
+  return r6(Math.max(0, end - c.in));
 }
 
 /** After the picture of a clip turned backwards: a hidden area follows what it hides, so its keyframes turn too. */

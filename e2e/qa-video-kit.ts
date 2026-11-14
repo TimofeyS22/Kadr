@@ -192,6 +192,27 @@ export const rmsOf = (x: Float32Array, from = 0, to = x.length) => { let s = 0; 
 
 // ---------- docs/11 §3.3–3.4: history and persistence ----------
 
+/** The project as saved in IndexedDB ('kadr'/'kv', key p:<id>), without its save time and bookkeeping. */
+export async function savedProject(page: Page): Promise<string> {
+  const id = /#\/p\/([^/?]+)/.exec(page.url())![1];
+  return page.evaluate(async (key) => {
+    const db = await new Promise<IDBDatabase>((ok, ko) => { const r = indexedDB.open('kadr'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+    const p = await new Promise<Record<string, unknown> | undefined>((ok, ko) => {
+      const r = db.transaction('kv').objectStore('kv').get(key);
+      r.onsuccess = () => ok(r.result as Record<string, unknown> | undefined); r.onerror = () => ko(r.error);
+    });
+    db.close();
+    if (!p) return '';
+    delete p.updatedAt; delete p.rev; delete p.writer;
+    return JSON.stringify(p);
+  }, `p:${id}`);
+}
+/** The saved project once the autosave after the last edit has landed. */
+export async function settledProject(page: Page, prev?: string): Promise<string> {
+  if (prev !== undefined) await expect.poll(() => savedProject(page), { timeout: 10_000 }).not.toBe(prev);
+  let cur = await savedProject(page);
+  for (;;) { await page.waitForTimeout(900); const next = await savedProject(page); if (next === cur) return cur; cur = next; }
+}
 /** Every toast shown so far in the test (any kind), for edges that must say something. */
 export const toastsSeen = (page: Page) => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts);
 /** Waits until a toast with this text has been shown. */
