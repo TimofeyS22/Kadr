@@ -16,9 +16,13 @@ async function open(page: Page, locale: 'ru' | 'en', file: string) {
     // Every line the work panel shows, in order: what the person reads while captions are made.
     const seen: string[] = [];
     (window as unknown as { __said: string[] }).__said = seen;
+    // And every toast: one lives six seconds, and a check that comes after the work may come after it too.
+    const notes: string[] = [];
+    (window as unknown as { __notes: string[] }).__notes = notes;
     new MutationObserver(() => {
       const s = document.querySelector('.ck-work-label')?.textContent ?? '';
       if (s && seen[seen.length - 1] !== s) seen.push(s);
+      document.querySelectorAll('.toast').forEach((el) => { const t = el.textContent ?? ''; if (t && !notes.includes(t)) notes.push(t); });
     }).observe(document, { subtree: true, childList: true, characterData: true });
   }, locale);
   await page.goto('./');
@@ -31,6 +35,7 @@ async function open(page: Page, locale: 'ru' | 'en', file: string) {
   await page.getByRole('button', { name: locale === 'ru' ? 'Закрыть инструменты' : 'Close tools' }).click();
 }
 const said = (page: Page) => page.evaluate(() => (window as unknown as { __said: string[] }).__said.slice());
+const toasts = (page: Page) => page.evaluate(() => (window as unknown as { __notes: string[] }).__notes.slice());
 const forget = (page: Page) => page.evaluate(() => { (window as unknown as { __said: string[] }).__said.length = 0; });
 const lines = (page: Page) => page.locator('.caption-row input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
 /** Requests for the large files of speech models (their parts on the site, or ranges of them on Hugging Face). */
@@ -136,7 +141,7 @@ test('Russian speech under music is taken for Russian by the Russian model itsel
   expect(asked[0]).not.toContain('77 МБ');
   expect(requests.filter((u) => /whisper/i.test(u))).toEqual([]);
   expect((await said(page)).join(' | ')).not.toContain('77 МБ');
-  await expect(page.locator('.toast', { hasText: 'Язык речи: Русский' })).toBeVisible();
+  expect((await toasts(page)).join(' | ')).toContain('Язык речи: Русский');
 });
 
 test('Auto in an English interface: Russian speech goes to the Russian model after one question; "Not now" keeps the model at work and is not asked again', async ({ page }) => {
@@ -153,7 +158,7 @@ test('Auto in an English interface: Russian speech goes to the Russian model aft
   await page.getByRole('button', { name: 'Not now', exact: true }).click();
   await expect(page.locator('.caption-row').first()).toBeVisible({ timeout: 400_000 });
   expect(requests.filter((u) => /gigaam|fastconformer/i.test(u))).toEqual([]);
-  await expect(page.locator('.toast', { hasText: 'choose the Russian model' })).toBeVisible();
+  await expect.poll(async () => (await toasts(page)).join(' | ')).toContain('choose the Russian model');
 
   // Again: after a "Not now" the question is not put again while the page lives (nothing is pressed on anyone).
   await page.getByRole('button', { name: 'Create again…' }).click();

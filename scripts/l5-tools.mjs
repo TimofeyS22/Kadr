@@ -715,6 +715,22 @@ const SCENARIOS = {
   // Г4 on the whole path: GigaAM chosen by hand reads the live samples in the editor, and the tab lives.
   'captions-gigaam-live': () => gigaamSpeech('eval_ru_live.mp4'),
   'captions-gigaam-music': () => gigaamSpeech('eval_ru_live_music.mp4'),
+  // Г4, what ends Safari on the second GigaAM run in a row: a pause between two pages (does the first page's memory
+  // need time to go?), and the same page making captions again (the worker is reused: the path a person takes).
+  'wait-90': async () => { await sleep(90_000); return { waitedS: 90 }; },
+  'captions-gigaam-again': async () => {
+    const first = await gigaamSpeech('eval_ru_live.mp4');
+    const runs = [{ werPercent: first.werPercent, seconds: first.seconds }];
+    for (let n = 2; n <= 3; n++) {
+      await tap('Создать заново…');
+      await sleep(2000);
+      const t = Date.now();
+      await tap('Создать субтитры');
+      await waitFor('captions again', () => js("return [...document.querySelectorAll('button')].some((b) => b.offsetParent !== null && b.textContent.trim() === 'Создать заново…') && document.querySelectorAll('.caption-row').length > 0"), 300_000);
+      runs.push({ werPercent: wer(TEXTS.ru_live, (await captionLines()).join(' ')), seconds: Math.round((Date.now() - t) / 100) / 10 });
+    }
+    return { runs, chips: await js("return (window.__l5.said || []).slice(-4)") };
+  },
   // Г4: does GigaAM (225 MB, heap about 500 MB) start and read on this iPhone? Through the site's own ?diag page.
   'diag-gigaam': async () => {
     await call('POST', `${S}/url`, { url: `${URL_}?diag` });
