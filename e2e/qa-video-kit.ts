@@ -1,6 +1,6 @@
 // Shared steps of the sweep's lane C tests (docs/21, `qa-video-*.spec.ts`): video and canvas functions, checked by the
 // 15 points of docs/11 §3. The same steps as in editor.spec.ts, so a number here means what it means there.
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -96,6 +96,19 @@ export async function scrubTo(page: Page, px: number, shown?: string) {
   if (shown) await expect.poll(() => time(page)).toBe(shown);
 }
 
+/** The value `name` of a sheet on the Scale, its tab chosen if the part has more than one. */
+export async function valueOf(page: Page, name: string) {
+  const tab = sheet(page).getByRole('tab', { name: new RegExp(`^${name}( ?,|$)`) });
+  if (await tab.count()) await tab.click();
+  return sheet(page).getByRole('slider', { name, exact: true });
+}
+/** Drives a Scale value to an end with the keys (`Home` or `End`) and returns where it stopped. */
+export async function valueToEnd(page: Page, name: string, key: 'Home' | 'End') {
+  const s = await valueOf(page, name);
+  await s.press(key);
+  return Number(await s.getAttribute('aria-valuenow'));
+}
+
 /**
  * «Done» on a sheet. While the sheet processes sound on the device (natural pitch after a speed change, 0.8 s after it),
  * the first tap only warns that it is still running (`useSheetGuard`); then the job is waited out and Done tapped again.
@@ -117,6 +130,18 @@ export async function setSpeedPreset(page: Page, name: string) {
   await tool(page, 'Speed').click();
   await page.getByRole('radio', { name, exact: true }).click();
   await doneSheet(page);
+}
+
+/** Opens a tool sheet, nudges its first value, picks its second option and closes it. */
+export async function useSheet(page: Page, name: string) {
+  await tool(page, name).click();
+  await expect(sheet(page)).toBeVisible();
+  const slider = sheet(page).locator('.ck-scale-strip, input[type=range]:not([aria-label="Position in the clip"])').first();
+  if (await slider.count()) { await slider.focus(); await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); }
+  const radios = sheet(page).getByRole('radio');
+  if ((await radios.count()) > 1) await radios.nth(1).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(sheet(page)).toHaveCount(0);
 }
 
 /** Runs an export of the given format from the export sheet and returns the saved file. */
@@ -146,6 +171,31 @@ export function probe(file: string): Probe {
 }
 export const durationOf = (file: string) => Number(probe(file).format.duration);
 
+/** RGB 135×240 of a picture, or of a video's frame number `n`. */
+export function rgbAt(file: string, n?: number): Buffer {
+  const pick = n === undefined ? '' : `select=eq(n\\,${n}),`;
+  return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', `${pick}scale=135:240`, '-fps_mode', 'passthrough', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
+}
+export const meanAbsDiff = (a: Buffer, b: Buffer) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; };
+/** Share of pixels that differ by more than `thr` levels. */
+export const changed = (a: Buffer, b: Buffer, thr: number) => { let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > thr) n++; return n / a.length; };
+/** The largest mean signed R, G or B difference of two RGB pictures, 0–255. */
+export function colourCast(a: Buffer, b: Buffer): number {
+  const sum = [0, 0, 0];
+  for (let i = 0; i < a.length; i++) sum[i % 3] += a[i] - b[i];
+  return Math.max(...sum.map((v) => Math.abs(v) / (a.length / 3)));
+}
+/** The largest mean signed channel difference of any 15×15 block of two 135×240 RGB pictures. */
+export function worstBlockCast(a: Buffer, b: Buffer): number {
+  let worst = 0;
+  for (let by = 0; by < 240; by += 15) for (let bx = 0; bx < 135; bx += 15) {
+    const sum = [0, 0, 0];
+    for (let y = by; y < by + 15; y++) for (let x = bx; x < bx + 15; x++) for (let c = 0; c < 3; c++) { const i = (y * 135 + x) * 3 + c; sum[c] += a[i] - b[i]; }
+    worst = Math.max(worst, ...sum.map((v) => Math.abs(v) / (15 * 15)));
+  }
+  return worst;
+}
+
 /** The preview canvas as a picture once it holds still with the playhead at `t` (60 px per second on the timeline). */
 export async function previewAt(page: Page, info: Out, t: number): Promise<string> {
   await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, t * 60);
@@ -167,6 +217,35 @@ export async function previewAt(page: Page, info: Out, t: number): Promise<strin
   const shot = info.outputPath(`preview-${t.toFixed(3)}.png`);
   execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', whole, '-vf', `crop=w='min(${w},iw-${x})':h='min(${h},ih-${y})':x=${x}:y=${y}`, shot]);
   return shot;
+}
+
+/**
+ * WYSIWYG (docs/11 §3.2): exports the video once, then at each point compares the preview with the photo export and the
+ * video's frame, in colour — the limits of editor.spec.ts «WYSIWYG for every look tool» (matching frames: mean ≤ 2,
+ * worst block ≤ 5; an export without the cutout gave 91).
+ */
+/** `maxCast` per point overrides the call's: a bright full frame matches with a larger cast (editor.spec «in motion»: ≤ 0.83). */
+export async function expectSameFrames(page: Page, info: TestInfo, title: string, points: { name: string; t: number; maxCast?: number }[], maxCast: number, fps = 30) {
+  const video = await exportVideo(page, info);
+  const rows: string[] = [];
+  for (const { name, t: at, maxCast: own } of points) {
+    const t = Math.round(at * fps) / fps;
+    const limit = own ?? maxCast;
+    const preview = rgbAt(await previewAt(page, info, t));
+    const photo = rgbAt(await exportPhoto(page, info));
+    const frame = rgbAt(video, Math.round(t * fps));
+    const [dp, df, cp, cf] = [meanAbsDiff(preview, photo), meanAbsDiff(preview, frame), colourCast(preview, photo), colourCast(preview, frame)];
+    const [bp, bf] = [worstBlockCast(preview, photo), worstBlockCast(preview, frame)];
+    rows.push(`${name} @ ${t.toFixed(2)} s (playhead ${await time(page)}): photo ${dp.toFixed(2)} / cast ${cp.toFixed(2)} / block ${bp.toFixed(1)}, video ${df.toFixed(2)} / cast ${cf.toFixed(2)} / block ${bf.toFixed(1)}`);
+    expect.soft(dp, `photo, ${name}`).toBeLessThan(4);
+    expect.soft(df, `video frame, ${name}`).toBeLessThan(6);
+    expect.soft(cp, `photo colour cast, ${name}`).toBeLessThan(limit);
+    expect.soft(cf, `video frame colour cast, ${name}`).toBeLessThan(limit);
+    expect.soft(bp, `photo, worst block, ${name}`).toBeLessThan(20);
+    expect.soft(bf, `video frame, worst block, ${name}`).toBeLessThan(20);
+  }
+  console.log(`${title} (${info.project.name}):\n${rows.join('\n')}`);
+  return video;
 }
 
 /** The source frame a picture (or a video's frame `n`) shows, read from counter.mp4's 8-stripe binary code. */
@@ -213,6 +292,73 @@ export async function settledProject(page: Page, prev?: string): Promise<string>
   let cur = await savedProject(page);
   for (;;) { await page.waitForTimeout(900); const next = await savedProject(page); if (next === cur) return cur; cur = next; }
 }
+export const firstDiff = (a: string, b: string) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return `at ${i}: …${a.slice(Math.max(0, i - 80), i + 80)}… vs …${b.slice(Math.max(0, i - 80), i + 80)}…`; };
+
+/** What a viewer sees and hears: gray 45×80 frames at 20/40/60/80% and the sound's 100 ms RMS envelope. */
+export function fingerprint(file: string) {
+  const duration = durationOf(file);
+  const frames = [0.2, 0.4, 0.6, 0.8].map((f) => execFileSync('ffmpeg', ['-v', 'error', '-ss', (f * duration).toFixed(2), '-i', file, '-frames:v', '1', '-vf', 'scale=45:80', '-f', 'rawvideo', '-pix_fmt', 'gray', '-']));
+  const pcm = pcmOf(file);
+  const env = Array.from({ length: Math.floor(pcm.length / 800) }, (_, i) => rmsOf(pcm, i * 800, (i + 1) * 800));
+  return { duration, frames, env };
+}
+
+/**
+ * docs/11 §3.3–3.4 for a chain of actions, as editor.spec.ts «history and persistence…»: the saved project after each
+ * one; every undo gives exactly the project before its action and every redo the one after; a reload keeps the
+ * project byte for byte and exports the same picture and sound.
+ */
+export function historyProof(page: Page, info: TestInfo, opts: { sound?: boolean } = {}) {
+  const states: string[] = [], names: string[] = [];
+  return {
+    async start() { states.push(await settledProject(page)); names.push('start'); },
+    /** One user action; it must change the project. */
+    async act(name: string, run: () => Promise<void>) {
+      await run();
+      names.push(name);
+      states.push(await settledProject(page, states[states.length - 1]).catch((e: Error) => { throw new Error(`"${name}" changed nothing in the saved project: ${e.message.split('\n')[0]}`); }));
+      await closeTools(page);
+    },
+    async undoRedo() {
+      const undo = page.getByRole('button', { name: 'Undo' }), redo = page.getByRole('button', { name: 'Redo' });
+      let cur = states[states.length - 1];
+      for (let k = states.length - 2; k >= 0; k--) {
+        await undo.click();
+        cur = await settledProject(page, cur).catch((e: Error) => { throw new Error(`undo of "${names[k + 1]}" changed nothing: ${e.message.split('\n')[0]}`); });
+        expect(cur === states[k], `undo of "${names[k + 1]}" gives the project before it; ${firstDiff(cur, states[k])}`).toBe(true);
+      }
+      for (let k = 1; k < states.length; k++) {
+        expect(await redo.isEnabled(), `redo is still possible before "${names[k]}"`).toBe(true);
+        await redo.click();
+        cur = await settledProject(page, cur).catch((e: Error) => { throw new Error(`redo of "${names[k]}" changed nothing: ${e.message.split('\n')[0]}`); });
+        expect(cur === states[k], `redo of "${names[k]}" gives the project after it; ${firstDiff(cur, states[k])}`).toBe(true);
+      }
+      await expect(redo).toBeDisabled();
+      console.log(`history (${info.project.name}): ${names.slice(1).join(', ')} — each one undo step, exact both ways`);
+    },
+    async reload() {
+      const clips = page.locator('.tl-row .clip'), n = await clips.count();
+      const before = fingerprint(await exportVideo(page, info));
+      const saved = await settledProject(page);
+      await page.reload();
+      await expect(clips).toHaveCount(n);
+      expect(await settledProject(page) === saved, `the reload keeps the project; ${firstDiff(await savedProject(page), saved)}`).toBe(true);
+      const after = fingerprint(await exportVideo(page, info));
+      expect(Math.abs(after.duration - before.duration)).toBeLessThan(0.05);
+      const frameDiff = before.frames.map((f, k) => meanAbsDiff(f, after.frames[k]));
+      const moved = before.frames.map((f, k) => changed(f, after.frames[k], 24));
+      const envDiff = Math.max(0, ...before.env.map((v, i) => Math.abs(v - (after.env[i] ?? 0))));
+      console.log(`reload (${info.project.name}): frame diff ${frameDiff.map((d) => d.toFixed(2)).join(', ')} of 255, pixels changed ${moved.map((c) => `${(c * 100).toFixed(1)}%`).join(', ')}; sound envelope diff ${envDiff.toFixed(4)}`);
+      for (const d of frameDiff) expect(d, 'frames after the reload, mean difference').toBeLessThan(1);
+      for (const c of moved) expect(c, 'frames after the reload, share of changed pixels').toBeLessThan(0.005);
+      if (opts.sound !== false) {
+        expect(Math.max(...before.env), 'there is sound to compare').toBeGreaterThan(0.01);
+        expect(envDiff).toBeLessThan(0.01);
+      }
+    },
+  };
+}
+
 /** Every toast shown so far in the test (any kind), for edges that must say something. */
 export const toastsSeen = (page: Page) => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts);
 /** Waits until a toast with this text has been shown. */
