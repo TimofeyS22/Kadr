@@ -5404,7 +5404,7 @@ test('the file is ready for the web: the index first, tagged as BT.709 video (au
   expect(Number(p.format.duration)).toBeGreaterThan(5);
 });
 
-test('a camera recording cut short by a crash comes back (audit V-250)', async ({ page }, info) => {
+test('a camera recording cut short by a crash comes back (audit V-250)', async ({ page }) => {
   test.setTimeout(120_000);
   // Runs on WebKit too since the take is stored as bytes (docs/19 ADR-М5): this test's WebKit context refuses Blobs in
   // storage, as a private Safari tab does, and the seconds of the take used to stay in memory and go with the crash.
