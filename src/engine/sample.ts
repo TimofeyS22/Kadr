@@ -10,6 +10,7 @@ import { anim, createProject, createTextClip, createVideoClip } from '../core/de
 import { insertMain, placeClip, setTransition } from '../core/timeline';
 import type { Asset, Project } from '../core/types';
 import { importFile } from './importer';
+import { t } from '../lib/i18n';
 import { MediaError } from './media';
 import { matchStreamRange } from './videoRange';
 
@@ -99,7 +100,8 @@ async function synthClip(scene: number): Promise<Asset> {
 export async function createSampleProject(): Promise<Project> {
   const a = await synthClip(0);
   const b = await synthClip(1);
-  const p = createProject('Sample project', '9:16');
+  // In the person's language, as everything they see (SW-A-1): the name in the list and the title in the frame.
+  const p = createProject(t('Sample project'), '9:16');
   p.assets = { [a.id]: a, [b.id]: b };
   return produce(p, (d) => {
     insertMain(d, createVideoClip(a), 0);
@@ -107,7 +109,7 @@ export async function createSampleProject(): Promise<Project> {
     c2.filter = { id: 'vivid', intensity: 0.8 };
     insertMain(d, c2, 99);
     setTransition(d, c2.id, { type: 'slideLeft', duration: 0.6 });
-    const title = createTextClip(0.3, 'Made with Kadr');
+    const title = createTextClip(0.3, t('Made with Kadr'));
     title.duration = 3;
     title.animIn = { type: 'pop', duration: 0.5 };
     title.transform.y = anim(-0.3);

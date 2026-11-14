@@ -245,6 +245,8 @@ export const RU: Record<string, string> = {
   'Recognize speech': 'Распознать речь',
   'From my text': 'По моему тексту',
   'Your text': 'Ваш текст',
+  'Sample project': 'Пример проекта',
+  'Made with Kadr': 'Сделано в Kadr',
   'Paste the text you read': 'Вставьте текст, который вы читали',
   'Words come from your text, timing from the recording. The speech model still runs to place each word.': 'Слова — из вашего текста, время — из записи. Модель речи всё равно нужна, чтобы расставить каждое слово.',
   'The text did not match the speech: captions are from recognition.': 'Текст не совпал с речью: субтитры по распознаванию.',
