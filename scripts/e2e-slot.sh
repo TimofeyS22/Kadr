@@ -5,7 +5,7 @@
 #   sh scripts/e2e-slot.sh npx playwright test --workers=1 ...
 #   E2E_SLOTS=1 sh scripts/e2e-slot.sh npm run check
 # The slots live in the repository's shared .git, so every worktree sees the same ones; a slot whose holder died is freed.
-SLOTS=${E2E_SLOTS:-2}
+SLOTS=${E2E_SLOTS:-3}
 ROOT="$(git rev-parse --git-common-dir)/e2e-slots"
 mkdir -p "$ROOT"
 waited=0
