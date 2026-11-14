@@ -76,8 +76,18 @@ const ASPECT_HINT: Record<AspectId, string> = {
   '9:16': 'TikTok · Reels · Shorts', '16:9': 'YouTube', '1:1': 'Square', '4:5': 'Instagram feed', '3:4': 'Portrait',
 };
 
-export const browserSupported = (): boolean =>
-  'VideoDecoder' in window && 'VideoEncoder' in window && !!document.createElement('canvas').getContext('webgl2');
+/**
+ * A yes holds for the page: each question made a WebGL context, Home asked on every render and let none go, so they
+ * piled up to the browser's limit (16 in WebKit), which dropped the oldest with a console error, and each held GPU
+ * memory until collected (SW-D-3). The probe's own context is let go at once; a no (no context made) is asked again.
+ */
+let saidYes = false;
+export const browserSupported = (): boolean => {
+  if (saidYes) return true;
+  const gl = 'VideoDecoder' in window && 'VideoEncoder' in window ? document.createElement('canvas').getContext('webgl2') : null;
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  return (saidYes = !!gl);
+};
 
 const open = (id: string) => { location.hash = `#/p/${id}`; };
 /** Width / height of a project's frame (a list from before aspects were kept counts as vertical). */
