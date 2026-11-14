@@ -188,6 +188,50 @@ export function normalizeGain(measured: number, target: number, maxBoostDb: numb
   return 10 ** (Math.min(maxBoostDb, target - measured) / 20);
 }
 
+/**
+ * The gain that brings a sound to `target` LUFS as it comes out of a `ceilingDb` limiter (Limiter), not before it. On
+ * peaks far above the loudness the limiter takes back what a gain measured before it adds: a 120 BPM beat at +6 dB came
+ * out at −18.4 LUFS instead of −14 (SW-D-5). `pass(each)` feeds the whole sound to `each` once per call, window by
+ * window; the inputs may be changed. The first pass measures the sound as it is; only when the limiter would act do
+ * further passes measure it through the limiter and correct the gain (a secant on dB: up to `passes` in all, the last
+ * gain is not measured again). The boost stays within `maxBoostDb`; silence keeps gain 1.
+ */
+export async function limitedGain(
+  pass: (each: (chans: Float32Array[]) => void) => Promise<void>, channels: number, sr: number, target: number, maxBoostDb: number,
+  ceilingDb = -1, passes = 4,
+): Promise<number> {
+  const raw = new LoudnessMeter(channels, sr);
+  let peak = 0;
+  await pass((chans) => {
+    for (const c of chans) for (let i = 0; i < c.length; i++) { const v = c[i] < 0 ? -c[i] : c[i]; if (v > peak) peak = v; }
+    raw.push(chans);
+  });
+  const measured = raw.integrated();
+  const first = normalizeGain(measured, target, maxBoostDb);
+  if (!Number.isFinite(measured) || peak * first <= 10 ** (ceilingDb / 20)) return first;
+  const most = Math.min(maxBoostDb, target - measured + maxBoostDb); // dB; the cap of normalizeGain, wherever the start
+  const through = async (db: number) => {
+    const meter = new LoudnessMeter(channels, sr);
+    const limiter = new Limiter(channels, sr, 10 ** (db / 20), ceilingDb);
+    await pass((chans) => meter.push(limiter.process(chans)));
+    meter.push(limiter.flush());
+    return meter.integrated();
+  };
+  const dbCap = Math.min(maxBoostDb, most);
+  let g0 = 20 * Math.log10(first), out0 = await through(g0);
+  if (!Number.isFinite(out0) || Math.abs(target - out0) < 0.1) return first;
+  let g1 = Math.min(dbCap, g0 + (target - out0));
+  for (let k = 3; k < passes; k++) {
+    if (g1 === g0) break;
+    const out1 = await through(g1);
+    if (!Number.isFinite(out1) || Math.abs(target - out1) < 0.1) break;
+    const slope = (out1 - out0) / (g1 - g0); // dB out per dB of gain: 1 unlimited, less the harder the limiter works
+    const next = Math.min(dbCap, g1 + (target - out1) / (slope > 0.05 ? slope : 0.05));
+    [g0, out0, g1] = [g1, out1, next];
+  }
+  return 10 ** (g1 / 20);
+}
+
 /** "Enhance voice" tone and dynamics (mono): rumble cut, less mud, presence, air, gentle compression. */
 export function voiceChain(sr: number): (x: Float32Array) => void {
   const stages = [

@@ -4,7 +4,7 @@ import {
   AudioBufferSource, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, getFirstEncodableAudioCodec,
 } from 'mediabunny';
 import { MemoryTarget } from './memTarget';
-import { Limiter, LoudnessMeter, normalizeGain, voiceChain } from '../core/dsp';
+import { Limiter, limitedGain, voiceChain } from '../core/dsp';
 import { VOICE_LABEL, VOICE_PITCH, voiceStages, type VoiceId } from '../core/voicefx';
 import { SOUND_SYNC, expectedAudioKey, keepsPitch } from '../core/timeline';
 import type { Asset, AudioClip, Project, SoundClip } from '../core/types';
@@ -102,13 +102,16 @@ export const VOICE_TARGET_LUFS = -16;
  * with a -1 dBFS limiter. Two passes: the first measures the processed loudness, the second applies it.
  */
 export async function enhanceAsset(p: Project, assetId: string, onProgress: (f: number) => void, signal: AbortSignal): Promise<Asset> {
-  // Measured as heard: the mono voice plays on both stereo channels (dual mono is +3 dB vs one channel).
-  const meter = new LoudnessMeter(2, SR);
-  let chain = voiceChain(SR);
-  await eachWindow(p, assetId, 1, ([m], done) => { chain(m); meter.push([m, m]); onProgress(done * 0.3); }, signal);
+  // Measured as heard: the mono voice plays on both stereo channels (dual mono is +3 dB vs one channel). Through the
+  // limiter, as the export's even loudness (SW-D-5): a pass more only when the limiter would hold the voice down.
+  let passes = 0;
+  const gain = await limitedGain(async (each) => {
+    const chain = voiceChain(SR);
+    passes++;
+    await eachWindow(p, assetId, 1, ([m], done) => { chain(m); each([m, m]); onProgress(Math.min(0.3, (passes - 1 + done) / passes * 0.3)); }, signal);
+  }, 2, SR, VOICE_TARGET_LUFS, 18);
   onProgress(0.3);
-  const gain = normalizeGain(meter.integrated(), VOICE_TARGET_LUFS, 18);
-  chain = voiceChain(SR);
+  const chain = voiceChain(SR);
   const limiter = new Limiter(1, SR, gain, -1);
   const name = (p.assets[assetId]?.name ?? 'sound').replace(/ \(clean\)$/, '');
   return processAssetAudio(p, assetId, `${name} (enhanced)`, {

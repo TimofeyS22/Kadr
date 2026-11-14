@@ -9,7 +9,7 @@ import { MemoryTarget } from './memTarget';
 import { diskFile } from './opfs';
 import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
-import { Limiter, LoudnessMeter, normalizeGain } from '../core/dsp';
+import { Limiter, limitedGain } from '../core/dsp';
 import { buildFrame } from '../core/frame';
 import { withoutGuides } from '../core/music';
 import { avcBaseline } from '../core/avc';
@@ -128,18 +128,25 @@ class MixStream {
   get progress(): number { return this.total ? this.done / this.total : 1; }
   due(untilS: number): boolean { return !this.finished && this.done < untilS * SAMPLE_RATE; }
 
-  /** Pre-pass: measures integrated loudness (BS.1770-4) and sets the gain for -14 LUFS. */
+  /**
+   * Pre-pass: measures integrated loudness (BS.1770-4) and sets the gain for -14 LUFS as the file comes out of the
+   * limiter (SW-D-5). A mix the limiter leaves alone is rendered once; one it would hold down is rendered again, up to
+   * three times more, through the limiter.
+   */
   async normalize(signal: AbortSignal, onProgress: (f: number) => void): Promise<void> {
-    const meter = new LoudnessMeter(2, SAMPLE_RATE);
-    for (let i = 0; i < this.total; i += 10 * SAMPLE_RATE) {
-      if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
-      const j = Math.min(this.total, i + 10 * SAMPLE_RATE);
-      const b = await renderAudioWindow(this.p, this.pool, i / SAMPLE_RATE, j / SAMPLE_RATE, SAMPLE_RATE);
-      meter.push([b.getChannelData(0), b.getChannelData(1)]);
-      onProgress(j / this.total);
-      await yieldToUi();
-    }
-    this.limiter = new Limiter(2, SAMPLE_RATE, normalizeGain(meter.integrated(), PLATFORM_LUFS, 12), -1);
+    let passes = 0;
+    const pass = async (each: (chans: Float32Array[]) => void) => {
+      passes++;
+      for (let i = 0; i < this.total; i += 10 * SAMPLE_RATE) {
+        if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
+        const j = Math.min(this.total, i + 10 * SAMPLE_RATE);
+        const b = await renderAudioWindow(this.p, this.pool, i / SAMPLE_RATE, j / SAMPLE_RATE, SAMPLE_RATE);
+        each([b.getChannelData(0), b.getChannelData(1)]);
+        onProgress(Math.min(1, (passes - 1 + j / this.total) / passes));
+        await yieldToUi();
+      }
+    };
+    this.limiter = new Limiter(2, SAMPLE_RATE, await limitedGain(pass, 2, SAMPLE_RATE, PLATFORM_LUFS, 12), -1);
   }
 
   /** Next window of audio; may be null for a window the limiter holds back entirely. */
