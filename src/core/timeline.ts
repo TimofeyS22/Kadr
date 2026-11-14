@@ -521,10 +521,13 @@ export function applyTransitionToAll(p: Project, tr: Transition | null): void {
   for (const c of mainTrack(p).clips.slice(1)) setTransition(p, c.id, tr);
 }
 
-/** Copies a video clip's sound to an audio track and mutes the video clip. Returns the audio clip id. */
+/**
+ * Copies a video clip's sound to an audio track and mutes the video clip. Returns the audio clip id. A muted clip has no
+ * sound to take out: it is on a track of its own already, or turned off. Taken again, it played twice, 6 dB louder (SW-C-1).
+ */
 export function detachAudio(p: Project, id: string): string | null {
   const f = findClip(p, id);
-  if (!f || f.clip.kind !== 'video' || !p.assets[f.clip.assetId]?.hasAudio) return null;
+  if (!f || f.clip.kind !== 'video' || f.clip.muted || !p.assets[f.clip.assetId]?.hasAudio) return null;
   const c = f.clip;
   const a: AudioClip = { kind: 'audio', id: uid(), assetId: c.assetId, start: c.start, duration: c.duration, in: c.in, speed: c.speed, curve: c.curve, volume: c.volume, muted: false, fadeIn: c.fadeIn, fadeOut: c.fadeOut };
   copyFields<Sound>(SOUND_FIELDS, c, a);

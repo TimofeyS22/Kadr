@@ -252,11 +252,13 @@ export function duplicateSelected(): void {
 }
 
 export function detachSelectedAudio(): void {
-  const { selection, commit, toast } = editor();
+  const { selection, commit, toast, project } = editor();
   if (!selection) return;
+  const clip = project ? findClip(project, selection)?.clip : undefined;
   let id: string | null = null;
   commit((d) => { id = detachAudio(d, selection); });
-  toast(id ? t('Audio extracted to its own track') : t('This clip has no audio'));
+  // A muted clip has nothing to give (SW-C-1): its sound is on a track already, or the person turned it off.
+  toast(id ? t('Audio extracted to its own track') : clip?.kind === 'video' && clip.muted ? t('The sound of this clip is off or already on its own track') : t('This clip has no audio'));
 }
 
 /** Edits one clip by id inside an undoable commit. */

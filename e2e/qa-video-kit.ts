@@ -182,6 +182,15 @@ export function counterAt(file: string, n?: number): number {
   return v;
 }
 
+/** Mono 8 kHz samples of a file's sound. */
+export function pcmOf(file: string, rate = 8000): Float32Array {
+  const b = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', String(rate), '-f', 'f32le', '-']);
+  return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
+}
+export const rmsOf = (x: Float32Array, from = 0, to = x.length) => { let s = 0; for (let i = from; i < to; i++) s += x[i] * x[i]; return Math.sqrt(s / Math.max(1, to - from)); };
+
+// ---------- docs/11 §3.3–3.4: history and persistence ----------
+
 /** Every toast shown so far in the test (any kind), for edges that must say something. */
 export const toastsSeen = (page: Page) => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts);
 /** Waits until a toast with this text has been shown. */
