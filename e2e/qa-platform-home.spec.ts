@@ -89,6 +89,23 @@ test('names: a blank rename keeps the name; a long name with emoji, quotes and a
   expect(await toastErrors(page)).toEqual([]);
 });
 
+test('a new project after one is deleted gets a name no other project has (Q-3 §3.5)', async ({ page }) => {
+  await page.goto('./');
+  await newProject(page);
+  await backHome(page);
+  await newProject(page);
+  await backHome(page);
+  const [newest, older] = await projectNames(page);
+  expect(newest).not.toBe(older);
+  await page.getByRole('button', { name: `Delete ${older}` }).click();
+  await page.getByRole('dialog', { name: /^Delete “/ }).getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.getByRole('button', { name: `Open ${older}` })).toHaveCount(0);
+  await newProject(page);
+  await backHome(page);
+  const names = await projectNames(page);
+  expect(new Set(names).size, `names on Home: ${names.join(', ')}`).toBe(names.length);
+});
+
 test('Home asks about WebGL once a page: its renders (renames here) make no GPU context and leave none alive (Q-3 §3.7, SW-D-3)', async ({ page }) => {
   await page.addInitScript(() => {
     const made: WebGL2RenderingContext[] = [];

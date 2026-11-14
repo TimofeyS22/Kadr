@@ -205,7 +205,12 @@ export function Home() {
   }, [route]);
 
   async function create(aspect: AspectId) {
-    const p = createProject(t('Project {n}', { n: (projects?.length ?? 0) + 1 }), aspect);
+    // The next number no project has: after a delete, «Project 2» was made beside the «Project 2» still there, two rows
+    // nobody could tell apart, whose backups took one file name (SW-D-2).
+    const taken = new Set(projects?.map((m) => m.name));
+    let n = (projects?.length ?? 0) + 1;
+    while (taken.has(t('Project {n}', { n }))) n++;
+    const p = createProject(t('Project {n}', { n }), aspect);
     try {
       await within(saveProject(p), STORAGE_WAIT_MS, () => { throw new Error(t('the browser’s storage does not answer')); });
     } catch (e) {
