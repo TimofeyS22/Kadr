@@ -66,6 +66,12 @@ export const expectedAudioKey = (c: SoundClip): string => {
   return key && `${key}~${SOUND_SYNC}`;
 };
 
+/**
+ * Whether the clip's settings need a sound made on the device: only when its file has a sound. A silent video at 2× (its
+ * pitch kept by default) or with noise reduction asked for one, and the export failed with «This clip has no sound» (SW-C-4).
+ */
+export const needsSoundJob = (p: Project, c: SoundClip): boolean => expectedAudioKey(c) !== '' && !!p.assets[c.assetId]?.hasAudio;
+
 /** Asset to play for a clip's sound: the processed one if it matches the clip's settings, else the source. */
 export function soundAssetId(c: SoundClip): string {
   const key = c.audioKey ?? (c.denoise ? 'd' : '');

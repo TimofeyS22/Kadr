@@ -81,12 +81,13 @@ export async function closeTools(page: Page) {
   if (await close.isVisible()) await close.click();
 }
 
-/** Selects a timeline clip (a tap on an already selected clip would deselect it); retried, as the clip may re-render. */
+/** Selects a timeline clip (a tap on an already selected clip would deselect it); retried, as the clip may re-render
+ *  (at load 40 on the shared Mac one try took over 3 s). */
 export async function selectClip(page: Page, clip: Locator) {
   await expect(async () => {
     if (!(await clip.getAttribute('class'))?.includes(' sel')) await clip.click();
-    await expect(clip).toHaveClass(/ sel/, { timeout: 1000 });
-  }).toPass({ timeout: 10_000 });
+    await expect(clip).toHaveClass(/ sel/, { timeout: 3000 });
+  }).toPass({ timeout: 30_000 });
 }
 
 /** The playhead at `px` timeline pixels (60 a second), waiting for the clock to read `shown`. */
@@ -194,5 +195,5 @@ export const rmsOf = (x: Float32Array, from = 0, to = x.length) => { let s = 0; 
 /** Every toast shown so far in the test (any kind), for edges that must say something. */
 export const toastsSeen = (page: Page) => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts);
 /** Waits until a toast with this text has been shown. */
-export const expectToast = (page: Page, text: string | RegExp) =>
-  expect.poll(async () => (await toastsSeen(page)).some((x) => (typeof text === 'string' ? x.includes(text) : text.test(x))), { message: `a toast "${text}"` }).toBe(true);
+export const expectToast = (page: Page, text: string | RegExp, timeout = 20_000) =>
+  expect.poll(async () => (await toastsSeen(page)).some((x) => (typeof text === 'string' ? x.includes(text) : text.test(x))), { message: `a toast "${text}"`, timeout }).toBe(true);

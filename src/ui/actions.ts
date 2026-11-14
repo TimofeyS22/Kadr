@@ -6,7 +6,7 @@ import { endWithVideo, fitTrack, type LibraryTrack, type MusicManifest } from '.
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
   clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, forwardIn, insertMain, isSound, mainTrack, mirrorPrivacyKeys, placeClip, projectDuration,
-  sourceTime, splitClip, SOUND_SYNC,
+  needsSoundJob, sourceTime, splitClip, SOUND_SYNC,
 } from '../core/timeline';
 import type { Asset, CaptionClip, CaptionWord, Clip, ImageClip, Project, SoundClip, VideoClip } from '../core/types';
 import { deleteBlob, getBlob } from '../storage/db';
@@ -407,7 +407,7 @@ export async function updateClipSound(clipId: string, change: (c: SoundClip) => 
   const clip = f.clip;
   const key = expectedAudioKey(clip);
   if (key && clip.audioKey === key && clip.audioAssetId && p.assets[clip.audioAssetId]) return;
-  const r = key ? await (await import('../engine/audiofx')).prepareClipSound(p, clip, onProgress, signal) : null;
+  const r = key && needsSoundJob(p, clip) ? await (await import('../engine/audiofx')).prepareClipSound(p, clip, onProgress, signal) : null;
   // Attaching the processed sound is not an edit of its own: undo goes straight back to the previous settings.
   editor().amend((d) => {
     if (r) {
@@ -426,7 +426,7 @@ export async function updateClipSound(clipId: string, change: (c: SoundClip) => 
 export const staleSoundClips = (p: Project): SoundClip[] =>
   p.tracks.flatMap((tr) => tr.clips.filter(isSound)).filter((c) => {
     const key = expectedAudioKey(c);
-    return key !== '' && !(c.audioKey === key && c.audioAssetId && p.assets[c.audioAssetId]);
+    return needsSoundJob(p, c) && !(c.audioKey === key && c.audioAssetId && p.assets[c.audioAssetId]);
   });
 
 /** Clips whose sound was processed by an older version (before the sync fix): rebuilt once when the project opens. */

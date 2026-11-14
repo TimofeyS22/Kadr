@@ -3,7 +3,8 @@
 // persistence across tools», «extreme speeds, 10× and 0.1×»). This file holds point 5, the edges, which the matrix had as ✗.
 import { expect, test, type Page } from '@playwright/test';
 import {
-  audited, closeTools, exportAs, expectToast, importFiles, mainClips, newProject, pcmOf, rmsOf, selectClip, tool,
+  audited, closeTools, doneSheet, exportAs, exportVideo, expectToast, importFiles, mainClips, newProject, pcmOf, probe, rmsOf, selectClip,
+  setSpeedPreset, tool,
 } from './qa-video-kit';
 
 audited();
@@ -38,4 +39,26 @@ test('Extract audio twice gives the clip\'s sound once: the second tap adds no c
   const undone = await level();
   expect(undone / before).toBeGreaterThan(0.89);
   expect(undone / before).toBeLessThan(1.12);
+});
+
+test('a video with no sound at 2×, with noise reduction on: no error, and the export makes the file — no sound to prepare (SW-C-4)', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  const main = mainClips(page);
+  await newProject(page);
+  await importFiles(page, 'Media', ['walk.mp4', 'landscape.mp4']); // walk: 5 s, no sound; landscape: 6 s with a tone
+  await expect(main).toHaveCount(2);
+  await selectClip(page, main.nth(0));
+  await setSpeedPreset(page, '2×'); // natural pitch is on by default: the sheet would make a pitch-kept sound
+  await selectClip(page, main.nth(0));
+  await tool(page, 'Volume').click();
+  await page.getByRole('switch', { name: 'Reduce background noise' }).check();
+  await doneSheet(page);
+  await closeTools(page);
+  // The audit (afterEach) fails on any error toast; the file is whole: 2.5 s of walk at 2× and the 6 s with its tone.
+  const file = await exportVideo(page, info);
+  const p = probe(file);
+  expect(Math.abs(Number(p.format.duration) - 8.5)).toBeLessThan(0.05);
+  expect(p.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
+  const x = pcmOf(file);
+  expect(rmsOf(x, 8000 * 3, 8000 * 8), 'the tone of the second clip is in the file').toBeGreaterThan(0.05);
 });

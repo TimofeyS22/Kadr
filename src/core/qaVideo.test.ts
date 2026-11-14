@@ -2,8 +2,8 @@
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createProject, createVideoClip } from './defaults';
-import { detachAudio, insertMain, mainTrack } from './timeline';
-import type { Asset, Project } from './types';
+import { detachAudio, expectedAudioKey, insertMain, mainTrack, needsSoundJob } from './timeline';
+import type { Asset, Project, VideoClip } from './types';
 
 const asset = (id: string, duration = 6): Asset => ({
   id, kind: 'video', name: id, mime: 'video/mp4', size: 1, duration, width: 1280, height: 720, hasAudio: true,
@@ -37,3 +37,26 @@ describe('SW-C-1: a clip\'s sound is taken out once', () => {
   });
 });
 
+describe('SW-C-4: a clip whose file has no sound needs no sound made', () => {
+  const withClip = (hasAudio: boolean, set: Partial<VideoClip>): [Project, VideoClip] => {
+    let p = createProject('t', '9:16');
+    p.assets = { a: { ...asset('a'), hasAudio } };
+    p = produce(p, (d) => { const c = createVideoClip(d.assets.a); Object.assign(c, set); insertMain(d, c, 0); });
+    return [p, mainTrack(p).clips[0] as VideoClip];
+  };
+  it('a silent video at 2× (pitch kept), with noise reduction, enhanced or with a voice: nothing to make', () => {
+    for (const set of [{ speed: 2 }, { denoise: true }, { enhance: true }, { voice: 'robot' as const }]) {
+      const [p, c] = withClip(false, set);
+      expect(expectedAudioKey(c), JSON.stringify(set)).not.toBe('');
+      expect(needsSoundJob(p, c), JSON.stringify(set)).toBe(false);
+    }
+  });
+  it('the same settings on a video with sound still make it', () => {
+    for (const set of [{ speed: 2 }, { denoise: true }]) {
+      const [p, c] = withClip(true, set);
+      expect(needsSoundJob(p, c), JSON.stringify(set)).toBe(true);
+    }
+    const [p, c] = withClip(true, {});
+    expect(needsSoundJob(p, c), 'plain settings: the source plays').toBe(false);
+  });
+});
