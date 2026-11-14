@@ -203,3 +203,40 @@ test('a caption template tile is never empty while its demo loops, and the tiles
   expect(seen.allEmpty).toBe(0);
   expect(seen.empty).toBe(0);
 });
+
+test('the speech model does not stay behind with a page that leaves: its worker ends on pagehide, a run in flight ends like Cancel, and captions work again', async ({ page }) => {
+  test.setTimeout(600_000);
+  // docs/20 Г4: a page in the back-forward cache kept its worker and the model's heap (484 MB for GigaAM); on the
+  // iPhone 15 the next page's model then did not fit and Safari ended the session. Playwright's WebKit caches no
+  // pages, so the page is told it is leaving the way the browser tells it.
+  const speech = () => page.workers().filter((w) => /asr\.worker/.test(w.url())).length;
+  const leave = () => page.evaluate(() => { window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: true })); });
+  // Back out of the cache: the storage, closed for the time away (storage/bfcache), opens again.
+  const comeBack = () => page.evaluate(() => { window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true })); });
+  await open(page, 'ru', 'speech_ru.mp4');
+  await page.getByRole('button', { name: 'Субтитры', exact: true }).click();
+  await page.getByRole('button', { name: 'Скачать и сделать субтитры', exact: true }).click();
+  await expect(page.locator('.caption-row').first()).toBeVisible({ timeout: 400_000 });
+  expect(speech()).toBe(1);
+  await leave();
+  await expect.poll(speech).toBe(0);
+  await comeBack();
+
+  // The page came back: captions are made again, by a new worker, without a download.
+  await forget(page);
+  await page.getByRole('button', { name: 'Создать заново…' }).click();
+  await page.getByRole('button', { name: 'Создать субтитры' }).click();
+  await expect(page.getByRole('button', { name: 'Создать заново…' })).toBeVisible({ timeout: 300_000 });
+  expect((await said(page)).join(' | ')).not.toMatch(/Скачиваем|скачается/);
+  expect(speech()).toBe(1);
+
+  // Leaving in the middle of a run: the sheet is back on its settings, with no error.
+  await page.getByRole('button', { name: 'Создать заново…' }).click();
+  await page.getByRole('button', { name: 'Создать субтитры' }).click();
+  await expect(page.locator('.ck-work-label')).toBeVisible({ timeout: 120_000 });
+  await leave();
+  await comeBack();
+  await expect(page.getByRole('button', { name: 'Создать субтитры' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.toast.error')).toHaveCount(0);
+  await expect.poll(speech).toBe(0);
+});

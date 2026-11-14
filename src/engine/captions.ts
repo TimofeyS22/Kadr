@@ -65,7 +65,8 @@ if (typeof document !== 'undefined') {
     sessionStorage.removeItem(WORKING_KEY);
   } catch { /* storage off */ }
   document.addEventListener('visibilitychange', markWorking);
-  addEventListener('pagehide', () => { working = null; markWorking(); }); // closing the page on purpose
+  // Closing the page on purpose; and the model does not stay behind with a page nobody sees (dropSpeechModel).
+  addEventListener('pagehide', () => { working = null; markWorking(); dropSpeechModel(); });
 }
 
 /** `m`, or the lighter model that replaces it on this device (it did not fit before). */
@@ -231,7 +232,21 @@ function getWorker(): Worker {
 function retire(w: Worker): void {
   if (worker === w) worker = null;
   w.terminate();
-  w.dispatchEvent(new ErrorEvent('error', { message: 'the speech engine restarted' })); // nothing left waits forever
+  endFlights(w, 'restarted'); // nothing left waits forever
+}
+
+/**
+ * Requests in flight, by worker, each with the way to end it when its worker is ended: told directly. An event
+ * dispatched on a terminated Worker is not something to wait on: WebKit did not deliver it to a request in flight
+ * (e2e/qa-captions-honest, 2026-11-14), and the sheet stayed on "Starting the speech model…".
+ */
+/** Ends when the page leaves; a new one for the page that comes back (dropSpeechModel). */
+let leaving = new AbortController();
+const flights = new Map<Worker, Set<(why: 'restarted' | 'gone') => void>>();
+function endFlights(w: Worker, why: 'restarted' | 'gone'): void {
+  const all = flights.get(w);
+  flights.delete(w);
+  for (const end of all ?? []) end(why);
 }
 
 /** ONNX Runtime ran out of WASM memory (iPhone, docs/12): said plainly, the engine's own words go to the log. */
@@ -276,11 +291,16 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
     let settled = false;
     const done = () => {
       w.removeEventListener('message', onMessage); w.removeEventListener('error', onError); signal?.removeEventListener('abort', onAbort);
+      flights.get(w)?.delete(ended);
       if (settled) return;
       settled = true;
       if (--inFlight === 0) { idle = setTimeout(releaseSpeechModel, IDLE_MS); awake?.(); awake = null; }
     };
     const onAbort = () => { done(); reject(new DOMException('Cancelled', 'AbortError')); };
+    // The page left and took the worker with it (dropSpeechModel): the run ends like Cancel, without an error.
+    const onGone = () => { done(); reject(new DOMException('Cancelled', 'AbortError')); };
+    /** The worker was ended under this request: by the page leaving, or after its engine failed (retire). */
+    const ended = (why: 'restarted' | 'gone') => (why === 'gone' ? onGone() : onError(new ErrorEvent('error', { message: 'the speech engine restarted' })));
     // While the version check below runs, Cancel still works (the request is no longer in flight).
     const cancellable = () => signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
     // The worker script itself failed to load (offline before captions were ever used, or a deploy removed it under
@@ -319,6 +339,8 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
     signal?.addEventListener('abort', onAbort);
     w.addEventListener('message', onMessage);
     w.addEventListener('error', onError);
+    if (!flights.has(w)) flights.set(w, new Set());
+    flights.get(w)!.add(ended);
     w.postMessage(msg, 'audio' in msg ? [msg.audio.buffer] : []);
   });
 }
@@ -333,9 +355,27 @@ export async function transcribeProject(
   p: Project, choice: AsrChoice, language: string | null, onProgress: (p: CaptionProgress) => void, signal: AbortSignal, consent: DownloadConsent,
   ranges?: readonly (readonly [number, number])[] | null,
 ): Promise<Transcript> {
+  // A run ends with Cancel, or with the page: one that leaves in the middle of it (dropSpeechModel) comes back, if
+  // it does, to the sheet as it was before the run — never to a run that goes on with a worker it no longer has.
+  const run = new AbortController(), page = leaving.signal;
+  const stop = () => run.abort();
+  if (signal.aborted) run.abort();
+  signal.addEventListener('abort', stop);
+  page.addEventListener('abort', stop);
+  // Over at once, whatever the run is waiting for at that moment (a look into the storage, a window being decoded):
+  // what it was doing ends by itself, and nothing of it is shown or asked any more.
+  const over = new Promise<never>((_, reject) => {
+    const end = () => reject(new DOMException('Cancelled', 'AbortError'));
+    if (run.signal.aborted) end(); else run.signal.addEventListener('abort', end, { once: true });
+  });
+  const quiet: DownloadConsent = { agreed: consent.agreed, ask: (d) => (run.signal.aborted ? Promise.resolve(false) : consent.ask(d)) };
+  const work = transcribeWith(p, choice, language, (x) => { if (!run.signal.aborted) onProgress(x); }, run.signal, quiet, ranges ?? null);
+  work.catch(() => undefined); // its own end after the run is over is nobody's error
   try {
-    return await transcribeWith(p, choice, language, onProgress, signal, consent, ranges ?? null);
+    return await Promise.race([work, over]);
   } finally {
+    signal.removeEventListener('abort', stop);
+    page.removeEventListener('abort', stop);
     setWorking(null);
   }
 }
@@ -355,6 +395,11 @@ async function transcribeWith(
   ranges: readonly (readonly [number, number])[] | null,
 ): Promise<Transcript> {
   const auto = choice === 'auto';
+  /** The worker for this run's next request; none once the run is over (no worker is started for a run nobody waits for). */
+  const speechWorker = (): Worker => {
+    if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+    return getWorker();
+  };
   let engine: AsrModel = firstEngine(choice, language);
   // The Russian model of this run: the chosen one, the one `auto` takes on this device, or the lighter one that replaced it.
   let russian: AsrModel = !auto && isRussian(fittingModel(choice)) ? fittingModel(choice) : russianModel();
@@ -396,7 +441,7 @@ async function transcribeWith(
       onProgress(missing ? { phase: 'download', fraction: 0, mb } : { phase: 'load' });
       setWorking(m);
       // A worker whose engine failed was replaced (retire): each request goes to the current one.
-      const loaded = await request(getWorker(), { type: 'load', id: 0, model: m }, (_l, _t, fetched) => {
+      const loaded = await request(speechWorker(), { type: 'load', id: 0, model: m }, (_l, _t, fetched) => {
         if (missing) onProgress(fetched >= missing ? { phase: 'load' } : { phase: 'download', fraction: fetched / missing, mb });
       }, signal);
       if (loaded.type !== 'error') return m;
@@ -445,7 +490,7 @@ async function transcribeWith(
     // Each part from a frame boundary, with a detector that starts fresh: what came before the part is not its past.
     const f0 = Math.floor((from * SR) / FRAME), f1 = Math.min(probs.length, Math.ceil((to * SR) / FRAME));
     if (f1 <= f0) continue;
-    const vad = await request(getWorker(), { type: 'vad', id: 0, audio: audio.slice(f0 * FRAME, f1 * FRAME) }, undefined, signal);
+    const vad = await request(speechWorker(), { type: 'vad', id: 0, audio: audio.slice(f0 * FRAME, f1 * FRAME) }, undefined, signal);
     if (vad.type === 'error') throw engineError(vad.message, 'Speech detection failed. Try again; the details are under “Details”.');
     if (vad.type === 'vad') probs.set(vad.probs.subarray(0, f1 - f0), f0);
   }
@@ -460,7 +505,7 @@ async function transcribeWith(
   segment();
   const cut = (i: number) => audio.slice(Math.floor(windows[i][0] * SR), Math.ceil(windows[i][1] * SR));
   const transcribe = async (i: number): Promise<Extract<AsrResponse, { type: 'result' }> | null> => {
-    const r = await request(getWorker(), { type: 'transcribe', id: 0, audio: cut(i), language: isRussian(engine) ? null : language, model: engine }, undefined, signal);
+    const r = await request(speechWorker(), { type: 'transcribe', id: 0, audio: cut(i), language: isRussian(engine) ? null : language, model: engine }, undefined, signal);
     if (r.type === 'error') {
       if (await lighten(r)) return transcribe(i);
       throw engineError(r.message, 'Speech recognition failed. Try again; the details are under “Details”.');
@@ -492,7 +537,7 @@ async function transcribeWith(
       else { done.clear(); engine = await load(fittingModel('base'), 'language'); segment(); }
     }
     if (!language && windows.length) {
-      const r = await request(getWorker(), { type: 'detect', id: 0, audio: cut(longestFirst()[0]), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code), model: engine }, undefined, signal);
+      const r = await request(speechWorker(), { type: 'detect', id: 0, audio: cut(longestFirst()[0]), candidates: CAPTION_LANGUAGES.filter((l) => l.code).map((l) => l.code), model: engine }, undefined, signal);
       if (r.type === 'error') throw engineError(r.message, 'Speech detection failed. Try again; the details are under “Details”.');
       if (r.type === 'language') language = CAPTION_LANGUAGES.find((l) => l.code === r.code)?.id ?? null;
       console.info(`speech language by ${engine}: ${language}`, r.type === 'language' ? r.p.toFixed(3) : '');
@@ -575,6 +620,23 @@ export async function checkSpeechModel(model: AsrModel, audio: Float32Array, lan
   if (r.type === 'error') return { ok: false, loadMs, runMs, error: r.message, heap: r.heap };
   const text = r.type === 'result' ? r.words.map((x) => x.text).join(' ') : '';
   return { ok: true, loadMs, runMs, text, heap: await heapOf(w) };
+}
+
+/**
+ * The page is leaving, and the worker goes with it, at once, a run in flight too (it ends like Cancel). A page that
+ * goes into the back-forward cache would keep its worker and the model's heap — 484 MB for GigaAM — for a page nobody
+ * sees, and the model of the next page then does not fit: on the iPhone 15 a second run in a row ended Safari's
+ * session, 2 of 2 (L5 2026-11-14, docs/20 Г4). The model's files stay on the device.
+ */
+function dropSpeechModel(): void {
+  leaving.abort(); // every run in progress is over, between two requests too
+  leaving = new AbortController();
+  clearTimeout(idle);
+  const w = worker;
+  worker = null;
+  if (!w) return;
+  w.terminate();
+  endFlights(w, 'gone');
 }
 
 /** Frees the model memory (the files stay cached for next time). Waits while a request is running. */
