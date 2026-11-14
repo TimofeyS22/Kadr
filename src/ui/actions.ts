@@ -157,7 +157,7 @@ const showFrom = (t: number) => { player.pause(); player.seek(t); useEditor.setS
 export function addText(): void {
   let id = '';
   editor().commit((d) => {
-    const c = createTextClip(player.time);
+    const c = createTextClip(player.time, t('Your text')); // in the person's language, not English in a Russian app (UI-6)
     endWithVideo(d, c); // ends with the video, not 3 s past it in black (S-1-4)
     placeClip(d, c);
     id = c.id;
