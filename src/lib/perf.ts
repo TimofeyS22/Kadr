@@ -13,8 +13,22 @@ export const perf = {
   leases: { renewed: 0, failed: 0 },
 };
 
+const waiting = new Map<string, (() => void)[]>();
+
 export function mark(name: string): void {
-  perf.marks[name] ??= performance.now();
+  if (name in perf.marks) return;
+  perf.marks[name] = performance.now();
+  for (const go of waiting.get(name) ?? []) go();
+  waiting.delete(name);
+}
+
+/**
+ * Resolves once `name` is marked (at once if it already is). Code a screen does not need to be used waits for its mark,
+ * so a first visit downloads it after the screen answers, not before (audit V-143: `editor:shown`).
+ */
+export function marked(name: string): Promise<void> {
+  if (name in perf.marks) return Promise.resolve();
+  return new Promise((go) => waiting.set(name, [...(waiting.get(name) ?? []), go]));
 }
 
 export function frameDrawn(t: number, ms: number, exact = true): void {

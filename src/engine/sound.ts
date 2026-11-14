@@ -3,10 +3,8 @@
 // canDecode() and still fail in configure() ("Unsupported configuration…"): the owner's captions died on it.
 // Every sound is decoded with WebCodecs first; when the browser refuses, the rest of it is decoded by the
 // browser's own media stack (decodeAudioData) in short windows, so memory stays bounded on a phone.
-import {
-  AudioBufferSink, EncodedPacketSink,
-  type EncodedPacket, type InputAudioTrack, type Input, type WrappedAudioBuffer,
-} from 'mediabunny';
+import type { EncodedPacket, EncodedPacketSink, InputAudioTrack, Input, WrappedAudioBuffer } from 'mediabunny';
+import { loadMediabunny } from './mediabunny';
 
 export interface SoundSink {
   buffers(start?: number, end?: number): AsyncGenerator<WrappedAudioBuffer, void, unknown>;
@@ -29,13 +27,11 @@ const RETRY_MS = 1000;
 
 /** Decodes a track through decodeAudioData: its packets, window by window, are copied (not re-encoded) into a small file. */
 export class NativeSink implements SoundSink {
-  private packets: EncodedPacketSink;
+  private packets?: EncodedPacketSink;
   /** Index into CONTAINERS of the container this browser decodes for this codec (found on first use). */
   private container = -1;
 
-  constructor(private track: InputAudioTrack) {
-    this.packets = new EncodedPacketSink(track);
-  }
+  constructor(private track: InputAudioTrack) {}
 
   async *buffers(start = 0, end = Infinity): AsyncGenerator<WrappedAudioBuffer, void, unknown> {
     end = Math.min(end, await this.track.computeDuration());
@@ -59,10 +55,11 @@ export class NativeSink implements SoundSink {
   /** The sound from t0 to t1 and the source time of its first sample, or null when nothing decodes. */
   private async decode(t0: number, t1: number): Promise<{ buffer: AudioBuffer; timestamp: number } | null> {
     const list: EncodedPacket[] = [];
-    let p = (await this.packets.getPacket(t0)) ?? (await this.packets.getFirstPacket());
+    const packets = (this.packets ??= new (await loadMediabunny()).EncodedPacketSink(this.track));
+    let p = (await packets.getPacket(t0)) ?? (await packets.getFirstPacket());
     while (p && p.timestamp < t1) {
       if (p.timestamp + p.duration > t0) list.push(p);
-      p = await this.packets.getNextPacket(p);
+      p = await packets.getNextPacket(p);
     }
     if (!list.length) return null;
     const codec = await this.track.getCodec();
@@ -98,6 +95,7 @@ export class ResilientSink implements SoundSink {
     let from = start;
     if (!refused.has(this.track)) {
       try {
+        const { AudioBufferSink } = await loadMediabunny();
         for await (const b of new AudioBufferSink(this.track).buffers(start, end)) {
           yield b;
           from = b.timestamp + b.duration;
@@ -133,6 +131,7 @@ export async function playableAudioTrack(input: Input, onFail?: (reason: string)
   const ranked = await input.getAudioTracks({
     sortBy: async (t) => [(await t.getDisposition()).default === false ? 1 : 0, (await t.getNumberOfChannels()) > 2 ? 1 : 0],
   });
+  const { AudioBufferSink } = await loadMediabunny();
   for (let attempt = 0; attempt < 2 && ranked.length; attempt++) {
     // A decoder can fail for a moment and work a moment later: in a loaded QA run both of WebKit's refused the same
     // file together ("decoding failed"), and a video was added without its sound for good. So once more, after a pause.

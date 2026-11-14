@@ -10,6 +10,7 @@ import { useEditor } from '../state/store';
 import { ProjectConflict, ProjectDeleted, clearJournal, deleteBlob, deleteTake, forgetLoadedMedia, unfinishedTakes, saveUnfinishedTake, forgetProject, journalProject, loadProject, onDeletedElsewhere, onSavedElsewhere, saveProject } from '../storage/db';
 import { exportSizeLabel, openExportSettings, startExport } from './exportPrefs';
 import { forgetThumbs } from '../engine/media';
+import { loadMediabunny } from '../engine/mediabunny';
 import { importStored } from '../engine/importer';
 import { uid } from '../core/defaults';
 import { addFiles, placeAssets, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
@@ -18,6 +19,7 @@ import { Preview } from './Preview';
 import { Timeline } from './Timeline';
 import { Toolbar } from './Toolbar';
 import { PerfOverlay, perfOverlayEnabled } from './PerfOverlay';
+import { mark, marked } from '../lib/perf';
 
 const showPerf = perfOverlayEnabled();
 import { t } from '../lib/i18n';
@@ -31,8 +33,11 @@ import { FrameFitNote, useFrameFit } from './FrameFit';
 import { Empty } from './ck/home';
 import { Transport as Row } from './ck/timeline';
 
-// Fetched as the editor mounts, not before it can be used: the editor's first load is the budget that counts (audit V-143).
-const Sheets = lazy(() => import('./sheets').then((m) => ({ default: m.Sheets })));
+// Fetched once the editor is shown, not before it can be used: the editor's first load is the budget that counts (audit
+// V-143). Called as the editor first renders, `import()` alone started the 68 KB of sheets before the editor was on screen.
+const Sheets = lazy(() => marked('editor:shown').then(() => import('./sheets')).then((m) => ({ default: m.Sheets })));
+// The media library as well (engine/mediabunny.ts), so the first import does not wait for it.
+void marked('editor:shown').then(loadMediabunny).catch(() => undefined);
 
 const snapshot = () => Promise.race([player.snapshot(), new Promise<null>((r) => setTimeout(() => r(null), 800))]);
 
@@ -148,6 +153,9 @@ export function Editor({ id }: { id: string }) {
     }).catch((e) => { useEditor.getState().toast(errorMessage(e), 'error'); setMissing(true); }); // not "Opening…" for ever
     return () => { alive = false; };
   }, [id]);
+
+  // On screen and answering: what the editor does not need to be used is fetched after this (V-143, `marked`).
+  useEffect(() => { if (project) mark('editor:shown'); }, [project]);
 
   // Player ↔ store wiring.
   useEffect(() => {

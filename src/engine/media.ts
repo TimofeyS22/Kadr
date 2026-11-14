@@ -1,13 +1,14 @@
 // Media access on top of Mediabunny/WebCodecs: probing, per-clip decoding streams, thumbnails, waveforms.
-import {
+import type {
   EncodedPacketSink, VideoSampleSink,
-  type Input, type InputAudioTrack, type InputTrack, type InputVideoTrack, type VideoSample,
+  Input, InputAudioTrack, InputTrack, InputVideoTrack, VideoSample,
 } from 'mediabunny';
+import { loadMediabunny } from './mediabunny';
 import { openInput } from './source';
 import { correctPixels, decodedAs709, hdrTransfer, sdMatrix, type Hdr } from './hdr';
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
-import { renderThumbs, type ThumbIn, type ThumbJob, type ThumbPost, type ThumbReply } from './thumbs.worker';
+import type { ThumbIn, ThumbJob, ThumbPost, ThumbReply } from './thumbs.worker';
 import { getBlob, getPeaks, openReader, putPeaks } from '../storage/db';
 import type { ChunkedMedia, StoredMedia } from '../storage/chunks';
 import { MediaMissing, isStorageError } from '../storage/reader';
@@ -52,7 +53,7 @@ export async function probe(file: StoredMedia): Promise<Probe> {
     bmp.close();
     return r;
   }
-  const input = openInput(file);
+  const input = await openInput(file);
   try {
     if (!(await input.canRead())) throw new MediaError('Unsupported file format');
     const video = await input.getPrimaryVideoTrack();
@@ -124,7 +125,7 @@ const CUT_SHORT_S = 0.5;
  * edge between what is there and what is not is found by halving.
  */
 async function readableEnd(track: InputTrack, promised: number): Promise<number> {
-  const sink = new EncodedPacketSink(track);
+  const sink = new (await loadMediabunny()).EncodedPacketSink(track);
   if (await sink.getPacket(promised) || !await sink.getPacket(promised, { metadataOnly: true })) return promised;
   const first = await sink.getFirstPacket();
   if (!first) return 0;
@@ -381,7 +382,7 @@ export class MediaPool {
         // whole Blob: in a private tab that is the file put together in memory (audit V-253).
         const media = await openReader(assetId);
         if (!media) throw new MediaError('Media file is missing from this device');
-        const input = openInput(media);
+        const input = await openInput(media);
         try {
           const video = await input.getPrimaryVideoTrack();
           // Which sound track plays is found by decoding its first packet: asked when the sound is wanted, not before the
@@ -472,6 +473,7 @@ export class MediaPool {
         const h = await this.handle(assetId);
         if (!h.video) return null;
         const [width, height] = fitSize(await h.video.getDisplayWidth(), await h.video.getDisplayHeight(), this.maxDim);
+        const { EncodedPacketSink, VideoSampleSink } = await loadMediabunny();
         if (this.disposed) return null;
         const s = new VideoStream(assetId, new VideoSampleSink(h.video), new EncodedPacketSink(h.video), width, height, () => this.sweep(new Set([clipId]), 300), h.hdr, h.sd);
         s.lastUsed = performance.now();
@@ -601,7 +603,7 @@ export function thumbnails(assetId: string, duration: number, height = 96): Prom
           waiting.clear();
           throw new Error('thumbnails took too long');
         })
-        : await (async () => { const list: Thumb[] = []; await renderThumbs(job, (t, bmp) => list.push({ t, bmp }), document.createElement('canvas')); return list; })();
+        : await (async () => { const { renderThumbs } = await import('./thumbs.worker'); const list: Thumb[] = []; await renderThumbs(job, (t, bmp) => list.push({ t, bmp }), document.createElement('canvas')); return list; })();
       mark(`thumbs:${assetId}`);
       return out;
     });
@@ -623,7 +625,7 @@ export function waveform(assetId: string): Promise<Float32Array> {
       // Read right after an import, as a camera take's pieces go (S-1-13): through the door that replaces a dead Blob.
       const media = await openReader(assetId);
       if (!media) return new Float32Array();
-      const input = openInput(media);
+      const input = await openInput(media);
       try {
         const audio = await playableAudioTrack(input);
         if (!audio) return new Float32Array();

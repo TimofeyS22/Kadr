@@ -19,7 +19,7 @@ export type ThumbIn = { job: ThumbPost } | { read: number; bytes?: ArrayBuffer; 
 export type ThumbReply = { id: number; t: number; bmp: ImageBitmap } | { id: number; done: true; error?: string } | { id: number; read: number; start: number; end: number };
 
 export async function renderThumbs(job: ThumbJob, emit: (t: number, bmp: ImageBitmap) => void, canvas: OffscreenCanvas | HTMLCanvasElement): Promise<void> {
-  const input = openInput(job.media);
+  const input = await openInput(job.media);
   try {
     const track = await input.getPrimaryVideoTrack();
     if (!track) return;
