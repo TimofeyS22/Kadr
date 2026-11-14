@@ -278,7 +278,9 @@ export async function prepareClipSound(p: Project, clip: SoundClip, onProgress: 
   const old = src?.derived?.sync === SOUND_SYNC ? src.derived : undefined;
   const derived = { denoise: old?.denoise, enhance: old?.enhance, pitch: { ...old?.pitch }, voice: { ...old?.voice }, sync: SOUND_SYNC };
   const created: Asset[] = [];
-  if (!key || !src) return { key, assetId: null, created, derived };
+  // A file without sound has none to process, whatever the settings ask: natural pitch is on by default, and 2× on a
+  // screen recording asked for a pitch-kept copy of nothing, so its export failed with "This clip has no sound" (SW-D-1).
+  if (!key || !src?.hasAudio) return { key, assetId: null, created, derived };
   let proj = p;
   const add = (a: Asset) => { created.push(a); proj = { ...proj, assets: { ...proj.assets, [a.id]: a } }; };
   const needPitch = keepsPitch(clip) && clip.speed !== 1;
