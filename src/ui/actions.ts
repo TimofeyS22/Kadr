@@ -13,7 +13,7 @@ import { deleteBlob, getBlob } from '../storage/db';
 import { coverScale, reframeKeys } from '../core/reframe';
 import { saveFile } from '../engine/save';
 import { MediaError, captureFrame } from '../engine/media';
-import { importFile, importFiles, pickFiles } from '../engine/importer';
+import { importFile, importFiles, importStored, pickFiles } from '../engine/importer';
 import { putBlob } from '../storage/db';
 import { player } from '../engine/player';
 import { IOS } from '../lib/device';
@@ -56,6 +56,29 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   } finally {
     useEditor.setState({ busy: null });
   }
+  return placeAssets(assets, target, owner, meta, pickMs);
+}
+
+/**
+ * A camera take already saved as the stored file `assetId` (docs/19 ADR-М5) goes into the project as an imported file
+ * does. A take that does not read is said so, and its stored copy goes; the take's pieces stay with the caller.
+ */
+export async function addStored(assetId: string, name: string, target: AddTarget, meta: { script?: string } = {}): Promise<number> {
+  const s = editor();
+  const owner = s.project?.id;
+  let asset: Asset;
+  try {
+    asset = await importStored(assetId, name, (note) => s.toast(importNoteText(name, note), 'info', 10_000));
+  } catch (e) {
+    await deleteBlob(assetId);
+    s.toast(t('Could not add {name}: {error}', { name, error: errorMessage(e) }), 'error');
+    return 0;
+  }
+  return placeAssets([asset], target, owner, meta);
+}
+
+/** Puts stored assets into the project `owner`, as `addFiles` does after the import. */
+export async function placeAssets(assets: Asset[], target: AddTarget, owner: string | undefined, meta: { script?: string } = {}, pickMs = 0): Promise<number> {
   if (!assets.length) return 0;
   if (editor().project?.id !== owner) { // the person left for another project: this one must not receive them
     await Promise.all(assets.map((a) => deleteBlob(a.id)));

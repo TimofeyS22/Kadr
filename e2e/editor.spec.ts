@@ -5406,7 +5406,8 @@ test('the file is ready for the web: the index first, tagged as BT.709 video (au
 
 test('a camera recording cut short by a crash comes back (audit V-250)', async ({ page }, info) => {
   test.setTimeout(120_000);
-  test.skip(info.project.name === 'iphone-webkit', "this test's WebKit context refuses Blobs in storage");
+  // Runs on WebKit too since the take is stored as bytes (docs/19 ADR-М5): this test's WebKit context refuses Blobs in
+  // storage, as a private Safari tab does, and the seconds of the take used to stay in memory and go with the crash.
   await fakeCamera(page);
   // Every note as it is shown: the "cut short" one comes with the recovery, and on a loaded machine it had gone by the
   // time the clip was drawn (a red so on a build before any change, d1828cd).

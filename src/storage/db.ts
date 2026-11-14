@@ -9,6 +9,7 @@ import { cacheGate } from './bfcache';
 import { CHUNK, ChunkCache, HELD_CHUNKS, chunkedMedia, type Chunked, type StoredMedia } from './chunks';
 import { track } from '../lib/telemetry';
 import { leasedReader, type LeaseEvent, type MediaReader } from './reader';
+import { SNIFF_BYTES, sniffMime } from '../core/sniff';
 
 /**
  * The 'kadr'/'kv' store, opened again when the browser drops the connection. WebKit drops it while the page is in the
@@ -361,30 +362,87 @@ export function forgetLoadedMedia(): void { held.drop(); }
 
 // A camera take, written second by second as it is recorded (audit V-250): it used to live in the page's memory until
 // Stop, so memory grew with every second and a crash lost all of it.
+//
+// The take's bytes become the stored file a piece at a time (docs/19 ADR-М5, variant «c»). It used to be read back from
+// the store as Blobs, put together into one File and saved again as the asset's Blob, and its pieces were deleted right
+// after: on the iPhone that saved Blob stopped reading the moment they went (S-1-13), for 0.3 s to 20 s. Now every
+// second is kept as bytes (a Blob is never stored here), and Stop copies them, in order, into the chunks of a new
+// stored file. No Blob read from the store is saved again, deleting the pieces cannot touch the file, and IndexedDB
+// takes bytes even where it refuses Blobs (a private tab), so there a crash no longer loses the take either.
 const takeKey = (project: string, take: string, n: number) => `t:${project}:${take}:${String(n).padStart(6, '0')}`;
+
+/** A stored piece as bytes; a piece stored as a Blob by an older version is read once, here. */
+async function pieceBytes(v: unknown): Promise<ArrayBuffer | undefined> {
+  if (v instanceof ArrayBuffer) return v;
+  if (v instanceof Blob) return v.arrayBuffer().catch((e: unknown) => { console.warn('A second of a camera take could not be read', e); return undefined; });
+  return undefined;
+}
+
+/**
+ * Writes `pieces`, in order, as the chunks of the new stored file `assetId` and returns its size (0, and nothing
+ * written, when there are no bytes). `type` is asked for once the bytes are in. Memory holds one chunk and one piece.
+ * A file written halfway is removed.
+ */
+async function writeChunks(assetId: string, type: () => string, pieces: AsyncIterable<ArrayBuffer>): Promise<number> {
+  const chunk = new Uint8Array(CHUNK);
+  let filled = 0, n = 0, size = 0;
+  try {
+    for await (const piece of pieces) {
+      const bytes = new Uint8Array(piece);
+      for (let at = 0; at < bytes.length;) {
+        const part = Math.min(CHUNK - filled, bytes.length - at);
+        chunk.set(bytes.subarray(at, at + part), filled);
+        filled += part; at += part; size += part;
+        // The store copies the bytes as it takes them, so the same buffer is filled again after the write.
+        if (filled === CHUNK) { await set(`c:${assetId}:${n}`, chunk.buffer, store); n++; filled = 0; }
+      }
+    }
+    if (filled) { await set(`c:${assetId}:${n}`, chunk.slice(0, filled).buffer, store); n++; }
+    if (size) await set(`c:${assetId}`, { type: type(), size, chunks: n } satisfies Chunked, store);
+    return size;
+  } catch (e) {
+    await Promise.all(Array.from({ length: n + 1 }, (_, i) => del(`c:${assetId}:${i}`, store).catch(() => undefined)));
+    throw quotaError(e) ?? e;
+  }
+}
 
 export class TakeWriter {
   readonly id = Math.random().toString(36).slice(2, 10);
+  /** Bytes recorded so far, for the room check before the save. */
+  bytes = 0;
   private n = 0;
-  /** Pieces the storage refused (a private tab): they stay here, as every piece did before. */
-  private memory = new Map<number, Blob>();
+  /** Pieces the storage refused (no room, a lost connection): their bytes wait here for the save. */
+  private memory = new Map<number, ArrayBuffer>();
   private writing: Promise<unknown> = Promise.resolve();
   constructor(private readonly project: string) {}
 
   add(piece: Blob): void {
     const i = this.n++;
-    this.writing = this.writing.then(() => set(takeKey(this.project, this.id, i), piece, store)).catch(() => { this.memory.set(i, piece); });
+    this.bytes += piece.size;
+    // The bytes are taken now: a Blob the recorder made can stop reading before its turn to be written (docs/19 С12).
+    const bytes = piece.arrayBuffer();
+    bytes.catch(() => undefined);
+    this.writing = this.writing
+      .then(async () => {
+        const b = await bytes;
+        await set(takeKey(this.project, this.id, i), b, store).catch(() => { this.memory.set(i, b); });
+      })
+      .catch((e: unknown) => console.warn('A second of a camera take could not be read', e));
   }
 
-  /** The take so far as one file: its pieces stay on disk, not in memory. */
-  async file(name: string, type: string): Promise<File> {
+  /**
+   * Saves the take so far as the stored file `assetId` (docs/19 ADR-М5) and returns its size, 0 for a take with no
+   * bytes. The pieces stay until `discard`: a full disk or a crash during the save loses nothing.
+   */
+  async save(assetId: string, type: string): Promise<number> {
     await this.writing;
-    const parts: Blob[] = [];
-    for (let i = 0; i < this.n; i++) {
-      const piece = this.memory.get(i) ?? await get<Blob>(takeKey(this.project, this.id, i), store);
-      if (piece) parts.push(piece);
-    }
-    return new File(parts, name, { type });
+    const { project, id, memory, n } = this;
+    return writeChunks(assetId, () => type, (async function* () {
+      for (let i = 0; i < n; i++) {
+        const piece = memory.get(i) ?? await pieceBytes(await get(takeKey(project, id, i), store));
+        if (piece) yield piece;
+      }
+    })());
   }
 
   async discard(): Promise<void> {
@@ -398,22 +456,33 @@ export async function deleteTake(project: string, take: string): Promise<void> {
   await Promise.all((await keys(store)).filter((k) => typeof k === 'string' && k.startsWith(prefix)).map((k) => del(k, store)));
 }
 
-/** Takes a crash left behind in this project, each as one blob. */
-export async function unfinishedTakes(project: string): Promise<{ id: string; blob: Blob }[]> {
+/** Takes a crash left behind in this project: their ids. */
+export async function unfinishedTakes(project: string): Promise<string[]> {
   const prefix = `t:${project}:`;
-  const found = new Map<string, string[]>();
-  for (const k of await keys(store)) {
-    if (typeof k !== 'string' || !k.startsWith(prefix)) continue;
-    const take = k.slice(prefix.length).split(':')[0];
-    found.set(take, [...(found.get(take) ?? []), k]);
-  }
-  const out: { id: string; blob: Blob }[] = [];
-  for (const [id, list] of found) {
-    const parts = await Promise.all(list.sort().map((k) => get<Blob>(k, store)));
-    const blobs = parts.filter((b): b is Blob => !!b);
-    if (blobs.length) out.push({ id, blob: new Blob(blobs, { type: blobs[0].type }) });
-  }
-  return out;
+  const found = new Set<string>();
+  for (const k of await keys(store)) if (typeof k === 'string' && k.startsWith(prefix)) found.add(k.slice(prefix.length).split(':')[0]);
+  return [...found];
+}
+
+/**
+ * Saves a take a crash left behind as the stored file `assetId`, as Stop does (docs/19 ADR-М5): its size and the type
+ * its first bytes show. Its pieces stay until `deleteTake`.
+ */
+export async function saveUnfinishedTake(project: string, take: string, assetId: string): Promise<{ size: number; type: string }> {
+  const prefix = `t:${project}:${take}:`;
+  const list = (await keys(store)).filter((k): k is string => typeof k === 'string' && k.startsWith(prefix)).sort();
+  let seen = '';
+  const type = () => seen.split(';')[0] || 'video/webm';
+  const size = await writeChunks(assetId, type, (async function* () {
+    for (const k of list) {
+      const v = await get(k, store);
+      const piece = await pieceBytes(v);
+      if (!piece) continue;
+      seen ||= sniffMime(new Uint8Array(piece, 0, Math.min(SNIFF_BYTES, piece.byteLength))) ?? (v instanceof Blob ? v.type : '');
+      yield piece;
+    }
+  })());
+  return { size, type: type() };
 }
 
 export const putPeaks = (assetId: string, peaks: Float32Array): Promise<void> => set(`w:${assetId}`, peaks, store);

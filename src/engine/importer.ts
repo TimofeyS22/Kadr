@@ -3,7 +3,8 @@ import { uid } from '../core/defaults';
 import { SNIFF_BYTES, sniffMime } from '../core/sniff';
 import type { Asset } from '../core/types';
 import { within } from '../lib/limits';
-import { putBlob, requestPersistence } from '../storage/db';
+import { openReader, putBlob, requestPersistence, type TakeWriter } from '../storage/db';
+import { MediaMissing } from '../storage/reader';
 import { MediaError, probe } from './media';
 
 export const MAX_FILE_BYTES = 4 * 1024 ** 3;
@@ -25,12 +26,35 @@ export async function importFile(file: File | Blob, name = (file as File).name ?
     if (size && size.width * size.height > MAX_IMAGE_PIXELS) throw new MediaError('This image is too large for this device ({mp} megapixels).', { mp: Math.round((size.width * size.height) / 1e6) });
     file = await toDecodableImage(file);
   }
-  const { soundError, promised, ...info } = await probe(file);
-  if (soundError) onNote?.({ kind: 'sound', error: soundError });
-  if (promised) onNote?.({ kind: 'cut', kept: info.duration, total: promised });
-  const asset: Asset = { id: uid(), name, mime: file.type, size: file.size, ...info };
+  const asset = assetOf(uid(), name, file, await probe(file), onNote);
   await ensureRoom(file.size, name);
   await putBlob(asset.id, file);
+  persistOnce();
+  return asset;
+}
+
+/** The asset a probed file makes; what the person should hear about it goes to `onNote`. */
+function assetOf(id: string, name: string, file: { type: string; size: number }, probed: Awaited<ReturnType<typeof probe>>, onNote?: (note: ImportNote) => void): Asset {
+  const { soundError, promised, ...info } = probed;
+  if (soundError) onNote?.({ kind: 'sound', error: soundError });
+  if (promised) onNote?.({ kind: 'cut', kept: info.duration, total: promised });
+  return { id, name, mime: file.type, size: file.size, ...info };
+}
+
+/**
+ * Saves a camera take as the stored file `assetId` (docs/19 ADR-М5): its size, 0 for a take with no bytes. The room is
+ * checked first, as for an import: the take's bytes are copied once.
+ */
+export async function saveTake(take: TakeWriter, assetId: string, name: string, type: string): Promise<number> {
+  await ensureRoom(take.bytes, name);
+  return take.save(assetId, type);
+}
+
+/** A file already in storage (a camera take) as an asset: read through the door by its id, never copied again. */
+export async function importStored(assetId: string, name: string, onNote?: (note: ImportNote) => void): Promise<Asset> {
+  const media = await openReader(assetId);
+  if (!media) throw new MediaMissing();
+  const asset = assetOf(assetId, name, media, await probe(media), onNote);
   persistOnce();
   return asset;
 }

@@ -9,8 +9,8 @@ import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
 import { renderThumbs, type ThumbIn, type ThumbJob, type ThumbPost, type ThumbReply } from './thumbs.worker';
 import { getBlob, getPeaks, openReader, putPeaks } from '../storage/db';
-import type { ChunkedMedia } from '../storage/chunks';
-import { isStorageError } from '../storage/reader';
+import type { ChunkedMedia, StoredMedia } from '../storage/chunks';
+import { MediaMissing, isStorageError } from '../storage/reader';
 import { ResilientSink, playableAudioTrack, type SoundSink } from './sound';
 import { within } from '../lib/limits';
 import { IOS } from '../lib/device';
@@ -44,8 +44,9 @@ const SCRUB_GAP = 0.3;
 /** The browser's own words go to the error's details (`vars.error`), not into the sentence. */
 export const DECODER_FAILED = 'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.';
 
-export async function probe(file: Blob): Promise<Probe> {
-  if (file.type.startsWith('image/')) {
+/** What a file holds: a picked file, or a stored one read through the door (a camera take, docs/19 ADR-М5). */
+export async function probe(file: StoredMedia): Promise<Probe> {
+  if (file instanceof Blob && file.type.startsWith('image/')) {
     const bmp = await createImageBitmap(file).catch(() => { throw new MediaError('This image format is not supported'); });
     const r: Probe = { kind: 'image', duration: 0, width: bmp.width, height: bmp.height, hasAudio: false };
     bmp.close();
@@ -527,7 +528,7 @@ export function forgetThumbs(): void {
 
 let thumbWorker: Worker | null | undefined;
 let nextJob = 0;
-const waiting = new Map<number, { out: Thumb[]; media: ChunkedMedia; resolve: (t: Thumb[]) => void; reject: (e: Error) => void }>();
+const waiting = new Map<number, { out: Thumb[]; media: ChunkedMedia; failed?: unknown; resolve: (t: Thumb[]) => void; reject: (e: unknown) => void }>();
 
 /** The shared thumbnail worker, or null where workers can't decode (then thumbnails render on this thread). */
 function worker(): Worker | null {
@@ -541,12 +542,13 @@ function worker(): Worker | null {
       if ('read' in r) {
         // The worker reads the job's file through this thread's door: bytes cross, a Blob never does (docs/19 H8).
         if (!w) { answer({ read: r.read, error: 'The thumbnail job is gone' }); return; }
-        w.media.read(r.start, r.end).then((b) => answer({ read: r.read, bytes: b.buffer }, [b.buffer]), (err: unknown) => answer({ read: r.read, error: String(err) }));
+        // A storage error is kept here: the worker hands back only words, and the strip's next try depends on the kind.
+        w.media.read(r.start, r.end).then((b) => answer({ read: r.read, bytes: b.buffer }, [b.buffer]), (err: unknown) => { if (isStorageError(err)) w.failed ??= err; answer({ read: r.read, error: String(err) }); });
         return;
       }
       if (!w) return;
       if ('bmp' in r) w.out.push({ t: r.t, bmp: r.bmp });
-      else { waiting.delete(r.id); if (r.error) w.reject(new Error(r.error)); else w.resolve(w.out); }
+      else { waiting.delete(r.id); if (r.error) w.reject(w.failed ?? new Error(r.error)); else w.resolve(w.out); }
     };
     wk.onerror = () => { thumbWorker = null; for (const w of waiting.values()) w.reject(new Error('thumbnail worker failed')); waiting.clear(); };
   } catch {
@@ -555,10 +557,27 @@ function worker(): Worker | null {
   return thumbWorker;
 }
 
+/**
+ * Pauses before a film strip or a waveform is made again after its file did not read (S-1-13-1). On the iPhone a take's
+ * record stayed unreadable for 10 and 19.6 s in 2 of 60 runs, past the 7.8 s a read waits for a new lease, and the
+ * strip that gave up then stayed empty while the take played. A file that is gone is not asked for again.
+ */
+export const AGAIN_MS = [15_000, 45_000];
+async function again<T>(make: () => Promise<T>): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await make();
+    } catch (e) {
+      if (!isStorageError(e) || e instanceof MediaMissing || i >= AGAIN_MS.length) throw e;
+      await new Promise((r) => setTimeout(r, AGAIN_MS[i]));
+    }
+  }
+}
+
 export function thumbnails(assetId: string, duration: number, height = 96): Promise<Thumb[]> {
   let p = thumbCache.get(assetId);
   if (!p) {
-    p = (async () => {
+    p = again(async () => {
       // By the asset's id through the door, on this thread: a Blob that stops reading is replaced (S-1-13).
       const media = await openReader(assetId);
       if (!media) return [];
@@ -585,7 +604,7 @@ export function thumbnails(assetId: string, duration: number, height = 96): Prom
         : await (async () => { const list: Thumb[] = []; await renderThumbs(job, (t, bmp) => list.push({ t, bmp }), document.createElement('canvas')); return list; })();
       mark(`thumbs:${assetId}`);
       return out;
-    })();
+    });
     p.catch(() => thumbCache.delete(assetId));
     thumbCache.set(assetId, p);
   }
@@ -598,7 +617,7 @@ const peakCache = new Map<string, Promise<Float32Array>>();
 export function waveform(assetId: string): Promise<Float32Array> {
   let p = peakCache.get(assetId);
   if (!p) {
-    p = (async () => {
+    p = again(async () => {
       const stored = await getPeaks(assetId);
       if (stored) return stored;
       // Read right after an import, as a camera take's pieces go (S-1-13): through the door that replaces a dead Blob.
@@ -625,7 +644,7 @@ export function waveform(assetId: string): Promise<Float32Array> {
       } finally {
         input.dispose();
       }
-    })();
+    });
     p.catch(() => peakCache.delete(assetId));
     peakCache.set(assetId, p);
   }

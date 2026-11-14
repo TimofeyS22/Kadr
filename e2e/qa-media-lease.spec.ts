@@ -29,8 +29,8 @@ const setup = () => {
 /**
  * Lets the test kill the page's Blobs of one size: their reads then fail as WebKit's did (S-1-13). The page's Blobs are
  * the ones read from IndexedDB and the ones read in slices (followed back to the Blob they were cut from). Blobs the
- * page gets afterwards, from a fresh read of the store, live. `__killOnThumbs(size)` kills them the moment a film strip
- * of a file that size starts, as a take's pieces went right after its import.
+ * page gets afterwards, from a fresh read of the store, live. `__killOnThumbs(size, ms)` kills them the moment a film strip
+ * of a file that size starts, as a take's pieces went right after its import; for `ms` after that fresh reads die too.
  */
 const killer = () => {
   const dead = new WeakSet<Blob>();
@@ -70,15 +70,15 @@ const killer = () => {
     for (const w of seen) { const b = w.deref(); if (b && b.size === size) { dead.add(b); n++; } }
     return n;
   };
-  const w = window as unknown as { __killBlobs: (size: number, ms?: number) => number; __killOnThumbs: (size: number) => void; __killedOnThumbs: number };
+  const w = window as unknown as { __killBlobs: (size: number, ms?: number) => number; __killOnThumbs: (size: number, ms?: number) => void; __killedOnThumbs: number };
   w.__killBlobs = (size, ms = 0) => { deadFor = { size, until: performance.now() + ms }; return kill(size); };
-  let armed = 0;
+  let armed = 0, armedFor = 0;
   w.__killedOnThumbs = 0;
-  w.__killOnThumbs = (size) => { armed = size; };
+  w.__killOnThumbs = (size, ms = 0) => { armed = size; armedFor = ms; };
   const post = Worker.prototype.postMessage;
   Worker.prototype.postMessage = function (this: Worker, message: unknown, ...rest: unknown[]) {
     const job = (message as { job?: { size?: number } } | null)?.job;
-    if (armed && job?.size === armed) { w.__killedOnThumbs += kill(armed); armed = 0; }
+    if (armed && job?.size === armed) { w.__killedOnThumbs += w.__killBlobs(armed, armedFor); armed = 0; }
     return (post as (...a: unknown[]) => void).call(this, message, ...rest);
   } as Worker['postMessage'];
 };
@@ -201,5 +201,18 @@ test('the film strip of a file whose Blob dies as the strip starts still comes: 
     const { leases } = await perf(page);
     expect(leases, 'the dead Blobs were replaced, and counted').toMatchObject({ failed: 0 });
     expect(leases!.renewed).toBeGreaterThan(0);
+  });
+});
+
+test('the film strip of a file that stays unreadable longer than a read waits still comes, once it reads again (S-1-13-1)', async ({ playwright }, info) => {
+  // On the iPhone (live v1.9.8–1.9.10) a take's record stayed unreadable for 10 and 19.6 s twice in 60 runs, past the
+  // 7.8 s a read waits for a new lease: the strip gave up and stayed empty while the take played.
+  test.setTimeout(240_000);
+  const size = fs.statSync(fx(FILE)).size;
+  await withKadr(playwright, info, async (page) => {
+    await addLongVideo(page, () => page.evaluate((s) => (window as unknown as { __killOnThumbs: (n: number, ms: number) => void }).__killOnThumbs(s, 12_000), size));
+    expect(await page.evaluate(() => (window as unknown as { __killedOnThumbs: number }).__killedOnThumbs), 'the Blobs read so far die as the strip starts').toBeGreaterThan(0);
+    await expect.poll(async () => (await perf(page)).leases?.failed ?? 0, { message: 'the first try gives up after the 7.8 s a read waits', timeout: 60_000 }).toBeGreaterThan(0);
+    await expect.poll(async () => (await perf(page)).thumbs, { message: 'the film strip is made once the file reads again', timeout: 90_000 }).toBe(true);
   });
 });

@@ -7,10 +7,12 @@ import type { Project } from '../core/types';
 import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
-import { ProjectConflict, ProjectDeleted, clearJournal, deleteBlob, deleteTake, forgetLoadedMedia, unfinishedTakes, forgetProject, journalProject, loadProject, onDeletedElsewhere, onSavedElsewhere, saveProject } from '../storage/db';
+import { ProjectConflict, ProjectDeleted, clearJournal, deleteBlob, deleteTake, forgetLoadedMedia, unfinishedTakes, saveUnfinishedTake, forgetProject, journalProject, loadProject, onDeletedElsewhere, onSavedElsewhere, saveProject } from '../storage/db';
 import { startExport } from './exportPrefs';
-import { forgetThumbs, probe } from '../engine/media';
-import { addFiles, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
+import { forgetThumbs } from '../engine/media';
+import { importStored } from '../engine/importer';
+import { uid } from '../core/defaults';
+import { addFiles, placeAssets, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
 import { formatTime } from './format';
 import { Preview } from './Preview';
 import { Timeline } from './Timeline';
@@ -121,14 +123,16 @@ export function Editor({ id }: { id: string }) {
       // The user's own fonts: register, then redraw text that may have used a fallback meanwhile.
       if (p.fonts) void import('../engine/customFonts').then((m) => m.registerProjectFonts(p)).then(() => { player.text.clear(); player.requestRender(); });
       // A recording a crash interrupted: what reached the disk goes into the project.
+      // Saved as Stop saves one, its bytes as the stored file (docs/19 ADR-М5): no Blob read back is saved again.
       void unfinishedTakes(p.id).then(async (takes) => {
         for (const take of takes) {
-          const ext = take.blob.type.includes('mp4') ? 'mp4' : 'webm';
-          const file = new File([take.blob], `${t('Camera')} (${t('restored')}).${ext}`, { type: take.blob.type || 'video/webm' });
+          const assetId = uid();
+          const { size, type } = await saveUnfinishedTake(p.id, take, assetId);
           // Cut off before its first complete part, a take cannot be read at all: nothing to bring back, nothing to say.
-          if (!await probe(file).then(() => true, () => false)) { await deleteTake(p.id, take.id); continue; }
-          if (await addFiles([file], 'main')) {
-            await deleteTake(p.id, take.id);
+          const asset = size ? await importStored(assetId, `${t('Camera')} (${t('restored')}).${type.includes('mp4') ? 'mp4' : 'webm'}`).catch(() => null) : null;
+          if (!asset) { await deleteBlob(assetId); await deleteTake(p.id, take); continue; }
+          if (await placeAssets([asset], 'main', p.id)) {
+            await deleteTake(p.id, take);
             useEditor.getState().toast(t('A camera recording that was cut short is back in the project.'));
           }
         }

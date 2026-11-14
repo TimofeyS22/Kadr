@@ -6,8 +6,10 @@ import { player } from '../engine/player';
 import { t } from '../lib/i18n';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor } from '../state/store';
-import { addFiles } from './actions';
+import { addStored } from './actions';
 import { TakeWriter } from '../storage/db';
+import { saveTake } from '../engine/importer';
+import { uid } from '../core/defaults';
 import { Slider, Values } from './controls';
 import { Button, IconButton } from './ck/controls';
 import { Field } from './ck/Field';
@@ -223,13 +225,25 @@ export function CameraSheet() {
     const type = r.recorder.mimeType || 'video/webm';
     const ext = type.includes('mp4') ? 'mp4' : 'webm';
     const stamp = new Date().toTimeString().slice(0, 5).replace(':', '-');
-    const file = await r.take.file(`${t('Camera')} ${stamp}.${ext}`, type.split(';')[0]);
+    const name = `${t('Camera')} ${stamp}.${ext}`;
+    // The take's bytes become the stored file as they are: nothing read back from the store is saved again, so deleting
+    // its pieces cannot stop the file reading (docs/19 ADR-М5, S-1-13).
+    const assetId = uid();
+    let size: number;
+    try {
+      size = await saveTake(r.take, assetId, name, type.split(';')[0]);
+    } catch (e) {
+      // No room or no storage: the pieces stay, and the take comes back when the project opens again.
+      editor().openSheet(null);
+      editor().toast(t('Could not add {name}: {error}', { name, error: errorMessage(e) }), 'error');
+      return;
+    }
     // Nothing came out of the recorder: said as it is, not as a file "in an unsupported format" (S-1-12).
-    if (!file.size) { rec.current = r; dropEmpty(r, t('The recording came out empty: the browser gave no video. Record again.')); return; }
-    track('camera_recording_saved', { seconds: Math.round(elapsed), mb: Math.round(file.size / 1e6) });
+    if (!size) { rec.current = r; dropEmpty(r, t('The recording came out empty: the browser gave no video. Record again.')); return; }
+    track('camera_recording_saved', { seconds: Math.round(elapsed), mb: Math.round(size / 1e6) });
     editor().openSheet(null); // closes this screen (stops the camera) before the import overlay
     // Only once it is in the project does the take leave storage: a full disk at this moment no longer loses the recording.
-    if (await addFiles([file], 'main', { script: script.trim() || undefined })) void r.take.discard();
+    if (await addStored(assetId, name, 'main', { script: script.trim() || undefined })) void r.take.discard();
   }
 
   const close = () => editor().openSheet(null);
