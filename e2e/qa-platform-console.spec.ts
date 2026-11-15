@@ -4,16 +4,17 @@
 // hold their own scenarios to the same rule.
 import { expect, test, type Page } from '@playwright/test';
 import { TASK_IDS } from '../src/core/taskIds';
+import { RU } from '../src/lib/locale-ru';
 import { audits, exportAs, fx, importFiles, newProject, sheet } from './qa-platform-kit';
 
 const SHEETS = ['Adjust', 'Filters', 'Effects', 'Crop', 'Transform', 'Mask', 'Chroma key', 'Speed', 'Volume', 'Voice', 'Text', 'Stickers', 'Music', 'Sounds', 'Canvas', 'Beat', 'Layers', 'Keyframes', 'Captions'];
 
-async function everySheet(page: Page, opened: string[]) {
+async function everySheet(page: Page, opened: string[], tr: (s: string) => string = (x) => x) {
   for (const scope of ['clip', 'project'] as const) {
-    for (const name of SHEETS) {
+    for (const name of SHEETS.map(tr)) {
       const sel = page.locator('.tl-row.main .clip.sel');
       if (scope === 'clip' && !(await sel.count())) await page.locator('.tl-row.main .clip').first().click();
-      if (scope === 'project' && (await sel.count())) await page.getByRole('button', { name: 'Close tools' }).click();
+      if (scope === 'project' && (await sel.count())) await page.getByRole('button', { name: tr('Close tools') }).click();
       const button = page.locator('.toolbar .tool', { hasText: new RegExp(`^${name}$`) });
       if (!(await button.count()) || !(await button.first().isEnabled())) continue;
       await button.first().click();
@@ -26,7 +27,7 @@ async function everySheet(page: Page, opened: string[]) {
   }
 }
 
-for (const locale of ['en'] as const) {
+for (const locale of ['en', 'ru'] as const) {
   test.describe(() => {
     audits({ locale });
     test(`the console stays clean (${locale}): every sheet, each export format, Home, the sample and a template (Q-2)`, async ({ page }, info) => {
@@ -53,6 +54,17 @@ for (const locale of ['en'] as const) {
         await (await chooser).setFiles([fx('photo.png'), fx('person.jpg')]);
         await expect(page.locator('.tl-row .clip').first()).toBeVisible({ timeout: 60_000 });
         expect(opened.length, `sheets opened: ${opened.join(', ')}`).toBeGreaterThanOrEqual(15);
+      } else {
+        // Russian: the same sheets, reached by their Russian names, on one video (no music clip: no «Beat»).
+        const ru = (x: string) => RU[x] ?? x;
+        await page.goto('./');
+        await page.getByRole('button', { name: ru('New project') }).click();
+        await page.locator('.aspect-card', { hasText: '9:16' }).click();
+        await expect(page.locator('.preview-canvas')).toBeVisible();
+        await importFiles(page, ru('Media'), ['landscape.mp4']);
+        await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+        await everySheet(page, opened, ru);
+        expect(opened.length, `sheets opened: ${opened.join(', ')}`).toBeGreaterThanOrEqual(12);
       }
     });
   });
