@@ -86,3 +86,30 @@ test('a processed sound on a piece cut at its start and played at 2×: the speec
   const t = onset(samples(await exportAs(page, info, 'Audio', { loudness: false })));
   expect(Math.abs(t - base), `noise reduction + Deep: ${base.toFixed(3)} → ${t.toFixed(3)} s`).toBeLessThan(0.02);
 });
+
+test('processing cancelled midway changes nothing: the setting is off, the preview and the file stay the plain sound (Q-22, Q-23)', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  await importFiles(page, 'Audio', ['eval_ru_live.mp4']); // a long live voice: its processing takes seconds
+  const clip = page.locator('.tl-row.audio .clip').first();
+  await expect(clip).toHaveCount(1);
+  const plainLoud = samples(await exportAs(page, info, 'Audio', { loudness: false }));
+  for (const [sheetName, control] of [['Volume', 'Enhance voice'], ['Voice', 'Robot']] as const) {
+    await selectClip(page, clip);
+    await tool(page, sheetName).click();
+    if (sheetName === 'Volume') await page.getByRole('switch', { name: control }).click();
+    else await sheet(page).getByRole('radio', { name: control, exact: true }).click();
+    await page.getByRole('button', { name: 'Cancel' }).click({ timeout: 10_000 });
+    if (sheetName === 'Volume') await expect(page.getByRole('switch', { name: control }), `${control}: off after Cancel`).not.toBeChecked();
+    else await expect(sheet(page).getByRole('radio', { name: 'Original', exact: true }), `${control}: Original after Cancel`).toHaveAttribute('aria-checked', 'true');
+    await page.getByRole('button', { name: 'Done' }).click();
+    const p = await storedProject<Project>(page);
+    const c = p.tracks.flatMap((t) => t.clips).find((x) => x.kind === 'audio') as { enhance?: boolean; voice?: string };
+    expect({ enhance: !!c.enhance, voice: c.voice ?? null }, `${control}: nothing stored`).toEqual({ enhance: false, voice: null });
+  }
+  // The file is the plain sound, as the preview plays it: no processing waits at the export.
+  const after = samples(await exportAs(page, info, 'Audio', { loudness: false }));
+  expect(Math.abs(rmsDb(after, 1, 20) - rmsDb(plainLoud, 1, 20)), 'the same level as before').toBeLessThan(0.2);
+});

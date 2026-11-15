@@ -6,7 +6,7 @@ import { endWithVideo, fitTrack, type LibraryTrack, type MusicManifest } from '.
 import { CAPTION_ACCENT, CAPTION_PRESETS } from '../core/presets';
 import {
   clipEnd, deleteClip, deleteClips, endWithContent, detachAudio, duplicateClip, duplicateClips, moveClipsBy, expectedAudioKey, findClip, insertFreezeFrame, forwardIn, insertMain, isSound, mainTrack, mirrorPrivacyKeys, placeClip, projectDuration,
-  needsSoundJob, reversedSpan, sourceTime, splitClip, SOUND_SYNC,
+  needsSoundJob, reversedSpan, sourceTime, splitClip, SOUND_SYNC, clone,
 } from '../core/timeline';
 import type { Asset, CaptionClip, CaptionWord, Clip, ImageClip, Project, SoundClip, VideoClip } from '../core/types';
 import { deleteBlob, getBlob } from '../storage/db';
@@ -399,26 +399,35 @@ export async function exportSubtitles(): Promise<void> {
  * needed. Until processing finishes the clip plays its source sound.
  */
 export async function updateClipSound(clipId: string, change: (c: SoundClip) => void, onProgress: (f: number) => void, signal: AbortSignal): Promise<void> {
-  editor().commit((d) => { const f = findClip(d, clipId); if (f && isSound(f.clip)) change(f.clip); });
   const p = editor().project;
   const f = p ? findClip(p, clipId) : null;
   if (!p || !f || !isSound(f.clip)) return;
-  const clip = f.clip;
+  // The settings change together with their sound, never before it: a Cancel or a failure midway left the switch on,
+  // the preview playing the plain sound and the export making the processed one — a file unlike the preview (SW-D-6).
+  const clip = clone(f.clip);
+  change(clip);
+  const changed = JSON.stringify(clip) !== JSON.stringify(f.clip);
   const key = expectedAudioKey(clip);
-  if (key && clip.audioKey === key && clip.audioAssetId && p.assets[clip.audioAssetId]) return;
-  const r = key && needsSoundJob(p, clip) ? await (await import('../engine/audiofx')).prepareClipSound(p, clip, onProgress, signal) : null;
-  // Attaching the processed sound is not an edit of its own: undo goes straight back to the previous settings.
-  editor().amend((d) => {
+  const ready = !!key && clip.audioKey === key && !!clip.audioAssetId && !!p.assets[clip.audioAssetId];
+  // Only a clip whose file has sound gets a job (SW-C-4); the change of settings still goes in, with nothing to attach.
+  const r = key && !ready && needsSoundJob(p, clip) ? await (await import('../engine/audiofx')).prepareClipSound(p, clip, onProgress, signal) : null;
+  const apply = (d: Project) => {
     if (r) {
       for (const a of r.created) d.assets[a.id] = a;
       const src = d.assets[clip.assetId];
       if (src) src.derived = r.derived;
     }
     const g = findClip(d, clipId);
-    if (!g || !isSound(g.clip) || expectedAudioKey(g.clip) !== key) return; // settings changed meanwhile
+    if (!g || !isSound(g.clip)) return;
+    if (changed) change(g.clip);
+    if (ready || expectedAudioKey(g.clip) !== key) return; // settings changed meanwhile
     if (r?.assetId) { g.clip.audioAssetId = r.assetId; g.clip.audioKey = key; }
     else { delete g.clip.audioAssetId; delete g.clip.audioKey; }
-  });
+  };
+  // A change of settings is one undo step with its sound. A sound made for settings already there (natural pitch after
+  // a speed change, the export's preparation) is no edit of its own: undo goes straight back to the previous settings.
+  if (changed) editor().commit(apply);
+  else editor().amend(apply);
 }
 
 /** Clips whose processed sound (natural pitch, noise reduction, voice enhance) is missing or out of date. */
