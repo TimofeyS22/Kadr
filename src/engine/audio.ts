@@ -8,6 +8,7 @@ import type { Project, SoundClip } from '../core/types';
 import type { WrappedAudioBuffer } from 'mediabunny';
 import { MediaError, PEAKS_PER_SEC, waveform, type MediaPool } from './media';
 import type { SoundSink } from './sound';
+import { isStorageError } from '../storage/reader';
 
 export interface SoundEntry { clip: SoundClip; fadeIn: number; fadeOut: number; duck: number }
 
@@ -318,6 +319,9 @@ export async function renderAudioWindow(p: Project, pool: MediaPool, from: numbe
     } catch (e) {
       if ((e as Error).name === 'AbortError' || e instanceof MediaError) throw e;
       if (skip) { console.warn('sound left out', p.assets[id]?.name, e); skip.add(id); continue; }
+      // A file that cannot be read is no sound that does not decode: the storage's words and the browser's
+      // NotReadableError go out as they are, and errorMessage says them (V-113; the preview does the same).
+      if (isStorageError(e) || (e instanceof DOMException && ['NotReadableError', 'NotFoundError'].includes(e.name))) throw e;
       // Name the file: a bare decoder message ("Unsupported configuration…") does not tell anyone what to do.
       // The decoder's own words go to the details (`vars.error`), not into the sentence (S-1-7).
       throw new MediaError('The sound of “{name}” cannot be decoded in this browser', { name: p.assets[id]?.name ?? '?', error: (e as Error).message ?? String(e) });
