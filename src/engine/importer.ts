@@ -1,6 +1,6 @@
 import { imageSize } from '../core/imageSize';
 import { uid } from '../core/defaults';
-import { SNIFF_BYTES, sniffMime } from '../core/sniff';
+import { SNIFF_BYTES, animatedImage, sniffMime } from '../core/sniff';
 import type { Asset } from '../core/types';
 import { within } from '../lib/limits';
 import { openReader, putBlob, requestPersistence, type TakeWriter } from '../storage/db';
@@ -12,7 +12,7 @@ export const MAX_FILE_BYTES = 4 * 1024 ** 3;
 export { pickFiles } from '../lib/pickFiles';
 
 /** What the person is told about a file that did go in: its sound does not decode here, or it holds less than it promises. */
-export type ImportNote = { kind: 'sound'; error: string } | { kind: 'cut'; kept: number; total: number };
+export type ImportNote = { kind: 'sound'; error: string } | { kind: 'cut'; kept: number; total: number } | { kind: 'still' };
 
 export async function importFile(file: File | Blob, name = (file as File).name ?? 'media', onNote?: (note: ImportNote) => void): Promise<Asset> {
   if (file.size > MAX_FILE_BYTES) throw new MediaError('{name} is larger than 4 GB', { name });
@@ -22,8 +22,11 @@ export async function importFile(file: File | Blob, name = (file as File).name ?
   // The stored type is what later decoding goes by (thumbnails, frames), so it must agree.
   if (sniffed && image !== file.type.startsWith('image/')) file = new Blob([file], { type: sniffed });
   if (image) {
-    const size = imageSize(new Uint8Array(await file.slice(0, 512 * 1024).arrayBuffer()));
+    const head = new Uint8Array(await file.slice(0, 512 * 1024).arrayBuffer());
+    const size = imageSize(head);
     if (size && size.width * size.height > MAX_IMAGE_PIXELS) throw new MediaError('This image is too large for this device ({mp} megapixels).', { mp: Math.round((size.width * size.height) / 1e6) });
+    // A picture that moves comes in as its first frame, and that is said wherever the file was added from (V-227).
+    if (animatedImage(head)) onNote?.({ kind: 'still' });
     file = await toDecodableImage(file);
   }
   const asset = assetOf(uid(), name, file, await probe(file), onNote);

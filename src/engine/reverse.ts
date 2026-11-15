@@ -61,10 +61,12 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     started = { output, sources: [vSource, ...(aSource ? [aSource] : [])] };
     await output.start();
 
+    // Cancel is heard at every step, the sound's as well as the frames' (SW-C-7: a 60 s clip took 25 s to stop on WebKit).
+    const stop = () => { if (signal.aborted) throw new DOMException('Cancelled', 'AbortError'); };
     if (audio && aSource) {
       // Sound: collect the range (≤ 60 s), reverse it, add it in one-second chunks.
       const parts = [];
-      for await (const wb of new ResilientSink(audio).buffers(s0, s1)) parts.push(wb);
+      for await (const wb of new ResilientSink(audio).buffers(s0, s1)) { stop(); parts.push(wb); }
       if (parts.length) {
         const sr = parts[0].buffer.sampleRate, ch = Math.min(2, parts[0].buffer.numberOfChannels);
         const len = Math.round((s1 - s0) * sr);
@@ -77,9 +79,11 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
             if (to > from) data[c].set(src.subarray(from, to), pos + from);
           }
         }
+        stop();
         for (const d of data) d.reverse();
         // The encoder puts its priming in front: off the start, so the reversed sound meets the reversed picture (audit V-159).
         for (let i = Math.min(len, aCodec ? await encoderDelay(aCodec, ch, sr) : 0); i < len; i += sr) {
+          stop();
           const n = Math.min(sr, len - i);
           const chunk = new AudioBuffer({ length: n, numberOfChannels: ch, sampleRate: sr });
           data.forEach((d, c) => chunk.copyToChannel(d.subarray(i, i + n), c));
@@ -91,11 +95,12 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     const sink = new CanvasSink(video, { width, height, fit: 'contain' });
     const frameDur = 1 / fps;
     for (let end = s1; end > s0 + 1e-6; end -= WINDOW_S) {
-      if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      stop();
       const start = Math.max(s0, end - WINDOW_S);
       const frames: WrappedCanvas[] = [];
-      for await (const f of sink.canvases(start, end)) if (f.timestamp < end - 1e-6 && (f.timestamp >= start - 1e-6 || start <= s0)) frames.push(f);
+      for await (const f of sink.canvases(start, end)) { stop(); if (f.timestamp < end - 1e-6 && (f.timestamp >= start - 1e-6 || start <= s0)) frames.push(f); }
       for (const f of frames.reverse()) {
+        stop();
         const t = Math.max(0, s1 - Math.max(s0, f.timestamp) - frameDur);
         ctx.drawImage(f.canvas, 0, 0);
         if (hdr || as601) {

@@ -109,7 +109,6 @@ export async function placeAssets(assets: Asset[], target: AddTarget, owner: str
   });
   if (first) editor().select(first);
   for (const f of fitted) editor().toast(t('“{name}” ends with the video: {kept} s of {total} s. Drag the end of the clip to make it longer.', { name: f.name, kept: f.kept.toFixed(1), total: f.total.toFixed(1) }), 'info', 8000);
-  if (assets.some((a) => a.mime === 'image/gif')) editor().toast(t('A GIF comes in as a still picture: its first frame.'), 'info', 6000); // audit V-227
   track('media_imported', { count: assets.length, target });
   slowPickTip(assets, pickMs);
   return assets.length;

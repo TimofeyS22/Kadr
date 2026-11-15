@@ -34,9 +34,24 @@ function migrateClip(c: Loose): void {
 /** Steps between versions of the format, by the version they start from: none yet. */
 const STEPS: Record<number, (p: Project) => void> = {};
 
-/** Brings a project to the current format. Tolerates a damaged one: `repairBackup` judges what is left. */
+/**
+ * A project saved by a newer version of Kadr (V-239): after a rollback of the site, or in a tab not yet updated. Opened
+ * here it would be saved back in this older format, and what the newer one added would be lost without a word.
+ */
+export class ProjectTooNew extends Error {
+  constructor() {
+    super('This project was saved by a newer version of Kadr. Reload the page to update, then open it again.');
+    this.name = 'ProjectTooNew';
+  }
+}
+
+/**
+ * Brings a project to the current format. Tolerates a damaged one: `repairBackup` judges what is left. A project of a
+ * newer format is refused untouched (`ProjectTooNew`), never written down to this one.
+ */
 export function migrateProject(p: Project): void {
   const from = typeof p.version === 'number' ? p.version : 1;
+  if (from > SCHEMA_VERSION) throw new ProjectTooNew();
   for (let v = from; v < SCHEMA_VERSION; v++) STEPS[v]?.(p);
   if (Array.isArray(p.tracks)) for (const t of p.tracks as unknown[]) if (isObj(t) && Array.isArray(t.clips)) for (const c of t.clips) if (isObj(c)) migrateClip(c);
   p.version = SCHEMA_VERSION;
