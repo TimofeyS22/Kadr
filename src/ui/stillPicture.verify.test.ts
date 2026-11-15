@@ -1,11 +1,19 @@
 // Sweep lane E2 (docs/21 §5): a reproducing test for audit V-227 — an animated GIF or WebP silently became a still
-// picture. The import itself is replaced: what is checked is what the person is told when a GIF comes in. An animated
-// WebP needs its frames to be told from a still one: that case is in e2e/qa-verify-media.spec.ts, with real files.
+// picture. The import itself is replaced: what is checked is that its word about a picture that moves reaches the person
+// as a toast. Since 668f670 the importer says it (`ImportNote` 'still'), as only it sees the file's bytes and can tell a
+// moving GIF, WebP or APNG from a still one: that part is `src/core/animated.test.ts` and e2e/qa-media-animated.spec.ts.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Asset } from '../core/types';
 
 let imported: Asset[] = [];
-vi.mock('../engine/importer', () => ({ importFiles: async () => imported, importFile: vi.fn(), pickFiles: vi.fn() }));
+type Note = (name: string, note: { kind: 'still' }) => void;
+vi.mock('../engine/importer', () => ({
+  importFiles: async (_files: File[], _onError: unknown, _onProgress: unknown, onNote?: Note) => {
+    for (const a of imported) if (a.name.startsWith('moving')) onNote?.(a.name, { kind: 'still' });
+    return imported;
+  },
+  importFile: vi.fn(), importStored: vi.fn(), pickFiles: vi.fn(),
+}));
 vi.mock('../engine/media', () => ({ MediaError: class extends Error {}, captureFrame: vi.fn() }));
 vi.mock('../engine/player', () => ({ player: {} }));
 vi.mock('../engine/save', () => ({ saveFile: vi.fn() }));
