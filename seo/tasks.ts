@@ -98,7 +98,7 @@ export const PAGES: TaskPage[] = [
       en: 'Kadr recognizes the speech in your video and turns it into captions. Pick the layout — whole phrases, one word at a time, the spoken word highlighted, or words appearing as they are said — and a style. The text is editable line by line, and you can save the captions as .srt.',
     },
     steps: {
-      ru: ['Откройте Kadr и добавьте видео.', 'Нажмите «Субтитры»: распознавание начнётся сразу, а язык и стиль можно поменять в «Настройках».', 'Нажмите «Создать субтитры» и дождитесь распознавания.', 'Исправьте слова, если нужно, и сохраните видео.'],
+      ru: ['Откройте Kadr и добавьте видео.', 'Нажмите «Субтитры»: распознавание начнётся сразу, а язык и стиль можно поменять в «Настройках».', 'Дождитесь, пока распознавание закончится.', 'Исправьте слова, если нужно, и сохраните видео.'],
       en: ['Open Kadr and add your video.', 'Tap “Captions”: recognition starts at once, and the language and style are under “Settings”.', 'Wait for the recognition to finish.', 'Fix any words if needed and save the video.'],
     },
     faq: {
@@ -190,8 +190,8 @@ export const PAGES: TaskPage[] = [
       en: 'Kadr has a library of tracks licensed CC0 (public domain): use them anywhere, including monetized videos and ads, with no credit needed. The track is fitted to your video’s length with a fade, and the beat is already marked so you can cut clips on the beat. For a Content ID dispute there is a “Copy license” button.',
     },
     steps: {
-      ru: ['Добавьте видео в Kadr.', 'Нажмите «Музыка» и выберите настроение.', 'Прослушайте треки и нажмите «Добавить».', 'Включите «Приглушать, когда говорят», если в видео есть речь.'],
-      en: ['Add your video to Kadr.', 'Tap “Music” and pick a mood.', 'Listen to the tracks and tap “Add track”.', 'Turn on “Lower when others speak” if your video has speech.'],
+      ru: ['Добавьте видео в Kadr.', 'Нажмите «Музыка» и выберите настроение.', 'Прослушайте треки и нажмите плюс рядом с понравившимся.', 'Включите «Приглушать, когда говорят», если в видео есть речь.'],
+      en: ['Add your video to Kadr.', 'Tap “Music” and pick a mood.', 'Listen to the tracks and tap the plus next to the one you like.', 'Turn on “Lower when others speak” if your video has speech.'],
     },
     faq: {
       ru: [
