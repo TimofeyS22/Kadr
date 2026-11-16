@@ -101,3 +101,56 @@ test.describe('the first visit', () => {
     expect(kb(before), `JS before the editor is shown: budget ${FIRST_LOAD_KB} KB gzip`).toBeLessThanOrEqual(FIRST_LOAD_KB);
   });
 });
+
+// "Hide faces" and "Cutout" are worked out off the page's thread (audit V-167, F-07): the detector's nine passes a frame
+// and the segmenter's read-back held up the interface and the preview together. Seen by where MediaPipe lives: the
+// page neither loads its runtime nor fetches its models; the vision worker does. Then the preview plays both. The page's
+// CSP does not reach a worker: MediaPipe's telemetry (sent every 60 s) must still go nowhere, so the test waits past it.
+test('hiding faces and cutting out the person run in a worker, not on the page', async ({ page }) => {
+  test.setTimeout(420_000);
+  const out: string[] = [];
+  page.context().on('request', (r) => { if (!/^(blob|data):/.test(r.url()) && !['127.0.0.1', 'localhost'].includes(new URL(r.url()).hostname)) out.push(`${r.method()} ${r.url()}`); });
+  await page.addInitScript(() => {
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
+    localStorage.setItem('kadr.locale', 'en');
+    localStorage.setItem('kadr.hint.move', '1');
+    localStorage.setItem('kadr.iosVideoTip.v3', '1');
+  });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '16:9' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Media', exact: true }).click();
+  await (await chooser).setFiles(fx('walk.mp4'));
+  const clip = page.locator('.tl-row.main .clip').first();
+  await expect(clip).toHaveCount(1, { timeout: 60_000 });
+  await expect(async () => {
+    if (!(await clip.getAttribute('class'))?.includes(' sel')) await clip.click();
+    await expect(clip).toHaveClass(/ sel/, { timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Hide faces', exact: true }).click();
+  const hide = page.getByRole('switch', { name: 'Hide faces automatically' });
+  await hide.click();
+  const modelsAt = Date.now();
+  await expect(hide).toBeChecked({ timeout: 120_000 });
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: 'Cutout', exact: true }).click();
+  // Headless Chromium draws WebGL in software: the segmenter's GPU setup took 86–101 s at load 40, with MediaPipe on the
+  // page as in the worker (both builds, 2026-11-14); WebKit 5–8 s.
+  await expect(page.getByRole('button', { name: 'Cutout', exact: true })).toHaveAttribute('aria-pressed', 'true', { timeout: 180_000 });
+  await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.waitForTimeout(2000);
+  const mediapipe = /vision_wasm_internal|\.tflite/;
+  const onPage = await page.evaluate((re) => ({
+    scripts: [...document.scripts].map((s) => s.src).filter((s) => new RegExp(re).test(s)),
+    fetched: performance.getEntriesByType('resource').map((e) => e.name).filter((n) => new RegExp(re).test(n)),
+  }), mediapipe.source);
+  expect(onPage.scripts, 'MediaPipe runtime loaded into the page').toEqual([]);
+  expect(onPage.fetched, 'MediaPipe files fetched by the page').toEqual([]);
+  const inWorkers = (await Promise.all(page.workers().map((w) => w.evaluate((re) => performance.getEntriesByType('resource').map((e) => e.name).filter((n) => new RegExp(re).test(n)), mediapipe.source).catch(() => [] as string[])))).flat();
+  expect(inWorkers.some((n) => /blaze_face/.test(n)), 'the face model is fetched by a worker').toBe(true);
+  expect(inWorkers.some((n) => /selfie_segmenter/.test(n)), 'the segmenter model is fetched by a worker').toBe(true);
+  await page.waitForTimeout(Math.max(0, modelsAt + 70_000 - Date.now())); // MediaPipe's telemetry goes every 60 s
+  expect(out, 'requests to anywhere but this site').toEqual([]);
+});

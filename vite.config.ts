@@ -131,7 +131,7 @@ export default defineConfig({
         // 2026-11-11: 2.5 MB more on the first visit, in the background, once; hashed names are not fetched again).
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
         // On-device AI (speech model runtime, noise reduction) is large: cache it on first use instead of up front.
-        globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision_bundle-*.js', '**/vision_wasm_internal-*.js', 'ru/**', 'en/**'],
+        globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision.worker-*.js', '**/vision_bundle-*.js', '**/vision_wasm_internal-*.js', '**/vision_wasm_module_internal-*.js', 'ru/**', 'en/**'],
         // Task pages are plain pages from the network, never the app shell.
         navigateFallbackDenylist: [/\/(ru|en)\//],
         maximumFileSizeToCacheInBytes: 4_000_000,
@@ -144,7 +144,7 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
-            urlPattern: ({ url }) => /\/assets\/(rnnoise|asr\.worker|vision_bundle|vision_wasm_internal|ort-wasm|selfie_segmenter|blaze_face_short_range)[-.]/.test(url.pathname),
+            urlPattern: ({ url }) => /\/assets\/(rnnoise|asr\.worker|vision\.worker|vision_bundle|vision_wasm_internal|vision_wasm_module_internal|ort-wasm|selfie_segmenter|blaze_face_short_range)[-.]/.test(url.pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'kadr-ai', expiration: { maxEntries: 32 } }, // two generations of the speech runtime fit
           },
