@@ -1,7 +1,7 @@
 // Chetko components (DESIGN.md): what is pressed. Every one of them is at least 44 px to a finger, names itself to a
 // screen reader, shows the keyboard where it is, and takes every value from tokens. Texts come from the caller, so the
 // components know no language.
-import { useId, useRef, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 
 type Native = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'children'>;
 
@@ -72,10 +72,27 @@ interface RibbonProps {
 }
 /** The ribbon of tools: the same order as ever, scrolled sideways, with what must stay in reach fixed at its edges. */
 export function Ribbon({ label, start, end, children, hook }: RibbonProps) {
+  // Which way more tools lie: that edge fades, the other does not (SW-U-4: a word cut under «Все» read as broken, and the
+  // last tool stayed faded with nothing beyond it).
+  const tools = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = tools.current;
+    if (!el) return;
+    const mark = () => {
+      el.toggleAttribute('data-more-start', el.scrollLeft > 1);
+      el.toggleAttribute('data-more-end', el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    };
+    mark();
+    const ro = new ResizeObserver(mark);
+    ro.observe(el);
+    for (const c of el.children) ro.observe(c);
+    el.addEventListener('scroll', mark, { passive: true });
+    return () => { ro.disconnect(); el.removeEventListener('scroll', mark); };
+  }, [children]);
   return (
     <nav className={hook ? `ck ck-ribbon ${hook}` : 'ck-ribbon'} aria-label={label}>
       {start && <div className="ck-ribbon-edge">{start}</div>}
-      <div className="ck-ribbon-tools">{children}</div>
+      <div ref={tools} className="ck-ribbon-tools">{children}</div>
       {end && <div className="ck-ribbon-edge ck-end">{end}</div>}
     </nav>
   );

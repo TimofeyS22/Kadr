@@ -79,8 +79,15 @@
 /* The fade at the right says the ribbon goes on. */
 /* 60 px tools and 4 px above and below: the ribbon is no taller than in 1.7.1 (71 px), so the frame keeps its room (principle 1). */
 .ck-ribbon-tools { flex: 1; min-width: 0; display: flex; align-items: center; padding: var(--space-1) 0;
-  -webkit-mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 .ck-ribbon-tools::-webkit-scrollbar { display: none; }
+/* Room after the last tool, before the line of «Все»: a spacer, since a scroller's own end padding is lost in some browsers. */
+.ck-ribbon-tools::after { content: ''; flex: none; width: var(--space-2); }
+/* What scrolls under the pinned «Назад» and «Все» fades over a tool's width on the side where more lie, so a word cut there
+   reads as «more this way», not as broken; at the end nothing fades (the art director, SW-U-4). */
+.ck-ribbon-tools[data-more-end] { -webkit-mask-image: linear-gradient(90deg, black calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, black calc(100% - 48px), transparent); }
+.ck-ribbon-tools[data-more-start] { -webkit-mask-image: linear-gradient(270deg, black calc(100% - 48px), transparent); mask-image: linear-gradient(270deg, black calc(100% - 48px), transparent); }
+.ck-ribbon-tools[data-more-start][data-more-end] { -webkit-mask-image: linear-gradient(90deg, transparent, black 48px, black calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, transparent, black 48px, black calc(100% - 48px), transparent); }
 /* Groups of tools, what is used most first: a hairline between them. */
 .ck-ribbon-group { flex: none; display: flex; align-items: center; }
 .ck-ribbon-group + .ck-ribbon-group { margin-left: var(--space-1); padding-left: var(--space-1); box-shadow: inset var(--hairline) 0 var(--border-subtle); }

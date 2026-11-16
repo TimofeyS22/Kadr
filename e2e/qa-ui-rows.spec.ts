@@ -290,3 +290,22 @@ test('SW-U-3: the corner handle of a picked piece that fills the frame stands wh
   expect(h!.x + h!.width, 'and inside it sideways').toBeLessThanOrEqual(s!.x + s!.width + 0.5);
   expect(await misses(handle), 'a finger takes it').toEqual([]);
 });
+
+test('SW-U-4: the ribbon fades only where more tools lie — under «Все» while more follow, under «Назад» once scrolled, nowhere at the end', async ({ page }) => {
+  await sampleEditor(page, 'ru');
+  await page.locator('.tl-row.main .clip').first().click();
+  const tools = page.locator('.toolbar .ck-ribbon-tools');
+  const faded = () => tools.evaluate((el) => { const m = getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage; return m && m !== 'none' ? m : null; });
+  const at = (x: number) => tools.evaluate((el, v) => { el.scrollLeft = v < 0 ? el.scrollWidth : v; }, x);
+  await at(0);
+  await page.waitForTimeout(200);
+  expect(await faded(), 'at the start the edge under «Все» fades').toContain('gradient');
+  expect(await tools.evaluate((el) => el.hasAttribute('data-more-start')), 'and nothing lies before the first tool').toBe(false);
+  await at(200);
+  await page.waitForTimeout(200);
+  expect(await tools.evaluate((el) => el.hasAttribute('data-more-start') && el.hasAttribute('data-more-end')), 'in the middle both edges fade').toBe(true);
+  await at(-1);
+  await page.waitForTimeout(200);
+  expect(await faded(), 'at the end the last tool is not faded: nothing lies beyond it').not.toMatch(/gradient\(90deg, (rgb\(0, 0, 0\)|black) calc/);
+  expect(await tools.evaluate((el) => el.hasAttribute('data-more-end'))).toBe(false);
+});
