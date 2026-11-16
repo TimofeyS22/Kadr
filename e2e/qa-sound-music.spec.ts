@@ -50,6 +50,30 @@ test('cut to the beat of music that starts later and is trimmed: every cut is on
 test.describe(() => {
   test.use({ serviceWorkers: 'allow' });
 
+  test('the music library never opened before, opened without a network: the sheet says so, and nothing goes unhandled (SW-D-7)', async ({ page, context, baseURL, browserName }) => {
+    test.setTimeout(180_000);
+    expectedConsole(/Failed to load resource|ERR_INTERNET_DISCONNECTED|net::ERR_FAILED|WebKit encountered an internal error|Load failed|FetchEvent/);
+    test.skip(!baseURL?.startsWith('http://'), 'the network is taken away through a local proxy (e2e/network.ts)');
+    const net = await switchableNetwork(baseURL!);
+    await page.goto(net.url);
+    await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.locator('.aspect-card', { hasText: '9:16' }).click();
+    await importFiles(page, 'Media', ['photo.png']);
+    await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Close tools' }).click();
+    // The list was never fetched: the service worker has none kept, and the network is gone.
+    net.off();
+    if (browserName === 'chromium') await context.setOffline(true);
+    await tool(page, 'Music').click();
+    await expect(page.getByText(/music library is not available|did not answer|No internet/), 'the sheet says so').toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(2000); // a refusal that goes unhandled shows up after the sheet has spoken (the audit fails on it)
+    await context.setOffline(false);
+    await net.close();
+  });
+
   test('a track added from the library plays and exports offline (Q-21 §3.13)', async ({ page, context, baseURL, browserName }, info) => {
     test.setTimeout(420_000);
     expectedConsole(/Failed to load resource|ERR_INTERNET_DISCONNECTED|net::ERR_FAILED|WebKit encountered an internal error|Load failed|FetchEvent/);
