@@ -107,7 +107,10 @@ test('deleting a project removes its backup from the device, as the dialog says 
     const exported = (await diskFiles(page)).filter((n) => n.startsWith('export-'));
     // The export's own file leaves when its sheet closes (ExportSheet.tsx); the backup is made on the home screen and
     // only the delete removes it.
-    await page.getByRole('button', { name: 'Export again' }).click();
+    await page.getByRole('button', { name: 'Export again' }).click(); // a file not saved yet is warned about once
+    // With a sheet open an upright phone folds the header away (UI-7): the sheet closes first (its second attempt within
+    // the warning means it), then the header gives the way back.
+    await page.getByRole('dialog', { name: 'Export' }).getByRole('button', { name: 'Done' }).click();
     await page.getByRole('button', { name: 'Back to projects' }).click();
     const dl = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Save a backup of Secret' }).click();
