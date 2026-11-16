@@ -111,6 +111,7 @@ export function VoiceoverBody() {
   const [meter, setMeter] = useState<ReturnType<typeof meterStep>>({ ...METER_IDLE, clip: false });
   const rec = useRef<VoiceRecorder | null>(null);
   const startAt = useRef(0);
+  const began = useRef(0);
   const raf = useRef(0);
 
   const gone = useRef(false);
@@ -132,6 +133,7 @@ export function VoiceoverBody() {
       rec.current = r;
       startAt.current = player.time;
       const t0 = performance.now();
+      began.current = t0;
       player.setMuted(true);
       player.play();
       setState('recording');
@@ -152,6 +154,7 @@ export function VoiceoverBody() {
   async function stop() {
     const r = rec.current;
     if (!r) return;
+    const short = performance.now() - began.current < 1000; // how long the take was, not how long saving it takes
     cancelAnimationFrame(raf.current);
     setState('saving');
     player.pause();
@@ -169,7 +172,8 @@ export function VoiceoverBody() {
       editor().select(id);
       track('voiceover_recorded', { seconds: Math.round(asset.duration) });
     } catch (e) {
-      editor().toast(t('Could not save the recording: {error}', { error: errorMessage(e) }), 'error');
+      // A take stopped at once holds no whole frame of sound: it is empty, not a sound this browser cannot decode.
+      editor().toast(t('Could not save the recording: {error}', { error: errorMessage(short ? new Error('The recording is empty') : e) }), 'error');
     } finally {
       rec.current = null;
       setState('idle');
