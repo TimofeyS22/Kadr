@@ -8,8 +8,10 @@ import { expect, type Page } from '@playwright/test';
 import { closeTools, counterAt, errorToasts, exportAs, importFiles, mainNames, newProject, probe, selectClip, tool, watch, test } from './qa-media-kit';
 
 /**
- * A synthetic camera: every picture carries its own number (eight stripes, white for a 1 bit, read by counterAt), plus
- * a tone. The k-th camera opened starts its numbers at 64·k, so takes from different openings tell apart.
+ * A synthetic camera: every picture carries a number of 4 bits, plus a tone. Bit k is drawn as stripe k and as stripe
+ * 7 − k (white for a 1), so the front camera's mirror image reads the same: counterAt(...) & 15. The top two bits are
+ * which camera opening it is (0–3), the low two count its frames (0–3, again and again): a take in the file says which
+ * one it is, however long it came out, and its picture moves.
  */
 const fakeCamera = () => {
   const w = window as unknown as { __tracks: MediaStreamTrack[]; __opened: number };
@@ -17,12 +19,13 @@ const fakeCamera = () => {
   MediaDevices.prototype.getUserMedia = async function (want?: MediaStreamConstraints) {
     const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
     const g = c.getContext('2d')!;
-    let n = (w.__opened++ * 64) % 256;
+    const opening = w.__opened++ % 4;
+    let frame = 0;
     const draw = () => {
+      const n = (opening << 2) | (frame++ & 3);
       g.fillStyle = '#000'; g.fillRect(0, 0, 640, 360);
       g.fillStyle = '#fff';
-      for (let k = 0; k < 8; k++) if ((n >> k) & 1) g.fillRect(k * 80, 0, 80, 360);
-      n = (n + 1) % 256;
+      for (let k = 0; k < 4; k++) if ((n >> k) & 1) { g.fillRect(k * 80, 0, 80, 360); g.fillRect((7 - k) * 80, 0, 80, 360); }
     };
     draw();
     setInterval(draw, 33);
@@ -108,13 +111,14 @@ test('camera edges: a double tap on Record is a countdown called off; a half-sec
   const names = await mainNames(page);
   const lengths = await main.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().width / 60));
   console.log(`takes (${info.project.name}): ${names.join(', ')}; ${lengths.map((l) => l.toFixed(2)).join(' s, ')} s`);
+  // Each take is as long as it was recorded (the steps between Start and Stop take longer on a loaded machine); the order
+  // they were made in is read from the file below, by the camera opening each picture carries.
   expect(lengths[0], 'the half-second take').toBeGreaterThan(0.2);
-  expect(lengths[0]).toBeLessThan(lengths[1]);
-  expect(lengths[1], 'the takes in the order they were made').toBeLessThan(lengths[2]);
 
   // After a speed change on a clip: the next take lands where the playhead is, after it.
   await importFiles(page, 'Media', ['counter.mp4']);
   await expect(main).toHaveCount(4, { timeout: 30_000 });
+  await expect.poll(async () => (await mainNames(page)).indexOf('counter.mp4'), { message: 'the project saved with the counter in it' }).toBeGreaterThan(-1);
   const counter = (await mainNames(page)).indexOf('counter.mp4');
   await selectClip(main.nth(counter));
   await tool(page, 'Speed').click();
@@ -133,9 +137,16 @@ test('camera edges: a double tap on Record is a countdown called off; a half-sec
   expect(pr.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
   expect(Math.abs(Number(pr.format.duration) - total), 'the file is as long as the timeline').toBeLessThan(0.15);
   const starts = await main.evaluateAll((els) => els.map((e) => (e as HTMLElement).offsetLeft - (els[0] as HTMLElement).offsetLeft).map((x) => x / 60));
-  const second = counterAt(video, Math.round((starts[2] + 0.5) * 30)), later = counterAt(video, Math.round((starts[2] + 1.5) * 30));
-  console.log(`third take in the file (${info.project.name}): ${second} then ${later}`);
-  expect(later, 'the take moves on in the file').not.toBe(second);
+  const at = (await mainNames(page)).indexOf('counter.mp4');
+  const openings = starts.map((t, k) => (k === at ? -1 : (counterAt(video, Math.round((t + 0.2) * 30)) & 15) >> 2));
+  console.log(`camera openings along the file (${info.project.name}, -1 the counter at the playhead): ${openings.join(', ')}`);
+  expect(openings.filter((o) => o >= 0), 'the takes in the file in the order they were made').toEqual([0, 1, 2, 3]);
+  expect(openings.at(-1), 'the take after the speed change is the last, where the playhead was').toBe(3);
+  const third = openings.indexOf(2);
+  const along = [0.4, 0.6, 0.8, 1.0, 1.2].map((d) => counterAt(video, Math.round((starts[third] + d) * 30)) & 15);
+  console.log(`third take in the file (${info.project.name}): ${along.join(', ')}`);
+  expect(along.every((v) => v >> 2 === 2), 'all of it is the third take').toBe(true);
+  expect(new Set(along).size, 'the take moves on in the file, not one frame held').toBeGreaterThan(1);
 });
 
 test('a camera refused, missing or busy is said in Kadr\'s words; Close works and nothing is recorded (QA matrix Q-27, §3.8)', async ({ page }) => {
