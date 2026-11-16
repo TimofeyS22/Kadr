@@ -5,7 +5,7 @@
 import { expect, test } from '@playwright/test';
 import {
   audited, closeTools, exportPhoto, expectSameFrames, importFiles, mainClips, meanAbsDiff, newProject, rgbAt, scrubTo, selectClip,
-  setSpeedPreset, tool, toastsSeen,
+  setSpeedPreset, sheet, tool, toastsSeen, valueToEnd,
 } from './qa-video-kit';
 
 audited();
@@ -57,4 +57,48 @@ test('Cutout at its ends: on a video sped up 2×, on an overlay over another cli
   console.log(`cutout twice (${info.project.name}): cut vs plain ${meanAbsDiff(cutPhoto, plain).toFixed(2)}, cut again vs cut ${meanAbsDiff(cutPhoto, again).toFixed(2)}`);
   expect(meanAbsDiff(cutPhoto, plain), 'the cutout came off').toBeGreaterThan(5);
   expect(meanAbsDiff(cutPhoto, again), 'and on again, the same picture').toBeLessThan(1);
+});
+
+test('Hide faces and Auto reframe at their ends: no face in the picture changes nothing, an area as big as the frame in its corner, a reframe of a shot with nobody says so — the preview, the photo and the video frame match (Q-14)', async ({ page }, info) => {
+  test.setTimeout(900_000);
+  const clips = mainClips(page);
+  await newProject(page);
+  await importFiles(page, 'Media', ['landscape.mp4', 'person.jpg']); // bars 0–6 s (no face, nobody), person 6–9 s
+  await expect(clips).toHaveCount(2);
+  await closeTools(page);
+  // 1 no face: automatic hiding on, the picture is the same.
+  await scrubTo(page, 180);
+  const before = rgbAt(await exportPhoto(page, info));
+  await selectClip(page, clips.nth(0));
+  await tool(page, 'Hide faces').click();
+  await page.getByRole('switch', { name: 'Hide faces automatically' }).click();
+  await expect(page.getByRole('switch', { name: 'Hide faces automatically' })).toBeChecked({ timeout: 120_000 });
+  await page.getByRole('button', { name: 'Done' }).click();
+  await closeTools(page);
+  await scrubTo(page, 180);
+  const after = rgbAt(await exportPhoto(page, info));
+  expect(meanAbsDiff(before, after), 'nothing to hide: nothing hidden').toBeLessThan(0.5);
+  // 2 the person: an area pixelated, as wide and tall as it goes, pushed into the top left corner.
+  await selectClip(page, clips.nth(1));
+  await tool(page, 'Hide faces').click();
+  await page.getByRole('radio', { name: 'Pixelate' }).click();
+  await page.getByRole('button', { name: 'Add area' }).click();
+  await valueToEnd(page, 'Width', 'End');
+  await valueToEnd(page, 'Height', 'End');
+  await valueToEnd(page, 'Position X', 'Home');
+  await valueToEnd(page, 'Position Y', 'Home');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  // 3 the bars have nobody to follow: Auto reframe says so and changes nothing.
+  await selectClip(page, clips.nth(0));
+  await tool(page, 'Auto reframe').click();
+  await expect.poll(async () => (await toastsSeen(page)).some((x) => /No person found|Reframed/.test(x)), { timeout: 180_000 }).toBe(true);
+  const said = await toastsSeen(page);
+  console.log(`reframe with nobody (${info.project.name}): ${said.join(' | ')}`);
+  expect(said.some((x) => x.includes('No person found in this clip')), 'a shot with nobody is not reframed').toBe(true);
+  await closeTools(page);
+  await expectSameFrames(page, info, 'WYSIWYG hide faces ends', [
+    { name: 'bars: hiding on, no face; reframe with nobody', t: 3, maxCast: 2 }, // a bright full frame (see qa-video-look)
+    { name: 'person: a frame-sized area in the corner', t: 7.5, maxCast: 2 }, // the white of the photo: a bright frame
+  ], 0.8);
 });
