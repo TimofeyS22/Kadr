@@ -182,26 +182,24 @@ test('Q-33: a swipe of a sheet that holds work warns first, as «Готово» 
   const go = sheet.getByRole('button', { name: 'Экспортировать видео' });
   await go.waitFor({ timeout: 5_000 }).then(() => go.click(), () => {}); // a first export opens on its settings
   await expect(sheet.locator('.ck-work-frame').first()).toBeVisible();
-  // The second swipe has to come within the 4 s the warning holds. Each call to the browser can take a second on a loaded
-  // Mac, so a swipe is three calls and the state is read in one; the gap is measured, and a slow Mac says so (2026-11-16:
-  // 8 steps took 5.2 s and the app rightly took the second swipe for a new first one).
-  const quick = async () => {
-    const b = (await head(page).boundingBox())!;
-    await page.mouse.move(b.x + 60, b.y + 12);
-    await page.mouse.down();
-    await page.mouse.move(b.x + 60, b.y + 232, { steps: 4 });
-    await page.mouse.up();
-    return page.evaluate(() => ({
-      at: performance.now(),
-      open: !!document.querySelector('[role="dialog"][aria-label="Экспорт"]'),
-      warned: [...document.querySelectorAll('.toast')].some((x) => x.textContent?.includes('Экспорт ещё идёт')),
-    }));
-  };
-  const first = await quick();
-  expect(first.open, 'the first swipe keeps the sheet').toBe(true);
-  expect(first.warned, 'and says the export is still running').toBe(true);
-  const second = await quick();
-  expect(second.at - first.at, 'the second swipe came within the 4 s of the warning (else this Mac is too slow to tell)').toBeLessThan(4000);
+  // The second swipe has to come within the 4 s the warning holds. With the export busy on WebKit's main thread, a release
+  // was handled up to seconds after the test sent it, and the app rightly took the second swipe for a new first one (one in
+  // three runs at load 2, 2026-11-16). So both swipes go in the page itself, as pointer events of the mouse (an active
+  // pointer, so the sheet may capture it), with only the warning waited for between them.
+  const r = await head(page).evaluate(async (h) => {
+    const box = h.getBoundingClientRect(), x = box.left + 60, y0 = box.top + 12;
+    const ev = (type: string, y: number, buttons: number) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons });
+    const swipe = () => { h.dispatchEvent(ev('pointerdown', y0, 1)); for (let i = 1; i <= 4; i++) h.dispatchEvent(ev('pointermove', y0 + i * 55, 1)); h.dispatchEvent(ev('pointerup', y0 + 220, 0)); return performance.now(); };
+    const warned = () => [...document.querySelectorAll('.toast')].some((x) => x.textContent?.includes('Экспорт ещё идёт'));
+    const t1 = swipe();
+    for (let i = 0; i < 100 && !warned(); i++) await new Promise((res) => setTimeout(res, 20));
+    const first = { warned: warned(), open: !!document.querySelector('[role="dialog"][aria-label="Экспорт"]') };
+    const t2 = swipe();
+    return { first, gap: t2 - t1 };
+  });
+  expect(r.first.open, 'the first swipe keeps the sheet').toBe(true);
+  expect(r.first.warned, 'and says the export is still running').toBe(true);
+  expect(r.gap, 'the second swipe came within the 4 s of the warning').toBeLessThan(4000);
   await expect(sheet, 'a second swipe within seconds means it').toHaveCount(0);
 });
 
