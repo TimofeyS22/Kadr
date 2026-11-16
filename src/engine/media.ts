@@ -42,6 +42,8 @@ const DECODE_RETRIES = 2;
 const DECODER_MS = 15_000;
 /** Forward jumps longer than this, while scrubbing, show the nearest keyframe first. */
 const SCRUB_GAP = 0.3;
+/** A scrub's keyframe decoder is let go once the finger has rested this long: a phone has few decoders to spare. */
+const KEYS_IDLE_MS = 1500;
 /** The browser's own words go to the error's details (`vars.error`), not into the sentence. */
 export const DECODER_FAILED = 'The video decoder of this device stopped. Close other apps, or restart the browser, and try again.';
 
@@ -178,6 +180,66 @@ export interface Turn { rotation: 0 | 90 | 180 | 270; flip: boolean }
  */
 export interface Picture { image: HTMLCanvasElement | VideoFrame; width: number; height: number; turn?: Turn; timestamp: number; exact: boolean; hdr?: Hdr; as601?: boolean }
 
+type Answer = <T>(work: Promise<T>, drop: (late: T) => void) => Promise<T>;
+
+/**
+ * One decoder for the keyframes a scrub shows, kept from step to step (audit V-248). `VideoSampleSink.getSample` made,
+ * configured and closed a decoder for every step: 20–60 ms of each on WebKit (2026-11-16). Here each step asks
+ * Mediabunny's `samplesAtTimestamps` for the keyframe's time and then for a time before the track: that one has no
+ * packet, so Mediabunny flushes the decoder and gives the keyframe out at once, and the decoder waits for the next step.
+ * The decoding is Mediabunny's, the same as getSample's: rotation, colour space and the browsers' workarounds stay.
+ * Mediabunny closes the decoder when the times end (`close`) or the decoder fails.
+ */
+class KeyDecoder {
+  private times: number[] = [];
+  private wake: (() => void) | null = null;
+  private ended = false;
+  private readonly out: AsyncGenerator<VideoSample | null, void, unknown>;
+
+  constructor(sink: VideoSampleSink) { this.out = sink.samplesAtTimestamps(this.feed()); }
+
+  /** False once the decoder has stopped: a new one is made for the next step. */
+  get alive(): boolean { return !this.ended; }
+
+  private async *feed(): AsyncGenerator<number, void, unknown> {
+    for (;;) {
+      const t = this.times.shift();
+      if (t !== undefined) yield t;
+      else if (this.ended) return;
+      else await new Promise<void>((r) => { this.wake = r; });
+    }
+  }
+
+  private ask(...t: number[]): void {
+    this.times.push(...t);
+    this.wake?.();
+    this.wake = null;
+  }
+
+  /** The frame starting at or before `t` (a keyframe's time: one decode); null if there is none. */
+  async at(t: number, answer: Answer): Promise<VideoSample | null> {
+    const drop = (late: IteratorResult<VideoSample | null>) => { if (!late.done) late.value?.close(); };
+    this.ask(t, Number.NEGATIVE_INFINITY);
+    const got = await answer(this.out.next(), drop);
+    if (got.done) { this.close(); return null; }
+    try {
+      drop(await answer(this.out.next(), drop)); // the time before the track: no frame, only the flush
+    } catch (e) {
+      got.value?.close();
+      throw e;
+    }
+    return got.value;
+  }
+
+  close(): void {
+    if (this.ended) return;
+    this.ended = true;
+    this.times.length = 0;
+    void this.out.return(undefined).catch(() => undefined);
+    this.ask();
+  }
+}
+
 /**
  * Sequential per-clip decoding (docs/04, H4). Frames the preview skips are closed without being drawn: only the
  * frame actually shown is converted to a canvas. Converting every decoded frame used to take ~90% of the main
@@ -197,6 +259,13 @@ class VideoStream {
   private shown: StreamFrame | null = null;
   /** The decoder frame handed out last: a copy of the sample's, so it stays valid if Mediabunny closes the sample. */
   private out: { sample: VideoSample; frame: VideoFrame } | null = null;
+  /** The decoder of a scrub's keyframes, while the finger moves (V-248). */
+  private keys: KeyDecoder | null = null;
+  private keysIdle: ReturnType<typeof setTimeout> | undefined;
+  /** The last read showed a scrub's keyframe: the next one is its exact frame, still part of the scrub. */
+  private afterKey = false;
+  /** The time of the last read: the same frame drawn again is neither a scrub step nor playing. */
+  private lastT = Number.NaN;
   private abandon!: (e: Error) => void;
   /** Rejects when the stream is closed: whoever waits for a silent decoder is let go at once. */
   private readonly closing = new Promise<never>((_, reject) => { this.abandon = reject; });
@@ -226,7 +295,22 @@ class VideoStream {
 
   /** `frameMax`: an exact frame at most this big on its long side comes as the decoder's frame (0: always a canvas). */
   frameAt(t: number, fast = false, frameMax = 0): Promise<Picture | null> {
-    const run = this.queue.then(() => this.readSafe(t, fast, frameMax));
+    const run = this.queue.then(async () => {
+      // A scrub's keyframe decoder stays while a finger scrubs, its steps and the exact frame after each, and goes once the
+      // finger has rested KEYS_IDLE_MS after that frame: an exact frame can take seconds. A read of another time (playing)
+      // lets it go at once; the same frame drawn again (the screen changed around it) changes nothing.
+      const scrub = fast || this.afterKey;
+      const again = !scrub && t === this.lastT;
+      this.afterKey = false;
+      this.lastT = t;
+      if (scrub) clearTimeout(this.keysIdle);
+      else if (!again) this.dropKeys();
+      try {
+        return await this.readSafe(t, fast, frameMax);
+      } finally {
+        if (scrub) this.restKeys();
+      }
+    });
     this.queue = run.catch(() => undefined);
     return run;
   }
@@ -272,6 +356,8 @@ class VideoStream {
         if (isStorageError(e)) throw e;
         first ??= e;
         console.warn(`Video decoding failed (attempt ${attempt + 1}), restarting the decoder`, e);
+        // The scrub's keyframe decoder goes too: a phone that took one decoder back has none to spare for an idle one.
+        this.dropKeys();
         await this.reset();
         if (attempt >= DECODE_RETRIES) throw new MediaError(DECODER_FAILED, { error: errorText(first) });
         if (attempt > 0) {
@@ -327,7 +413,8 @@ class VideoStream {
     if (fast && (far || t > cur.timestamp + SCRUB_GAP)) {
       // Scrubbing: show the nearest keyframe right away (one decode); the exact frame follows when asked.
       const key = await this.answer(this.packets.getKeyPacket(t), () => undefined);
-      const s = await this.answer(this.sink.getSample(key?.timestamp ?? t), (late) => late?.close());
+      this.afterKey = true;
+      const s = await this.keyframe(key?.timestamp ?? t);
       if (!s || this.closed) { s?.close(); return this.shown && this.canvasPicture(this.shown); }
       const f = this.show(s, false, 0);
       s.close();
@@ -351,9 +438,35 @@ class VideoStream {
     return this.show(c, true, frameMax);
   }
 
+  /** A keyframe through the scrub's decoder, made at the first step and let go once the finger rests or it fails. */
+  private async keyframe(t: number): Promise<VideoSample | null> {
+    const keys = (this.keys ??= new KeyDecoder(this.sink));
+    try {
+      return await keys.at(t, (work, drop) => this.answer(work, drop));
+    } catch (e) {
+      keys.close(); // failed or silent: the next try makes a new decoder, as getSample did every time
+      throw e;
+    } finally {
+      if (this.keys === keys && !keys.alive) this.keys = null;
+    }
+  }
+
+  /** The finger rests from now: the keyframe decoder goes if no scrub step comes within KEYS_IDLE_MS. */
+  private restKeys(): void {
+    clearTimeout(this.keysIdle);
+    if (this.keys?.alive) this.keysIdle = setTimeout(() => this.dropKeys(), KEYS_IDLE_MS);
+  }
+
+  private dropKeys(): void {
+    clearTimeout(this.keysIdle);
+    this.keys?.close();
+    this.keys = null;
+  }
+
   close(): void {
     this.closed = true;
     this.abandon(new Error('The stream was closed'));
+    this.dropKeys();
     void this.reset();
   }
 }

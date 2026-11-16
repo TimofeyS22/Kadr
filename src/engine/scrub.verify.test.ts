@@ -20,6 +20,14 @@ vi.mock('mediabunny', () => {
   class VideoSampleSink {
     async *samples(start: number) { for (let i = 0; i < 180; i++) { decoded.push(i / 30); if (i / 30 >= start - 1e-4) yield sample(i / 30); } }
     async getSample(t: number) { for (let i = 0; i <= Math.round(t * 30); i++) decoded.push(i / 30); return sample(Math.round(t * 30) / 30); }
+    // The same decoding for each time asked: scrub keyframes come this way since V-248. A time before the file has no frame.
+    async *samplesAtTimestamps(times: AsyncIterable<number>) {
+      for await (const t of times) {
+        if (!(t >= 0)) { yield null; continue; }
+        for (let i = 0; i <= Math.round(t * 30); i++) decoded.push(i / 30);
+        yield sample(Math.round(t * 30) / 30);
+      }
+    }
   }
   class EncodedPacketSink { async getKeyPacket() { return { timestamp: 0 }; } }
   return { BlobSource, EncodedPacketSink, Input, VideoSampleSink };

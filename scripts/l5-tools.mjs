@@ -431,6 +431,40 @@ const SCENARIOS = {
   'export-photo': async () => { await fresh(['landscape.mp4']); return { ready: await exportAs('Photo', 'Save photo') }; },
   'export-gif': async () => { await fresh(['landscape.mp4']); return { ready: await exportAs('GIF', 'Export GIF') }; },
   'export-audio': async () => { await fresh(['speech_en.mp4']); return { ready: await exportAs('Audio', 'Export audio') }; },
+  // V-248: scrub response (CLAUDE.md §5: ≤ 100 ms to a frame), as e2e/scrub-perf.spec.ts but on the phone: 40 steps back
+  // and forth across a 30 s 1080p phone video, each from the scroll to the first frame drawn at its time (the keyframe),
+  // the next step once the exact frame is there. `decoders`: VideoDecoders the page made for the 40 steps.
+  scrub: async () => {
+    await fresh(['phone_1080_h264.mp4']);
+    await waitFor('thumbnails', () => js("return Object.keys(window.__kadrPerf?.marks ?? {}).some((k) => k.startsWith('thumbs:'))"), 120_000);
+    await js("const B = window.VideoDecoder; window.__decoders = { made: 0 }; if (B) window.VideoDecoder = class extends B { constructor(i) { super(i); window.__decoders.made++; } };");
+    await sleep(3000);
+    const steps = [6.2, 15.85, 2.6, 23.95, 11.15, 19.55, 27.8, 4.4, 13.75, 22.1, 8.45, 18.2, 25.65, 1.85, 12.55, 29.1, 9.8, 16.9, 5.15, 21.35,
+      14.7, 3.05, 26.95, 7.25, 19.1, 24.8, 10.9, 1.45, 22.65, 17.3, 5.85, 28.55, 13.1, 20.4, 8.7, 25.25, 3.8, 15.45, 27.2, 11.75];
+    const r = await jsAsync(`const done = arguments[arguments.length - 1], steps = arguments[0];
+      (async () => {
+        const P = window.__kadrPerf, el = document.querySelector('.tl-scroll');
+        const step = async (x) => {
+          const t0 = performance.now();
+          el.scrollLeft = x;
+          let first = 0, t = NaN;
+          while (performance.now() - t0 < 30000) {
+            await new Promise((ok) => setTimeout(ok, 2));
+            if (P.last.at <= t0) continue;
+            if (Number.isNaN(t)) t = P.last.t;
+            if (Math.abs(P.last.t - t) < 1e-3) { first ||= P.last.at - t0; if (P.last.exact) return { t, first, exact: P.last.at - t0 }; }
+          }
+          return { t, first: first || 30000, exact: 30000 };
+        };
+        const zoom = 600 / (await step(600)).t, made = window.__decoders.made, got = [];
+        for (const s of steps) got.push({ want: s, ...(await step(Math.round(s * zoom))) });
+        return { got, decoders: window.__decoders.made - made };
+      })().then(done, (e) => done({ error: String(e) }));`, steps);
+    if (r.error) throw new Error(r.error);
+    const pct = (xs, q) => { const s = [...xs].sort((a, b) => a - b); return Math.round(s[Math.min(s.length - 1, Math.floor(q * s.length))]); };
+    const first = r.got.map((x) => x.first), exact = r.got.map((x) => x.exact);
+    return { steps: r.got.length, missed: r.got.filter((x) => Math.abs(x.t - x.want) > 0.1).length, decoders: r.decoders, firstP50: pct(first, 0.5), firstP90: pct(first, 0.9), firstMax: Math.round(Math.max(...first)), exactP50: pct(exact, 0.5), exactMax: Math.round(Math.max(...exact)) };
+  },
 
   // ---- The S-1 search's fixes (v1.9.0–v1.9.1) where only the phone can say: its decoder, its storage, its sheet. ----
   // S-1-7/8/9: a 2×2 video, one 8K frame, H.264 4:4:4 and MP3 in a .mov are refused for their real reason, in Kadr's
