@@ -1,8 +1,12 @@
-// Takes in storage and their locks (SW-A-16, SW-A-17): a take being recorded holds a Web Lock in its name, the recovery
+// Takes in storage and their locks (SW-A-16, SW-A-17, SW-A-18): a take being recorded holds a Web Lock in its name, the recovery
 // brings back only takes whose lock is free, and a voice-over comes back with its place and type.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mem = vi.hoisted(() => new Map<string, unknown>());
+const mem = vi.hoisted(() => {
+  // The page db.ts listens to for pagehide and pageshow (SW-A-18); the rest of it needs no window in these tests.
+  (globalThis as { window?: EventTarget }).window ??= new EventTarget();
+  return new Map<string, unknown>();
+});
 vi.mock('idb-keyval', () => ({
   get: async (k: string) => mem.get(k),
   set: async (k: string, v: unknown) => { mem.set(k, v); },
@@ -108,6 +112,17 @@ describe('a take in storage and its lock', () => {
     expect(got).toEqual([{ kind: 'voice', at: 3.5, type: 'audio/webm' }, { size: 16, type: 'audio/webm' }]);
     expect(mem.get('c:a1')).toEqual({ type: 'audio/webm', size: 16, chunks: 1 });
     expect([...new Uint8Array(mem.get('c:a1:0') as ArrayBuffer)]).toEqual([...Array(7).fill(2), ...Array(9).fill(3)]);
+  });
+
+  it('a recorder\'s last piece, handed over as the page unloads, is not read (SW-A-18)', async () => {
+    const take = new TakeWriter('u');
+    const read = vi.fn(() => Promise.reject(new Error('Cannot load blob: … due to access control checks')));
+    window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: false })); // a reload, not the back-forward cache
+    take.add({ size: 3, arrayBuffer: read } as unknown as Blob);
+    expect(read, 'a dying page reads no Blob of the recorder').not.toHaveBeenCalled();
+    window.dispatchEvent(new Event('pageshow')); // a page shown again is alive
+    take.add(piece(2));
+    await vi.waitFor(() => expect(pieceKeys('u')).toHaveLength(1));
   });
 
   it('a camera take needs no description: one from an older version comes back as a camera take', async () => {

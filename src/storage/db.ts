@@ -429,6 +429,18 @@ function holdLock(name: string): Promise<() => void> {
   });
 }
 
+/**
+ * The page is being unloaded (a reload, a navigation; not the back-forward cache). The unload stops a recorder, which
+ * still hands over its last piece, but that piece's Blob can no longer be read: WebKit reports the attempt as an
+ * uncaught "Cannot load blob:… due to access control checks" (SW-A-18), and the piece is lost either way. A page shown
+ * again is alive.
+ */
+let unloading = false;
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', (e) => { if (!(e as PageTransitionEvent).persisted) unloading = true; });
+  window.addEventListener('pageshow', () => { unloading = false; });
+}
+
 export class TakeWriter {
   readonly id = Math.random().toString(36).slice(2, 10);
   /** Bytes recorded so far, for the room check before the save. */
@@ -449,6 +461,7 @@ export class TakeWriter {
   }
 
   add(piece: Blob): void {
+    if (unloading) return; // its bytes cannot be read any more (SW-A-18)
     const i = this.n++;
     this.bytes += piece.size;
     // The bytes are taken now: a Blob the recorder made can stop reading before its turn to be written (docs/19 С12).
