@@ -1,7 +1,8 @@
-// Music at its edges (QA matrix Q-21, docs/11 §3.5): cuts land on the beat where the music is on the timeline, not
-// where the beat is in the file.
+// Music at its edges (QA matrix Q-21, docs/11 §3.5, §3.13): cuts land on the beat where the music is on the timeline,
+// not where the beat is in the file; the library without a network says so, and a track added before plays offline.
 import { expect, test } from '@playwright/test';
-import { audits, importFiles, selectClip, sheet, storedProject, tool } from './qa-platform-kit';
+import { switchableNetwork } from './network';
+import { audits, expectedConsole, exportAs, importFiles, probe, rmsDb, samples, selectClip, sheet, storedProject, tool } from './qa-platform-kit';
 import type { AudioClip, Project } from '../src/core/types';
 
 audits();
@@ -44,4 +45,40 @@ test('cut to the beat of music that starts later and is trimmed: every cut is on
   await page.waitForTimeout(1500);
   const back = (await storedProject<Project>(page)).tracks.find((t) => t.kind === 'main')!.clips.map((c) => c.duration);
   expect(new Set(back).size, `durations after undo: ${back.join(', ')}`).toBe(1);
+});
+
+test.describe(() => {
+  test.use({ serviceWorkers: 'allow' });
+
+  test('a track added from the library plays and exports offline (Q-21 §3.13)', async ({ page, context, baseURL, browserName }, info) => {
+    test.setTimeout(420_000);
+    expectedConsole(/Failed to load resource|ERR_INTERNET_DISCONNECTED|net::ERR_FAILED|WebKit encountered an internal error|Load failed|FetchEvent/);
+    test.skip(!baseURL?.startsWith('http://'), 'the network is taken away through a local proxy (e2e/network.ts)');
+    const net = await switchableNetwork(baseURL!);
+    await page.goto(net.url);
+    await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+    await page.reload();
+    await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.locator('.aspect-card', { hasText: '9:16' }).click();
+    await importFiles(page, 'Media', ['photo.png']);
+    await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Close tools' }).click();
+    await tool(page, 'Music').click();
+    const row = page.locator('.music-row').first();
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.getByRole('button', { name: /^Add .* at the playhead$/ }).click();
+    await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 60_000 });
+    await page.waitForTimeout(1500); // saved
+    // No network from here on, the page opened again from the service worker.
+    net.off();
+    if (browserName === 'chromium') await context.setOffline(true);
+    await page.reload();
+    await expect(page.locator('.tl-row.audio .clip')).toHaveCount(1, { timeout: 30_000 });
+    const file = await exportAs(page, info, 'Audio', { loudness: false });
+    expect(Math.abs(probe(file).duration - 3)).toBeLessThan(0.15);
+    expect(rmsDb(samples(file), 0.5, 2.5), 'the track is in the file offline').toBeGreaterThan(-40);
+    await context.setOffline(false);
+    await net.close();
+  });
 });
