@@ -32,6 +32,8 @@ for (let attempt = 1; !session; attempt++) {
 const S = `/session/${session.sessionId}`;
 await call('POST', `${S}/timeouts`, { script: 320_000 });
 const js = (script, ...args) => call('POST', `${S}/execute/sync`, { script, args });
+// Safari on the Mac rehearses the phone in a narrow upright window: the editor's phone layout is under 900 px, upright.
+if (process.env.L5_MAC) await call('POST', `${S}/window/rect`, { width: 430, height: 900 }).catch(() => undefined);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const shot = async (name) => writeFileSync(join(OUT, `${name}.png`), Buffer.from(await call('GET', `${S}/screenshot`), 'base64'));
 async function waitFor(what, fn, ms) {
