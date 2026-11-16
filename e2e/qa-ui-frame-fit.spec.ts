@@ -99,3 +99,50 @@ test('UI-4: no note where there are no bars to speak of — a portrait video in 
   await page.waitForTimeout(1_000);
   await expect(note(page), 'a project opened with its pieces is never told').toHaveCount(0);
 });
+
+// SW-U-7: the note was placed once, above the row under the frame as it stood when the note came. A text or a sound then
+// gave the timeline a row, the row under the frame rose, and the note lay over Undo and Redo (lead of the sweep: a tap on
+// «Повторить» went into the note).
+test('UI-4 (SW-U-7): the note never lies over the controls — when Redo brings a row of the timeline back, Undo, Redo, Play and Export still take a finger', async ({ page }) => {
+  await newProjectWith(page, 'landscape.mp4');
+  await expect(note(page)).toBeVisible({ timeout: 2_000 });
+  const rowTop = async () => (await page.locator('.transport').boundingBox())!.y;
+  const projectTools = async () => { const back = page.locator('.toolbar .tool-back'); if (await back.isVisible()) await back.click(); };
+  // A text, a sound and an overlay give the timeline rows; Undo takes them away; the note is placed again (a sheet opened
+  // and closed) without them; Redo brings them back without the note being placed again — as in the history of a camera
+  // take and a voice-over (editor.spec «history and persistence…»).
+  await projectTools();
+  await page.locator('.toolbar .tool', { hasText: /^Текст$/ }).click();
+  await page.locator('.sheet').getByRole('button', { name: 'Готово' }).click();
+  for (const [name, file] of [['Звук', 'music.m4a'], ['Наложение', 'portrait.mp4']] as const) {
+    await projectTools();
+    const chooser = page.waitForEvent('filechooser');
+    await page.locator('.toolbar .tool', { hasText: new RegExp(`^${name}$`) }).click();
+    await (await chooser).setFiles([fx(file)]);
+    await page.waitForTimeout(800);
+  }
+  const withRows = await rowTop();
+  const undo = page.locator('.transport').getByRole('button', { name: 'Отменить' }), redo = page.locator('.transport').getByRole('button', { name: 'Повторить' });
+  for (let i = 0; i < 3; i++) { await undo.click(); await page.waitForTimeout(300); }
+  await projectTools();
+  await page.locator('.toolbar .tool', { hasText: /^Холст$/ }).click();
+  await page.locator('.sheet').getByRole('button', { name: 'Готово' }).click();
+  await expect(note(page), 'the note is back once the sheet is gone').toBeVisible();
+  const without = await rowTop();
+  for (let i = 0; i < 3; i++) { await redo.click({ timeout: 10_000 }); await page.waitForTimeout(300); }
+  await page.waitForTimeout(800);
+  console.log(`SW-U-7: the row under the frame ${Math.round(without)} without the rows, ${Math.round(withRows)} with them, ${Math.round(await rowTop())} after Redo`);
+  const row = (await page.locator('.transport').boundingBox())!;
+  const card = (await note(page).boundingBox())!;
+  expect(card.y + card.height, 'the note ends above the row under the frame').toBeLessThanOrEqual(row.y + 0.5);
+  const controls = [
+    page.locator('.transport').getByRole('button', { name: 'Отменить' }),
+    page.locator('.transport').getByRole('button', { name: 'Повторить' }),
+    page.locator('.transport').getByRole('button', { name: /^(Воспроизвести|Пауза)$/ }),
+    page.locator('.topbar').getByRole('button', { name: 'Экспорт', exact: true }),
+  ];
+  for (const c of controls) {
+    const hit = await c.evaluate((el) => { const r = el.getBoundingClientRect(); const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && (h === el || el.contains(h)); });
+    expect(hit, `${await c.getAttribute('aria-label') ?? await c.textContent()}: a tap on it reaches it`).toBe(true);
+  }
+});

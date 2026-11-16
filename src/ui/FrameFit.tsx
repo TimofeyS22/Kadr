@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ASPECTS } from '../core/defaults';
 import type { AspectId, Project } from '../core/types';
 import { t } from '../lib/i18n';
@@ -68,13 +68,27 @@ export function useFrameFit(): { fit: Fit; close: () => void } | null {
 }
 
 export function FrameFitNote({ fit, close }: { fit: Fit; close: () => void }) {
-  // On the stage, just above the row under the frame (Undo, Play): measured, since the timeline under it grows with rows.
-  const [bottom, setBottom] = useState<number | null>(null);
+  // On the stage, just above the row under the frame (Undo, Redo, Play), and kept there: the stage and that row are watched,
+  // so when the timeline takes a row or the header folds the note moves with them — placed once, it lay over Undo and Redo
+  // after a sound or a take was added (SW-U-7). Where the stage has no room for it, it waits out of sight rather than
+  // cover the frame's top or the header.
+  const card = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{ bottom: number; room: boolean } | null>(null);
   useLayoutEffect(() => {
-    const place = () => { const row = document.querySelector('.transport'); if (row) setBottom(Math.round(innerHeight - row.getBoundingClientRect().top) + 8); };
-    place();
-    addEventListener('resize', place);
-    return () => removeEventListener('resize', place);
+    const stage = document.querySelector<HTMLElement>('.ck-stage'), row = document.querySelector<HTMLElement>('.transport');
+    let frame = 0;
+    const measure = () => {
+      const el = card.current;
+      if (!stage || !row || !el) return;
+      const bottom = Math.round(innerHeight - row.getBoundingClientRect().top) + 8;
+      const room = stage.getBoundingClientRect().height >= el.offsetHeight + 16;
+      setPlace((p) => (p && p.bottom === bottom && p.room === room ? p : { bottom, room }));
+    };
+    measure();
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); });
+    for (const el of [stage, row, card.current]) if (el) ro.observe(el);
+    addEventListener('resize', measure);
+    return () => { ro.disconnect(); cancelAnimationFrame(frame); removeEventListener('resize', measure); };
   }, []);
   const commit = useEditor((s) => s.commit);
   const toast = useEditor((s) => s.toast);
@@ -88,7 +102,8 @@ export function FrameFitNote({ fit, close }: { fit: Fit; close: () => void }) {
     Object.assign(d.settings, { aspect: fit.format, width, height });
   });
   return (
-    <div className="ck-coach ck-frame-fit" role="note" style={bottom === null ? undefined : { bottom }}>
+    <div ref={card} className="ck-coach ck-frame-fit" role="note" inert={place?.room === false || undefined}
+      style={place ? { bottom: place.bottom, visibility: place.room ? undefined : 'hidden' } : { visibility: 'hidden' }}>
       <div className="ck ck-editor-tip">
         <span>{fit.wider ? t('The video is wider than the frame: black bars above and below.') : t('The video is narrower than the frame: black bars at the sides.')}</span>
         <IconButton label={t('Close')} onClick={close}><X aria-hidden /></IconButton>
