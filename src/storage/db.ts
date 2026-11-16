@@ -449,6 +449,21 @@ if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', (e) => { if (!(e as PageTransitionEvent).persisted) unloading = true; });
   window.addEventListener('pageshow', () => { unloading = false; });
 }
+/**
+ * `pagehide` comes too late on WebKit: a reload can stop the recorder and hand its last piece over before it (3 of 20
+ * in the crash test, E3 2026-11-17). `beforeunload` comes before the reload stops anything: from it a piece is read
+ * only once the page is seen to stay (a navigation that did not happen), so a page that goes reads nothing and a page
+ * that stays loses nothing. Listened to only while a take is recorded, so it costs no other page anything.
+ */
+let leaving: Promise<void> | null = null;
+let recording = 0;
+const onLeave = () => {
+  leaving ??= new Promise((resolve) => setTimeout(() => { leaving = null; resolve(); }, 2000));
+};
+const readPiece = (piece: Blob): Promise<ArrayBuffer> => {
+  if (!leaving) return piece.arrayBuffer();
+  return leaving.then(() => (unloading ? Promise.reject(new Error('The page went away')) : piece.arrayBuffer()));
+};
 
 export class TakeWriter {
   readonly id = Math.random().toString(36).slice(2, 10);
@@ -462,6 +477,7 @@ export class TakeWriter {
   private free: () => void = () => undefined;
   /** `project`: the project the take is for. */
   constructor(readonly project: string, meta: TakeMeta = { kind: 'camera' }) {
+    if (recording++ === 0 && typeof window !== 'undefined') window.addEventListener('beforeunload', onLeave);
     this.writing = holdLock(takeLock(project, this.id)).then(async (free) => {
       this.free = free;
       // A crash brings a voice-over back where it was recorded: its place goes to storage before its first second.
@@ -474,7 +490,8 @@ export class TakeWriter {
     const i = this.n++;
     this.bytes += piece.size;
     // The bytes are taken now: a Blob the recorder made can stop reading before its turn to be written (docs/19 С12).
-    const bytes = piece.arrayBuffer();
+    // While the page may be leaving, they are taken once it stays (SW-A-18).
+    const bytes = readPiece(piece);
     bytes.catch(() => undefined);
     this.writing = this.writing
       .then(async () => {
@@ -505,14 +522,23 @@ export class TakeWriter {
     try {
       await deleteTake(this.project, this.id);
     } finally {
-      this.free();
+      this.end();
     }
   }
 
   /** Lets the take go with its pieces kept (no room, the project left): it comes back when the project opens. */
   async release(): Promise<void> {
     await this.writing;
+    this.end();
+  }
+
+  private ended = false;
+  /** The take is done with: its lock goes, and the page stops listening for a leave once no take is recorded. */
+  private end(): void {
+    if (this.ended) return;
+    this.ended = true;
     this.free();
+    if (--recording === 0 && typeof window !== 'undefined') window.removeEventListener('beforeunload', onLeave);
   }
 }
 

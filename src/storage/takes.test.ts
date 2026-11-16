@@ -123,6 +123,54 @@ describe('a take in storage and its lock', () => {
     window.dispatchEvent(new Event('pageshow')); // a page shown again is alive
     take.add(piece(2));
     await vi.waitFor(() => expect(pieceKeys('u')).toHaveLength(1));
+    await take.discard();
+  });
+
+  it('from beforeunload a piece is read only once the page stays: a reload reads nothing, a page that stays loses nothing (SW-A-18)', async () => {
+    vi.useFakeTimers();
+    try {
+      // A reload: beforeunload, the recorder's last piece, then pagehide — the piece is never read.
+      const gone = new TakeWriter('g');
+      const read = vi.fn(() => Promise.reject(new Error('Cannot load blob: … due to access control checks')));
+      window.dispatchEvent(new Event('beforeunload'));
+      gone.add({ size: 3, arrayBuffer: read } as unknown as Blob);
+      window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: false }));
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(read, 'a piece handed over while the page leaves is not read').not.toHaveBeenCalled();
+      window.dispatchEvent(new Event('pageshow'));
+      await gone.discard();
+
+      // A beforeunload with no leave after it: the piece waits, then is written in its place, before the next one.
+      const stays = new TakeWriter('s');
+      window.dispatchEvent(new Event('beforeunload'));
+      stays.add(piece(4, 1));
+      await vi.advanceTimersByTimeAsync(500);
+      expect(pieceKeys('s'), 'not read while the page may still go').toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(2000);
+      stays.add(piece(5, 2));
+      await vi.waitFor(() => expect(pieceKeys('s')).toHaveLength(2));
+      const sizes = pieceKeys('s').sort((x, y) => Number(x.split(':').pop()) - Number(y.split(':').pop()))
+        .map((k) => (mem.get(k) as ArrayBuffer).byteLength);
+      expect(sizes, 'the waiting piece keeps its place').toEqual([4, 5]);
+      await stays.discard();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the page listens for a leave only while a take is recorded (SW-A-18: no cost to the back-forward cache of other pages)', async () => {
+    // A fresh copy of the module: takes of the tests above that were never ended still count as recorded.
+    vi.resetModules();
+    const fresh = await import('./db');
+    const add = vi.spyOn(window, 'addEventListener'), remove = vi.spyOn(window, 'removeEventListener');
+    const a = new fresh.TakeWriter('l'), b = new fresh.TakeWriter('l');
+    expect(add.mock.calls.filter(([type]) => type === 'beforeunload')).toHaveLength(1);
+    await a.discard();
+    await a.discard();
+    expect(remove.mock.calls.filter(([type]) => type === 'beforeunload'), 'one take still records').toHaveLength(0);
+    await b.release();
+    expect(remove.mock.calls.filter(([type]) => type === 'beforeunload')).toHaveLength(1);
+    add.mockRestore(); remove.mockRestore();
   });
 
   it('a camera take needs no description: one from an older version comes back as a camera take', async () => {
