@@ -75,13 +75,21 @@ export function Sheet({ open, title, closeLabel, closeIcon, onClose, children }:
     // Past 30% of its height, or a flick (> 0.5 px/ms), closes it; otherwise it springs back.
     if (d.y - d.y0 > 0.3 * el.offsetHeight || d.v > 0.5) onClose();
   };
+  // A cancelled pointer (a system gesture, a call) is not the person letting go: the sheet springs back (Q-33, SW-U-1).
+  const cancel = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d?.on) return;
+    panel.current?.removeAttribute('data-dragging');
+    slide(0);
+  };
 
   return (
     <div className="ck-sheet-layer" data-open={open} inert={!open} aria-hidden={!open}>
       <div className="ck-scrim" onClick={onClose} />
       <section ref={panel} className="ck-sheet" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}
-        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}>
-        <header className="ck-sheet-head" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+        onKeyDown={(e) => { if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.stopPropagation(); onClose(); } }}>
+        <header className="ck-sheet-head" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}>
           <h2>{title}</h2>
           <button type="button" className="ck-ib" aria-label={closeLabel} onClick={onClose}>{closeIcon}</button>
         </header>

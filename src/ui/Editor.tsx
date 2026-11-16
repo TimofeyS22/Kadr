@@ -251,7 +251,11 @@ export function Editor({ id }: { id: string }) {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       const s = useEditor.getState();
-      if (e.key === 'Escape') { if (s.closeSheet()) s.select(null); return; } // from a field or a slider in a sheet too
+      if (e.key === 'Escape') { // from a field or a slider in a sheet too
+        if (e.isComposing) return; // it ends a word being composed (an input method), not the sheet (Q-33, SW-U-2)
+        if (s.closeSheet()) s.select(null);
+        return;
+      }
       if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable) return; // the s in a list must not cut the video (audit V-186)
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();

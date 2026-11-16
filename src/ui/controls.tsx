@@ -121,9 +121,17 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
       if (matchMedia('(prefers-reduced-motion: reduce)').matches) close(); else setTimeout(close, 160);
     } else slide(0);
   };
+  // A cancelled pointer (a system gesture, a call) is not the person letting go: the sheet springs back (Q-33, SW-U-1).
+  const cancel = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d?.on) return;
+    ref.current?.removeAttribute('data-dragging');
+    slide(0);
+  };
   return (
     <section ref={ref} className="sheet ck ck-panel" role="dialog" aria-label={t(title)}>
-      <header className="sheet-head ck-panel-head" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+      <header className="sheet-head ck-panel-head" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}>
         <span ref={setBack} className="ck-panel-back" />
         <h2 id={id} ref={heading} tabIndex={-1}>{t(title)}</h2>
         <span ref={setTools} className="ck-panel-tools" />
