@@ -112,3 +112,48 @@ test('on every sampled frame of a moving person the face is hidden from eyes to 
   // The control: the same analysis on a file with nothing hidden has to complain about every frame.
   expect(problems(plain, plain).length, 'nothing hidden is seen as nothing hidden').toBe(FRAMES);
 });
+
+// A picture with no face loses nothing (SW-C-5): on a fractal (fixtures/photo.png) two tiles found «faces» at a score of
+// 0.41 and a quarter of the frame was blurred. The photo of the frame with «Hide faces» on must be the photo without it.
+test('a picture with no face in it stays as it is with Hide faces on', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  test.skip(!fs.existsSync(fx('photo.png')), 'needs npm run fixtures');
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  await expect(page.locator('.preview-canvas')).toBeVisible();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Media', exact: true }).click();
+  await (await chooser).setFiles(fx('photo.png'));
+  const clip = page.locator('.tl-row.main .clip').first();
+  await expect(clip).toHaveCount(1);
+  const shot = async (name: string) => {
+    await page.getByRole('button', { name: 'Export' }).first().click();
+    await page.getByRole('radio', { name: 'Photo', exact: true }).click();
+    await page.getByRole('button', { name: 'Save photo' }).click();
+    await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
+    const dl = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Save / Share' }).click();
+    const file = info.outputPath(name);
+    await (await dl).saveAs(file);
+    await page.getByRole('button', { name: 'Done' }).click();
+    return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', 'scale=360:640', '-f', 'rawvideo', '-pix_fmt', 'gray', '-']);
+  };
+  const before = await shot('before.png');
+  await expect(async () => {
+    if (!(await clip.getAttribute('class'))?.includes(' sel')) await clip.click();
+    await expect(clip).toHaveClass(/ sel/, { timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Hide faces', exact: true }).click();
+  const hide = page.getByRole('switch', { name: 'Hide faces automatically' });
+  await hide.click();
+  await expect(hide).toBeChecked({ timeout: 120_000 });
+  await page.getByRole('button', { name: 'Done' }).click();
+  const after = await shot('after.png');
+  let diff = 0;
+  for (let i = 0; i < before.length; i++) diff += Math.abs(before[i] - after[i]);
+  const mean = diff / before.length;
+  console.log(`no-face picture, mean change with Hide faces (${info.project.name}): ${mean.toFixed(2)} of 255`);
+  expect(before.length).toBe(360 * 640);
+  expect(mean, 'mean change of a picture with no face, with «Hide faces» on').toBeLessThan(0.5);
+});

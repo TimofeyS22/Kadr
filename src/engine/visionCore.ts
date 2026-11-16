@@ -53,6 +53,13 @@ const PASS_SIDE = 128;
  */
 const TILE_SHARE = 0.75;
 const PAD = 0.25;
+/**
+ * A tile sees a quarter of the frame closely, so anything face-like there is a candidate: on a fractal with no face
+ * (fixtures/photo.png) two tiles found «faces» at 0.41 and a quarter of the picture was blurred (SW-C-5). Real faces in
+ * tiles scored 0.87–0.99; 0.42–0.63 were faces cut by a tile's edge, found whole by the overlapping tile next to it. The
+ * whole-frame pass keeps the detector's own 0.4.
+ */
+const TILE_MIN_SCORE = 0.5;
 
 /** Face boxes in source-image UV space (0..1), padded by 25% so hair and chin are covered too. */
 export function detectFaces(det: FaceDetector, image: CanvasImageSource, w: number, h: number, frame: AnyCanvas, scratch: AnyCanvas): Rect[] {
@@ -62,7 +69,7 @@ export function detectFaces(det: FaceDetector, image: CanvasImageSource, w: numb
   frame.height = fh;
   ctx2d(frame).drawImage(image, 0, 0, fw, fh);
   const found: Rect[] = [];
-  const pass = (sx: number, sy: number, sw: number, sh: number) => {
+  const pass = (sx: number, sy: number, sw: number, sh: number, minScore = 0) => {
     const s = Math.min(1, PASS_SIDE / Math.max(sw, sh));
     scratch.width = Math.max(1, Math.round(sw * s));
     scratch.height = Math.max(1, Math.round(sh * s));
@@ -70,12 +77,12 @@ export function detectFaces(det: FaceDetector, image: CanvasImageSource, w: numb
     const kx = sw / scratch.width, ky = sh / scratch.height;
     for (const d of det.detect(scratch as ImageSource).detections) {
       const b = d.boundingBox;
-      if (b) found.push({ x: (sx + b.originX * kx) / fw, y: (sy + b.originY * ky) / fh, w: (b.width * kx) / fw, h: (b.height * ky) / fh });
+      if (b && (d.categories[0]?.score ?? 0) >= minScore) found.push({ x: (sx + b.originX * kx) / fw, y: (sy + b.originY * ky) / fh, w: (b.width * kx) / fw, h: (b.height * ky) / fh });
     }
   };
   pass(0, 0, fw, fh); // large faces
   const t = Math.round(Math.min(fw, fh) * TILE_SHARE);
-  if (t >= 96) for (const y of tileStarts(fh, t)) for (const x of tileStarts(fw, t)) pass(x, y, t, t); // small ones
+  if (t >= 96) for (const y of tileStarts(fh, t)) for (const x of tileStarts(fw, t)) pass(x, y, t, t, TILE_MIN_SCORE); // small ones
   return mergeBoxes(found).map((b) => ({ x: b.x - b.w * PAD, y: b.y - b.h * PAD * 1.4, w: b.w * (1 + 2 * PAD), h: b.h * (1 + 2.4 * PAD) }));
 }
 
