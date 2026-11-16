@@ -162,6 +162,7 @@ export async function makeReel(o: ReelOptions, onProgress: (stage: string, label
   } catch (e) {
     undoSteps(r.steps);
     if ((e as Error).name === 'AbortError') track('reel_cancelled', { steps: r.steps });
+    else track('reel_failed', { error: (e as Error).message }); // the sink keeps it only if it is Kadr's own sentence (G-3)
     throw e;
   } finally {
     awake();

@@ -1,21 +1,21 @@
 import { noteError } from './errorLog';
+import { optedOut, sinkEvent } from './events';
 import { t } from './i18n';
 import { RU } from './locale-ru';
 import { isStaleCode, updatingMessage } from './update';
-// Privacy-first product telemetry: event names and coarse numbers only, never media or text content.
-// v0.1 keeps events in memory (and logs them in dev); a backend can be plugged in later behind opt-in.
+// Privacy-first product telemetry: event names and coarse numbers only, never media or text content. The events kept in
+// the tab's memory; the few outcome events of lib/events.ts, cleaned to their listed values, go to the sink when the
+// site has one and the person has not said no (G-3).
 type Props = Record<string, string | number | boolean>;
 
-const OPT_OUT_KEY = 'kadr.telemetry.optout';
 const buffer: { name: string; props: Props; at: number }[] = [];
 
 export function track(name: string, props: Props = {}): void {
-  try {
-    if (localStorage.getItem(OPT_OUT_KEY) === '1') return;
-  } catch { /* storage blocked */ }
+  if (optedOut()) return;
   buffer.push({ name, props, at: Date.now() });
   if (buffer.length > 500) buffer.shift();
   if (import.meta.env.DEV) console.debug('[telemetry]', name, props);
+  sinkEvent(name, props);
 }
 
 /** User-facing, translated message; MediaError-style errors carry `vars` for their placeholders. */

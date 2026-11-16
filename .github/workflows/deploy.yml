@@ -34,6 +34,9 @@ jobs:
         run: npm run build
         env:
           KADR_BASE: /Kadr/
+          # Anonymous statistics (G-3, src/lib/events.ts): the owner's Aptabase app key, a repository variable. Unset, the
+          # site has no sink and sends nothing; set, its one host joins the CSP and the Privacy page says what goes there.
+          KADR_EVENTS_KEY: ${{ vars.KADR_EVENTS_KEY }}
       # The main path on Chromium before anything is deployed (docs/12 stage 6): open, sample, split, undo, export.
       - name: Smoke test the build in a browser
         run: |

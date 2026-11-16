@@ -2,7 +2,7 @@
 // No JS, no third-party requests, CSS inline and pinned by hash in the page's CSP. Links are relative, so the pages
 // work under any base path; canonical, hreflang and the sitemap use the absolute site URL.
 import { createHash } from 'node:crypto';
-import { LEGAL, LICENSES, PRIVACY, legalPath, type LegalId } from './legal.ts';
+import { LEGAL, LICENSES, PRIVACY, legalPath, privacyWithEvents, type LegalId } from './legal.ts';
 import { PAGES, UI, type Lang, type TaskPage } from './tasks.ts';
 
 export const LANGS: Lang[] = ['ru', 'en'];
@@ -140,9 +140,9 @@ export function renderHub(lang: Lang, site: string): string {
 /** Text with [label](url) links, escaped. */
 const linked = (s: string) => esc(s).replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, url: string) => `<a href="${url}">${label}</a>`);
 
-/** "Privacy" or "Licenses" (seo/legal.ts) at <lang>/<id>/. */
-export function renderLegal(id: LegalId, lang: Lang, site: string): string {
-  const page = (id === 'privacy' ? PRIVACY : LICENSES)[lang];
+/** "Privacy" or "Licenses" (seo/legal.ts) at <lang>/<id>/; `events`: the host anonymous statistics go to, if any (G-3). */
+export function renderLegal(id: LegalId, lang: Lang, site: string, events = ''): string {
+  const page = id === 'privacy' ? (events ? privacyWithEvents(lang, events) : PRIVACY[lang]) : LICENSES[lang];
   const body = `<h1>${esc(page.h1)}</h1>
 <p>${linked(page.intro)}</p>
 ${page.sections.map((x) => `<h2>${esc(x.h)}</h2>${(x.p ?? []).map((t) => `<p>${linked(t)}</p>`).join('')}${x.items ? `<ul>${x.items.map((t) => `<li>${linked(t)}</li>`).join('')}</ul>` : ''}`).join('\n')}
@@ -156,12 +156,12 @@ ${page.sections.map((x) => `<h2>${esc(x.h)}</h2>${(x.p ?? []).map((t) => `<p>${l
 }
 
 /** Every generated file: path inside dist/ → contents. */
-export function buildSite(site: string): Record<string, string> {
+export function buildSite(site: string, events = ''): Record<string, string> {
   const files: Record<string, string> = {};
   for (const lang of LANGS) {
     files[`${hubPath(lang)}index.html`] = renderHub(lang, site);
     for (const p of PAGES) files[`${pagePath(p, lang)}index.html`] = renderTask(p, lang, site);
-    for (const id of LEGAL) files[`${legalPath(id, lang)}index.html`] = renderLegal(id, lang, site);
+    for (const id of LEGAL) files[`${legalPath(id, lang)}index.html`] = renderLegal(id, lang, site, events);
   }
   const urls = [site, ...Object.keys(files).map((f) => site + f.replace(/index\.html$/, ''))];
   files['sitemap.xml'] = `<?xml version="1.0" encoding="UTF-8"?>

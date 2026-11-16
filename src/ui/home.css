@@ -69,6 +69,8 @@ button.ck-home-card:focus-visible { outline: 2px solid var(--text-primary); outl
 
 .ck-home-foot { margin-top: var(--space-4); color: var(--text-secondary); font-size: var(--type-xs); }
 .ck-home-foot a { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 var(--space-1); color: inherit; }
+/* The statistics switch reads as the links next to it (G-3). */
+.ck-home-foot-switch { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 var(--space-1); border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 
 /* The dock: in reading order after the reel, on the screen at its bottom, above the system's home bar. The page ends
    above it (--home-dock, its height, set by the screen) and a focused field or button scrolls clear of it. */
