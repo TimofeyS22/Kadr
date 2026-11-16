@@ -49,8 +49,14 @@ export function maskCentroid(data: Uint8Array, w: number, h: number): number | n
 
 const FILLERS = new Set(['um', 'umm', 'uh', 'uhh', 'uhm', 'er', 'erm', 'hmm', 'mm', 'ah', 'эээ', 'ээ', 'э', 'эм', 'мм', 'ммм', 'ам']);
 const norm = (w: string) => w.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-/** "um", "эээ" and the like. */
-export const isFiller = (w: string): boolean => FILLERS.has(norm(w));
+/**
+ * A drawn-out hesitation as a speech model writes it: GigaAM writes «а-а», «Аа-а», «э-э» (five in 85 s of a live
+ * interview, 2026-11-16), and only «э», «ээ», «эээ» were in the list — the reel left the rest in (V-142). Two or more
+ * of the same vowel, with or without an «м» at the end; never a single «а» or «и», which are words.
+ */
+const DRAWN = /^(а{2,}м*|э{2,}м*|м{2,}|u+h+m*|e+r+m*)$/u;
+/** "um", "эээ", «а-а» and the like. */
+export const isFiller = (w: string): boolean => { const n = norm(w); return FILLERS.has(n) || DRAWN.test(n); };
 
 /** Indices of filler words and immediate repeats ("I I think") — candidates for "edit by text". */
 export function fillerIndices(words: { text: string }[]): number[] {
@@ -58,7 +64,7 @@ export function fillerIndices(words: { text: string }[]): number[] {
   words.forEach((w, i) => {
     const n = norm(w.text);
     if (!n) return;
-    if (FILLERS.has(n) || (i + 1 < words.length && norm(words[i + 1].text) === n)) out.push(i);
+    if (isFiller(n) || (i + 1 < words.length && norm(words[i + 1].text) === n)) out.push(i);
   });
   return out;
 }

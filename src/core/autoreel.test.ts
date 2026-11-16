@@ -161,3 +161,13 @@ describe('reel in one tap: cuts keep the speech', () => {
     expect(s().project).toBe(p0);
   });
 });
+
+describe('hesitations as the speech models write them (V-142)', () => {
+  it('takes GigaAM\'s drawn-out «а-а», «Аа-а,» and «э-э» for fillers, and leaves the words «а», «и», «ну» of a sentence alone', async () => {
+    const { isFiller, fillerIndices } = await import('./reframe');
+    for (const w of ['а-а', 'А-а,', 'Аа-а,', 'э-э,', 'ээээ', 'эм', 'м-м', 'а-ам']) expect(isFiller(w), w).toBe(true);
+    for (const w of ['а', 'и', 'ну', 'вам', 'мама', 'это', 'э-это', 'ага']) expect(isFiller(w), w).toBe(false);
+    const said = 'за последние месяцы. А-а, и вы неоднократно давали понять А-а, э-э, скажите'.split(' ').map((text) => ({ text }));
+    expect(fillerIndices(said).map((i) => said[i].text)).toEqual(['А-а,', 'А-а,', 'э-э,']);
+  });
+});
