@@ -75,19 +75,35 @@ export function Ribbon({ label, start, end, children, hook }: RibbonProps) {
   // Which way more tools lie: that edge fades, the other does not (SW-U-4: a word cut under «Все» read as broken, and the
   // last tool stayed faded with nothing beyond it).
   const tools = useRef<HTMLDivElement>(null);
+  const watch = useRef<{ ro: ResizeObserver; mark: () => void } | null>(null);
+  // One observer for the ribbon's life. It marks the edges a frame later, and only when they change: marking inside the
+  // observer's own callback, with a new observer at every render of the ribbon, met the preview's own resize in one frame
+  // and WebKit reported «ResizeObserver loop completed with undelivered notifications» (lane D, under load).
   useEffect(() => {
     const el = tools.current;
     if (!el) return;
+    let frame = 0;
     const mark = () => {
-      el.toggleAttribute('data-more-start', el.scrollLeft > 1);
-      el.toggleAttribute('data-more-end', el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+      const start = el.scrollLeft > 1, end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      if (el.hasAttribute('data-more-start') !== start) el.toggleAttribute('data-more-start', start);
+      if (el.hasAttribute('data-more-end') !== end) el.toggleAttribute('data-more-end', end);
     };
-    mark();
-    const ro = new ResizeObserver(mark);
+    const later = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(mark); };
+    const ro = new ResizeObserver(later);
     ro.observe(el);
-    for (const c of el.children) ro.observe(c);
+    watch.current = { ro, mark: later };
     el.addEventListener('scroll', mark, { passive: true });
-    return () => { ro.disconnect(); el.removeEventListener('scroll', mark); };
+    return () => { ro.disconnect(); cancelAnimationFrame(frame); el.removeEventListener('scroll', mark); watch.current = null; };
+  }, []);
+  // The tools change with what is picked: the same observer drops the groups that left and watches the ones there now, so
+  // a removed group is not held.
+  useEffect(() => {
+    const w = watch.current, el = tools.current;
+    if (!w || !el) return;
+    w.ro.disconnect();
+    w.ro.observe(el);
+    for (const c of el.children) w.ro.observe(c);
+    w.mark();
   }, [children]);
   return (
     <nav className={hook ? `ck ck-ribbon ${hook}` : 'ck-ribbon'} aria-label={label}>
