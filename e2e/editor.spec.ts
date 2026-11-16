@@ -2077,18 +2077,34 @@ test('an older project\'s processed sound (44 ms late before v1.2.1) is rebuilt 
   expect(Math.abs(t - t0), `${t0.toFixed(3)} → ${t.toFixed(3)} s`).toBeLessThan(0.02);
 });
 
-test('iPhone: the first video import explains how to get originals (picker format "Current"), once', async ({ page }, info) => {
+// D-10 (owner, 2026-11-10): on an iPhone the advice about originals comes before the first pick from Photos
+// (e2e/qa-ios-import.spec.ts), and after a pick only when the facts point to the picker's re-encoded copy: an H.264
+// video after a long wait in it. A quick pick says nothing; Android, whose picker does not re-encode, never says it.
+// Every toast shown is recorded: under the test's clock a toast can go before a check that only looks would see it.
+test('iPhone: a quick video pick says nothing, an H.264 video after 20 s in the picker is explained with the seconds (picker format "Current"); Android never', async ({ page }, info) => {
+  await page.addInitScript(() => {
+    const seen: string[] = ((window as unknown as { __tips: string[] }).__tips = []);
+    new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => {
+      if (/Format: Current/.test(el.textContent ?? '') && !seen.includes(el.textContent ?? '')) seen.push(el.textContent ?? '');
+    })).observe(document, { subtree: true, childList: true });
+  });
+  const tips = () => page.evaluate(() => (window as unknown as { __tips: string[] }).__tips);
+  await page.clock.install();
   await newProject(page);
-  const tip = page.locator('.toast', { hasText: 'Format: Current' });
   await importFiles(page, 'Media', ['landscape.mp4']);
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
-  if (info.project.name !== 'iphone-webkit') { await expect(tip).toHaveCount(0); return; } // only iOS re-encodes
-  await expect(tip).toBeVisible();
-  await tip.click(); // dismiss
+  await page.waitForTimeout(800);
+  expect(await tips(), 'a quick pick').toEqual([]);
   await page.getByRole('button', { name: 'Close tools' }).click();
-  await importFiles(page, 'Media', ['portrait.mp4']);
+  // The picker open 20 s: what the iPhone's re-encoding of a video looks like from the page.
+  const chooser = page.waitForEvent('filechooser');
+  await tool(page, 'Media').click();
+  const picker = await chooser;
+  await page.clock.fastForward(20_000);
+  await picker.setFiles(fx('portrait.mp4'));
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(2);
-  await expect(tip).toHaveCount(0);
+  if (info.project.name !== 'iphone-webkit') { await page.waitForTimeout(800); expect(await tips(), 'Android does not re-encode').toEqual([]); return; }
+  await expect.poll(tips).toEqual([expect.stringContaining('open for 20 s')]);
 });
 
 test('iPhone HDR original (HEVC 10-bit HLG, as "Format: Current" hands it over) imports and exports', async ({ page }, info) => {
