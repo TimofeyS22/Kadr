@@ -715,6 +715,13 @@ const SCENARIOS = {
   // Г4 on the whole path: GigaAM chosen by hand reads the live samples in the editor, and the tab lives.
   'captions-gigaam-live': () => gigaamSpeech('eval_ru_live.mp4'),
   'captions-gigaam-music': () => gigaamSpeech('eval_ru_live_music.mp4'),
+  // SW-S-1: a live interview with hesitations (fixtures/README-eval_ru_talk.md) on the phone's default model: how many
+  // of them it writes down (the reel can cut only those).
+  'captions-talk-ru': async () => {
+    const r = await oneTapCaptions('eval_ru_talk.mp4');
+    const text = r.lines.join(' ');
+    return { seconds: r.seconds, lines: r.lines.length, hesitations: (text.match(/(^|[^а-яё])(а-а+|аа+|э-э+|ээ+|эм+|м-м+)(?=[^а-яё]|$)/giu) ?? []).length, asks: r.asks, said: r.said, text: text.slice(0, 400) };
+  },
   // Г4, what ends Safari on the second GigaAM run in a row: a pause between two pages (does the first page's memory
   // need time to go?), and the same page making captions again (the worker is reused: the path a person takes).
   'wait-90': async () => { await sleep(90_000); return { waitedS: 90 }; },
