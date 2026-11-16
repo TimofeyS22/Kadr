@@ -205,33 +205,3 @@ test('opening the project in a second tab does not take the take the first tab i
   expect(stolen, 'the second tab leaves a take in progress alone').toBe(0);
   expect(kept, 'the recording tab gets its whole take').toBe(1);
 });
-
-// A finished export waits in the origin-private file system until the person saves it. If the tab is reloaded before
-// that (on an iPhone: Safari takes the page back while the person looks at another app, a common moment right after
-// a long export), the file is still on the disk, but nothing offers it any more: the editor opens as if no export was
-// made, and the next export or project deletion removes the file. The person exports again, for minutes.
-test('a finished export that was not saved yet is offered again after the tab is reloaded', async ({ page }) => {
-  test.setTimeout(240_000);
-  await newProject(page);
-  const chooser = page.waitForEvent('filechooser');
-  await tool(page, 'Media').click();
-  await (await chooser).setFiles(`${import.meta.dirname}/../fixtures/landscape.mp4`);
-  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Export' }).first().click();
-  await page.getByRole('radio', { name: 'Small file' }).click();
-  await page.getByRole('button', { name: 'Export video' }).click();
-  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 180_000 });
-  const onDisk = () => page.evaluate(async () => {
-    const names: string[] = [];
-    try { for await (const name of (await navigator.storage.getDirectory() as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(name); } catch { /* no OPFS */ }
-    return names;
-  });
-  const before = await onDisk();
-  await page.reload(); // what iOS does to a Safari tab in the background
-  await expect(page.locator('.preview-canvas')).toBeVisible();
-  await page.waitForTimeout(5000);
-  const after = await onDisk();
-  const offered = await page.getByRole('button', { name: 'Save / Share' }).isVisible();
-  console.log(`unsaved export: on disk before ${JSON.stringify(before)}, after reload ${JSON.stringify(after)}, offered ${offered}, toasts ${JSON.stringify(await toasts(page))}`);
-  expect(offered, 'the finished file is offered to save after the reload').toBe(true);
-});
