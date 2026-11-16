@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { findClip } from '../core/timeline';
 import type { Project } from '../core/types';
 import { entryFor, logError, takeNoted, type ErrorEntry } from '../lib/errorLog';
+import { t } from '../lib/i18n';
 import { reloadPending, updatingMessage } from '../lib/update';
 
 export type SheetId =
@@ -20,6 +21,8 @@ const COALESCE_MS = 1200;
 export interface EditorState {
   project: Project | null;
   past: Project[];
+  /** The history's start was let go (past HISTORY_LIMIT steps): said once, and an Undo at the cut says why (SW-E2-1). */
+  historyCut: boolean;
   future: Project[];
   histKey: string | null;
   histAt: number;
@@ -101,6 +104,7 @@ const validSelection = (p: Project | null, id: string | null) => (p && id && fin
 export const useEditor = create<EditorState>()((set, get) => ({
   project: null,
   past: [],
+  historyCut: false,
   future: [],
   histKey: null,
   histAt: 0,
@@ -122,8 +126,8 @@ export const useEditor = create<EditorState>()((set, get) => ({
   saving: 'saved',
   session: 0,
 
-  open: (p) => set((s) => ({ project: p, past: [], future: [], histKey: null, selection: null, multi: null, sheet: null, time: 0, playing: false, eyedropper: null, elsewhere: false, gone: false, saving: 'saved', session: s.session + 1 })),
-  close: () => set({ project: null, past: [], future: [], selection: null, multi: null, sheet: null, playing: false, eyedropper: null, elsewhere: false, gone: false }),
+  open: (p) => set((s) => ({ project: p, past: [], historyCut: false, future: [], histKey: null, selection: null, multi: null, sheet: null, time: 0, playing: false, eyedropper: null, elsewhere: false, gone: false, saving: 'saved', session: s.session + 1 })),
+  close: () => set({ project: null, past: [], historyCut: false, future: [], selection: null, multi: null, sheet: null, playing: false, eyedropper: null, elsewhere: false, gone: false }),
 
   commit(fn, key, base) {
     const s = get();
@@ -133,9 +137,13 @@ export const useEditor = create<EditorState>()((set, get) => ({
     if (next === s.project) return;
     const now = Date.now();
     const coalesce = key !== undefined && key === s.histKey && now - s.histAt < COALESCE_MS;
+    // Past the limit the oldest step goes: once, the person is told how far Undo reaches (SW-E2-1).
+    const cut = !coalesce && s.past.length >= HISTORY_LIMIT;
+    if (cut && !s.historyCut) get().toast(t('Undo keeps the last {n} steps', { n: HISTORY_LIMIT }));
     set({
       project: next,
       past: coalesce ? s.past : [...s.past.slice(-(HISTORY_LIMIT - 1)), s.project],
+      historyCut: s.historyCut || cut,
       future: [],
       histKey: key ?? null,
       histAt: now,
@@ -151,6 +159,7 @@ export const useEditor = create<EditorState>()((set, get) => ({
   undo() {
     const s = get();
     const prev = s.past.at(-1);
+    if (!prev && s.historyCut && s.project && !s.locked) { get().toast(t('Earlier steps are not kept: Undo goes back {n} steps', { n: HISTORY_LIMIT })); return; }
     if (!prev || !s.project || s.locked) return;
     set({ project: prev, past: s.past.slice(0, -1), future: [s.project, ...s.future], histKey: null, selection: validSelection(prev, s.selection) });
   },

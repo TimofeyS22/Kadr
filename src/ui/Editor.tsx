@@ -395,7 +395,7 @@ function Transport({ onUsed }: { onUsed: () => void }) {
   const locked = useEditor((s) => s.locked);
   const duration = useEditor((s) => (s.project ? projectDuration(s.project) : 0));
   const safeZones = useEditor((s) => s.safeZones);
-  const canUndo = useEditor((s) => s.past.length > 0 && !s.locked);
+  const canUndo = useEditor((s) => (s.past.length > 0 || s.historyCut) && !s.locked); // at the cut it says why (SW-E2-1)
   const canRedo = useEditor((s) => s.future.length > 0 && !s.locked);
   const s = useEditor.getState();
   return (

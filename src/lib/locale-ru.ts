@@ -121,6 +121,8 @@ export const RU: Record<string, string> = {
   'Too close to the edge of the clip': 'Слишком близко к краю клипа',
   'Audio extracted to its own track': 'Звук вынесен на отдельную дорожку',
   'This clip has no audio': 'В этом клипе нет звука',
+  'Undo keeps the last {n} steps': 'Отмена хранит последние {n} шагов',
+  'Earlier steps are not kept: Undo goes back {n} steps': 'Более ранние шаги не хранятся: отмена возвращает на {n} шагов назад',
   'The sound of this clip is off or already on its own track': 'Звук этого клипа выключен или уже вынесен на свою дорожку',
   'Put the playhead over a video clip': 'Поставьте иглу на видеоклип',
   'No speech was found in this video': 'Речь в видео не найдена',
