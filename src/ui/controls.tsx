@@ -91,6 +91,10 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
     const el = ref.current, host = el?.closest<HTMLElement>('.ck-editor');
     if (!el || !host) return;
     let tallest = 0, frame = 0, cap = 0;
+    // Later changes wait for the next frame: changing the editor's layout inside the observer's own callback made the
+    // browser report "ResizeObserver loop completed with undelivered notifications".
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fit); });
+    const watched = new Set<Element>();
     const fit = () => {
       // A sheet where the picture is judged stops a peek below its working set and the rest scrolls, so the frame keeps
       // its room (UI-7, the art director): `data-below` marks what comes after that set. Measured on what is drawn, the
@@ -98,6 +102,9 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
       // half the screen, so its Scale is whole on a 667 px phone (the header has folded: the frame still gains, UI-7).
       const below = el.querySelector<HTMLElement>('[data-below]'), body = el.querySelector<HTMLElement>('.ck-panel-body');
       if (below && body && matchMedia(PHONE_UPRIGHT).matches) {
+        // A stopped sheet no longer changes its own size when its working set grows (a font arriving, a tab with more
+        // in it), so the parts of that set are watched themselves: the stop follows them down.
+        for (const part of body.children) { if (part === below) break; if (!watched.has(part)) { watched.add(part); ro.observe(part); } }
         const at = Math.ceil(below.getBoundingClientRect().top - el.getBoundingClientRect().top + body.scrollTop + PEEK);
         if (at > cap) { cap = at; el.style.maxHeight = `min(50dvh, ${cap}px)`; el.setAttribute('data-capped', ''); }
       }
@@ -108,9 +115,6 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
       host.style.setProperty('--sheet-h', `${h}px`);
     };
     fit();
-    // Later changes wait for the next frame: changing the editor's layout inside the observer's own callback made the
-    // browser report "ResizeObserver loop completed with undelivered notifications".
-    const ro = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fit); });
     ro.observe(el);
     return () => { ro.disconnect(); cancelAnimationFrame(frame); el.style.minHeight = ''; el.style.maxHeight = ''; el.removeAttribute('data-capped'); host.style.removeProperty('--sheet-h'); };
   }, [title]);
