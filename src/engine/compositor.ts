@@ -681,6 +681,11 @@ export class Compositor {
     this.gl.deleteFramebuffer(this.target);
     this.slots.clear();
     this.luts.clear();
-    if (loseContext) this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+    if (loseContext) this.releaseContext();
+  }
+
+  /** Gives the GPU context back now, not when the garbage collector gets to it (only for canvases that are thrown away). */
+  releaseContext(): void {
+    this.gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }

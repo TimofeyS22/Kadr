@@ -71,9 +71,14 @@ export class Player {
     document.removeEventListener('visibilitychange', this.onHidden);
     this.pause();
     clearTimeout(this.contextTimer);
-    this.compositor?.dispose();
+    const comp = this.compositor;
+    comp?.dispose();
     this.compositor = null;
     this.pool.release();
+    // The preview's canvas goes with the editor (or is replaced after a GPU loss): its context goes with it. Kept, one a
+    // visit piled up until the browser dropped the oldest (SW-D-4). React's test unmount in development keeps the canvas
+    // on the page and attaches it again, so the context is let go only once the canvas has left.
+    if (comp) setTimeout(() => { if (!comp.canvas.isConnected) comp.releaseContext(); }, 0);
   }
 
   onFrame(fn: () => void): () => void {
