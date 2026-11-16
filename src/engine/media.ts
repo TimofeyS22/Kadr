@@ -250,6 +250,12 @@ class VideoStream {
   private it: AsyncGenerator<VideoSample, void, unknown> | null = null;
   private cur: VideoSample | null = null;
   private nxt: VideoSample | null = null;
+  /**
+   * The newest timestamp `pull` has handed out since the stream last sought. A decoder can hand a frame after a later one
+   * (iOS 26.0–26.3, audit V-105; Mediabunny puts back a frame one place late, not two): shown, it would step the picture
+   * back, a jerk in the preview and in the file. Such a frame is let go and the picture holds the one before instead.
+   */
+  private pulled = -Infinity;
   private queue: Promise<unknown> = Promise.resolve();
   private closed = false;
   // Two canvases alternate so a frame being uploaded is never overwritten by the next one. Made on first use: frames
@@ -319,16 +325,21 @@ class VideoStream {
   private async pull(): Promise<VideoSample | null> {
     const it = this.it;
     if (!it || this.closed) return null;
-    const r = await this.answer(it.next(), (late) => { if (!late.done) late.value.close(); });
-    if (r.done) return null;
-    if (this.closed || it !== this.it) { r.value.close(); return null; }
-    return r.value;
+    for (;;) {
+      const r = await this.answer(it.next(), (late) => { if (!late.done) late.value.close(); });
+      if (r.done) return null;
+      if (this.closed || it !== this.it) { r.value.close(); return null; }
+      if (r.value.timestamp < this.pulled - 1e-6) { r.value.close(); continue; } // out of order: never drawn (V-105)
+      this.pulled = r.value.timestamp;
+      return r.value;
+    }
   }
 
   /** Stops the running decoder and forgets its samples; the next read seeks afresh. */
   private async reset(): Promise<void> {
     const it = this.it;
     this.it = null;
+    this.pulled = -Infinity;
     this.drop();
     // A generator waiting on a silent decoder would not return until it answers.
     if (it) await within(it.return().catch(() => undefined), 1000, () => undefined);
