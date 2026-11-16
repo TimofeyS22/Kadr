@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
 import { switchableNetwork } from './network';
 import { compareSound } from './soundMatch';
+import { hideOverFrame } from './over-frame';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
@@ -2361,7 +2362,7 @@ async function previewAt(page: Page, info: { outputPath: (n: string) => string }
   await page.waitForTimeout(1000);
   const canvas = page.locator('.preview-canvas');
   const whole = info.outputPath(`preview-${t}-element.png`);
-  const shoot = () => canvas.screenshot({ style: '.toast { visibility: hidden !important; }' }); // a tip lying over the preview is not in the export
+  const shoot = () => canvas.screenshot({ style: hideOverFrame() }); // a tip or note lying over the preview is not in the export
   // A scrub shows the nearest keyframe first and the exact frame once the finger rests (audit V-173): the picture is
   // taken when it holds still. Headless Chromium decodes in software; on a busy Mac the exact frame came after > 1 s.
   let still = await shoot();
@@ -4902,7 +4903,7 @@ const toastErrors = (page: Page) => page.evaluate(() => (window as unknown as { 
 /** The average brightness of what the preview shows, 0..255. */
 async function previewBrightness(page: Page, info: TestInfo, name: string): Promise<number> {
   const file = info.outputPath(`${name}.png`);
-  await page.locator('.preview-canvas').screenshot({ path: file, style: '.toast { visibility: hidden !important; }' });
+  await page.locator('.preview-canvas').screenshot({ path: file, style: hideOverFrame() });
   const { execFileSync } = await import('node:child_process');
   return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', 'scale=1:1,format=gray', '-f', 'rawvideo', '-'])[0];
 }
@@ -5302,7 +5303,7 @@ test('captions have the same look settings as text: outline, second outline, sha
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await srtCaptions(page);
-  const shot = async (n: string) => { await page.locator('.caption-row input').first().focus(); await page.waitForTimeout(800); const f = info.outputPath(`${n}.png`); await page.locator('.preview-canvas').screenshot({ path: f, style: '.toast, .sel-box { visibility: hidden !important; }' }); return gray(f); };
+  const shot = async (n: string) => { await page.locator('.caption-row input').first().focus(); await page.waitForTimeout(800); const f = info.outputPath(`${n}.png`); await page.locator('.preview-canvas').screenshot({ path: f, style: hideOverFrame('.sel-box') }); return gray(f); };
   const plain = await shot('plain');
   const outline = page.getByRole('switch', { name: 'Outline', exact: true });
   if (!(await outline.isChecked())) await outline.check();

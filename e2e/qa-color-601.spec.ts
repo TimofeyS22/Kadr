@@ -6,6 +6,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { hideOverFrame } from './over-frame';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 const tool = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -68,7 +69,7 @@ test('a BT.601 video keeps its colours in the preview, a photo, the video, a fre
   await open(page, 'bt601.mp4');
   await seek(page, 1);
   await page.waitForTimeout(600);
-  const preview = bands(['-i', 'pipe:0'], await page.locator('.preview-canvas').screenshot());
+  const preview = bands(['-i', 'pipe:0'], await page.locator('.preview-canvas').screenshot({ style: hideOverFrame() }));
   const photo = bands(['-i', await save(page, info, 'Photo', 'photo.jpg')]);
   const video = bands(['-ss', '1', '-i', await save(page, info, 'Video', 'video.mp4')]);
   await seek(page, 1);

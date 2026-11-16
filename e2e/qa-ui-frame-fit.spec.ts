@@ -4,6 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { hideOverFrame } from './over-frame';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
@@ -36,7 +37,7 @@ const note = (page: Page) => page.getByRole('note').filter({ hasText: 'чёрн�
 async function edges(page: Page) {
   await page.waitForTimeout(600);
   // The frame's own pixels: the note stands on the bottom bar it speaks of, so it is hidden for the shot.
-  const shot = await page.locator('.preview-canvas').screenshot({ type: 'png', style: '.ck-frame-fit { visibility: hidden !important; }' });
+  const shot = await page.locator('.preview-canvas').screenshot({ type: 'png', style: hideOverFrame() });
   const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-vf', 'scale=36:64', '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], { input: shot, maxBuffer: 1 << 20 });
   const mean = (from: number, to: number) => { let s = 0; for (let y = from; y < to; y++) for (let x = 0; x < 36; x++) s += raw[y * 36 + x]; return s / ((to - from) * 36); };
   return { top: mean(0, 6), bottom: mean(58, 64) };

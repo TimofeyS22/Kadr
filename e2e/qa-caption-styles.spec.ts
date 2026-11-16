@@ -7,6 +7,7 @@ import path from 'node:path';
 import { CAPTION_CATEGORIES, CAPTION_PRESETS, TEXT_PRESETS } from '../src/core/presets';
 import { FONT_IDS } from '../src/core/types';
 import type { StylesReport } from '../src/ui/StylesCheck';
+import { hideOverFrame } from './over-frame';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 const pageErrors: string[] = [];
@@ -98,7 +99,7 @@ async function previewAt(page: Page, info: TestInfo, t: number, name: string): P
   await expect(page.locator('.sel-box')).toBeHidden();
   const canvas = page.locator('.preview-canvas');
   const whole = info.outputPath(`${name}-element.png`);
-  await canvas.screenshot({ path: whole, style: '.toast { visibility: hidden !important; }' });
+  await canvas.screenshot({ path: whole, style: hideOverFrame() });
   const b = await canvas.evaluate((c) => { const r = c.getBoundingClientRect(); return [r.x - Math.floor(r.x), r.y - Math.floor(r.y), r.width, r.height].map((v) => v * devicePixelRatio); });
   const [x, y, w, h] = b.map(Math.round);
   const shot = info.outputPath(`${name}.png`);
