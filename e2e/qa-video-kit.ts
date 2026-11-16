@@ -171,6 +171,11 @@ export function probe(file: string): Probe {
 }
 export const durationOf = (file: string) => Number(probe(file).format.duration);
 
+/** Grayscale 270×480 of a picture, or of a video's frame number `n` (exact: `-ss` can land a frame off). */
+export function grayAt(file: string, n?: number): Buffer {
+  const pick = n === undefined ? '' : `select=eq(n\\,${n}),`;
+  return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', `${pick}scale=270:480`, '-fps_mode', 'passthrough', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-']);
+}
 /** RGB 135×240 of a picture, or of a video's frame number `n`. */
 export function rgbAt(file: string, n?: number): Buffer {
   const pick = n === undefined ? '' : `select=eq(n\\,${n}),`;
@@ -368,3 +373,32 @@ export const expectToast = (page: Page, text: string | RegExp, timeout = 20_000)
 
 /** The playhead's time in seconds, as the timeline's position slider holds it. */
 export const playhead = async (page: Page) => Number(await page.getByRole('slider', { name: 'Position in the video' }).inputValue());
+
+/**
+ * docs/11 §3.9 at the screen as it is, as editor.spec.ts «every tool at 375 px» audits it: sideways scroll of the page and
+ * of the sheet, controls past the edge (outside a row meant to scroll), controls without a name; small targets listed.
+ */
+export function layoutAudit(page: Page) {
+  return page.evaluate(() => {
+    const vw = window.innerWidth;
+    const overflow = document.scrollingElement!.scrollWidth - vw;
+    const controls = [...document.querySelectorAll<HTMLElement>('button, [role="button"], [role="radio"], [role="switch"], [role="slider"], input, select, a[href]')]
+      .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; });
+    const name = (el: HTMLElement) => (el.getAttribute('aria-label') ?? el.getAttribute('title') ?? (el as HTMLInputElement).labels?.[0]?.textContent ?? el.textContent ?? '').trim();
+    const nameless = controls.filter((el) => !name(el) && !el.closest('[aria-hidden="true"]')).map((el) => el.outerHTML.slice(0, 90));
+    const small = controls.filter((el) => { const r = el.getBoundingClientRect(); return (r.width < 44 || r.height < 44) && el.tagName !== 'INPUT'; })
+      .map((el) => `${name(el).slice(0, 30) || el.className} ${Math.round(el.getBoundingClientRect().width)}×${Math.round(el.getBoundingClientRect().height)}`);
+    const inScroller = (el: HTMLElement) => {
+      for (let a = el.parentElement; a; a = a.parentElement) {
+        const ox = getComputedStyle(a).overflowX;
+        if ((ox === 'auto' || ox === 'scroll') && a.scrollWidth > a.clientWidth + 1 && !a.classList.contains('sheet-body')) return true;
+      }
+      return false;
+    };
+    const offscreen = controls.filter((el) => { const r = el.getBoundingClientRect(); return (r.right > vw + 1 || r.left < -1) && !inScroller(el); })
+      .map((el) => `${name(el).slice(0, 30) || el.className} at ${Math.round(el.getBoundingClientRect().left)}…${Math.round(el.getBoundingClientRect().right)}`);
+    const body = document.querySelector<HTMLElement>('.sheet-body');
+    const sheetScroll = body ? body.scrollWidth - body.clientWidth : 0;
+    return { overflow, nameless, small, offscreen, sheetScroll };
+  });
+}
