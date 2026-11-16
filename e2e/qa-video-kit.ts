@@ -202,7 +202,8 @@ export async function previewAt(page: Page, info: Out, t: number): Promise<strin
   await page.waitForTimeout(1000);
   const canvas = page.locator('.preview-canvas');
   const whole = info.outputPath(`preview-${t.toFixed(3)}-element.png`);
-  const shoot = () => canvas.screenshot({ style: '.toast { visibility: hidden !important; }' });
+  // What lies over the preview is not the preview: toasts and the black-bars note (UI-4), as `qa-ui-frame-fit` shoots it.
+  const shoot = () => canvas.screenshot({ style: '.toast, .ck-frame-fit { visibility: hidden !important; }' });
   let still = await shoot();
   for (let k = 1; k <= 20; k++) {
     await page.waitForTimeout(500);
