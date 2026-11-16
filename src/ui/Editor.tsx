@@ -1,5 +1,5 @@
 import { produce } from 'immer';
-import { Check, ChevronLeft, Pause, Play, Redo2, Smartphone, Undo2, Upload } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, Pause, Play, Redo2, Smartphone, Undo2, Upload } from 'lucide-react';
 import { Suspense, lazy, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { runStartTask } from './tasks';
 import { normalizeProject, projectDuration, withUsedAssets } from '../core/timeline';
@@ -8,7 +8,7 @@ import { player } from '../engine/player';
 import { errorMessage, track } from '../lib/telemetry';
 import { useEditor } from '../state/store';
 import { ProjectConflict, ProjectDeleted, clearJournal, deleteBlob, deleteTake, forgetLoadedMedia, unfinishedTakes, saveUnfinishedTake, forgetProject, journalProject, loadProject, onDeletedElsewhere, onSavedElsewhere, saveProject } from '../storage/db';
-import { startExport } from './exportPrefs';
+import { exportSizeLabel, openExportSettings, startExport } from './exportPrefs';
 import { forgetThumbs } from '../engine/media';
 import { importStored } from '../engine/importer';
 import { uid } from '../core/defaults';
@@ -363,6 +363,12 @@ function TopBar({ project, moved, onMovedSeen, folded }: { project: Project; mov
           onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
         <Saved id={`${id}-saved`} />
       </div>
+      {/* The size a tap on «Экспорт» makes, and the way to the settings before anything renders (UI-2): a qualifier of the
+          white button, in words, not a second white button. */}
+      {projectDuration(project) > 0 && exportSizeLabel(project) && (
+        <Button variant="plain" hook="ck-editor-size" aria-haspopup="dialog" aria-label={t('Resolution and settings: {size}', { size: exportSizeLabel(project) })}
+          onClick={openExportSettings}>{exportSizeLabel(project)}<ChevronDown aria-hidden /></Button>
+      )}
       <Button variant="primary" icon={<Upload aria-hidden />} disabled={projectDuration(project) <= 0} onClick={startExport}>{t('Export')}</Button>
       {moved && (
         <div className="ck-editor-moved" role="note">

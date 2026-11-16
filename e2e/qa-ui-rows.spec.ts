@@ -31,7 +31,9 @@ for (const [locale, tool, field, word] of [['ru', 'Текст', 'Текст', '�
 /** The audit's measure (§3): a finger lands on the control when it is anywhere within 21.5 px of its centre on either
  *  axis. Returns the offsets that land elsewhere (on a neighbour, on nothing), so an empty list means 44 px to a finger. */
 const misses = (loc: ReturnType<Page['locator']>) => loc.evaluate((el) => {
-  el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  // Centred in what scrolls it, not flush with its edge: a point 21 px off the centre of a control that sits on the very
+  // last pixel of a sheet fell on the edge by rounding (Android, 2026-11-16). Sideways stays put: the timeline is time.
+  el.scrollIntoView({ block: 'center', inline: 'nearest' });
   const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
   return [[0, 0], [-21, 0], [21, 0], [0, -21], [0, 21]].filter(([dx, dy]) => {
     const hit = document.elementFromPoint(cx + dx, cy + dy);
@@ -237,5 +239,38 @@ for (const h of [667, 812]) {
     }
     console.log(`UI-7 375×${h}: frame % of the screen`, JSON.stringify(seen));
     for (const [name, pct] of Object.entries(seen)) expect(pct, `${name}: the frame, % of the screen (v1.7.1: ${h === 667 ? 13.4 : 19.2})`).toBeGreaterThanOrEqual(MIN_SHARE[h][name]);
+  });
+}
+
+// ---- UI-2: the size of a one-tap export in the header, and the settings before anything renders (the owner chose this
+// over a sheet before every export: one tap stays one tap). ----
+for (const width of [375, 320]) {
+  test(`UI-2 at ${width} px: the header says the size a tap on «Экспорт» makes; a tap on that opens the settings at that size with nothing rendered; «Экспорт» still renders in one tap`, async ({ page }) => {
+    await sampleEditor(page, 'ru');
+    await page.setViewportSize({ width, height: width === 320 ? 640 : 812 });
+    const top = page.locator('.topbar');
+    const size = top.getByRole('button', { name: /^Разрешение и настройки: / });
+    await expect(size, 'the sample is 720p: a file is never larger than its video').toHaveText('720p');
+    await expect(size).toHaveAccessibleName('Разрешение и настройки: 720p');
+    await expect(top.getByRole('button', { name: 'Экспорт' }), 'a search for «Экспорт» finds the white button alone').toHaveCount(1);
+    expect(await misses(size), 'a finger takes it').toEqual([]);
+    const exp = top.getByRole('button', { name: 'Экспорт', exact: true });
+    expect((await size.boundingBox())!.x, 'it qualifies the white button, on its left').toBeLessThan((await exp.boundingBox())!.x);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), 'nothing scrolls sideways').toBe(false);
+    await size.click();
+    const sheet = page.getByRole('dialog', { name: 'Экспорт' });
+    await expect(sheet.getByRole('button', { name: /^Экспортировать видео/ })).toBeEnabled({ timeout: 15_000 });
+    await expect(sheet.locator('.ck-work-frame'), 'nothing renders until it is asked to').toHaveCount(0);
+    await expect(sheet.getByRole('radio', { name: '720p', exact: true }), 'the sheet starts at the size the header said').toBeChecked();
+    // The sizes stand in sight above the held button and its 24 px fade, at 320 px too (the art director).
+    const [chipsBottom, footTop] = await sheet.evaluate((s) => {
+      const h = [...s.querySelectorAll('h3')].find((x) => x.textContent === 'Разрешение')!;
+      return [h.nextElementSibling!.getBoundingClientRect().bottom, s.querySelector('.ck-panel-foot')!.getBoundingClientRect().top];
+    });
+    expect(chipsBottom, 'the sizes above the fade of the held button').toBeLessThanOrEqual(footTop - 24 + 0.5);
+    await sheet.getByRole('button', { name: 'Готово' }).click();
+    await expect(sheet).toHaveCount(0);
+    await exp.click();
+    await expect(page.getByRole('dialog', { name: 'Экспорт' }).locator('.ck-work-frame').first(), 'one tap still renders').toBeVisible({ timeout: 15_000 });
   });
 }

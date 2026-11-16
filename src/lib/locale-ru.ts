@@ -923,6 +923,8 @@ export const RU: Record<string, string> = {
   // Chetko, stage Ч4 release 3: the frame of the editor.
   'changed': 'изменено',
   'All tools': 'Все инструменты',
+  // UI-2: not «экспорт» in the name — a search for the Export button by its name must find that button alone
+  'Resolution and settings: {size}': 'Разрешение и настройки: {size}',
   // UI-4: the black bars after the first video
   'The video is wider than the frame: black bars above and below.': 'Видео шире кадра: сверху и снизу чёрные поля.',
   'The video is narrower than the frame: black bars at the sides.': 'Видео уже кадра: по бокам чёрные поля.',

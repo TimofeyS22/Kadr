@@ -6,7 +6,7 @@ import { roundLeft, timeLeft } from '../core/exportProgress';
 import type { ExportResult, Film } from '../engine/exporter';
 import { GIF_FPS, MAX_GIF_S, gifSize, outputSize, supportedResolutions, type Resolution } from '../engine/exportSizes';
 import { downloadFile, saveFile } from '../engine/save';
-import { exportPrefs, savePrefs } from './exportPrefs';
+import { SIZE_NAME as LABEL, exportPrefs, openedAtSize, rememberSizes, savePrefs } from './exportPrefs';
 import { releaseSpeechModel } from '../engine/captions';
 import { player } from '../engine/player';
 import { within } from '../lib/limits';
@@ -46,7 +46,8 @@ const RESOLUTIONS_MS = 8000;
 /** What the encoder said: the sizes it takes, and those of them it takes at 60 fps (null: not asked, or no answer). */
 interface Encodable { sizes: Resolution[]; sizes60: Resolution[] | null }
 const NO_ANSWER: Encodable = { sizes: [720, 1080], sizes60: null };
-const LABEL: Record<Resolution, string> = { 720: '720p', 1080: '1080p', 1440: '2K', 2160: '4K' };
+/** The held foot's fade over what scrolls under it (sheets.css `.ck-panel-foot::before`). */
+const FADE = 24;
 const PRESETS = [
   { id: 'social', label: t('TikTok, Reels, Shorts'), resolution: 1080, fps: 30, quality: 'high' },
   { id: 'best', label: t('Best quality'), resolution: 2160, fps: 30, quality: 'high' },
@@ -67,6 +68,10 @@ export function ExportSheet() {
   const [encodable, setEncodable] = useState<Encodable | null>(null);
   const supported = encodable?.sizes ?? null;
   const [prefs] = useState(exportPrefs);
+  // Opened by the size in the header: the sizes stand in sight above the held button once the encoder has answered, not
+  // below the fold of a 320 px phone (the art director, UI-2).
+  const [atSize] = useState(openedAtSize);
+  const sizeHead = useRef<HTMLHeadingElement>(null);
   // Both are placeholders until the encoder answers: the start is then worked out from the videos (core/exportDefaults).
   const [resolution, setResolution] = useState<Resolution>(prefs.size ?? 1080);
   const [fps, setFps] = useState(project.settings.fps);
@@ -106,6 +111,15 @@ export function ExportSheet() {
   const film = useMemo<Film>(() => ({ frames: FILM, take: (picture, k) => paint(slots.current[k], picture) }), []);
 
   useEffect(() => {
+    const chips = atSize && supported?.length ? sizeHead.current?.nextElementSibling : null;
+    const body = chips?.closest<HTMLElement>('.ck-panel-body');
+    if (!chips || !body) return;
+    const foot = body.querySelector('.ck-panel-foot')?.getBoundingClientRect().top ?? body.getBoundingClientRect().bottom;
+    const over = chips.getBoundingClientRect().bottom - (foot - FADE - 8);
+    if (over > 0) body.scrollTop += over;
+  }, [atSize, supported]);
+
+  useEffect(() => {
     // The encoder is asked about each size; a browser that never answers gets the sizes every phone encodes.
     let alive = true;
     // 60 fps is asked about only where a video has it: on some browsers every question is a trial encode.
@@ -114,6 +128,7 @@ export function ExportSheet() {
     void within(ask, RESOLUTIONS_MS, () => NO_ANSWER).catch(() => NO_ANSWER).then((e) => {
       if (!alive) return; // closed before the answer: starting now would be an export nobody can see or stop (audit V-131)
       setEncodable(e);
+      rememberSizes(project, e.sizes); // the header names a size this device makes (UI-2)
       // Without an answer about 60 fps the export stays at 30: a rate the encoder did not agree to is not started on a guess.
       const start = exportDefaults(project, e.sizes, e.sizes60 ?? [], prefs.size);
       own.current = exportDefaults(project, e.sizes, e.sizes60 ?? []).resolution;
@@ -302,7 +317,7 @@ export function ExportSheet() {
               const res = !supported || supported.includes(pr.resolution) ? pr.resolution : supported.at(-1) ?? 1080;
               pickSize(res); pickFps(pr.fps); setQuality(pr.quality);
             }} />
-          <h3>{t('Resolution')}</h3>
+          <h3 ref={sizeHead}>{t('Resolution')}</h3>
           {supported?.length === 0 ? <Alert>{t('This browser cannot encode video. Try Chrome or Safari.')}</Alert> : supported === null ? <p className="ck-hint">{t('Checking what this device can encode…')}</p> : (
             <Chips options={supported} value={resolution} onChange={pickSize} render={(r) => LABEL[r]} even />
           )}

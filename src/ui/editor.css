@@ -27,6 +27,19 @@
 /* Not saved: said by words and weight, not by red (red is for deleting). */
 .ck-editor-saved[data-state='failed'] { color: var(--text-primary); font-weight: var(--weight-strong); }
 .ck-editor-top .ck-btn { flex: none; padding: 0 var(--space-3); }
+/* The size the white button makes, and the way to the settings before anything renders (UI-2): words on the ground of
+   the header, the number in figures of one width, a small chevron that says it opens. */
+.ck-editor-top .ck-editor-size { min-width: var(--touch); padding: 0 var(--space-1); color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.ck-editor-size .ck-btn-label { display: flex; align-items: center; gap: var(--space-1); }
+.ck-editor-size svg { width: 16px; height: 16px; margin-top: var(--hairline); color: var(--text-secondary); }
+/* Under 360 px the white button keeps its word and gives up its sign, and the size its chevron, so the name still shows
+   twelve letters. */
+@media (max-width: 359px) {
+  .ck-editor-top .ck-primary { padding: 0 var(--space-2); }
+  .ck-editor-top .ck-primary > svg { display: none; }
+  /* Words alone: the chevron would crowd «p» and the white button (the art director); 8 px to the button and the edge. */
+  .ck-editor-top .ck-editor-size svg { display: none; }
+}
 
 /* Said for one visit, where Undo and Redo used to be (rule Ж1): a row of the header, so it covers nothing of the frame. */
 .ck-editor-moved {
