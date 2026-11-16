@@ -360,7 +360,7 @@ export async function collectOrphans(): Promise<number> {
 /** Lets go of the chunks held in memory for the project just left (the chunked fallback keeps the last two it read). */
 export function forgetLoadedMedia(): void { held.drop(); }
 
-// A camera take or a voice-over, written second by second as it is recorded (audit V-250; the voice-over since SW-A-16):
+// A camera take or a voice-over, written second by second as it is recorded (audit V-250; the voice-over since SW-A-19):
 // it used to live in the page's memory until Stop, so memory grew with every second and a crash lost all of it.
 //
 // The take's bytes become the stored file a piece at a time (docs/19 ADR-М5, variant «c»). It used to be read back from

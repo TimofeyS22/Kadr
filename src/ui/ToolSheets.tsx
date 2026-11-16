@@ -104,7 +104,7 @@ export function CropBody({ clip }: { clip: VideoClip | ImageClip }) {
 /**
  * Ends a voice-over and puts it into the project at `at`, as Stop does. Also when the sheet closes mid-take — Done, Esc,
  * the system Back: that threw the take away without a word (SW-A-11); a take not wanted goes with one Undo.
- * Its seconds are already in storage (SW-A-16) and become the stored file as they are, as a camera take's (docs/19
+ * Its seconds are already in storage (SW-A-19) and become the stored file as they are, as a camera take's (docs/19
  * ADR-М5); they leave storage only once the voice-over is in the project. Not put in (no room, the project left, a file
  * that does not read): they stay, and the voice-over comes back when the project opens.
  * `short`: the take was stopped at once (under a second), so a file that does not open is said as empty (SW-D-8) and

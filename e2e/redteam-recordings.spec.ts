@@ -147,7 +147,7 @@ for (const [how, close] of [
 // until Stop. The camera writes its pieces to storage and brings a take back after a crash; a voice-over is gone.
 test('a voice-over cut short by a crash comes back, as a camera take does (V-250 for the microphone)', async ({ page }) => {
   test.setTimeout(120_000);
-  // On WebKit too since the voice-over is stored as bytes (SW-A-16): this context refuses Blobs, as a private tab does.
+  // On WebKit too since the voice-over is stored as bytes (SW-A-19): this context refuses Blobs, as a private tab does.
   await fakeMicrophone(page);
   await newProject(page);
   const chooser = page.waitForEvent('filechooser');

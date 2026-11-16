@@ -135,7 +135,7 @@ export function Editor({ id }: { id: string }) {
       // The user's own fonts: register, then redraw text that may have used a fallback meanwhile.
       if (p.fonts) void import('../engine/customFonts').then((m) => m.registerProjectFonts(p)).then(() => { player.text.clear(); player.requestRender(); });
       // A recording a crash interrupted: what reached the disk goes into the project — a camera take onto the main track,
-      // a voice-over at its place (SW-A-16). Not one another tab is recording right now: that one is left alone (SW-A-17).
+      // a voice-over at its place (SW-A-19). Not one another tab is recording right now: that one is left alone (SW-A-17).
       // Saved as Stop saves one, its bytes as the stored file (docs/19 ADR-М5): no Blob read back is saved again.
       void recoverTakes(p.id, async (take, meta) => {
         const voice = meta.kind === 'voice' ? meta : null;

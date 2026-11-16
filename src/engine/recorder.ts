@@ -1,6 +1,6 @@
 // Voice-over recording with MediaRecorder (Safari records AAC/MP4, Chrome Opus/WebM; both import fine).
 // Every second goes to storage as it comes, as a camera take's does (TakeWriter): memory stays flat, and a crash loses at
-// most a second — the voice-over comes back at its place when the project opens (SW-A-16). Before, every piece waited in
+// most a second — the voice-over comes back at its place when the project opens (SW-A-19). Before, every piece waited in
 // memory for Stop, and a crash lost the whole voice-over.
 import { within } from '../lib/limits';
 import { TakeWriter } from '../storage/db';

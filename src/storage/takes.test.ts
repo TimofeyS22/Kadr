@@ -1,4 +1,4 @@
-// Takes in storage and their locks (SW-A-16, SW-A-17, SW-A-18): a take being recorded holds a Web Lock in its name, the recovery
+// Takes in storage and their locks (SW-A-19, SW-A-17, SW-A-18): a take being recorded holds a Web Lock in its name, the recovery
 // brings back only takes whose lock is free, and a voice-over comes back with its place and type.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -96,7 +96,7 @@ describe('a take in storage and its lock', () => {
     expect(pieceKeys('p'), 'only the released take is left').toEqual([`t:p:${kept.id}:000000`]);
   });
 
-  it('a voice-over comes back with its place and type, and its description is not a second of it (SW-A-16)', async () => {
+  it('a voice-over comes back with its place and type, and its description is not a second of it (SW-A-19)', async () => {
     const voice = new TakeWriter('v', { kind: 'voice', at: 3.5, type: 'audio/webm' });
     voice.add(piece(7, 2));
     voice.add(piece(9, 3));
