@@ -67,6 +67,7 @@ export const RU: Record<string, string> = {
   'Pause': 'Пауза',
   'Show TikTok, Reels and Shorts safe zones': 'Показать безопасные зоны TikTok, Reels и Shorts',
   'Drop videos, photos or music to add them': 'Перетащите видео, фото или музыку, чтобы добавить',
+  'Drop videos, photos or music to start a project': 'Перетащите видео, фото или музыку, чтобы начать проект',
   'Could not save: {error}': 'Не удалось сохранить: {error}',
   'Done': 'Готово',
   'Double-tap to reset': 'Дважды нажмите, чтобы сбросить',

@@ -126,6 +126,7 @@ export function Home() {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [dropping, setDropping] = useState(false);
   const [naming, setNaming] = useState<ProjectMeta | null>(null);
   const [name, setName] = useState('');
   const [asked, setAsked] = useState<ProjectMeta | null>(null);
@@ -232,13 +233,17 @@ export function Home() {
     }).catch((e) => toast(errorMessage(e), 'error'));
   }, [route]);
 
-  async function create(aspect: AspectId) {
-    // The next number no project has: after a delete, «Project 2» was made beside the «Project 2» still there, two rows
-    // nobody could tell apart, whose backups took one file name (SW-D-2).
+  /** The next number no project has: after a delete, «Project 2» was made beside the «Project 2» still there, two rows
+   *  nobody could tell apart, whose backups took one file name (SW-D-2). */
+  function freeName() {
     const taken = new Set(projects?.map((m) => m.name));
     let n = (projects?.length ?? 0) + 1;
     while (taken.has(t('Project {n}', { n }))) n++;
-    const p = createProject(t('Project {n}', { n }), aspect);
+    return t('Project {n}', { n });
+  }
+
+  async function create(aspect: AspectId) {
+    const p = createProject(freeName(), aspect);
     try {
       await within(saveProject(p), STORAGE_WAIT_MS, () => { throw new Error(t('the browser’s storage does not answer')); });
     } catch (e) {
@@ -417,7 +422,21 @@ export function Home() {
   });
 
   return (
-    <main className="ck ck-home" ref={root}>
+    <main
+      className="ck ck-home" ref={root}
+      // Files dropped on Home start a project (V-148): an iPhone never lists Kadr under «Share», but a video dragged out of
+      // Photos into Safari arrives whole as a drop, the way Android's «Share → Kadr» hands one over.
+      onDragOver={(e) => { if (supported && !busy && e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDropping(true); } }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDropping(false); }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDropping(false);
+        const files = Array.from(e.dataTransfer.files);
+        if (!files.length || busy) return;
+        track('home_drop_received', { files: files.length, kinds: [...new Set(files.map((f) => f.type.split('/')[0]))].join(',') });
+        void held(() => fromFiles(files, null, freeName()));
+      }}
+    >
       <div className="ck-home-in">
         <header className="ck-home-head">
           <span className="ck-home-logo" aria-hidden />
@@ -531,6 +550,7 @@ export function Home() {
         text={t('Its video and edits will be removed from this device. They cannot be brought back.')}
         confirmLabel={t('Delete')} cancelLabel={t('Cancel')} busy={deleting ? t('Deleting…') : undefined} onCancel={() => setAsked(null)} onConfirm={() => { if (asked) void remove(asked); }}
         afterClose={() => root.current?.querySelector<HTMLElement>('.ck-project-open') ?? root.current?.querySelector<HTMLElement>('.ck-home-dock .ck-primary')} />
+      {dropping && <div className="drop-hint ck-drop">{t('Drop videos, photos or music to start a project')}</div>}
     </main>
   );
 }
