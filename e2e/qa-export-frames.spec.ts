@@ -102,3 +102,21 @@ test('a processed sound (a voice effect over 30 s) is kept in whole AAC frames, 
   expect(off.length, 'all 8 pairs found').toBe(8);
   for (const o of off) expect(Math.abs(o), `sound vs picture: ${off.join(' ')} ms`).toBeLessThanOrEqual(FRAME_MS);
 });
+
+test('a 30 s clip at 0.5× with natural pitch keeps its sound on its picture at every pair, within a frame (SW-A-13)', async ({ page }, info) => {
+  test.setTimeout(500_000);
+  await newProject(page);
+  await importFiles(page, 'Media', ['avsync_long.mp4']);
+  const clip = page.locator('.tl-row.main .clip').first();
+  await expect(clip).toHaveCount(1);
+  await selectClip(page, clip);
+  await tool(page, 'Speed').click();
+  await page.getByRole('radio', { name: '0.5×' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const file = await exportAs(page, info, 'Video', { loudness: false }); // the export makes the natural-pitch sound first
+  const off = offsets(file);
+  note(info, 'offsets.txt', `0.5×: sound minus picture ${off.join(' ')} ms`);
+  console.log(`SW-A-13 0.5× (${info.project.name}): ${off.join(' ')} ms`);
+  expect(off.length, 'all 8 pairs found').toBe(8);
+  for (const o of off) expect(Math.abs(o), `sound vs picture at 0.5×: ${off.join(' ')} ms`).toBeLessThanOrEqual(FRAME_MS);
+});
