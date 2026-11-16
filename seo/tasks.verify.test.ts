@@ -37,12 +37,8 @@ describe('the task pages name the speech download the app really makes (audit V-
 /** Quoted words that are not controls: what the person says («эээ»), and a label in another grammatical case. */
 const NOT_LABELS = new Set(['эээ', 'um']);
 const CASES: Record<string, string> = { 'Настройках': 'Настройки' };
-/**
- * Quotes that are not interface labels on e9ef303 — still open, reported by the verifier (report-e, V-200): the music
- * sheet adds a track with a «+» (Ч4 release 5); its words are only the button's accessible name, not «Добавить».
- * A change on either side changes this list.
- */
-const STILL_OPEN = ['music/ru: «Добавить»', 'music/en: “Add track”'];
+/** Quotes that are not interface labels: none since aa0386c (the music page names the «+» by words, V-200). */
+const STILL_OPEN: string[] = [];
 
 describe('the task pages\' instructions name controls the interface has (audit V-200)', () => {
   it('every label quoted in the steps and answers is one the interface shows', () => {
