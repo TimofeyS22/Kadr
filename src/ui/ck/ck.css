@@ -97,6 +97,9 @@
 /* ---- the Scale ---- */
 .ck-scale { display: flex; flex-direction: column; background: var(--surface-panel); padding-bottom: env(safe-area-inset-bottom, 0px); }
 .ck-scale[data-disabled] { opacity: 0.4; pointer-events: none; }
+/* Off, it does not keep the signal colour: a yellow number read as a live value (the filter's strength on «Нет», UI-7). */
+.ck-scale[data-disabled] .ck-digit { color: var(--text-secondary); }
+.ck-scale[data-disabled] :is(.ck-needle, .ck-seg) { background: var(--text-secondary); }
 .ck-scale-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; min-height: var(--touch); padding: 0 var(--space-1); }
 .ck-scale-side { display: flex; min-width: 0; overflow: hidden; }
 .ck-scale-side .ck-btn { padding: 0 var(--space-2); }

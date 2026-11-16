@@ -95,7 +95,8 @@ export function LutSection({ clip, paint }: { clip: MediaVisual; paint: ReturnTy
   }), [paint]);
   return (
     <>
-      <h3>{t('LUT')}</h3>
+      {/* After the filter's working set (tiles and their Intensity): from here the sheet scrolls (UI-7). */}
+      <h3 data-below>{t('LUT')}</h3>
       {items.length > 1 && (
         <StylePicker items={items} categories={LUT_CATEGORY} value={clip.lut && luts[clip.lut.id] ? clip.lut.id : 'none'} label={t('LUT')} draw={draw} rows={1}
           onChange={(id) => editClip(clip.id, (c) => {

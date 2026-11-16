@@ -1,5 +1,5 @@
 import { Diamond, Minus, Pipette, Plus, RotateCcw } from 'lucide-react';
-import { Children, Fragment, createContext, isValidElement, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactElement, type ReactNode } from 'react';
+import { Children, Fragment, createContext, isValidElement, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent, type ReactElement, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { labelsFor, specFor } from '../core/scale';
 import { Scale } from './ck/Scale';
@@ -16,6 +16,19 @@ import { giveBack, opener, watchPressed } from './ck/focus';
 
 /** Px of downward drag before the sheet follows the finger (taps on the header stay taps). */
 const DRAG_SLOP = 8;
+/** Px of what follows a sheet's working set that stays in sight, so the person sees there is more (UI-7). */
+const PEEK = 24;
+
+/** A phone held upright: the editor's sheets rise from the bottom over the timeline and the ribbon (editor.css). */
+export const PHONE_UPRIGHT = '(max-width: 899px) and (orientation: portrait)';
+/** Whether `query` matches now, and a new render when that changes. */
+export function useMedia(query: string): boolean {
+  return useSyncExternalStore((changed) => {
+    const m = matchMedia(query);
+    m.addEventListener('change', changed);
+    return () => m.removeEventListener('change', changed);
+  }, () => matchMedia(query).matches, () => false);
+}
 
 /**
  * While this sheet holds work closing it would lose (an export, captions being made, a file not saved yet), `message`
@@ -77,8 +90,17 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
   useLayoutEffect(() => {
     const el = ref.current, host = el?.closest<HTMLElement>('.ck-editor');
     if (!el || !host) return;
-    let tallest = 0, frame = 0;
+    let tallest = 0, frame = 0, cap = 0;
     const fit = () => {
+      // A sheet where the picture is judged stops a peek below its working set and the rest scrolls, so the frame keeps
+      // its room (UI-7, the art director): `data-below` marks what comes after that set. Measured on what is drawn, the
+      // stop only goes down the sheet, never up: the sheet does not shrink while it is open. Such a sheet may take up to
+      // half the screen, so its Scale is whole on a 667 px phone (the header has folded: the frame still gains, UI-7).
+      const below = el.querySelector<HTMLElement>('[data-below]'), body = el.querySelector<HTMLElement>('.ck-panel-body');
+      if (below && body && matchMedia(PHONE_UPRIGHT).matches) {
+        const at = Math.ceil(below.getBoundingClientRect().top - el.getBoundingClientRect().top + body.scrollTop + PEEK);
+        if (at > cap) { cap = at; el.style.maxHeight = `min(50dvh, ${cap}px)`; }
+      }
       const h = el.offsetHeight;
       if (h <= tallest) return;
       tallest = h;
@@ -90,7 +112,7 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
     // browser report "ResizeObserver loop completed with undelivered notifications".
     const ro = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fit); });
     ro.observe(el);
-    return () => { ro.disconnect(); cancelAnimationFrame(frame); el.style.minHeight = ''; host.style.removeProperty('--sheet-h'); };
+    return () => { ro.disconnect(); cancelAnimationFrame(frame); el.style.minHeight = ''; el.style.maxHeight = ''; host.style.removeProperty('--sheet-h'); };
   }, [title]);
   const slide = (dy: number) => { if (ref.current) ref.current.style.transform = dy ? `translateY(${dy}px)` : ''; };
   const down = (e: PointerEvent<HTMLElement>) => {

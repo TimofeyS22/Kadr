@@ -200,3 +200,42 @@ test('Q-33: a swipe of a sheet that holds work warns first, as «Готово» 
   await expect(sheet, 'a second swipe within seconds means it').toHaveCount(0);
 });
 
+// ---- UI-7: the frame while a sheet that judges the picture is open (the art director: the header folds, the sheet stops
+// a peek below its working set). The audit of v1.7.1: 13% of the screen at 667 px, 19% at 812 (§2). ----
+/** The least share of the screen the frame keeps, from the measure of 2026-11-16 less a margin. */
+const MIN_SHARE: Record<number, Record<string, number>> = {
+  667: { 'Фильтры': 16, 'Настройка': 16, 'Трансформация': 18 },
+  812: { 'Фильтры': 27, 'Настройка': 27, 'Трансформация': 34 },
+};
+for (const h of [667, 812]) {
+  test(`UI-7 at 375×${h}: with «Фильтры», «Настройка», «Трансформация» open the header folds, the sheet stops below its working set and does not grow with a choice, the frame keeps its room`, async ({ page }) => {
+    await sampleEditor(page, 'ru');
+    await page.setViewportSize({ width: 375, height: h });
+    await page.locator('.tl-row.main .clip').first().click();
+    const share = () => page.locator('.preview-canvas').evaluate((c) => { const r = c.getBoundingClientRect(); return (r.width * r.height) / (innerWidth * innerHeight) * 100; });
+    const sheetH = () => page.locator('.sheet').evaluate((s) => s.getBoundingClientRect().height);
+    const top = page.locator('.ck-editor-top');
+    const seen: Record<string, number> = {};
+    for (const name of ['Фильтры', 'Настройка', 'Трансформация']) {
+      await tool(page, name).click();
+      await expect(page.getByRole('dialog', { name })).toBeVisible();
+      await page.waitForTimeout(500);
+      expect(await top.evaluate((e) => e.getBoundingClientRect().height), `${name}: the header gives its height to the frame`).toBe(0);
+      expect(await top.evaluate((e) => (e as HTMLElement).inert), `${name}: and is out of reach of Tab and VoiceOver`).toBe(true);
+      // The working set is whole in sight: the first value of the sheet ends above the bottom of the screen.
+      const value = (await page.locator('.sheet').getByRole('slider').first().boundingBox())!;
+      expect(value.y + value.height, `${name}: its value is in sight without a scroll`).toBeLessThanOrEqual(h + 0.5);
+      const h0 = await sheetH();
+      // A choice does not make the sheet grow, so the frame does not jump.
+      const tiles = page.locator('.sheet .ck-picker [role="radio"]');
+      if (await tiles.count() > 1) { await tiles.nth(1).click(); await page.waitForTimeout(400); }
+      expect(await sheetH(), `${name}: the sheet keeps its height after a choice`).toBeCloseTo(h0, 0);
+      seen[name] = Math.round(await share() * 10) / 10;
+      await page.locator('.sheet').getByRole('button', { name: 'Готово' }).click();
+      await expect(top, 'the header comes back with the sheet gone').toBeVisible();
+      expect(await top.evaluate((e) => (e as HTMLElement).inert)).toBe(false);
+    }
+    console.log(`UI-7 375×${h}: frame % of the screen`, JSON.stringify(seen));
+    for (const [name, pct] of Object.entries(seen)) expect(pct, `${name}: the frame, % of the screen (v1.7.1: ${h === 667 ? 13.4 : 19.2})`).toBeGreaterThanOrEqual(MIN_SHARE[h][name]);
+  });
+}

@@ -26,6 +26,7 @@ import { t } from '../lib/i18n';
 import './ck/ck.css';
 import './editor.css';
 import { Button, IconButton, Progress } from './ck/controls';
+import { PHONE_UPRIGHT, useMedia } from './controls';
 import { Empty } from './ck/home';
 import { Transport as Row } from './ck/timeline';
 
@@ -74,6 +75,10 @@ export async function leaveEditor(): Promise<void> {
 export function Editor({ id }: { id: string }) {
   const project = useEditor((s) => s.project);
   const sheetOpen = useEditor((s) => s.sheet !== null);
+  // With a sheet open on an upright phone the header folds and gives the frame its room (UI-7, editor.css); it stays
+  // where it has something to say: saving failed, or the project changed in another tab.
+  const keepTop = useEditor((s) => s.saving === 'failed' || s.elsewhere);
+  const topFolded = useMedia(PHONE_UPRIGHT) && sheetOpen && !keepTop;
   const [missing, setMissing] = useState(false);
   const [dragging, setDragging] = useState(false);
   // Undo and Redo moved under the frame (owner, 2026-11-10): said once, where they were, to who worked here before (Ж1).
@@ -297,6 +302,7 @@ export function Editor({ id }: { id: string }) {
     <div
       className={`editor ck-editor ${sheetOpen ? 'sheet-open' : ''}`}
       data-sheet={sheetOpen || undefined}
+      data-keep-top={keepTop || undefined}
       onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => {
@@ -307,7 +313,7 @@ export function Editor({ id }: { id: string }) {
         void addFiles(files.filter((f) => !audio.includes(f)), 'main').then(() => addFiles(audio, 'audio'));
       }}
     >
-      <TopBar project={project} moved={!undoMovedSeen && !sheetOpen} onMovedSeen={undoMovedFound} />
+      <TopBar project={project} moved={!undoMovedSeen && !sheetOpen} onMovedSeen={undoMovedFound} folded={topFolded} />
       <Preview />
       <Transport onUsed={undoMovedFound} />
       <Timeline />
@@ -342,11 +348,11 @@ function Saved({ id }: { id: string }) {
   );
 }
 
-function TopBar({ project, moved, onMovedSeen }: { project: Project; moved: boolean; onMovedSeen: () => void }) {
+function TopBar({ project, moved, onMovedSeen, folded }: { project: Project; moved: boolean; onMovedSeen: () => void; folded: boolean }) {
   const s = useEditor.getState();
   const id = useId();
   return (
-    <header className="ck ck-editor-top topbar">
+    <header className="ck ck-editor-top topbar" inert={folded || undefined}>
       <IconButton label={t('Back to projects')} onClick={() => void leaveEditor()}><ChevronLeft aria-hidden /></IconButton>
       <div className="ck-editor-title">
         <input className="ck-editor-name" value={project.name} maxLength={80} aria-label={t('Project name')} aria-describedby={`${id}-saved`}

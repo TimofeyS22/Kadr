@@ -190,7 +190,7 @@ function AdjustBody({ clip }: { clip: LookClip }) {
         <Slider label={ADJUST_LABELS[active]} value={clip.adjust[active]} min={min} max={max} format={signed} reset={0}
           onChange={(v) => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust[active] = v; }, `adj:${active}:${clip.id}`)} />
       </Values>
-      <Button icon={<RotateCcw aria-hidden="true" />} disabled={!changed} onClick={() => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust = defaultAdjust(); })}>{t('Reset all')}</Button>
+      <Button data-below icon={<RotateCcw aria-hidden="true" />} disabled={!changed} onClick={() => editClip(clip.id, (c) => { if ('adjust' in c) c.adjust = defaultAdjust(); })}>{t('Reset all')}</Button>
     </>
   );
 }
@@ -207,12 +207,12 @@ function FiltersBody({ clip }: { clip: LookClip }) {
       <LookActions clip={clip} parts={['filter']} />
       <StylePicker items={FILTER_ITEMS} categories={FILTER_CATEGORIES} value={clip.filter?.id ?? 'none'} label={t('Filters')} draw={draw} rows={1}
         onChange={(id) => (clip.filter?.id ?? 'none') !== id && editClip(clip.id, (c) => { if ('filter' in c) c.filter = id === 'none' ? null : { id, intensity: c.filter?.intensity ?? 0.8 }; })} />
-      {clip.filter && (
-        <Values label={t('Intensity')}>
-          <Slider label={t('Intensity')} value={clip.filter.intensity} min={0} max={1} format={pct} reset={0.8}
-            onChange={(v) => editClip(clip.id, (c) => { if ('filter' in c && c.filter) c.filter.intensity = v; }, `fint:${clip.id}`)} />
-        </Values>
-      )}
+      {/* There from the start, off on «Нет»: the sheet does not grow with the first tile, so the frame does not jump (UI-7).
+          Under the tiles of a filter its number is its strength: the Scale needs no name over it (as in «Настройка»). */}
+      <Values label={t('Intensity')} named={false}>
+        <Slider label={t('Intensity')} value={clip.filter?.intensity ?? 0.8} min={0} max={1} format={pct} reset={0.8} disabled={!clip.filter}
+          onChange={(v) => editClip(clip.id, (c) => { if ('filter' in c && c.filter) c.filter.intensity = v; }, `fint:${clip.id}`)} />
+      </Values>
       <LutSection clip={clip} paint={paint} />
     </>
   );
@@ -249,7 +249,7 @@ function TransformBody({ clip }: { clip: Clip }) {
         );
       })}
       </Values>
-      <p className="ck-hint">{t('Tap ◆ to add a keyframe at the playhead. When a property has keyframes, changes create keyframes.')}</p>
+      <p className="ck-hint" data-below>{t('Tap ◆ to add a keyframe at the playhead. When a property has keyframes, changes create keyframes.')}</p>
       {(clip.kind === 'video' || clip.kind === 'image') && (
         <div className="flip-row ck-pair">
           <Button aria-pressed={!!clip.flipX} icon={<TrianglesCenterlineDashedVertical aria-hidden="true" />} onClick={() => toggleFlip('x')}>{t('Mirror')}</Button>
