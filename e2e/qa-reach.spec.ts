@@ -1,6 +1,7 @@
 // Small things that kept people out (docs/16 stage 4): the text field under the fold (V-202), zoom forbidden (V-177),
 // and another site's form able to put its file into a person's projects (V-235).
 import { expect, test } from '@playwright/test';
+import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -49,8 +50,11 @@ test('a form on another site posts a file to the share address: Kadr opens, and 
   await page.evaluate(() => navigator.serviceWorker.ready);
   await expect.poll(async () => { await page.reload(); return page.evaluate(() => !!navigator.serviceWorker.controller); }).toBe(true);
   const target = new URL('share-target', baseURL).href;
+  // A video Kadr can open: a file the import refuses would keep itself out of the projects, whatever the share address
+  // let through (WebKit's service worker sees no Origin: the form's file was parked there, SW-D-10).
+  const video = fs.readFileSync(`${import.meta.dirname}/../fixtures/avsync.mp4`).toString('base64');
   const other = http.createServer((_, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><form method="POST" action="${target}" enctype="multipart/form-data"><input type="file" name="media" id="m"><button id="go">go</button></form>
-    <script>const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array(2048)], 'theirs.mp4', { type: 'video/mp4' })); document.getElementById('m').files = dt.files;</script>`));
+    <script>const dt = new DataTransfer(); dt.items.add(new File([Uint8Array.from(atob('${video}'), (c) => c.charCodeAt(0))], 'theirs.mp4', { type: 'video/mp4' })); document.getElementById('m').files = dt.files;</script>`));
   await new Promise<void>((ok) => other.listen(0, 'localhost', ok));
   try {
     // "localhost" against the test site's 127.0.0.1 (or its real host): another origin, as any other site is.
