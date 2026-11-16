@@ -144,4 +144,12 @@ try {
   driver.kill();
 }
 console.log(`screenshots and result.json in ${OUT}`);
+// What a script cannot do on a phone: a finger, the system's Home gesture, a pick from Photos (reports/L5 — очередь.md, U).
+console.log(`
+By hand, on the phone, after this run:
+  1. SW-U-1  «Трансформация»: drag the sheet's header half way down and, still holding, carry the finger to the Home bar — the sheet springs back.
+  2. SW-U-3  pick the sample's piece; drag the corner handle with a finger — the piece scales.
+  3. UI-3, UI-9  drag the Scale of «Трансформация» with a finger — the value changes; take a trim handle 15 px off its centre.
+  4. SW-U-8  new project 9:16 → «Медиа» → a landscape video from Photos: the note is a strip between the frame and Undo/Play,
+     «Заполнить кадр» fills the frame, Undo brings the bars back; a text added then follows the finger on the frame.`);
 process.exit(result.failed || result.checks.some((c) => !c.ok) ? 1 : 0);
