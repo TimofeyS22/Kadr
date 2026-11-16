@@ -95,12 +95,13 @@ export function Scale({ label, spec, value, format, labels, onChange, onCommit, 
     if (to !== g.from) onCommit?.(g.from, to, false);
   };
   const key = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (disabled) return;
     const to = keyTo(spec, value, e.key);
     if (to === null) return;
     e.preventDefault();
     e.stopPropagation(); // the value's own keys: the editor's arrows would move the playhead too
-    stepTo(to, e.timeStamp);
+    // Greyed out (Intensity before a filter is picked), they do nothing — and still stay here: a focus left on the value
+    // when it greyed let the arrows step the playhead behind the sheet, and a freeze then cut a piece too thin to pick.
+    if (!disabled) stepTo(to, e.timeStamp);
   };
 
   return (
