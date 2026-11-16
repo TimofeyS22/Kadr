@@ -203,7 +203,8 @@ export async function previewAt(page: Page, info: TestInfo, t: number): Promise<
   await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, t * 60);
   await page.waitForTimeout(600);
   const canvas = page.locator('.preview-canvas');
-  const shoot = () => canvas.screenshot({ style: '.toast { visibility: hidden !important; }' });
+  // The editing chrome over the picture (a toast, the selection box, the snap guides) is not in the file.
+  const shoot = () => canvas.screenshot({ style: '.toast, .sel-box, .guide { visibility: hidden !important; }' });
   let still = await shoot();
   for (let k = 1; k <= 20; k++) {
     await page.waitForTimeout(400);
