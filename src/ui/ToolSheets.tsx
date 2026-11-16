@@ -593,7 +593,10 @@ function CaptionLines({ clip }: { clip: CaptionClip }) {
     const pg = captionPages(c.words, Math.max(1, c.wordsPerPage))[i];
     if (!pg || lineText(c, pg) === text.trim().replace(/\s+/g, ' ')) return;
     const at = c.words.indexOf(pg[0]);
-    const words = text.trim() ? wordsFromSegment(pg[0].t0, pg[pg.length - 1].t1, text) : [];
+    // A corrected line of imported subtitles stays its own line: its words keep the cue they came in (Q-26: without it
+    // the line ran into the next one — «Hello from Chetko Second line»).
+    const cue = pg[0].cue;
+    const words = (text.trim() ? wordsFromSegment(pg[0].t0, pg[pg.length - 1].t1, text) : []).map((w) => (cue === undefined ? w : { ...w, cue }));
     c.words.splice(at, pg.length, ...words);
   })).current;
   const toNow = (block: ScrollLogicalPosition) => list.current?.querySelector('[data-now]')?.scrollIntoView({ block, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
