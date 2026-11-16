@@ -96,3 +96,22 @@ test('a camera take is stored as its own bytes: no Blob of it is read back and s
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('every second of a take reaches storage on its own, so a crash loses at most a second (V-250)', async ({ page }) => {
+  // Chromium's MP4 recorder cut its pieces at key frames only: 9 s of a take came as a 1 KB header and one more piece,
+  // and a tab that died before the first frames were cut lost the take (E4, 2026-11-16).
+  test.setTimeout(120_000);
+  await page.addInitScript(setup);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  await page.getByRole('button', { name: 'Camera', exact: true }).click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
+  await page.waitForTimeout(6500);
+  const pieces = (await store(page)).filter((k) => k.key.startsWith('t:'));
+  expect(pieces.length, 'about one piece a second after 6.5 s of recording').toBeGreaterThanOrEqual(5);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
+});
+

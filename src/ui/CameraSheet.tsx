@@ -171,7 +171,10 @@ export function CameraSheet() {
     try {
       const mime = pickMime();
       const mirror = facing === 'user' && video.current ? mirrored(s, video.current) : null;
-      const recorder = new MediaRecorder(mirror?.stream ?? s, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
+      // A key frame every second (V-250, E4 2026-11-16): Chromium's MP4 recorder cuts its pieces at key frames only, so
+      // with its default spacing 9 s of a take came as 2 pieces and a crash lost all after the last one. Safari ignores it.
+      const options = { mimeType: mime, videoBitsPerSecond: 8_000_000, videoKeyFrameIntervalDuration: 1000 } as MediaRecorderOptions;
+      const recorder = new MediaRecorder(mirror?.stream ?? s, mime ? options : undefined);
       const take = new TakeWriter(editor().project!.id);
       let got = false;
       recorder.ondataavailable = (e) => { if (e.data.size) { got = true; take.add(e.data); } };
