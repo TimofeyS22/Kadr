@@ -27,6 +27,7 @@ import './ck/ck.css';
 import './editor.css';
 import { Button, IconButton, Progress } from './ck/controls';
 import { PHONE_UPRIGHT, useMedia } from './controls';
+import { FrameFitNote, useFrameFit } from './FrameFit';
 import { Empty } from './ck/home';
 import { Transport as Row } from './ck/timeline';
 
@@ -82,6 +83,7 @@ export function Editor({ id }: { id: string }) {
   const [missing, setMissing] = useState(false);
   const [dragging, setDragging] = useState(false);
   // Undo and Redo moved under the frame (owner, 2026-11-10): said once, where they were, to who worked here before (Ж1).
+  const frameFit = useFrameFit(); // black bars after the first video, once (UI-4)
   const [undoMovedSeen, setUndoMovedSeen] = useState(() => {
     try {
       if (localStorage.getItem(UNDO_MOVED_KEY) !== null) return true;
@@ -322,7 +324,8 @@ export function Editor({ id }: { id: string }) {
       <Suspense fallback={null}><Sheets /></Suspense>
       <BusyOverlay />
       <ElsewhereNotice />
-      <Coach hold={!undoMovedSeen} />
+      {frameFit && <FrameFitNote {...frameFit} />}
+      <Coach hold={!undoMovedSeen || !!frameFit} />
       {dragging && <div className="drop-hint ck-drop">{t('Drop videos, photos or music to add them')}</div>}
     </div>
   );
