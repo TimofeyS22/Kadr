@@ -77,6 +77,18 @@ export async function addStored(assetId: string, name: string, target: AddTarget
   return placeAssets([asset], target, owner, meta);
 }
 
+/** A voice-over into the project at `at` s, on a sound track, selected: from the Record sheet, or back after a crash. */
+export function placeVoice(asset: Asset, at: number): void {
+  let id = '';
+  editor().commit((d) => {
+    d.assets[asset.id] = asset;
+    const c = createAudioClip(asset, at);
+    placeClip(d, c);
+    id = c.id;
+  });
+  editor().select(id);
+}
+
 /** Puts stored assets into the project `owner`, as `addFiles` does after the import. */
 export async function placeAssets(assets: Asset[], target: AddTarget, owner: string | undefined, meta: { script?: string } = {}, pickMs = 0): Promise<number> {
   if (!assets.length) return 0;
