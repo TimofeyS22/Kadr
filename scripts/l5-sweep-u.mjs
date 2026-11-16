@@ -159,5 +159,7 @@ By hand, on the phone, after this run:
   4. SW-U-8  new project 9:16 → «Медиа» → a landscape video from Photos: the note is a strip between the frame and Undo/Play,
      «Заполнить кадр» fills the frame, Undo brings the bars back; a text added then follows the finger on the frame.
   5. V-148  Photos → any video → Share: Kadr is not in the list (with Kadr on the Home Screen too, if it is there).
-     After the release that carries V-148: …/Kadr/ru/ → «Как добавить видео» is there and reads at the phone's width.`);
+     Kadr's Home open in Safari: in Photos hold a video and, still holding, open Safari with another finger; over Home
+     «Перетащите видео…» shows, and letting go opens a new «Проект N» with the video. The same over an open project adds it.
+     After the release that carries the site text: …/Kadr/ru/ → «Как добавить видео» is there and reads at the phone's width.`);
 process.exit(result.failed || result.checks.some((c) => !c.ok) ? 1 : 0);
