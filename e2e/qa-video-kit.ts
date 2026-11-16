@@ -365,3 +365,6 @@ export const toastsSeen = (page: Page) => page.evaluate(() => (window as unknown
 /** Waits until a toast with this text has been shown. */
 export const expectToast = (page: Page, text: string | RegExp, timeout = 20_000) =>
   expect.poll(async () => (await toastsSeen(page)).some((x) => (typeof text === 'string' ? x.includes(text) : text.test(x))), { message: `a toast "${text}"`, timeout }).toBe(true);
+
+/** The playhead's time in seconds, as the timeline's position slider holds it. */
+export const playhead = async (page: Page) => Number(await page.getByRole('slider', { name: 'Position in the video' }).inputValue());
