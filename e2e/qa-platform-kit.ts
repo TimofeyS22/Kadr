@@ -5,6 +5,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { hideOverFrame } from './over-frame';
 
 export const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
@@ -203,8 +204,8 @@ export async function previewAt(page: Page, info: TestInfo, t: number): Promise<
   await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, t * 60);
   await page.waitForTimeout(600);
   const canvas = page.locator('.preview-canvas');
-  // The editing chrome over the picture (a toast, the selection box, the snap guides) is not in the file.
-  const shoot = () => canvas.screenshot({ style: '.toast, .sel-box, .guide { visibility: hidden !important; }' });
+  // What lies over the picture and is not in the file (toasts, tips, the black-bars note; the selection box, the guides).
+  const shoot = () => canvas.screenshot({ style: hideOverFrame('.sel-box, .guide') });
   let still = await shoot();
   for (let k = 1; k <= 20; k++) {
     await page.waitForTimeout(400);
