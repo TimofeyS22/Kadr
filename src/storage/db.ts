@@ -254,10 +254,19 @@ export async function putBlob(assetId: string, blob: Blob): Promise<void> {
     const full = quotaError(e);
     if (full) throw full;
   }
+  await putCopy(assetId, blob);
+}
+
+/**
+ * Stores a copy of the bytes of `blob`, read and written a chunk at a time: never the Blob itself. For a Blob cut out
+ * of a picked file, as the media of a backup are: WebKit's IndexedDB keeps such a Blob as the whole file it was cut
+ * from, so on Safari every file of a restored backup came back as the whole backup and nothing played (SW-A-4).
+ */
+export async function putCopy(assetId: string, blob: Blob, type = blob.type): Promise<void> {
   const chunks = Math.max(1, Math.ceil(blob.size / CHUNK));
   try {
     for (let i = 0; i < chunks; i++) await set(`c:${assetId}:${i}`, await blob.slice(i * CHUNK, (i + 1) * CHUNK).arrayBuffer(), store);
-    await set(`c:${assetId}`, { type: blob.type, size: blob.size, chunks } satisfies Chunked, store);
+    await set(`c:${assetId}`, { type, size: blob.size, chunks } satisfies Chunked, store);
   } catch (e) {
     // A file written halfway is no file: its chunks go, or they would hold the space for nothing.
     await Promise.all(Array.from({ length: chunks }, (_, i) => del(`c:${assetId}:${i}`, store).catch(() => undefined)));

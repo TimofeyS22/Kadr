@@ -4,7 +4,7 @@ import { uid } from '../core/defaults';
 import { repairBackup } from '../core/restore';
 import { normalizeProject, remapAssets, withUsedAssets } from '../core/timeline';
 import { SCHEMA_VERSION, type Project } from '../core/types';
-import { deleteBlob, openMedia, putBlob, saveProject } from '../storage/db';
+import { deleteBlob, openMedia, putCopy, saveProject } from '../storage/db';
 import { ensureRoom } from './importer';
 import { MediaError } from './media';
 import { diskFile } from './opfs';
@@ -141,7 +141,8 @@ export async function importBackup(file: Blob): Promise<{ project: Project; drop
   try {
     for (const [old, id] of ids) {
       const blob = files.get(`media/${old}`);
-      if (blob) { await putBlob(id, new Blob([blob], { type: p.assets[id]?.mime ?? '' })); written.push(id); }
+      // Its bytes, not the slice of the backup: WebKit keeps a stored slice of a file as the whole file (SW-A-4).
+      if (blob) { await putCopy(id, blob, p.assets[id]?.mime ?? ''); written.push(id); }
       else delete p.assets[id];
     }
   } catch (e) {
