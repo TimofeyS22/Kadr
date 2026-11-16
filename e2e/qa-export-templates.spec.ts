@@ -11,6 +11,19 @@ import { audits, decodeErrors, exportAs, fx, grayAt, note, probe, rmsDb, samples
 
 audits();
 
+// Control (docs/11 §5): CONTROL=drop-frames makes the browser's video encoder lose every 10th frame, as a broken export
+// would; every template's check must then go red ("every frame is in the file").
+if (process.env.CONTROL === 'drop-frames') {
+  test.beforeEach(({ page }) => page.addInitScript(() => {
+    const encode = VideoEncoder.prototype.encode;
+    let n = 0;
+    VideoEncoder.prototype.encode = function (this: VideoEncoder, frame: VideoFrame, opts?: VideoEncoderEncodeOptions) {
+      if (++n % 10 === 0) return;
+      return encode.call(this, frame, opts);
+    };
+  }));
+}
+
 interface Case { tpl: string; files: string[]; clips: number; music: boolean; why: string }
 const CASES: Case[] = [
   { tpl: 'Slideshow', files: ['photo.png', 'person.jpg', 'music.m4a'], clips: 2, music: true, why: 'photos and music, the usual pick' },
