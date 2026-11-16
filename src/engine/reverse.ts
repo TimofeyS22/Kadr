@@ -21,6 +21,14 @@ import { correctPixels, decodedAs709, hdrTransfer, sdMatrix } from './hdr';
 export const MAX_REVERSE_S = 60;
 const WINDOW_S = 0.5;
 const MAX_DIM = 1280;
+/**
+ * Samples of reversed sound handed to the encoder at a time: whole codec frames, 45 of AAC (1024) and 48 of 48 kHz Opus
+ * (960). WebKit's encoder stamps the packets of each piece from the piece's own start, so a piece of one second (48 000,
+ * 46.875 AAC frames) left a packet stamped 128 samples off at every second: up to 19 ms between the stamps and the sound,
+ * and the export, which starts decoding a stretch at a stamp, put the sound of a reversed clip up to 38 ms after its
+ * picture (V-159). Whole frames keep the stamps on the sound.
+ */
+const SOUND_CHUNK = 45 * 1024;
 
 export async function reverseClipSource(p: Project, clip: VideoClip, onProgress: (f: number) => void, signal: AbortSignal): Promise<Asset> {
   const asset = p.assets[clip.assetId];
@@ -82,9 +90,9 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
         stop();
         for (const d of data) d.reverse();
         // The encoder puts its priming in front: off the start, so the reversed sound meets the reversed picture (audit V-159).
-        for (let i = Math.min(len, aCodec ? await encoderDelay(aCodec, ch, sr) : 0); i < len; i += sr) {
+        for (let i = Math.min(len, aCodec ? await encoderDelay(aCodec, ch, sr) : 0); i < len; i += SOUND_CHUNK) {
           stop();
-          const n = Math.min(sr, len - i);
+          const n = Math.min(SOUND_CHUNK, len - i);
           const chunk = new AudioBuffer({ length: n, numberOfChannels: ch, sampleRate: sr });
           data.forEach((d, c) => chunk.copyToChannel(d.subarray(i, i + n), c));
           await aSource.add(chunk);
