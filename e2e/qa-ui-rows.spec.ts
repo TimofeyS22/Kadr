@@ -30,7 +30,10 @@ for (const [locale, tool, field, word] of [['ru', 'Текст', 'Текст', '�
 
 /** The audit's measure (§3): a finger lands on the control when it is anywhere within 21.5 px of its centre on either
  *  axis. Returns the offsets that land elsewhere (on a neighbour, on nothing), so an empty list means 44 px to a finger. */
-const misses = (loc: ReturnType<Page['locator']>) => loc.evaluate((el) => {
+const misses = (loc: ReturnType<Page['locator']>) => loc.evaluate(async (el) => {
+  // Once what moves has stopped: a sheet still rising stands up to 32 px lower than it will (since the editor loads its
+  // sheets after it is shown, V-143, the measure fell inside that rise). Endless animations (a spinner) are not waited for.
+  await Promise.all(document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity).map((a) => a.finished.catch(() => {})));
   // Centred in what scrolls it, not flush with its edge: a point 21 px off the centre of a control that sits on the very
   // last pixel of a sheet fell on the edge by rounding (Android, 2026-11-16). Sideways stays put: the timeline is time.
   el.scrollIntoView({ block: 'center', inline: 'nearest' });
