@@ -45,6 +45,8 @@ export interface Film { frames: number; take(picture: HTMLCanvasElement, slot: n
 
 export interface ExportResult {
   blob: Blob; fileName: string; seconds: number;
+  /** The file's name in the origin-private file system, where the export streamed it: a reload finds it there (SW-A-15). */
+  disk?: string;
   /** The project has sound, but this browser encodes none: the file is silent, and the person is told. */
   noSound?: boolean;
 }
@@ -188,7 +190,7 @@ class MixStream {
 // MessageChannel instead of setTimeout: timers are throttled to ~1/s in background tabs, messages are not.
 const yieldToUi = () => new Promise<void>((r) => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
 
-type Target = { target: StreamTarget; result: () => Promise<Blob> };
+type Target = { target: StreamTarget; result: () => Promise<{ blob: Blob; disk?: string }> };
 
 /** The browser gets this long to say which codecs it can encode (docs/12 G2): a query that never answers is a failure. */
 const CAPS_MS = 10_000;
@@ -260,7 +262,7 @@ async function openStream(ext: string, type: string): Promise<(Target & { drop: 
   if (!disk) return null; // OPFS unavailable (private mode, old browser)
   return {
     target: new StreamTarget(disk.writable, { chunked: true }),
-    result: async () => new Blob([await disk.file()], { type }),
+    result: async () => { const file = await disk.file(); return { blob: new Blob([file], { type }), disk: file.name }; },
     drop: disk.drop,
   };
 }
@@ -279,7 +281,7 @@ async function openTarget(ext: string, type: string): Promise<Target> {
   if (got) return got;
   void stream.then((s) => s?.drop());
   const target = new MemoryTarget();
-  return { target, result: async () => target.blob(type) };
+  return { target, result: async () => ({ blob: target.blob(type) }) };
 }
 
 /** A GPU reset during the export gets this many fresh starts; a device that keeps losing it is told so. */
@@ -423,8 +425,8 @@ async function exportOnce(
     video.close();
     audio?.close();
     await encoding(output.finalize());
-    const blob = await result();
-    return { blob, fileName: `${fileBase(p)}.${mp4 ? 'mp4' : 'webm'}`, seconds: (performance.now() - started) / 1000, noSound: !audio && soundEntries(p).length > 0 };
+    const { blob, disk } = await result();
+    return { blob, disk, fileName: `${fileBase(p)}.${mp4 ? 'mp4' : 'webm'}`, seconds: (performance.now() - started) / 1000, noSound: !audio && soundEntries(p).length > 0 };
   } catch (e) {
     // A stuck encoder holds a graceful end forever: after a stall, or a Cancel that cannot end within ABANDON_MS,
     // the encoders are closed outright.

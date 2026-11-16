@@ -20,6 +20,7 @@ import { t } from '../lib/i18n';
 import { useHoldUpdates } from '../lib/update';
 import { useSheetGuard } from './controls';
 import { clearDiskFiles } from '../engine/opfs';
+import { dropKeptExport, keepExport, keptExportOf } from '../engine/keptExport';
 import { keepError, type ErrorEntry } from '../lib/errorLog';
 import { ErrorDetails } from './ErrorDetails';
 import { IN_APP } from '../lib/device';
@@ -30,6 +31,10 @@ const FORMATS: Record<Format, string> = { video: 'Video', photo: 'Photo', gif: '
 
 /** What is being made, for the line under the progress and the facts of the file. */
 interface Made { format: Format; w: number; h: number; fps?: number; mb?: number }
+/** What the sheet shows of a finished file kept for a reload (SW-A-15). */
+interface KeptView { quick?: boolean; made?: Made }
+/** Export sheets on screen: StrictMode mounts one twice in development, and a sheet that comes straight back keeps its file. */
+let sheetsOpen = 0;
 /** Pictures in the film an export shows while it is made (engine/exporter Film). */
 const FILM = 8;
 
@@ -87,7 +92,10 @@ export function ExportSheet() {
   // Consumed once: the Export button asked for a quick export (see startExport). It opens straight on the progress.
   // Not in an app's built-in browser: the person first reads that the file cannot be saved there (audit V-203).
   const [auto] = useState(() => { const a = useEditor.getState().startAuto; if (a) useEditor.setState({ startAuto: false }); return a && !IN_APP; });
-  const [phase, setPhase] = useState<Phase>(() => (auto ? { kind: 'running', progress: 0 } : { kind: 'setup' }));
+  // A finished file of this project that a reload interrupted before it was saved opens the sheet on it (SW-A-15).
+  const [back] = useState(() => keptExportOf<KeptView>(project.id));
+  const [phase, setPhase] = useState<Phase>(() => (back ? { kind: 'done', result: back.result, quick: back.extra?.quick }
+    : auto ? { kind: 'running', progress: 0 } : { kind: 'setup' }));
   useEffect(() => {
     if (phase.kind !== 'running') return;
     useEditor.setState({ locked: true });
@@ -95,17 +103,17 @@ export function ExportSheet() {
     return () => { useEditor.setState({ locked: false }); player.locked = false; };
   }, [phase.kind]);
   const [saved, setSaved] = useState(false);
-  const save = (r: ExportResult) => void saveFile(r.blob, r.fileName).then((ok) => { if (ok) setSaved(true); });
+  const save = (r: ExportResult) => void saveFile(r.blob, r.fileName).then((ok) => { if (ok) { setSaved(true); dropKeptExport(); } });
   useHoldUpdates(phase.kind === 'running' || phase.kind === 'done'); // a reload would lose the export or the file
   useSheetGuard(phase.kind === 'running' ? t('The export is still running. Tap again to stop it.')
     : phase.kind === 'done' && !saved && !(phase.quick && !IOS) ? t('The video is not saved yet. Tap again to discard it.') : null);
-  const [format, setFormat] = useState<Format>('video');
+  const [format, setFormat] = useState<Format>(back?.extra?.made?.format ?? 'video');
   const [loudness, setLoudness] = useState(prefs.evenLoudness);
   const [quick, setQuick] = useState(prefs.quick);
   const abort = useRef<AbortController | null>(null);
   const done = useRef(false);
   done.current = phase.kind === 'done';
-  const [made, setMade] = useState<Made | null>(null);
+  const [made, setMade] = useState<Made | null>(back?.extra?.made ?? null);
   // The film: the export paints its own frames into these as it goes, and they stay when it is done.
   const slots = useRef<(HTMLCanvasElement | null)[]>([]);
   const film = useMemo<Film>(() => ({ frames: FILM, take: (picture, k) => paint(slots.current[k], picture) }), []);
@@ -151,8 +159,14 @@ export function ExportSheet() {
     });
     return () => { alive = false; abort.current?.abort(); };
   }, [project.settings]);
-  // The finished file is on the device only while this sheet offers it (audit V-189).
-  useEffect(() => () => { if (done.current) void clearDiskFiles(); }, []);
+  // The finished file is on the device only while this sheet offers it (audit V-189), and kept for a reload until then.
+  useEffect(() => {
+    sheetsOpen++;
+    return () => {
+      sheetsOpen--;
+      if (done.current) setTimeout(() => { if (!sheetsOpen) { void clearDiskFiles(); dropKeptExport(); } }, 0);
+    };
+  }, []);
   useEffect(() => { void import('../engine/exporter').catch(() => undefined); }, []); // fetched now, so the button does not wait; a failure is said by the button's own import
 
   const duration = projectDuration(project);
@@ -174,10 +188,12 @@ export function ExportSheet() {
     abort.current = ac;
     setPhase({ kind: 'running', progress: 0 });
     setSaved(false);
+    dropKeptExport(); // the file of an export before this one is no longer offered
     const [rw, rh] = outputSize(project.settings, res);
-    setMade(format === 'gif' ? { format, w: gifSize(project.settings)[0], h: gifSize(project.settings)[1], fps: GIF_FPS }
+    const making: Made = format === 'gif' ? { format, w: gifSize(project.settings)[0], h: gifSize(project.settings)[1], fps: GIF_FPS }
       : format === 'video' ? { format, w: rw, h: rh, fps: rate, mb: mbFor(res, rate) }
-      : { format, w: format === 'photo' ? w : 0, h: format === 'photo' ? h : 0 });
+      : { format, w: format === 'photo' ? w : 0, h: format === 'photo' ? h : 0 };
+    setMade(making);
     // Keep the screen on: a phone going to sleep is the most common way long exports die. Not awaited: a lock that
     // never answers must not hold the export.
     const awake = keepAwake();
@@ -205,6 +221,7 @@ export function ExportSheet() {
         : await exporter.exportProject(p, { resolution: res, fps: rate, quality, loudness }, progress, ac.signal, film);
       setPhase({ kind: 'done', result, quick: isQuick });
       if (isQuick && !IOS) downloadFile(result.blob, result.fileName);
+      else void keepExport(project.id, result, { quick: isQuick, made: making } satisfies KeptView);
       track('export_completed', { resolution: res, fps: rate, quick: isQuick, seconds: Math.round(result.seconds), mb: Math.round(result.blob.size / 1e6) });
     } catch (e) {
       // An encoder or decoder interrupted by Cancel fails with its own error: that is a cancel, not a failure.
