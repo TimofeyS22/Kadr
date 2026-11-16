@@ -6,7 +6,8 @@ import { expect, test } from '@playwright/test';
 test('a pair: each paragraph in its own face, tucked by its gap; captions ignore the looks; every face is loaded first', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('./');
-  const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
+  // The source, not the app shell: a production server answers any path with index.html and 200.
+  const dev = await page.evaluate(async () => { const r = await fetch('/src/engine/text.ts'); return r.ok && /javascript/.test(r.headers.get('content-type') ?? ''); });
   test.skip(!dev, 'needs the dev server: the renderer is imported from its source');
 
   const r = await page.evaluate(async () => {
@@ -107,7 +108,8 @@ test('a pair: each paragraph in its own face, tucked by its gap; captions ignore
 test('a long accent is set smaller, never broken between words, above or below the support; typed out letter by letter it keeps its size', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('./');
-  const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
+  // The source, not the app shell: a production server answers any path with index.html and 200.
+  const dev = await page.evaluate(async () => { const r = await fetch('/src/engine/text.ts'); return r.ok && /javascript/.test(r.headers.get('content-type') ?? ''); });
   test.skip(!dev, 'needs the dev server: the renderer is imported from its source');
   const r = await page.evaluate(async () => {
     const imp = (p: string) => import(/* @vite-ignore */ p);
@@ -156,7 +158,8 @@ test('a long accent is set smaller, never broken between words, above or below t
 test('a script accent keeps white between its words («С днём», not «Сднём»); text in one face is drawn as before', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('./');
-  const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
+  // The source, not the app shell: a production server answers any path with index.html and 200.
+  const dev = await page.evaluate(async () => { const r = await fetch('/src/engine/text.ts'); return r.ok && /javascript/.test(r.headers.get('content-type') ?? ''); });
   test.skip(!dev, 'needs the dev server: the renderer is imported from its source');
   const r = await page.evaluate(async () => {
     const imp = (p: string) => import(/* @vite-ignore */ p);
@@ -200,7 +203,8 @@ test('a script accent keeps white between its words («С днём», not «Сд
 test('under a long accent the support stays readable and smaller than the accent (the art director, round 3)', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('./');
-  const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
+  // The source, not the app shell: a production server answers any path with index.html and 200.
+  const dev = await page.evaluate(async () => { const r = await fetch('/src/engine/text.ts'); return r.ok && /javascript/.test(r.headers.get('content-type') ?? ''); });
   test.skip(!dev, 'needs the dev server: the renderer is imported from its source');
   const r = await page.evaluate(async () => {
     const imp = (p: string) => import(/* @vite-ignore */ p);

@@ -17,7 +17,8 @@ interface Archive { made: string; texts: Record<string, string>; captionWords: R
 test('every text style and caption template draws exactly as the archive baseline (docs/18 Ш7)', async ({ page, browserName }) => {
   test.setTimeout(300_000);
   await page.goto('./');
-  const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
+  // The source, not the app shell: a production server answers any path with index.html and 200.
+  const dev = await page.evaluate(async () => { const r = await fetch('/src/engine/text.ts'); return r.ok && /javascript/.test(r.headers.get('content-type') ?? ''); });
   test.skip(!dev, 'needs the dev server: the renderer is imported from its source');
 
   if (process.env.RASTER_ARCHIVE) {

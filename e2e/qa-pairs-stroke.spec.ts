@@ -8,7 +8,8 @@ import { expect, test } from '@playwright/test';
 test('every pair keeps its strokes through a 2 px opening at 720p and 1080p, unlike a weight-100 control', async ({ page }) => {
   test.setTimeout(180_000);
   await page.goto('./');
-  const dev = await page.evaluate(async () => (await fetch('/src/engine/text.ts')).ok);
+  // The source, not the app shell: a production server answers any path with index.html and 200.
+  const dev = await page.evaluate(async () => { const r = await fetch('/src/engine/text.ts'); return r.ok && /javascript/.test(r.headers.get('content-type') ?? ''); });
   test.skip(!dev, 'needs the dev server: the renderer is imported from its source');
   const r = await page.evaluate(async () => {
     const imp = (p: string) => import(/* @vite-ignore */ p);
