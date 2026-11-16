@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { ASPECTS } from '../core/defaults';
 import type { AspectId, Project } from '../core/types';
 import { t } from '../lib/i18n';
@@ -68,6 +68,14 @@ export function useFrameFit(): { fit: Fit; close: () => void } | null {
 }
 
 export function FrameFitNote({ fit, close }: { fit: Fit; close: () => void }) {
+  // On the stage, just above the row under the frame (Undo, Play): measured, since the timeline under it grows with rows.
+  const [bottom, setBottom] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const place = () => { const row = document.querySelector('.transport'); if (row) setBottom(Math.round(innerHeight - row.getBoundingClientRect().top) + 8); };
+    place();
+    addEventListener('resize', place);
+    return () => removeEventListener('resize', place);
+  }, []);
   const commit = useEditor((s) => s.commit);
   const toast = useEditor((s) => s.toast);
   const fill = () => {
@@ -80,7 +88,7 @@ export function FrameFitNote({ fit, close }: { fit: Fit; close: () => void }) {
     Object.assign(d.settings, { aspect: fit.format, width, height });
   });
   return (
-    <div className="ck-coach ck-frame-fit" role="note">
+    <div className="ck-coach ck-frame-fit" role="note" style={bottom === null ? undefined : { bottom }}>
       <div className="ck ck-editor-tip">
         <span>{fit.wider ? t('The video is wider than the frame: black bars above and below.') : t('The video is narrower than the frame: black bars at the sides.')}</span>
         <IconButton label={t('Close')} onClick={close}><X aria-hidden /></IconButton>

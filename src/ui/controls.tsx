@@ -99,7 +99,7 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
       const below = el.querySelector<HTMLElement>('[data-below]'), body = el.querySelector<HTMLElement>('.ck-panel-body');
       if (below && body && matchMedia(PHONE_UPRIGHT).matches) {
         const at = Math.ceil(below.getBoundingClientRect().top - el.getBoundingClientRect().top + body.scrollTop + PEEK);
-        if (at > cap) { cap = at; el.style.maxHeight = `min(50dvh, ${cap}px)`; }
+        if (at > cap) { cap = at; el.style.maxHeight = `min(50dvh, ${cap}px)`; el.setAttribute('data-capped', ''); }
       }
       const h = el.offsetHeight;
       if (h <= tallest) return;
@@ -112,7 +112,7 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
     // browser report "ResizeObserver loop completed with undelivered notifications".
     const ro = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fit); });
     ro.observe(el);
-    return () => { ro.disconnect(); cancelAnimationFrame(frame); el.style.minHeight = ''; el.style.maxHeight = ''; host.style.removeProperty('--sheet-h'); };
+    return () => { ro.disconnect(); cancelAnimationFrame(frame); el.style.minHeight = ''; el.style.maxHeight = ''; el.removeAttribute('data-capped'); host.style.removeProperty('--sheet-h'); };
   }, [title]);
   const slide = (dy: number) => { if (ref.current) ref.current.style.transform = dy ? `translateY(${dy}px)` : ''; };
   const down = (e: PointerEvent<HTMLElement>) => {
@@ -160,7 +160,7 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
         <Button onClick={close}>{t('Done')}</Button>
       </header>
       {/* A line under the header once the body has scrolled under it. */}
-      <div className="sheet-body ck-panel-body" onScroll={(e) => ref.current?.toggleAttribute('data-scrolled', e.currentTarget.scrollTop > 0)}>
+      <div className="sheet-body ck-panel-body" onScroll={(e) => { const b = e.currentTarget; ref.current?.toggleAttribute('data-scrolled', b.scrollTop > 0); ref.current?.toggleAttribute('data-end', b.scrollTop + b.clientHeight >= b.scrollHeight - 1); }}>
         <SheetHead.Provider value={head}>{children}</SheetHead.Provider>
       </div>
     </section>
