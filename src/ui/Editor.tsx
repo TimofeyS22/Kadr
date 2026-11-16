@@ -88,7 +88,9 @@ export function Editor({ id }: { id: string }) {
   const [missing, setMissing] = useState(false);
   const [dragging, setDragging] = useState(false);
   // Undo and Redo moved under the frame (owner, 2026-11-10): said once, where they were, to who worked here before (Ж1).
-  const frameFit = useFrameFit(); // black bars after the first video, once (UI-4)
+  // First-run tips come first; the note about black bars waits until they are walked through (one thing at a time).
+  const [tipsSeen, setTipsSeen] = useState(() => { try { return Number(localStorage.getItem('kadr.tips') ?? 0); } catch { return TIPS.length; } });
+  const frameFit = useFrameFit(tipsSeen < TIPS.length); // black bars after the first video, once (UI-4)
   const [undoMovedSeen, setUndoMovedSeen] = useState(() => {
     try {
       if (localStorage.getItem(UNDO_MOVED_KEY) !== null) return true;
@@ -325,6 +327,9 @@ export function Editor({ id }: { id: string }) {
     >
       <TopBar project={project} moved={!undoMovedSeen && !sheetOpen} onMovedSeen={undoMovedFound} folded={topFolded} />
       <Preview />
+      {/* In the flow, between the frame and the row under it: it covers nothing — not the frame a finger drags on, not
+          Undo and Redo, not the timeline (SW-U-7, SW-U-8); the frame gives it its height while it is up. */}
+      {frameFit && <FrameFitNote {...frameFit} />}
       <Transport onUsed={undoMovedFound} />
       <Timeline />
       {showPerf && <PerfOverlay />}
@@ -332,8 +337,7 @@ export function Editor({ id }: { id: string }) {
       <Suspense fallback={null}><Sheets /></Suspense>
       <BusyOverlay />
       <ElsewhereNotice />
-      {frameFit && <FrameFitNote {...frameFit} />}
-      <Coach hold={!undoMovedSeen || !!frameFit} />
+      <Coach hold={!undoMovedSeen} seen={tipsSeen} onSeen={setTipsSeen} />
       {dragging && <div className="drop-hint ck-drop">{t('Drop videos, photos or music to add them')}</div>}
     </div>
   );
@@ -527,8 +531,7 @@ const TIPS = [
 ];
 
 /** First-run tips, one at a time, remembered per device; not while the note about the move is up (one thing at a time). */
-function Coach({ hold }: { hold: boolean }) {
-  const [seen, setSeen] = useState(() => { try { return Number(localStorage.getItem('kadr.tips') ?? 0); } catch { return TIPS.length; } });
+function Coach({ hold, seen, onSeen: setSeen }: { hold: boolean; seen: number; onSeen: (n: number) => void }) {
   const hasClips = useEditor((s) => !!s.project?.tracks.some((tr) => tr.clips.length));
   const sheet = useEditor((s) => s.sheet);
   if (seen >= TIPS.length || !hasClips || sheet || hold) return null;

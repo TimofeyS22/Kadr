@@ -92,10 +92,10 @@ test('Remove pauses on a clip whose sound cannot be read says so and closes, not
 });
 
 test('an encoder that takes no size: the export says this browser cannot encode, not an empty list of sizes (audit V-199)', async ({ page }) => {
-  await page.addInitScript(() => {
-    VideoEncoder.isConfigSupported = async (c) => ({ supported: false, config: c });
-  });
+  // Such a browser is refused at the door since V-199 (lane D, e2e/qa-platform-entry.spec.ts): the encoder refuses here
+  // only once the project is open, as for a project reached by its own address, past Home.
   await projectWith(page, ['landscape.mp4']);
+  await page.evaluate(() => { VideoEncoder.isConfigSupported = async (c) => ({ supported: false, config: c }); });
   await page.getByRole('button', { name: 'Export' }).first().click();
   await expect(page.getByText('This browser cannot encode video. Try Chrome or Safari.')).toBeVisible({ timeout: 30_000 });
 });

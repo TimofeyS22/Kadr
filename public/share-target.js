@@ -6,10 +6,19 @@
  * posts here does (audit V-235): it could put its own file into a person's projects without a word. Such a request
  * opens the app and stores nothing. A page with an opaque origin (a sandboxed frame) sends "null", as a real share may:
  * telling those apart needs the headers of a real Android share, which no test stand has seen yet.
+ * WebKit hands the service worker no Origin at all, only the referrer: there the other site's page is known by it
+ * (SW-D-10 — the form's file was parked, and only a file the import refused kept it out of a project). A share from
+ * an app has no web page behind it (no referrer, or android-app://).
  */
 function fromAnotherSite(request) {
   const origin = request.headers.get('origin');
-  return !!origin && origin !== 'null' && origin !== self.location.origin;
+  if (origin && origin !== 'null' && origin !== self.location.origin) return true;
+  try {
+    const from = new URL(request.referrer);
+    return (from.protocol === 'http:' || from.protocol === 'https:') && from.origin !== self.location.origin;
+  } catch {
+    return false; // no referrer
+  }
 }
 
 self.addEventListener('fetch', (event) => {

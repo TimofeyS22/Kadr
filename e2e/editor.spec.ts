@@ -5095,7 +5095,10 @@ test('deleting a project removes its last export from the device (audit V-189)',
   await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 120_000 });
   const hasDisk = (await diskFiles(page).catch(() => [])).some((n) => n.startsWith('export-'));
   test.skip(!hasDisk, 'this engine exports to memory here');
-  await page.getByRole('button', { name: 'Export again' }).click(); // the file stays until the sheet closes
+  await page.getByRole('button', { name: 'Export again' }).click(); // the file stays until the sheet closes; a file not saved yet is warned about once
+  // With a sheet open an upright phone folds the header away (UI-7): the sheet closes first (its second attempt within
+  // the warning means it), then the header gives the way back.
+  await page.getByRole('dialog', { name: 'Export' }).getByRole('button', { name: 'Done' }).click();
   await page.getByRole('button', { name: 'Back to projects' }).click();
   await page.getByRole('button', { name: 'Delete Secret' }).click();
   await confirmDelete(page);

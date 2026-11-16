@@ -84,11 +84,13 @@
 }
 .ck-editor-tip span { flex: 1; line-height: var(--leading-text); }
 .ck-editor-tip .ck-btn { flex: none; }
-/* The black bars after the first video (UI-4, FrameFit.tsx): on the stage just above the row under the frame — on the
-   bars it speaks of, in reach of the thumb, and over no piece of the timeline a finger means to tap (a mis-tap there
-   would change the format). The words and a close on one row, the two answers under them, one width. */
+/* The black bars after the first video (UI-4, FrameFit.tsx): a strip in the flow between the frame and the row under it —
+   in reach of the thumb, over nothing (SW-U-7, SW-U-8). The words and a close on one row, the two answers side by side,
+   one width, a long answer on two lines. */
+.ck-frame-fit { padding: var(--space-2) var(--space-3) 0; }
 .ck-frame-fit .ck-editor-tip { flex-wrap: wrap; row-gap: var(--space-2); }
-.ck-frame-fit-actions { flex: 1 0 100%; display: grid; gap: var(--space-2); }
+.ck-frame-fit-actions { flex: 1 0 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: var(--space-2); }
+.ck-frame-fit-actions .ck-btn { white-space: normal; text-align: center; line-height: var(--leading-tight); }
 
 /* ---- the sheet of all tools: each group of the ribbon, in the same order, over the editor's old layers ---- */
 .ck-editor > .ck-sheet-layer { z-index: var(--z-over-old); }
