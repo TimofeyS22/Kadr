@@ -284,6 +284,9 @@ test('at 375 px: nothing scrolls sideways, every control is big enough, the pict
     await expect(sheet(page)).toBeVisible();
     await tilePainted(page, name === 'Adjust' ? 'Exposure' : 'None');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name}: no sideways scroll`).toBe(true);
+    // Measured once the sheet stands: while it rises WebKit gave «Before / after» 43.99997 px through the moving layer (a
+    // stopped sheet fades its cut edge since UI-7), 44 px once still — a size of the motion, not of the button.
+    await sheet(page).evaluate((s) => Promise.all(s.getAnimations({ subtree: true }).map((a) => a.finished)));
     for (const el of await sheet(page).locator('.look-actions button, .sheet-head .compare').all()) expect((await el.boundingBox())!.height, `${name}: ${await el.textContent()}`).toBeGreaterThanOrEqual(44);
     const pic = (await page.locator('.preview-canvas').boundingBox())!;
     expect(pic.height, `${name}: the picture is in view`).toBeGreaterThan(150);
