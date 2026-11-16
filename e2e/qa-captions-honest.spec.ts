@@ -167,11 +167,16 @@ test('Auto in an English interface: Russian speech goes to the Russian model aft
   expect(requests.filter((u) => /gigaam|fastconformer/i.test(u))).toEqual([]);
 
   // A new visit, and a yes: the Russian model reads it, and every word of the first sentence is right.
+  // Q-25, what is kept: the captions made by speech recognition are there after a reload, line for line.
+  const kept = await lines(page);
+  expect(kept.length).toBeGreaterThan(3);
+  await page.waitForTimeout(1200); // the autosave
   await page.reload();
   await expect(page.locator('.clip-caption')).toHaveCount(1);
   const close = page.getByRole('button', { name: 'Close tools' });
   if (await close.isVisible()) await close.click();
   await page.getByRole('button', { name: 'Captions', exact: true }).click(); // the project has captions: their sheet
+  expect(await lines(page)).toEqual(kept);
   await page.getByRole('button', { name: 'Create again…' }).click();
   await page.getByRole('button', { name: 'Create captions' }).click();
   await expect(ask).toContainText('This is Russian speech', { timeout: 400_000 });
