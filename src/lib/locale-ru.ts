@@ -4,6 +4,7 @@ export const RU: Record<string, string> = {
   'Edit videos right in your browser.': 'Монтируйте видео прямо в браузере.',
   'Nothing is uploaded — your media stays on this device.': 'Ничего не загружается: файлы остаются на этом устройстве.',
   'This browser can’t edit video yet. Use a current Chrome, Edge or Safari 26+ (iPhone: iOS 26+).': 'Этот браузер пока не умеет монтировать видео. Откройте Kadr в свежем Chrome, Edge или Safari 26+ (на iPhone — iOS 26+).',
+  'This browser cannot keep projects: its storage for sites is turned off. Open Kadr in a regular window, or allow site data in the settings.': 'Этот браузер не может хранить проекты: хранилище для сайтов отключено. Откройте Kadr в обычном окне или разрешите данные сайтов в настройках.',
   'New project': 'Новый проект',
   'Try a sample': 'Открыть пример',
   'Restore backup': 'Восстановить копию',

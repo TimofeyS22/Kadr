@@ -89,6 +89,23 @@ export const browserSupported = (): boolean => {
   return (saidYes = !!gl);
 };
 
+/**
+ * Whether this browser's video encoder takes any size at all (V-199): one that refuses every size passed the door and
+ * failed only at the export. A few small configurations of the codecs the export uses; no answer within 5 s is no
+ * refusal (null): the door must never shut on a slow answer.
+ */
+async function encodesAnySize(): Promise<boolean | null> {
+  if (typeof VideoEncoder === 'undefined') return false;
+  const configs = [
+    { codec: 'avc1.42001f', width: 1280, height: 720 }, { codec: 'avc1.42001e', width: 640, height: 360 },
+    { codec: 'vp09.00.10.08', width: 640, height: 360 }, { codec: 'av01.0.04M.08', width: 640, height: 360 },
+  ];
+  const ask = Promise.all(configs.map((c) => VideoEncoder.isConfigSupported({ ...c, framerate: 30, bitrate: 2_000_000 })
+    .then((r) => !!r.supported, () => false)));
+  const answers = await within(ask, 5000, () => null);
+  return answers === null ? null : answers.some(Boolean);
+}
+
 const open = (id: string) => { location.hash = `#/p/${id}`; };
 /** Width / height of a project's frame (a list from before aspects were kept counts as vertical). */
 const frame = (a: AspectId | undefined) => { const [w, h] = (a && ASPECTS[a]) || ASPECTS['9:16']; return w / h; };
@@ -119,7 +136,9 @@ export function Home() {
   const toast = useEditor((s) => s.toast);
   const noted = (name: string, note: ImportNote) => toast(importNoteText(name, note), 'info', 10_000);
   const { locale, setLocale } = useLocale();
-  const supported = browserSupported();
+  // What the door finds out after the first look (V-199): storage that refuses, an encoder that takes no size.
+  const [refused, setRefused] = useState<'storage' | 'encoder' | null>(null);
+  const supported = browserSupported() && !refused;
 
   // Safari's 7-day rule (docs/12 §1.3 item 4): a site not on the Home Screen loses its data after a week away. The app
   // on the Home Screen has its own storage, so what was made in Safari does not appear there (audit V-164): the advice
@@ -155,12 +174,20 @@ export function Home() {
   const offered = useInstall();
   const install = IN_APP ? null : offered; // a built-in browser installs nothing, whatever it announces (audit V-203)
   const refresh = () => listProjects().then(setProjects).catch((e) => toast(errorMessage(e), 'error'));
-  useEffect(() => { void refresh(); void requestPersistence(); }, []);
   useEffect(() => {
-    if (projects !== null) return;
+    // The first read of the list: storage that refuses it (turned off, a private window of an old browser) cannot keep a
+    // project either, and is said at the door, not after the person has edited (V-199).
+    listProjects().then(setProjects, (e: unknown) => { console.warn('the storage refuses the project list', e); setRefused('storage'); });
+    void requestPersistence();
+    let gone = false;
+    void encodesAnySize().then((ok) => { if (!gone && ok === false) setRefused((r) => r ?? 'encoder'); });
+    return () => { gone = true; };
+  }, []);
+  useEffect(() => {
+    if (projects !== null || refused) return;
     const timer = setTimeout(() => toast(t('Your projects are not loading: the browser’s storage does not answer. Close other Kadr tabs and reload the page.'), 'error'), STORAGE_WAIT_MS);
     return () => clearTimeout(timer);
-  }, [projects]);
+  }, [projects, refused]);
   useEffect(() => { if (isTask(route ?? undefined)) track('deeplink_task', { task: route! }); }, [route]);
 
   /** Media in → a vertical project → the task's tool (shared by the reel card, task links and the share target). */
@@ -410,7 +437,9 @@ export function Home() {
 
         {!supported && (
           <div className="banner error ck-banner" role="alert">
-            <CircleAlert aria-hidden />{t('This browser can’t edit video yet. Use a current Chrome, Edge or Safari 26+ (iPhone: iOS 26+).')}
+            <CircleAlert aria-hidden />{refused === 'storage'
+              ? t('This browser cannot keep projects: its storage for sites is turned off. Open Kadr in a regular window, or allow site data in the settings.')
+              : t('This browser can’t edit video yet. Use a current Chrome, Edge or Safari 26+ (iPhone: iOS 26+).')}
           </div>
         )}
 
