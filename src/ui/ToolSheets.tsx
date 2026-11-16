@@ -5,24 +5,24 @@ import { fillerIndices } from '../core/reframe';
 import { wordCutRange } from '../core/silence';
 import { clipEnd, cutTimelineRanges, mainTrack, projectDuration, soundAssetId, sourceTime, timelineTimeOf } from '../core/timeline';
 import { PEAKS_PER_SEC, waveform } from '../engine/media';
-import { createAudioClip } from '../core/defaults';
+import { uid } from '../core/defaults';
 import { CAPTION_ACCENT, CAPTION_CATEGORIES, CAPTION_PRESETS, STICKER_GROUPS } from '../core/presets';
-import { placeClip } from '../core/timeline';
 import { CAPTION_EMPHASES, CAPTION_MOTIONS, type CaptionClip, type CaptionEmphasis, type CaptionMotion, type ImageClip, type Rect, type VideoClip } from '../core/types';
 import { soundEntries } from '../engine/audio';
 import { METER_IDLE, meterStep } from '../core/meter';
 import { finishPace, reportPace, startPace, type Pace } from '../core/pace';
 import { projectScript } from '../core/script';
 import { ASR_CHOICES, ASR_MODELS, CAPTION_LANGUAGES, alignToScript, firstDownload, fittingModel, languageLabel, modelsToDownload, startingModel, transcribeProject, type AsrChoice, type AsrModel, type CaptionProgress, type DownloadConsent } from '../engine/captions';
-import { importFile } from '../engine/importer';
+import { importStored, saveTake } from '../engine/importer';
 import { player } from '../engine/player';
-import { VoiceRecorder } from '../engine/recorder';
+import { VoiceRecorder, voiceExt } from '../engine/recorder';
+import { deleteBlob } from '../storage/db';
 import './capture.css';
 import './catalog.css';
 import './detail.css';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
-import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles } from './actions';
+import { addCaptions, addSticker, editClip, exportSubtitles, importSubtitles, placeVoice } from './actions';
 import { Chips, Slider, Swatches, Toggle, Values, num, pct, useSheetGuard } from './controls';
 import { ModelAsk, useModelAsk } from './modelAsk';
 import { PaceBar, learnPace, speechStage, speechStages } from './pace';
@@ -101,27 +101,28 @@ export function CropBody({ clip }: { clip: VideoClip | ImageClip }) {
 
 // ---------- Voice-over ----------
 
-const extFor = (type: string) => (type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm');
-
 /**
  * Ends a voice-over and puts it into the project at `at`, as Stop does. Also when the sheet closes mid-take — Done, Esc,
  * the system Back: that threw the take away without a word (SW-A-11); a take not wanted goes with one Undo.
- * `short`: the take was stopped at once (under a second), so a file that does not open is said as empty (SW-D-8).
+ * Its seconds are already in storage (SW-A-16) and become the stored file as they are, as a camera take's (docs/19
+ * ADR-М5); they leave storage only once the voice-over is in the project. Not put in (no room, the project left, a file
+ * that does not read): they stay, and the voice-over comes back when the project opens.
+ * `short`: the take was stopped at once (under a second), so a file that does not open is said as empty (SW-D-8) and
+ * is not kept.
  */
 async function keepVoice(r: VoiceRecorder, at: number, short: boolean): Promise<void> {
   player.pause();
   player.setMuted(false);
   try {
-    const blob = await r.stop();
-    const asset = await importFile(blob, `Voice-over.${extFor(blob.type)}`);
-    let id = '';
-    editor().commit((d) => {
-      d.assets[asset.id] = asset;
-      const c = createAudioClip(asset, at);
-      placeClip(d, c);
-      id = c.id;
-    });
-    editor().select(id);
+    const { take, type } = await r.stop();
+    const name = `Voice-over.${voiceExt(type)}`;
+    const assetId = uid();
+    const size = await saveTake(take, assetId, name, type.split(';')[0]).catch((e: unknown) => { void take.release(); throw e; });
+    if (!size) { void take.discard(); throw new Error('The recording is empty'); }
+    if (editor().project?.id !== take.project) { await deleteBlob(assetId); void take.release(); return; }
+    const asset = await importStored(assetId, name).catch(async (e: unknown) => { await deleteBlob(assetId); void (short ? take.discard() : take.release()); throw e; });
+    placeVoice(asset, at);
+    void take.discard();
     track('voiceover_recorded', { seconds: Math.round(asset.duration) });
   } catch (e) {
     // A take stopped at once holds no whole frame of sound: it is empty, not a sound this browser cannot decode.
@@ -155,7 +156,7 @@ export function VoiceoverBody() {
     setState('asking');
     try {
       const r = new VoiceRecorder();
-      await r.start();
+      await r.start(editor().project!.id, () => player.time);
       // The sheet closed while the microphone was opening: nobody would ever stop this recording (audit V-224).
       if (gone.current) { r.cancel(); return; }
       rec.current = r;

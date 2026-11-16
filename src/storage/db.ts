@@ -360,8 +360,8 @@ export async function collectOrphans(): Promise<number> {
 /** Lets go of the chunks held in memory for the project just left (the chunked fallback keeps the last two it read). */
 export function forgetLoadedMedia(): void { held.drop(); }
 
-// A camera take, written second by second as it is recorded (audit V-250): it used to live in the page's memory until
-// Stop, so memory grew with every second and a crash lost all of it.
+// A camera take or a voice-over, written second by second as it is recorded (audit V-250; the voice-over since SW-A-16):
+// it used to live in the page's memory until Stop, so memory grew with every second and a crash lost all of it.
 //
 // The take's bytes become the stored file a piece at a time (docs/19 ADR-М5, variant «c»). It used to be read back from
 // the store as Blobs, put together into one File and saved again as the asset's Blob, and its pieces were deleted right
@@ -370,6 +370,11 @@ export function forgetLoadedMedia(): void { held.drop(); }
 // stored file. No Blob read from the store is saved again, deleting the pieces cannot touch the file, and IndexedDB
 // takes bytes even where it refuses Blobs (a private tab), so there a crash no longer loses the take either.
 const takeKey = (project: string, take: string, n: number) => `t:${project}:${take}:${String(n).padStart(6, '0')}`;
+/** What a take is, kept beside its pieces for a voice-over (a take without it is from the camera). */
+const takeMetaKey = (project: string, take: string) => `t:${project}:${take}:meta`;
+
+/** A camera take goes onto the main track; a voice-over onto a sound track at `at` s, in the type it was recorded in. */
+export type TakeMeta = { kind: 'camera' } | { kind: 'voice'; at: number; type: string };
 
 /** A stored piece as bytes; a piece stored as a Blob by an older version is read once, here. */
 async function pieceBytes(v: unknown): Promise<ArrayBuffer | undefined> {
@@ -434,8 +439,13 @@ export class TakeWriter {
   /** Every write waits for the lock: no second of the take is in storage before it is held. */
   private writing: Promise<unknown>;
   private free: () => void = () => undefined;
-  constructor(private readonly project: string) {
-    this.writing = holdLock(takeLock(project, this.id)).then((free) => { this.free = free; });
+  /** `project`: the project the take is for. */
+  constructor(readonly project: string, meta: TakeMeta = { kind: 'camera' }) {
+    this.writing = holdLock(takeLock(project, this.id)).then(async (free) => {
+      this.free = free;
+      // A crash brings a voice-over back where it was recorded: its place goes to storage before its first second.
+      if (meta.kind !== 'camera') await set(takeMetaKey(project, this.id), meta, store).catch((e: unknown) => console.warn('A take could not be described', e));
+    });
   }
 
   add(piece: Blob): void {
@@ -503,22 +513,23 @@ async function storedTakes(project: string): Promise<string[]> {
  * alone: opening the project in a second tab used to take it for a leftover, put what it had so far into its own copy
  * and delete the pieces under the recording (SW-A-17). Two tabs opening the project at once bring a take back once.
  */
-export async function recoverTakes(project: string, bring: (take: string) => Promise<void>): Promise<void> {
+export async function recoverTakes(project: string, bring: (take: string, meta: TakeMeta) => Promise<void>): Promise<void> {
   const locks = lockManager();
+  const bringOne = async (take: string) => bring(take, (await get<TakeMeta>(takeMetaKey(project, take), store)) ?? { kind: 'camera' });
   for (const take of await storedTakes(project)) {
-    if (!locks) await bring(take);
-    else await locks.request(takeLock(project, take), { ifAvailable: true }, async (lock) => { if (lock) await bring(take); });
+    if (!locks) await bringOne(take);
+    else await locks.request(takeLock(project, take), { ifAvailable: true }, async (lock) => { if (lock) await bringOne(take); });
   }
 }
 
 /**
- * Saves a take a crash left behind as the stored file `assetId`, as Stop does (docs/19 ADR-М5): its size and the type
- * its first bytes show. Its pieces stay until `deleteTake`.
+ * Saves a take a crash left behind as the stored file `assetId`, as Stop does (docs/19 ADR-М5): its size and its type,
+ * `known` or else what its first bytes show. Its pieces stay until `deleteTake`.
  */
-export async function saveUnfinishedTake(project: string, take: string, assetId: string): Promise<{ size: number; type: string }> {
+export async function saveUnfinishedTake(project: string, take: string, assetId: string, known = ''): Promise<{ size: number; type: string }> {
   const prefix = `t:${project}:${take}:`;
-  const list = (await keys(store)).filter((k): k is string => typeof k === 'string' && k.startsWith(prefix)).sort();
-  let seen = '';
+  const list = (await keys(store)).filter((k): k is string => typeof k === 'string' && k.startsWith(prefix) && /:\d+$/.test(k)).sort();
+  let seen = known;
   const type = () => seen.split(';')[0] || 'video/webm';
   const size = await writeChunks(assetId, type, (async function* () {
     for (const k of list) {
