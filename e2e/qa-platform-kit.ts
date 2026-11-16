@@ -23,6 +23,9 @@ export const EXPLAINED_CONSOLE: { re: RegExp; why: string }[] = [
 
 const state = { pageErrors: [] as string[], console: [] as string[], network: [] as { method: string; url: string; body: number }[], blocked: [] as string[], expected: [] as RegExp[] };
 
+/** Patterns of console errors this test causes on purpose (a refused decoder, the network taken away). */
+export function expectedConsole(...re: RegExp[]) { state.expected.push(...re); }
+
 /** Registers the audits on every test of the spec file that calls it (privacy, page errors, error toasts, console). */
 export function audits(opts: { locale?: 'en' | 'ru'; quick?: boolean } = {}) {
   test.beforeEach(async ({ page }) => {
@@ -267,4 +270,17 @@ export function toneHz(x: Float32Array, t0: number, t1: number): number {
   let n = 0;
   for (let i = a + 1; i < b; i++) if ((x[i - 1] < 0) !== (x[i] < 0)) n++;
   return n / 2 / ((b - a) / 48000);
+}
+/**
+ * The largest mean signed R, G or B difference of any 15×15 block of two 135×240 pictures: a colour that is in one
+ * and not the other (missing copies, a missing glow). Edge noise of matching text is of both signs and cancels out.
+ */
+export function worstCast(a: Buffer, b: Buffer): number {
+  let worst = 0;
+  for (let by = 0; by < 240; by += 15) for (let bx = 0; bx < 135; bx += 15) {
+    const sum = [0, 0, 0];
+    for (let y = by; y < by + 15; y++) for (let x = bx; x < bx + 15; x++) for (let c = 0; c < 3; c++) { const i = (y * 135 + x) * 3 + c; sum[c] += a[i] - b[i]; }
+    worst = Math.max(worst, ...sum.map((v) => Math.abs(v) / (15 * 15)));
+  }
+  return worst;
 }
