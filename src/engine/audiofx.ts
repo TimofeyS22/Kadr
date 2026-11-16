@@ -12,6 +12,7 @@ import { abandon } from './abandon';
 import { renderAudioWindow } from './audio';
 import { importFile } from './importer';
 import { encoderDelay } from './encoderDelay';
+import { WholeFrames, encoderPieces } from './wholeFrames';
 import { MediaError, MediaPool } from './media';
 import { offlineAware } from './modelLoad';
 
@@ -73,16 +74,25 @@ async function processAssetAudio(
     skip -= k;
     const n = Math.min((chans[0]?.length ?? 0) - k, total - emitted);
     if (n <= 0) return;
-    const buf = new AudioBuffer({ length: n, numberOfChannels: proc.channels, sampleRate: SR });
-    chans.forEach((c, i) => buf.copyToChannel(c.subarray(k, k + n) as Float32Array<ArrayBuffer>, i));
-    await source.add(buf);
     emitted += n;
+    await toEncoder(frames.push(chans.map((c) => c.subarray(k, k + n))));
+  };
+  // Whole codec frames only (SW-A-14): WebKit stamps each piece's packets from its start, and 10 s windows left a short
+  // packet at every seam, the processed sound up to 19 ms off its stamps.
+  const frames = new WholeFrames(proc.channels);
+  const toEncoder = async (piece: Float32Array[] | null) => {
+    for (const part of piece ? encoderPieces(piece) : []) {
+      const buf = new AudioBuffer({ length: part[0].length, numberOfChannels: proc.channels, sampleRate: SR });
+      part.forEach((c, i) => buf.copyToChannel(c as Float32Array<ArrayBuffer>, i));
+      await source.add(buf);
+    }
   };
   try {
     await output.start();
     await eachWindow(p, assetId, proc.channels, async (input, done) => { await emit(proc.process(input)); onProgress(done); }, signal);
     await emit(proc.flush());
     if (emitted < total) await emit(Array.from({ length: proc.channels }, () => new Float32Array(total - emitted))); // keep exact length
+    await toEncoder(frames.flush());
     source.close();
     await output.finalize();
     const type = mp4 ? 'audio/mp4' : 'audio/webm';
