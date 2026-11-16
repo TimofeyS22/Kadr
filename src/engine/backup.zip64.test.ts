@@ -19,7 +19,8 @@ vi.mock('../storage/db', () => ({
     const size = sizes.get(id);
     return size === undefined ? undefined : { size, type: 'video/mp4', read: async (a: number, b: number) => ZERO.subarray(0, b - a) };
   },
-  deleteBlob: vi.fn(), putBlob: vi.fn(), saveProject: vi.fn(),
+  // Restoring stores a copy of each file's own bytes (SW-A-4): `putCopy`, as `putBlob` was before it.
+  deleteBlob: vi.fn(), putBlob: vi.fn(), putCopy: vi.fn(), saveProject: vi.fn(),
 }));
 vi.mock('./importer', () => ({ ensureRoom: vi.fn() }));
 vi.mock('./media', () => ({ MediaError: class extends Error {} }));
