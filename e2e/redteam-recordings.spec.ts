@@ -145,9 +145,9 @@ for (const [how, close] of [
 
 // The voice-over is the camera's sibling of audit V-250: VoiceRecorder keeps every 250 ms piece in `chunks`, in memory,
 // until Stop. The camera writes its pieces to storage and brings a take back after a crash; a voice-over is gone.
-test('a voice-over cut short by a crash comes back, as a camera take does (V-250 for the microphone)', async ({ page }, info) => {
+test('a voice-over cut short by a crash comes back, as a camera take does (V-250 for the microphone)', async ({ page }) => {
   test.setTimeout(120_000);
-  test.skip(info.project.name === 'iphone-webkit', "this context's WebKit storage refuses Blobs (as in V-250's own test)");
+  // On WebKit too since the voice-over is stored as bytes (SW-A-16): this context refuses Blobs, as a private tab does.
   await fakeMicrophone(page);
   await newProject(page);
   const chooser = page.waitForEvent('filechooser');
@@ -175,12 +175,12 @@ test('a voice-over cut short by a crash comes back, as a camera take does (V-250
   expect(await page.locator('.tl-row.audio .clip').count(), 'the voice-over recorded before the crash').toBeGreaterThan(0);
 });
 
-// Two tabs, one project (Chromium: this WebKit context refuses Blobs). The tab that opens the project takes every take it
+// Two tabs, one project. The tab that opens the project takes every take it
 // finds in storage for a crash's leftover (Editor: unfinishedTakes) and deletes its pieces, including the take the other
 // tab is recording right now. The recording tab then stops on a file that has lost its start.
-test('opening the project in a second tab does not take the take the first tab is recording', async ({ page, context }, info) => {
+test('opening the project in a second tab does not take the take the first tab is recording', async ({ page, context }) => {
   test.setTimeout(180_000);
-  test.skip(info.project.name === 'iphone-webkit', "this context's WebKit storage refuses Blobs");
+  // On WebKit too: the take is stored as bytes (docs/19 ADR-М5), which this context takes though it refuses Blobs.
   await fakeCamera(page);
   await newProject(page);
   const url = page.url();
