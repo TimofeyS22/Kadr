@@ -538,7 +538,7 @@ const SCENARIOS = {
       await tap('Start recording');
       const t0 = Date.now();
       await waitFor('recording', () => js(`${FIND.replace('return [', 'const el = [')} return !!el;`, ['Stop recording']), 15_000);
-      await sleep(3000);
+      await sleep(Number(process.env.S1_TAKE_MS ?? 3000));
       await tap('Stop recording').catch(() => undefined); // the net may have stopped it already
       // The take, however long it takes: a word on the way (a decoder that stopped) does not end the wait.
       const got = await waitFor('the take on the timeline', async () => (await count('.tl-row.main .clip-video')) > before && 'clip', 40_000).catch(() => 'no clip in 40 s');
@@ -547,6 +547,33 @@ const SCENARIOS = {
       // records the next take at once does (the first run, 1.5 s, saw "the video decoder of this device stopped").
       await sleep(Number(process.env.S1_PAUSE ?? 4000));
       takes.push({ take: k + 1, got, recordedMs: Date.now() - t0, said: await js('return window.__l5.toasts.slice()') });
+    }
+    // S1_PULL=<dir>: the takes' own bytes, as Kadr stored them, copied to the Mac — real iPhone recordings for the phone
+    // video set (V-201, fixtures/real). Read from the page's IndexedDB: a whole Blob (b:) or the file's chunks (c:).
+    if (process.env.S1_PULL) {
+      const assets = await jsAsync(`const done = arguments[arguments.length - 1]; const id = decodeURIComponent(location.hash.replace(/^#\\/p\\//, ''));
+        const o = indexedDB.open('kadr'); o.onerror = () => done(null);
+        o.onsuccess = () => { const r = o.result.transaction('kv').objectStore('kv').get('p:' + id); r.onsuccess = () => done(Object.values(r.result.assets).filter((a) => a.kind === 'video').map((a) => ({ id: a.id, mime: a.mime, size: a.size }))); r.onerror = () => done(null); };`);
+      mkdirSync(process.env.S1_PULL, { recursive: true });
+      for (const [k, a] of (assets ?? []).entries()) {
+        const ok = await jsAsync(`const done = arguments[arguments.length - 1]; const id = arguments[0];
+          const o = indexedDB.open('kadr'); o.onerror = () => done('no db');
+          o.onsuccess = () => { const s = () => o.result.transaction('kv').objectStore('kv');
+            const ask = (key) => new Promise((ok, ko) => { const r = s().get(key); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+            (async () => { const whole = await ask('b:' + id); if (whole) return whole;
+              const meta = await ask('c:' + id); const parts = []; for (let i = 0; i < meta.chunks; i++) parts.push(await ask('c:' + id + ':' + i)); return new Blob(parts, { type: meta.type }); })()
+              .then((b) => { window.__l5.take = b; done(b.size); }, (e) => done(String(e))); };`, a.id);
+        if (typeof ok !== 'number') throw new Error(`take ${k + 1} could not be read: ${ok}`);
+        const parts = [];
+        for (let at = 0; at < ok; at += CHUNK) {
+          parts.push(Buffer.from(await jsAsync(`const done = arguments[arguments.length - 1]; const r = new FileReader();
+            r.onload = () => done(r.result.split(',')[1]); r.onerror = () => done(''); r.readAsDataURL(window.__l5.take.slice(arguments[0], arguments[1]));`, at, at + CHUNK), 'base64'));
+        }
+        const out = join(process.env.S1_PULL, `iphone15_kadr_take_${Date.now()}_${k + 1}${a.mime.includes('mp4') ? '.mp4' : a.mime.includes('quicktime') ? '.mov' : '.webm'}`);
+        writeFileSync(out, Buffer.concat(parts));
+        console.log(`take ${k + 1}: ${a.mime}, ${ok} bytes → ${out}`);
+      }
+      await js('window.__l5.take = null;');
     }
     // Which takes got their film strip (a strip that failed stays empty until it is drawn again), and when the dead files read again.
     const strips = { clips: await count('.tl-row.main .clip-video'), thumbs: await js("return Object.keys(window.__kadrPerf.marks).filter((k) => k.startsWith('thumbs:')).length") };
