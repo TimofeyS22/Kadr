@@ -93,6 +93,7 @@ async function keepTake(r: Take, close: () => void): Promise<'done' | 'empty'> {
     size = await saveTake(r.take, assetId, name, type.split(';')[0]);
   } catch (e) {
     // No room or no storage: the pieces stay, and the take comes back when the project opens again.
+    void r.take.release();
     close();
     editor().toast(t('Could not add {name}: {error}', { name, error: errorMessage(e) }), 'error');
     return 'done';
@@ -102,9 +103,10 @@ async function keepTake(r: Take, close: () => void): Promise<'done' | 'empty'> {
   track('camera_recording_saved', { seconds: Math.round((performance.now() - r.t0) / 1000), mb: Math.round(size / 1e6) });
   close(); // closes this screen (stops the camera) before the import overlay
   // The project was left meanwhile: the pieces stay, and the take comes back when that project opens (unfinishedTakes).
-  if (editor().project?.id !== r.owner) { await deleteBlob(assetId); return 'done'; }
+  if (editor().project?.id !== r.owner) { await deleteBlob(assetId); void r.take.release(); return 'done'; }
   // Only once it is in the project does the take leave storage: a full disk at this moment no longer loses the recording.
-  if (await addStored(assetId, name, 'main', { script: r.script || undefined })) void r.take.discard();
+  // Not put in: the pieces stay, its lock goes, and it comes back when the project opens (SW-A-17).
+  if (await addStored(assetId, name, 'main', { script: r.script || undefined })) void r.take.discard(); else void r.take.release();
   return 'done';
 }
 

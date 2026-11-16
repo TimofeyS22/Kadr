@@ -406,6 +406,24 @@ async function writeChunks(assetId: string, type: () => string, pieces: AsyncIte
   }
 }
 
+// A take being recorded is held under a Web Lock in its name (SW-A-17). The tab recording it takes the lock before the
+// take's first second is written and keeps it until the take is in the project or let go; the browser lets it go when
+// the tab dies (a crash, a reload, the system taking the page back). So a take whose lock is free is a crash's leftover,
+// and one whose lock is held is being recorded in another tab right now. Where the browser has no locks (an insecure
+// page), every take found counts as left over, as before.
+const takeLock = (project: string, take: string) => `kadr-take:${project}:${take}`;
+const lockManager = (): LockManager | undefined => (typeof navigator === 'undefined' ? undefined : navigator.locks as LockManager | undefined);
+
+/** Takes the lock `name` and resolves with the function that lets it go (else it goes with the page). */
+function holdLock(name: string): Promise<() => void> {
+  const locks = lockManager();
+  if (!locks) return Promise.resolve(() => undefined);
+  return new Promise((held) => {
+    locks.request(name, () => new Promise<void>((free) => held(free)))
+      .catch((e: unknown) => { console.warn('A take could not be locked', e); held(() => undefined); });
+  });
+}
+
 export class TakeWriter {
   readonly id = Math.random().toString(36).slice(2, 10);
   /** Bytes recorded so far, for the room check before the save. */
@@ -413,8 +431,12 @@ export class TakeWriter {
   private n = 0;
   /** Pieces the storage refused (no room, a lost connection): their bytes wait here for the save. */
   private memory = new Map<number, ArrayBuffer>();
-  private writing: Promise<unknown> = Promise.resolve();
-  constructor(private readonly project: string) {}
+  /** Every write waits for the lock: no second of the take is in storage before it is held. */
+  private writing: Promise<unknown>;
+  private free: () => void = () => undefined;
+  constructor(private readonly project: string) {
+    this.writing = holdLock(takeLock(project, this.id)).then((free) => { this.free = free; });
+  }
 
   add(piece: Blob): void {
     const i = this.n++;
@@ -445,9 +467,20 @@ export class TakeWriter {
     })());
   }
 
+  /** Deletes the take's pieces (it is in the project, or holds nothing), then lets its lock go. */
   async discard(): Promise<void> {
     await this.writing;
-    await deleteTake(this.project, this.id);
+    try {
+      await deleteTake(this.project, this.id);
+    } finally {
+      this.free();
+    }
+  }
+
+  /** Lets the take go with its pieces kept (no room, the project left): it comes back when the project opens. */
+  async release(): Promise<void> {
+    await this.writing;
+    this.free();
   }
 }
 
@@ -456,12 +489,26 @@ export async function deleteTake(project: string, take: string): Promise<void> {
   await Promise.all((await keys(store)).filter((k) => typeof k === 'string' && k.startsWith(prefix)).map((k) => del(k, store)));
 }
 
-/** Takes a crash left behind in this project: their ids. */
-export async function unfinishedTakes(project: string): Promise<string[]> {
+/** Takes with pieces in storage in this project, left over or being recorded: their ids. */
+async function storedTakes(project: string): Promise<string[]> {
   const prefix = `t:${project}:`;
   const found = new Set<string>();
   for (const k of await keys(store)) if (typeof k === 'string' && k.startsWith(prefix)) found.add(k.slice(prefix.length).split(':')[0]);
   return [...found];
+}
+
+/**
+ * Hands each take a crash left behind in this project to `bring`, which puts it into the project and deletes its
+ * pieces, while this tab holds the take's lock. A take whose lock is held is being recorded in another tab and is left
+ * alone: opening the project in a second tab used to take it for a leftover, put what it had so far into its own copy
+ * and delete the pieces under the recording (SW-A-17). Two tabs opening the project at once bring a take back once.
+ */
+export async function recoverTakes(project: string, bring: (take: string) => Promise<void>): Promise<void> {
+  const locks = lockManager();
+  for (const take of await storedTakes(project)) {
+    if (!locks) await bring(take);
+    else await locks.request(takeLock(project, take), { ifAvailable: true }, async (lock) => { if (lock) await bring(take); });
+  }
 }
 
 /**
