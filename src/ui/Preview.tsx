@@ -9,6 +9,9 @@ import { useEditor } from '../state/store';
 import { t } from '../lib/i18n';
 import { toHex } from '../core/color';
 
+/** The corner handle's side (`--touch`, stage.css): it is kept whole on the stage. */
+const HANDLE = 44;
+
 const PREVIEW_MAX_PX = 1280;
 const SNAP_PX = 8; // screen pixels within which a layer snaps to a guide
 const SNAP_DEG = 4; // degrees within which a rotation snaps to a multiple of 45°
@@ -56,6 +59,7 @@ export function Preview() {
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
+  const handle = useRef<HTMLDivElement>(null);
   const zones = useRef<HTMLDivElement>(null);
   const guideV = useRef<HTMLDivElement>(null);
   const guideH = useRef<HTMLDivElement>(null);
@@ -118,6 +122,16 @@ export function Preview() {
       b.style.width = `${lb.w * k}px`;
       b.style.height = `${lb.h * k}px`;
       b.style.transform = `translate(${c.offsetLeft + (lb.cx - lb.w / 2) * k}px, ${c.offsetTop + (lb.cy - lb.h / 2) * k}px) rotate(${lb.rot}rad)`;
+      // The handle stays whole on the stage: at the corner of a layer that reaches the stage's edge it went half under the
+      // row under the frame and was cut (SW-U-3). Its centre is the box's corner; clamped in stage pixels, the shift is
+      // turned back into the box's own (rotated) frame.
+      const hd = handle.current, stage = b.parentElement;
+      if (hd && stage) {
+        const half = HANDLE / 2, cos = Math.cos(lb.rot), sin = Math.sin(lb.rot), hw = (lb.w * k) / 2, hh = (lb.h * k) / 2;
+        const x = c.offsetLeft + lb.cx * k + hw * cos - hh * sin, y = c.offsetTop + lb.cy * k + hw * sin + hh * cos;
+        const dx = Math.min(Math.max(x, half), stage.clientWidth - half) - x, dy = Math.min(Math.max(y, half), stage.clientHeight - half) - y;
+        hd.style.translate = dx || dy ? `${dx * cos + dy * sin}px ${-dx * sin + dy * cos}px` : '';
+      }
     };
     const offFrame = player.onFrame(update);
     const offSel = useEditor.subscribe((s, p) => { if (s.selection !== p.selection) update(); });
@@ -302,7 +316,7 @@ export function Preview() {
       <div ref={guideH} className="guide h ck-stage-guide ck-h" aria-hidden />
       <div ref={angleTag} className="angle-tag ck-stage-angle" aria-live="polite" />
       <div ref={box} className="sel-box ck-stage-sel">
-        <div className="sel-handle ck-stage-handle" onPointerDown={onHandleDown} role="button" aria-label={t('Drag to resize and rotate')} />
+        <div ref={handle} className="sel-handle ck-stage-handle" onPointerDown={onHandleDown} role="button" aria-label={t('Drag to resize and rotate')} />
       </div>
       <Eyedropper canvas={canvas} />
       {safeZones && (

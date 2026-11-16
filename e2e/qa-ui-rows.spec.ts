@@ -277,3 +277,16 @@ for (const width of [375, 320]) {
     await expect(page.getByRole('dialog', { name: 'Экспорт' }).locator('.ck-work-frame').first(), 'one tap still renders').toBeVisible({ timeout: 15_000 });
   });
 }
+
+// ---- SW-U-3, SW-U-4: what the art director saw on the screens of UI-4 and UI-7 ----
+test('SW-U-3: the corner handle of a picked piece that fills the frame stands whole on the stage and takes a finger, not half under the row under the frame', async ({ page }) => {
+  await sampleEditor(page, 'ru');
+  await page.locator('.tl-row.main .clip').first().click();
+  const handle = page.getByRole('button', { name: 'Потяните, чтобы изменить размер и повернуть' });
+  await expect(handle).toBeVisible();
+  await page.waitForTimeout(400);
+  const [h, s] = await Promise.all([handle.boundingBox(), page.locator('.ck-stage').boundingBox()]);
+  expect(h!.y + h!.height, 'the handle ends on the stage, above the row under the frame').toBeLessThanOrEqual(s!.y + s!.height + 0.5);
+  expect(h!.x + h!.width, 'and inside it sideways').toBeLessThanOrEqual(s!.x + s!.width + 0.5);
+  expect(await misses(handle), 'a finger takes it').toEqual([]);
+});
