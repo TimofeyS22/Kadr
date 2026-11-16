@@ -24,3 +24,6 @@ research/*/data/
 
 # Worktrees the agent tooling makes for parallel fixes: other checkouts of this repo, never part of it.
 .claude/worktrees/
+
+# unit-test coverage report (npm run coverage)
+coverage/
