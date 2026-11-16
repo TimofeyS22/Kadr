@@ -17,6 +17,7 @@ import { matchStreamRange } from './videoRange';
 import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
 import { correctPixels, decodedAs709, hdrTransfer, sdMatrix } from './hdr';
+import { letGo } from '../lib/canvas';
 
 export const MAX_REVERSE_S = 60;
 const WINDOW_S = 0.5;
@@ -39,6 +40,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
   if (s1 - s0 > MAX_REVERSE_S) throw new MediaError('Reverse works on clips up to {n} s. Split the clip first.', { n: MAX_REVERSE_S });
   const input = await openInput(media);
   let started: { output: Output; sources: { close(): void }[] } | null = null;
+  let canvas: HTMLCanvasElement | null = null;
   try {
     const video = await input.getPrimaryVideoTrack();
     if (!video) throw new MediaError('No video in this clip');
@@ -58,7 +60,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     const mp4 = vCodec === 'avc';
     const aCodec = audio ? await getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus']) : null;
     const output = new Output({ format: mp4 ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new MemoryTarget() });
-    const canvas = document.createElement('canvas');
+    canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
@@ -131,5 +133,6 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     throw e;
   } finally {
     input.dispose();
+    letGo(canvas); // the reversed clip's frame size: not left to the collector (audit V-169)
   }
 }

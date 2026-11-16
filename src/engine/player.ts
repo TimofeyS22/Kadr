@@ -8,6 +8,7 @@ import { MediaPool } from './media';
 import { resolveDrawables } from './render';
 import { frameDrawn } from '../lib/perf';
 import { TextRasterizer } from './text';
+import { letGo } from '../lib/canvas';
 
 const PREVIEW_MAX_DIM = 1280;
 const PRELOAD_S = 0.7;
@@ -254,6 +255,7 @@ export class Player {
       c.height = Math.round(src.height * s);
       c.getContext('2d')!.drawImage(src, 0, 0, c.width, c.height);
       url = c.toDataURL('image/jpeg', 0.7);
+      letGo(c); // made for every project thumbnail: not left to the collector (audit V-169)
     } catch { /* tainted or lost context */ }
     for (const w of this.thumbWaiters.splice(0)) w(url);
   }

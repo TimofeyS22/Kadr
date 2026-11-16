@@ -8,6 +8,7 @@ import { openInput } from './source';
 import { correctPixels, decodedAs709, hdrTransfer, sdMatrix, type Hdr } from './hdr';
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
+import { letGo } from '../lib/canvas';
 import type { ThumbIn, ThumbJob, ThumbPost, ThumbReply } from './thumbs.worker';
 import { getBlob, getPeaks, openReader, putPeaks } from '../storage/db';
 import type { ChunkedMedia, StoredMedia } from '../storage/chunks';
@@ -471,6 +472,10 @@ class VideoStream {
     this.abandon(new Error('The stream was closed'));
     this.dropKeys();
     void this.reset();
+    // Its two canvases go with it, not with the next garbage collection (audit V-169).
+    this.canvases?.forEach(letGo);
+    this.canvases = null;
+    this.shown = null;
   }
 }
 
@@ -787,7 +792,11 @@ export async function captureFrame(assetId: string, t: number): Promise<Blob> {
       correctPixels(image.data, f);
       ctx.putImageData(image, 0, 0);
     }
-    return await new Promise<Blob>((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new MediaError('Could not encode the frame'))), 'image/jpeg', 0.92));
+    try {
+      return await new Promise<Blob>((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new MediaError('Could not encode the frame'))), 'image/jpeg', 0.92));
+    } finally {
+      letGo(c); // a full-size frame: not left to the collector (audit V-169)
+    }
   } finally {
     pool.dispose();
   }

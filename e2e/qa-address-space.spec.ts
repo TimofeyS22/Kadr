@@ -119,3 +119,72 @@ test('an iPhone-sized address space: after two exports the speech heap still fit
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 300_000 });
   await expect(page.locator('.toast.error')).toHaveCount(0);
 });
+
+// Canvases are given back, not left to the collector (audit V-169): on an iPhone every canvas of a page draws on one
+// memory limit, and full-size frames waiting for a collection make the next canvas fail. Every canvas the page makes is
+// counted (the test keeps them, so nothing is collected under it); what still has pixels after an action, outside the
+// document, is what the page left to the collector. Done three times, that must not grow: a freeze frame (a full-size
+// frame through captureFrame), a reverse and a scrub of twelve steps.
+test('freeze frames, a reverse and a scrub leave no canvas with its pixels to the collector (V-169)', async ({ page }, info) => {
+  test.setTimeout(400_000);
+  await page.addInitScript(() => {
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
+    localStorage.setItem('kadr.locale', 'en');
+    localStorage.setItem('kadr.hint.move', '1');
+    localStorage.setItem('kadr.iosVideoTip.v3', '1');
+    localStorage.setItem('kadr.undoMoved.v1', '1');
+    const made: (HTMLCanvasElement | OffscreenCanvas)[] = ((window as unknown as { __canvases: unknown[] }).__canvases = []) as never;
+    const create = Document.prototype.createElement;
+    Document.prototype.createElement = function (this: Document, name: string, ...rest: unknown[]) {
+      const el = (create as (...a: unknown[]) => HTMLElement).call(this, name, ...rest);
+      if (String(name).toLowerCase() === 'canvas') made.push(el as HTMLCanvasElement);
+      return el;
+    } as typeof create;
+    if (typeof OffscreenCanvas !== 'undefined') {
+      const Native = OffscreenCanvas;
+      const Counted = new Proxy(Native, { construct(target, args: [number, number], newTarget) { const c = Reflect.construct(target, args, newTarget) as OffscreenCanvas; made.push(c); return c; } });
+      Object.defineProperty(window, 'OffscreenCanvas', { value: Counted, writable: true, configurable: true });
+    }
+  });
+  const left = () => page.evaluate(() => (window as unknown as { __canvases: (HTMLCanvasElement | OffscreenCanvas)[] }).__canvases
+    .filter((c) => !(c instanceof HTMLCanvasElement && c.isConnected))
+    .reduce((mp, c) => mp + (c.width * c.height) / 1e6, 0));
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '16:9' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await tool(page, 'Media').click();
+  await (await chooser).setFiles(fx('landscape.mp4'));
+  const clips = page.locator('.tl-row.main .clip');
+  await expect(clips).toHaveCount(1, { timeout: 60_000 });
+  const select = async () => {
+    const clip = clips.first();
+    await expect(async () => {
+      if (!(await clip.getAttribute('class'))?.includes(' sel')) await clip.click();
+      await expect(clip).toHaveClass(/ sel/, { timeout: 1000 });
+    }).toPass({ timeout: 10_000 });
+  };
+  const scrub = () => page.evaluate(async () => {
+    const el = document.querySelector('.tl-scroll')!;
+    for (const f of [0.6, 0.1, 0.8, 0.3, 0.95, 0.05, 0.5, 0.7, 0.2, 0.9, 0.4, 0.15]) { el.scrollLeft = f * (el.scrollWidth - el.clientWidth); await new Promise((r) => setTimeout(r, 120)); }
+    el.scrollLeft = 0;
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  const areas: number[] = [];
+  for (let round = 0; round < 3; round++) {
+    await select();
+    await tool(page, 'Freeze').click();
+    await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
+    await expect(page.locator('.tl-row.main .clip-image')).toHaveCount(round + 1, { timeout: 30_000 });
+    await select();
+    await tool(page, 'Reverse').click();
+    await expect(page.locator('.busy')).toHaveCount(0, { timeout: 120_000 });
+    if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+    await scrub();
+    await page.waitForTimeout(1500); // streams nobody uses are let go after a moment
+    areas.push(Math.round((await left()) * 100) / 100);
+  }
+  console.log(`canvas megapixels outside the page after each round (${info.project.name}): ${areas.join(', ')}`);
+  expect(areas[2], 'megapixels of canvases left with their pixels after round 3, against round 1').toBeLessThanOrEqual(areas[0] + 0.1);
+  await expect(page.locator('.toast.error')).toHaveCount(0);
+});
