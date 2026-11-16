@@ -35,7 +35,7 @@ button, [role=radio], [role=switch] { -webkit-touch-callout: none; -webkit-user-
   .ck-editor { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; }
   .ck-editor > .ck-editor-top { grid-column: 1 / -1; }
   .ck-editor > .ck-stage { grid-column: 1; grid-row: 2 / -1; }
-  .ck-editor > .ck-transport, .ck-editor > .ck-tl, .ck-editor > .ck-ribbon { grid-column: 2; }
+  .ck-editor > .ck-transport, .ck-editor > .ck-tl, .ck-editor > .ck-ribbon, .ck-editor > .ck-frame-fit { grid-column: 2; }
 }
 @media (min-width: 900px) { .ck-tl-scroll { max-height: 40dvh; } }
 /* Where a first-run tip lies: over the ribbon, in reach of the thumb; how it looks is `ck-editor-tip` (editor.css). */

@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ASPECTS } from '../core/defaults';
 import type { AspectId, Project } from '../core/types';
 import { t } from '../lib/i18n';
@@ -42,9 +42,9 @@ const hasMain = (p: Project) => p.tracks.some((tr) => tr.kind === 'main' && tr.c
  * undone in one tap) or the format the video has. It applies nothing by itself. Never for a project opened with pieces
  * already in it, under a sheet or long work, with a blurred background, or once the shapes agree.
  */
-export function useFrameFit(): { fit: Fit; close: () => void } | null {
+export function useFrameFit(waiting = false): { fit: Fit; close: () => void } | null {
   const project = useEditor((s) => s.project);
-  const blocked = useEditor((s) => s.sheet !== null || s.busy !== null);
+  const blocked = useEditor((s) => s.sheet !== null || s.busy !== null) || waiting;
   const [said, setSaid] = useState<{ id: string; open: boolean } | null>(null);
   // Decided once per project as it opens: empty and never asked, or not at all.
   useEffect(() => {
@@ -68,28 +68,6 @@ export function useFrameFit(): { fit: Fit; close: () => void } | null {
 }
 
 export function FrameFitNote({ fit, close }: { fit: Fit; close: () => void }) {
-  // On the stage, just above the row under the frame (Undo, Redo, Play), and kept there: the stage and that row are watched,
-  // so when the timeline takes a row or the header folds the note moves with them — placed once, it lay over Undo and Redo
-  // after a sound or a take was added (SW-U-7). Where the stage has no room for it, it waits out of sight rather than
-  // cover the frame's top or the header.
-  const card = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState<{ bottom: number; room: boolean } | null>(null);
-  useLayoutEffect(() => {
-    const stage = document.querySelector<HTMLElement>('.ck-stage'), row = document.querySelector<HTMLElement>('.transport');
-    let frame = 0;
-    const measure = () => {
-      const el = card.current;
-      if (!stage || !row || !el) return;
-      const bottom = Math.round(innerHeight - row.getBoundingClientRect().top) + 8;
-      const room = stage.getBoundingClientRect().height >= el.offsetHeight + 16;
-      setPlace((p) => (p && p.bottom === bottom && p.room === room ? p : { bottom, room }));
-    };
-    measure();
-    const ro = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); });
-    for (const el of [stage, row, card.current]) if (el) ro.observe(el);
-    addEventListener('resize', measure);
-    return () => { ro.disconnect(); cancelAnimationFrame(frame); removeEventListener('resize', measure); };
-  }, []);
   const commit = useEditor((s) => s.commit);
   const toast = useEditor((s) => s.toast);
   const fill = () => {
@@ -102,8 +80,7 @@ export function FrameFitNote({ fit, close }: { fit: Fit; close: () => void }) {
     Object.assign(d.settings, { aspect: fit.format, width, height });
   });
   return (
-    <div ref={card} className="ck-coach ck-frame-fit" role="note" inert={place?.room === false || undefined}
-      style={place ? { bottom: place.bottom, visibility: place.room ? undefined : 'hidden' } : { visibility: 'hidden' }}>
+    <div className="ck-frame-fit" role="note">
       <div className="ck ck-editor-tip">
         <span>{fit.wider ? t('The video is wider than the frame: black bars above and below.') : t('The video is narrower than the frame: black bars at the sides.')}</span>
         <IconButton label={t('Close')} onClick={close}><X aria-hidden /></IconButton>
