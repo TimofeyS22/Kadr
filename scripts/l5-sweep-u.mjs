@@ -67,6 +67,10 @@ try {
   await js("window.__errs = []; addEventListener('error', (e) => window.__errs.push(String(e.message).slice(0, 200))); addEventListener('unhandledrejection', (e) => window.__errs.push(String(e.reason && (e.reason.message || e.reason)).slice(0, 200)));");
   result.version = await waitFor('the version', () => js("const m = (document.querySelector('.home-foot') || {}).textContent?.match(/v\\d+\\.\\d+\\.\\d+/); return m && m[0];"), 30_000);
   console.log(`site ${URL_}: ${result.version}`);
+  // V-148: on an iPhone nothing promises «Поделиться → Kadr» — the install card needs beforeinstallprompt, which Safari never sends.
+  await sleep(1000);
+  const promise = await js("return { card: !!document.querySelector('.ck-home-install'), text: document.body.innerText.includes('«Поделиться» в галерее') }");
+  check('V-148: Home promises no «Поделиться → Kadr» on an iPhone (no install card)', !promise.card && !promise.text, JSON.stringify(promise));
   await tap('Открыть пример');
   await waitFor('the sample', () => js("return !!document.querySelector('.preview-canvas') && document.querySelectorAll('.tl-row.main .clip').length > 0"), 90_000);
   await sleep(1500);
@@ -153,5 +157,7 @@ By hand, on the phone, after this run:
   2. SW-U-3  pick the sample's piece; drag the corner handle with a finger — the piece scales.
   3. UI-3, UI-9  drag the Scale of «Трансформация» with a finger — the value changes; take a trim handle 15 px off its centre.
   4. SW-U-8  new project 9:16 → «Медиа» → a landscape video from Photos: the note is a strip between the frame and Undo/Play,
-     «Заполнить кадр» fills the frame, Undo brings the bars back; a text added then follows the finger on the frame.`);
+     «Заполнить кадр» fills the frame, Undo brings the bars back; a text added then follows the finger on the frame.
+  5. V-148  Photos → any video → Share: Kadr is not in the list (with Kadr on the Home Screen too, if it is there).
+     After the release that carries V-148: …/Kadr/ru/ → «Как добавить видео» is there and reads at the phone's width.`);
 process.exit(result.failed || result.checks.some((c) => !c.ok) ? 1 : 0);
