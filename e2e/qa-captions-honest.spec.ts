@@ -245,3 +245,32 @@ test('the speech model does not stay behind with a page that leaves: its worker 
   await expect(page.locator('.toast.error')).toHaveCount(0);
   await expect.poll(speech).toBe(0);
 });
+
+for (const [locale, file, tap, yes, what] of [
+  ['ru', 'speech_ru.mp4', 'Субтитры', 'Скачать и сделать субтитры', 'the Russian model'],
+  ['en', 'speech_en.mp4', 'Captions', 'Download and make captions', 'Whisper'],
+] as const) {
+  test(`while captions are made by ${what} nothing leaves the device: every request is a GET to Kadr's own site`, async ({ page, context }) => {
+    test.setTimeout(600_000);
+    // The page's CSP (a meta tag) does not bind workers: MediaPipe in a worker posted telemetry to Google, and only
+    // a look at the network saw it (the sweep, lane B, 2026-11-14). The speech worker runs ONNX Runtime and
+    // transformers.js: the same look, on every thread, for the whole of a captions run.
+    const own = new URL(test.info().project.use.baseURL!).origin;
+    const asked: string[] = [];
+    context.on('request', (r) => {
+      const url = r.url();
+      if (/^(blob|data):/.test(url)) return;
+      if (new URL(url).origin !== own || r.method() !== 'GET') asked.push(`${r.method()} ${url.slice(0, 120)}`);
+    });
+    await open(page, locale, file);
+    await page.getByRole('button', { name: tap, exact: true }).click();
+    const agree = page.getByRole('button', { name: yes, exact: true });
+    await expect(async () => {
+      if (await agree.isVisible()) await agree.click();
+      await expect(page.locator('.caption-row').first()).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 500_000 });
+    expect(page.workers().some((w) => /asr\.worker/.test(w.url())), 'the speech worker did the work').toBe(true);
+    await page.waitForTimeout(3000); // anything sent after the work is done
+    expect(asked).toEqual([]);
+  });
+}
