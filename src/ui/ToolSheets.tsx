@@ -103,6 +103,32 @@ export function CropBody({ clip }: { clip: VideoClip | ImageClip }) {
 
 const extFor = (type: string) => (type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm');
 
+/**
+ * Ends a voice-over and puts it into the project at `at`, as Stop does. Also when the sheet closes mid-take — Done, Esc,
+ * the system Back: that threw the take away without a word (SW-A-11); a take not wanted goes with one Undo.
+ * `short`: the take was stopped at once (under a second), so a file that does not open is said as empty (SW-D-8).
+ */
+async function keepVoice(r: VoiceRecorder, at: number, short: boolean): Promise<void> {
+  player.pause();
+  player.setMuted(false);
+  try {
+    const blob = await r.stop();
+    const asset = await importFile(blob, `Voice-over.${extFor(blob.type)}`);
+    let id = '';
+    editor().commit((d) => {
+      d.assets[asset.id] = asset;
+      const c = createAudioClip(asset, at);
+      placeClip(d, c);
+      id = c.id;
+    });
+    editor().select(id);
+    track('voiceover_recorded', { seconds: Math.round(asset.duration) });
+  } catch (e) {
+    // A take stopped at once holds no whole frame of sound: it is empty, not a sound this browser cannot decode.
+    editor().toast(t('Could not save the recording: {error}', { error: errorMessage(short ? new Error('The recording is empty') : e) }), 'error');
+  }
+}
+
 export function VoiceoverBody() {
   const [state, setState] = useState<'idle' | 'asking' | 'recording' | 'saving'>('idle');
   useHoldUpdates(state !== 'idle'); // a reload would lose the recording
@@ -117,9 +143,11 @@ export function VoiceoverBody() {
   const gone = useRef(false);
   useEffect(() => () => {
     gone.current = true;
-    rec.current?.cancel();
     cancelAnimationFrame(raf.current);
-    player.setMuted(false);
+    const r = rec.current;
+    rec.current = null;
+    if (r) void keepVoice(r, startAt.current, performance.now() - began.current < 1000); // closed mid-take: kept, as by Stop (SW-A-11)
+    else player.setMuted(false);
   }, []);
 
   async function start() {
@@ -155,29 +183,11 @@ export function VoiceoverBody() {
     const r = rec.current;
     if (!r) return;
     const short = performance.now() - began.current < 1000; // how long the take was, not how long saving it takes
+    rec.current = null; // the take is Stop's now: a close while it is saved does not take it a second time
     cancelAnimationFrame(raf.current);
     setState('saving');
-    player.pause();
-    player.setMuted(false);
-    try {
-      const blob = await r.stop();
-      const asset = await importFile(blob, `Voice-over.${extFor(blob.type)}`);
-      let id = '';
-      editor().commit((d) => {
-        d.assets[asset.id] = asset;
-        const c = createAudioClip(asset, startAt.current);
-        placeClip(d, c);
-        id = c.id;
-      });
-      editor().select(id);
-      track('voiceover_recorded', { seconds: Math.round(asset.duration) });
-    } catch (e) {
-      // A take stopped at once holds no whole frame of sound: it is empty, not a sound this browser cannot decode.
-      editor().toast(t('Could not save the recording: {error}', { error: errorMessage(short ? new Error('The recording is empty') : e) }), 'error');
-    } finally {
-      rec.current = null;
-      setState('idle');
-    }
+    await keepVoice(r, startAt.current, short);
+    setState('idle');
   }
 
   return (
