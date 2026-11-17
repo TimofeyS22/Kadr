@@ -4,7 +4,7 @@
 // rows (decoders, WebGL contexts, toasts). Taken from scripts/l5-tools.mjs, whose scenarios keep their own copy.
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, extname, join } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 import { avOffsets, brokenPackets, joins, parseEbur128, parseVolume, probeSummary } from './l5-verdict.mjs';
 
 const CHUNK = 3 * 2 ** 20;
@@ -319,7 +319,7 @@ export async function connect({ url, out, port = Number(process.env.L5_PORT ?? 4
 // ---------- on the Mac ----------
 /** A test file made with ffmpeg into the output folder. */
 export function make(out, name, args) {
-  const file = join(out, name);
+  const file = resolve(out, name);
   execFileSync('ffmpeg', ['-v', 'error', '-y', ...args, file]);
   return file;
 }

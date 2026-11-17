@@ -7,7 +7,7 @@
 //   Env: L5_ONLY=ID,ID (only these rows), L5_PRICE=1,2 (only rows of these prices), L5_KEEP=1 (projects stay on the phone), L5_MAC=1 (Safari on this Mac).
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { connect, sleep } from './l5-session.mjs';
 import { ERROR, holds, judge, line, mdRow, none, toolsRows, totals } from './l5-verdict.mjs';
 
@@ -50,7 +50,8 @@ async function tools(item, { url, out }) {
  */
 export async function sweep({ lane, title, items, manual = [] }) {
   const url = process.argv[2] ?? 'https://timofeys22.github.io/Kadr/';
-  const out = process.env.L5_OUT ?? join(process.env.TMPDIR ?? '/tmp', `kadr-l5-sweep-${lane}`);
+  // Absolute: a file made on the Mac is pushed by its full path (a relative one is read as a fixture's name).
+  const out = resolve(process.env.L5_OUT ?? join(process.env.TMPDIR ?? '/tmp', `kadr-l5-sweep-${lane}`));
   mkdirSync(out, { recursive: true });
   const started = new Date().toISOString();
   const results = [];
