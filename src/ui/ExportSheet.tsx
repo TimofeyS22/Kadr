@@ -228,7 +228,7 @@ export function ExportSheet() {
       if ((e as Error).name === 'AbortError' || ac.signal.aborted) { setPhase({ kind: 'setup' }); track('export_cancelled'); return; }
       const message = errorMessage(e);
       setPhase({ kind: 'error', message, detail: keepError(e, 'export') });
-      track('export_failed', { resolution: res, fps: rate, quick: isQuick, error: message.slice(0, 80) });
+      track('export_failed', { resolution: res, fps: rate, quick: isQuick, error: message }); // whole: the sink keeps only Kadr's own sentences (G-3)
     }
     finally {
       awake();

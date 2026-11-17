@@ -25,6 +25,8 @@ export default defineConfig({
     // Only with `npm run perf` (PERF=1), so a plain `playwright test` stays functional.
     // `EVAL=1 npx playwright test --project eval`: caption quality per speech model (docs/06 M5) and the reel (docs/08 A).
     ...(process.env.EVAL ? [{ name: 'eval', use: { ...devices['Pixel 7'] }, testMatch: /-eval\.spec/ }] : []),
+    // `EVAL=1 npx playwright test --project eval-webkit encoder-eval`: the export's size for its quality on WebKit's encoder (V-231).
+    ...(process.env.EVAL ? [{ name: 'eval-webkit', use: { ...devices['iPhone 15'] }, testMatch: /encoder-eval\.spec/ }] : []),
     ...(process.env.PERF ? [{ name: 'perf', use: { ...devices['Pixel 7'], launchOptions: { args: ['--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] } }, testMatch: /perf\.spec/ }] : []),
   ],
 });

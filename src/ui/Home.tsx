@@ -5,6 +5,7 @@ import { ASPECTS, createProject } from '../core/defaults';
 import { TEMPLATES, buildTemplate, type TemplateSpec } from '../core/templates';
 import type { AspectId } from '../core/types';
 import { IN_APP, IOS, standalone } from '../lib/device';
+import { optedOut, setOptedOut, sinkConfig } from '../lib/events';
 import { errorMessage, track } from '../lib/telemetry';
 import { within } from '../lib/limits';
 import { pickFiles } from '../lib/pickFiles';
@@ -512,6 +513,7 @@ export function Home() {
         <footer className="ck-home-foot home-foot">{/* home-foot: the iPhone script and the smoke test read the version here */}
           {t('Projects and media are stored in this browser.')} Kadr v{__APP_VERSION__}
           {' · '}<a href={`${locale}/privacy/`}>{t('Privacy')}</a>{' · '}<a href={`${locale}/licenses/`}>{t('Licenses')}</a>
+          {sinkConfig() && <>{' · '}<StatsSwitch /></>}
         </footer>
       </div>
 
@@ -530,5 +532,19 @@ export function Home() {
         confirmLabel={t('Delete')} cancelLabel={t('Cancel')} busy={deleting ? t('Deleting…') : undefined} onCancel={() => setAsked(null)} onConfirm={() => { if (asked) void remove(asked); }}
         afterClose={() => root.current?.querySelector<HTMLElement>('.ck-project-open') ?? root.current?.querySelector<HTMLElement>('.ck-home-dock .ck-primary')} />
     </main>
+  );
+}
+
+/**
+ * The person's no to anonymous statistics (G-3, CLAUDE.md §3.1), where the Privacy page that describes them is linked.
+ * Shown only when the site sends any: a build without a sink has nothing to switch off.
+ */
+function StatsSwitch() {
+  const [on, setOn] = useState(() => !optedOut());
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={t('Anonymous statistics')} className="ck-home-foot-switch"
+      onClick={() => { setOptedOut(on); setOn(!on); }}>
+      {on ? t('Anonymous statistics: on') : t('Anonymous statistics: off')}
+    </button>
   );
 }

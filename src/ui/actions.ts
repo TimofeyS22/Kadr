@@ -49,12 +49,19 @@ export async function addFiles(files: File[], target: AddTarget, meta: { script?
   const busy = (i: number) => useEditor.setState({ busy: { label: t('Adding {i} of {n}…', { i: i + 1, n: files.length }), progress: i / files.length } });
   busy(0);
   mark('import:start');
+  track('media_import_started', { files: files.length });
   let assets: Asset[] = [];
+  let failed = 0;
   try {
-    assets = await importFiles(files, (name, e) => s.toast(t('Could not add {name}: {error}', { name, error: errorMessage(e) }), 'error'), busy,
-      (name, note) => s.toast(importNoteText(name, note), 'info', 10_000));
+    assets = await importFiles(files, (name, e) => {
+      const error = errorMessage(e);
+      failed++;
+      track('media_import_failed', { error }); // the sentence, not the file's name (G-3)
+      s.toast(t('Could not add {name}: {error}', { name, error }), 'error');
+    }, busy, (name, note) => s.toast(importNoteText(name, note), 'info', 10_000));
   } finally {
     useEditor.setState({ busy: null });
+    track('media_import_ended', { added: assets.length, failed });
   }
   return placeAssets(assets, target, owner, meta, pickMs);
 }

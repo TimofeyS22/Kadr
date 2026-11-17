@@ -5,6 +5,7 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { APP_TITLE, DEFAULT_SITE, appMeta, buildSite } from './seo/render.ts';
+import { eventsUrl, withEvents } from './scripts/events-sink.ts';
 import { noReservePlugin } from './scripts/no-reserve.ts';
 import { oneCopyPlugin } from './scripts/one-copy.ts';
 
@@ -42,14 +43,19 @@ const dropUnusedOrt: Plugin = {
   },
 };
 
+// Anonymous statistics (G-3): the sink only where CI sets KADR_EVENTS_KEY (scripts/events-sink.ts).
+const eventsKey = process.env.KADR_EVENTS_KEY ?? '';
+const eventsAt = eventsUrl(eventsKey, process.env.KADR_EVENTS_URL);
+const eventsHost = eventsAt ? new URL(eventsAt).host : '';
+
 // Task pages, sitemap and robots.txt (docs/08 C) next to the app, plus the app's own description and Open Graph.
 const site = process.env.KADR_SITE ?? DEFAULT_SITE;
 const taskPages: Plugin = {
   name: 'kadr-task-pages',
   apply: 'build',
-  transformIndexHtml: (html) => html.replace('<title>Kadr</title>', `<title>${APP_TITLE}</title>\n    ${appMeta(site)}`),
+  transformIndexHtml: (html) => withEvents(html.replace('<title>Kadr</title>', `<title>${APP_TITLE}</title>\n    ${appMeta(site)}`), eventsKey, eventsAt),
   generateBundle() {
-    for (const [fileName, source] of Object.entries(buildSite(site))) this.emitFile({ type: 'asset', fileName, source });
+    for (const [fileName, source] of Object.entries(buildSite(site, eventsHost))) this.emitFile({ type: 'asset', fileName, source });
   },
 };
 

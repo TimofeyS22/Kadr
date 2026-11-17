@@ -149,6 +149,21 @@ const SOVA: Record<Lang, string> = {
   en: 'The live speech sample on the diagnostics page (10 s) is from [SOVA RuDevices](https://huggingface.co/datasets/bond005/sova_rudevices) (SOVA.ai; published on Hugging Face by Ivan Bondarenko, bond005), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Changes: excerpts were cut, joined with pauses and re-encoded to AAC.',
 };
 
+/**
+ * The Privacy page of a site built with the anonymous statistics sink (G-3; `host` is the one host it sends to): the line
+ * that said nothing leaves the device says what does, where it goes and how to say no. The same build setting puts the
+ * sink in the app (vite.config.ts), so the page cannot say one thing while the app does another.
+ */
+export function privacyWithEvents(lang: Lang, host: string): LegalPage {
+  const aptabase = /(^|\.)aptabase\.com$/.test(host);
+  const line = lang === 'ru'
+    ? `Обезличенная статистика: Kadr сообщает только, получились ли экспорт, субтитры, рилс и импорт, и короткий код ошибки — с типом устройства (iPhone, iPad, Android, компьютер), версиями системы и Kadr. Без видео, имён файлов, текста и идентификаторов, без cookie. Получатель — ${host}${aptabase ? ' (Aptabase; адрес запроса и браузер там не хранятся)' : ''}. Отключить — «Обезличенная статистика» внизу главного экрана.`
+    : `Anonymous statistics: Kadr reports only whether an export, captions, a reel and an import worked, and a short error code — with the device type (iPhone, iPad, Android, computer) and the system and Kadr versions. No videos, file names, text or identifiers, no cookies. They go to ${host}${aptabase ? ' (Aptabase; the request’s address and browser are not stored there)' : ''}. To turn them off: “Anonymous statistics” at the bottom of the home screen.`;
+  const was = lang === 'ru' ? 'Нет телеметрии' : 'No telemetry';
+  const page = PRIVACY[lang];
+  return { ...page, sections: page.sections.map((s) => (s.items ? { ...s, items: s.items.map((i) => (i.startsWith(was) ? line : i)) } : s)) };
+}
+
 export const LICENSES: Record<Lang, LegalPage> = {
   ru: {
     title: 'Лицензии — Kadr',

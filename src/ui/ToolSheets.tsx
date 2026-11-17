@@ -398,6 +398,7 @@ export function CaptionsBody() {
       const starts = startingModel(model, lang || null);
       pace.current = startPace(speechStages(starts, seconds, { script: withScript }), performance.now());
       setProgress(t('Getting ready…'));
+      track('captions_started', { model, seconds: Math.round(seconds) }); // after the model was agreed to: an attempt (G-3)
       const report = (pr: CaptionProgress) => {
         if (pace.current) reportPace(pace.current, speechStage(pr.phase), pr.phase === 'download' || pr.phase === 'transcribe' ? pr.fraction : null, performance.now());
         const label = progressLabel(pr);
@@ -423,7 +424,13 @@ export function CaptionsBody() {
       if (tr.unreadable.length) editor().toast(t('Captions are made without “{name}”: its sound cannot be decoded in this browser.', { name: tr.unreadable.join(', ') }), 'info', 8000);
     } catch (e) {
       // A decoder interrupted by Cancel or by leaving the project fails with its own error: that is a cancel, not a failure.
-      if ((e as Error).name !== 'AbortError' && !ac.signal.aborted) editor().toast(t('Captions failed: {error}', { error: errorMessage(e) }), 'error');
+      const cancelled = (e as Error).name === 'AbortError' || ac.signal.aborted;
+      if (cancelled) track('captions_cancelled');
+      else {
+        const error = errorMessage(e);
+        track('captions_failed', { model, error });
+        editor().toast(t('Captions failed: {error}', { error }), 'error');
+      }
     } finally {
       setProgress(null);
     }

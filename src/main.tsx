@@ -6,6 +6,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { loadFonts } from './engine/text';
+import { sendAbandoned } from './lib/events';
 import { errorMessage, track } from './lib/telemetry';
 import { holdUpdates, newerVersionDeployed, othersWorking, reloadIntoUpdate, setUpdateApplier, shareWork, takeUpdateNotice, updatesHeld, whenUpdatesFree, whenUpdatesHeld } from './lib/update';
 import { useEditor } from './state/store';
@@ -17,6 +18,9 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+// An export, captions, a reel or an import the last run left without an outcome ended badly: said once, now (G-3).
+sendAbandoned();
 
 // Text is rasterized on canvas, so re-render once the bundled fonts are ready.
 // Only with a project open: on the home screen there is nothing to redraw, and this import alone pulled 160 KB of video
