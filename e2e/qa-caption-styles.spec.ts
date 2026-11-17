@@ -1,6 +1,6 @@
 // v1.5 template catalogs (docs/11 §3): every caption template is applied from the picker and the preview equals the
 // export (photo for each, video for one template per new drawing feature); the pickers work one-handed at 375 px;
-// every template reads on any background, in Cyrillic and Latin, and draws no slower than the styles before v1.5.
+// every template reads on any background, in Cyrillic and Latin. How fast each draws is a speed budget: qa-speed.spec.ts.
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -199,11 +199,8 @@ test('WYSIWYG in video for every new way of drawing captions: preview = photo = 
 
 const LEGACY_TEXT = TEXT_PRESETS.slice(0, TEXT_PRESETS.findIndex((p) => p.id === 'rounded')).map((p) => p.id);
 
-test('every template reads on white, black, grey and a busy picture, in Cyrillic and Latin, and draws fast (?styles)', async ({ page, browserName }, info) => {
+test('every template reads on white, black, grey and a busy picture, in Cyrillic and Latin (?styles)', async ({ page }, info) => {
   test.setTimeout(600_000);
-  // A mid-range phone, as in the perf bench (docs/04): Chromium's CPU slowed 4×. WebKit cannot be slowed.
-  const slowed = browserName === 'chromium';
-  if (slowed) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });
   await page.goto('./?styles');
   await page.waitForFunction(() => (window as unknown as { __kadrStyles?: StylesReport }).__kadrStyles?.done, null, { timeout: 540_000, polling: 1000 });
   const r = await page.evaluate(() => (window as unknown as { __kadrStyles: StylesReport }).__kadrStyles);
@@ -214,15 +211,8 @@ test('every template reads on white, black, grey and a busy picture, in Cyrillic
   const checked = r.rows.filter((x) => x.kind === 'caption' || !LEGACY_TEXT.includes(x.id));
   expect(checked.filter((x) => x.kind === 'caption').length).toBe(CAPTION_PRESETS.length * 2);
   expect(checked.filter((x) => minEdge(x) < 3).map((x) => `${x.kind} ${x.id} ${x.lang}: ${JSON.stringify(x.edge)}`)).toEqual([]);
-  // Speed: a caption is drawn again only when it changes (a word, a karaoke step). At the preview's size every template
-  // takes at most half a 30 fps frame on the slowed CPU.
-  const isNew = (x: StylesReport['rows'][number]) => (x.kind === 'caption' ? CAPTION_PRESETS.findIndex((p) => p.id === x.id) >= 9 : !LEGACY_TEXT.includes(x.id));
-  const stat = (xs: typeof r.rows, k: 'ms' | 'msPreview') => { const v = xs.map((x) => x[k]).sort((a, b) => a - b); return `median ${v[v.length >> 1]}, max ${v[v.length - 1]}`; };
-  // WebKit cannot be slowed, and on a busy Mac its times float: there a template may take at most 2.5× the slowest style
-  // before v1.5 measured in the same run (and never fails under 16 ms, half a 30 fps frame, the budget stated above).
-  const budget = slowed ? 16 : Math.max(16, 2.5 *Math.max(...r.rows.filter((x) => !isNew(x)).map((x) => x.msPreview)));
-  console.log(`?styles (${info.project.name}${slowed ? ', CPU 4× slower' : ''}): ${r.rows.length} drawings. Preview size (540×960): before v1.5 ${stat(r.rows.filter((x) => !isNew(x)), 'msPreview')} ms, v1.5 ${stat(r.rows.filter(isNew), 'msPreview')} ms. Export size (1080×1920): before ${stat(r.rows.filter((x) => !isNew(x)), 'ms')}, v1.5 ${stat(r.rows.filter(isNew), 'ms')} ms. Slowest: ${[...r.rows].sort((a, b) => b.msPreview - a.msPreview).slice(0, 5).map((x) => `${x.kind} ${x.id} ${x.msPreview}/${x.ms}`).join(', ')}. Weakest caption edge ${Math.min(...checked.filter((x) => x.kind === 'caption').map(minEdge)).toFixed(2)}`);
-  expect(r.rows.filter((x) => x.msPreview > budget).map((x) => `${x.kind} ${x.id} ${x.lang}: ${x.msPreview} ms at preview size (budget ${budget})`)).toEqual([]);
+  console.log(`?styles (${info.project.name}): ${r.rows.length} drawings, weakest caption edge ${Math.min(...checked.filter((x) => x.kind === 'caption').map(minEdge)).toFixed(2)}`);
+  // How fast each template draws: qa-speed.spec.ts, «every caption and text template draws…» (the speed project, SPEED=1).
 });
 
 /** Problems of the open sheet at the current width: sideways scroll, controls without names, small targets of ours. */
