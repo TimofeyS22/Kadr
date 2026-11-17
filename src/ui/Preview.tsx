@@ -159,7 +159,7 @@ export function Preview() {
     // Typing in a sheet leaves the keyboard up; touching the preview puts it away, so the layer can be moved.
     const active = document.activeElement;
     if (active instanceof HTMLElement && active.matches('input, textarea')) active.blur();
-    wrap.current!.setPointerCapture(e.pointerId);
+    try { wrap.current!.setPointerCapture(e.pointerId); } catch { /* a pointer already gone (SW-U-12) */ }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.current.size === 1) {
       const c = canvas.current!, r = c.getBoundingClientRect();
@@ -273,7 +273,7 @@ export function Preview() {
     const local = player.time - f.clip.start, tf = f.clip.transform, base = s.project;
     const s0 = evalAnim(tf.scale, local), r0 = evalAnim(tf.rotation, local);
     const d0 = Math.max(4, Math.hypot(e.clientX - cx, e.clientY - cy)), a0 = Math.atan2(e.clientY - cy, e.clientX - cx);
-    (e.target as Element).setPointerCapture(e.pointerId);
+    try { (e.target as Element).setPointerCapture(e.pointerId); } catch { /* a pointer already gone (SW-U-12) */ }
     const move = (ev: PointerEvent) => {
       const scale = Math.min(10, Math.max(0.05, (s0 * Math.hypot(ev.clientX - cx, ev.clientY - cy)) / d0));
       const rotation = showAngle(r0 + ((Math.atan2(ev.clientY - cy, ev.clientX - cx) - a0) * 180) / Math.PI);

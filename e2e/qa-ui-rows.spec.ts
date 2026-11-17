@@ -1,6 +1,6 @@
 // Lane U of the sweep (docs/21 §3): the rows of the interface audit of v1.7.1 (UI-2…UI-9, reports/Chetko — аудит
 // интерфейса.md §7). Each test names its row and measures what the audit measured.
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import path from 'node:path';
 
 async function sampleEditor(page: Page, locale: 'ru' | 'en') {
@@ -306,4 +306,42 @@ test('SW-U-4: the ribbon fades only where more tools lie — under «Все» wh
   await page.waitForTimeout(200);
   expect(await faded(), 'at the end the last tool is not faded: nothing lies beyond it').not.toMatch(/gradient\(90deg, (rgb\(0, 0, 0\)|black) calc/);
   expect(await tools.evaluate((el) => el.hasAttribute('data-more-end'))).toBe(false);
+});
+
+// ---- SW-U-12: a pointer that is already gone when its handler runs (the system cancelled it in between) ----
+
+/** A touch whose pointer no finger holds: down near the top of `target`, carried `dy` px in ten steps, lifted. Browsers
+ *  refuse to capture such a pointer (NotFoundError), which is what a pointer cancelled before the page's handler meets. */
+async function goneTouch(target: Locator, dy = 0) {
+  await target.evaluate((el, d) => {
+    const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y0 = r.top + Math.min(14, r.height / 2);
+    const ev = (type: string, y: number, buttons: number) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 77, pointerType: 'touch', isPrimary: true, button: 0, buttons });
+    el.dispatchEvent(ev('pointerdown', y0, 1));
+    for (let i = 1; i <= 10; i++) el.dispatchEvent(ev('pointermove', y0 + (d * i) / 10, 1));
+    el.dispatchEvent(ev('pointerup', y0 + d, 0));
+  }, dy);
+}
+
+test('SW-U-12: a touch whose pointer is already gone raises no page error where a gesture begins — the corner handle, the preview, a sheet of the editor, a sheet of Home — and its swipe still closes a sheet', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await sampleEditor(page, 'ru');
+  await page.locator('.tl-row.main .clip').first().click();
+  await expect(page.locator('.sel-handle')).toBeVisible();
+  await goneTouch(page.locator('.sel-handle'), 30);
+  await goneTouch(page.locator('.ck-stage'));
+  await tool(page, 'Трансформация').click();
+  const sheet = page.getByRole('dialog', { name: 'Трансформация' });
+  await expect(sheet).toBeVisible();
+  await page.waitForTimeout(500); // its entrance
+  await goneTouch(head(page), 260);
+  await expect(sheet, 'a swipe of the editor sheet still carries it away').toHaveCount(0);
+  await page.getByRole('button', { name: 'К проектам' }).first().click();
+  await page.getByRole('button', { name: 'Новый проект' }).click();
+  const open = page.locator('.ck-sheet-layer[data-open="true"]');
+  await expect(open.locator('.ck-sheet-head')).toBeVisible();
+  await page.waitForTimeout(500);
+  await goneTouch(open.locator('.ck-sheet-head'), 260);
+  await expect(open, 'a swipe of the Home sheet still carries it away').toHaveCount(0);
+  expect(errors, 'no page error from a pointer that is gone').toEqual([]);
 });
