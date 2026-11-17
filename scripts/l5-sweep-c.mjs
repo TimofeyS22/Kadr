@@ -3,6 +3,7 @@
 // person tools on a 30 s 1080p video and its export (Q-13, Q-14), Extract audio twice and a silent clip at 2× (SW-C-1,
 // SW-C-4), WebGL contexts after twenty reopenings (SW-D-4).
 //   L5_UDID=… L5_OUT=… node scripts/l5-sweep-c.mjs [site URL]      (runner and env: scripts/l5-sweep.mjs)
+import { execFileSync } from 'node:child_process';
 import { fixture, luma, make, probe, rgb } from './l5-session.mjs';
 import { sweep } from './l5-sweep.mjs';
 import { atLeast, atMost, equals, glChecks, holds, meanAbsDiff, none, record, sameFrame, wholeFile } from './l5-verdict.mjs';
@@ -16,6 +17,35 @@ async function reverse(c, ms = 300_000) {
   await c.idle(ms);
   return Date.now() - t;
 }
+
+/** Mean colour of four bands across the middle rows of a picture or a video at 1 s (as e2e/qa-color-601 and l5-tools). */
+function bands(src, { at } = {}) {
+  const input = Buffer.isBuffer(src) ? 'pipe:0' : src;
+  const raw = execFileSync('ffmpeg', ['-v', 'error', ...(at === undefined ? [] : ['-ss', String(at)]), '-i', input, '-frames:v', '1', '-vf', 'format=rgb24,crop=iw:ih*0.5:0:ih*0.25,scale=4:1:flags=area', '-f', 'rawvideo', '-'], Buffer.isBuffer(src) ? { input: src } : {});
+  return [0, 1, 2, 3].map((i) => [...raw.subarray(i * 3, i * 3 + 3)]);
+}
+const levelsOff = (a, b) => Math.max(...a.flatMap((c, i) => c.map((v, k) => Math.abs(v - b[i][k]))));
+/**
+ * The preview's own pixels, the same four bands: read from its WebGL canvas, not from a screenshot, so the screen's
+ * colour handling and the shot's scaling stay out of the number. The canvas keeps what it drew (KEEP_DRAWN, set before
+ * the editor made its context), so readPixels reads the frame on screen.
+ */
+const GL_BANDS = `const c = document.querySelector('.preview-canvas'), gl = c && c.getContext('webgl2');
+  if (!gl) return null;
+  const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const y0 = Math.floor(h / 4), y1 = Math.floor((3 * h) / 4);
+  return [0, 1, 2, 3].map((i) => {
+    const x0 = Math.floor((i * w) / 4), x1 = Math.floor(((i + 1) * w) / 4), s = [0, 0, 0];
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) for (let k = 0; k < 3; k++) s[k] += px[(y * w + x) * 4 + k];
+    const n = (x1 - x0) * (y1 - y0);
+    return s.map((v) => Math.round(v / n));
+  });`;
+const KEEP_DRAWN = `if (!window.__keepDrawn) {
+  window.__keepDrawn = true;
+  const get = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (id, o) { return get.call(this, id, id === 'webgl2' ? { ...(o || {}), preserveDrawingBuffer: true } : o); };
+}`;
 
 /** The ends of every look tool, written into the stored project as the e2e reaches them through its sheets (Q-11). */
 const PATCH = `const done = arguments[arguments.length - 1], id = arguments[0];
@@ -192,6 +222,39 @@ await sweep({
         return { gl: after.gl, drawn: after.drawn - before.drawn, luma: luma(await c.previewShot('sw-d-4-preview')) };
       },
       judge: (m) => [...glChecks(m.gl), atLeast('кадров превью за 2 с воспроизведения', m.drawn, 20), atLeast('яркость превью', m.luma, 10)],
+    },
+    {
+      // V-243 on the phone: L5 v1.9.11 had the BT.601 bands' preview 8 levels off (limit 6) by a screenshot, photo and video
+      // in. No wrong matrix gives those numbers (601 read as 709: 15–20; the correction twice: 15). The control: the same
+      // bands tagged BT.709, and the preview read from its canvas as well as shot. 601 off and 709 in: the 601 path, a fix;
+      // both off: the GPU's sampling or the measuring, not 601; the canvas in and the shot out: the screenshot.
+      id: 'V-243 (601 против 709, пиксели холста)', price: 2,
+      run: async (c) => {
+        const out = {};
+        for (const name of ['bt601.mp4', 'bt709.mp4']) {
+          const tag = name.replace('.mp4', '');
+          await c.fresh([name], { aspect: '16:9' });
+          await c.leave();
+          await c.js(KEEP_DRAWN);
+          await c.openFirst();
+          await c.exactAt(1);
+          const canvas = await c.js(GL_BANDS);
+          const shot = bands(await c.previewShot(`v-243-${tag}-preview`));
+          const { file: photo } = await c.exportAs({ format: 'Photo', file: `v-243-${tag}.jpg` });
+          const { file: video } = await c.exportAs({ file: `v-243-${name}` });
+          const truth = bands(fixture(name), { at: 1 });
+          out[name] = {
+            truth, canvas, shot, canvasOff: canvas ? levelsOff(canvas, truth) : null, shotOff: levelsOff(shot, truth),
+            photoOff: levelsOff(bands(photo), truth), videoOff: levelsOff(bands(video, { at: 1 }), truth),
+          };
+        }
+        return out;
+      },
+      judge: (m) => ['bt601.mp4', 'bt709.mp4'].flatMap((n) => [
+        atMost(`${n}: превью, пиксели холста`, m[n].canvasOff, 6, ' ур.'), record(`${n}: превью, скриншот`, m[n].shotOff, ' ур.'),
+        atMost(`${n}: фото`, m[n].photoOff, 6, ' ур.'), atMost(`${n}: видео`, m[n].videoOff, 6, ' ур.'),
+        record(`${n}: полосы (эталон / холст / скриншот)`, JSON.stringify([m[n].truth, m[n].canvas, m[n].shot])),
+      ]),
     },
   ],
   manual: [
