@@ -111,10 +111,13 @@ export class ResilientSink implements SoundSink {
   }
 }
 
-async function decodesFirst(sink: SoundSink, how: string, onFail?: (reason: string) => void): Promise<boolean> {
+async function decodesFirst(sink: SoundSink, how: string, onFail?: (reason: string) => void): Promise<boolean | 'closed'> {
   try {
     for await (const b of sink.buffers()) { void b; return true; }
   } catch (e) {
+    // The file was let go while its sound was asked about (its pool was disposed): not a refusal. It was logged as one,
+    // 124 times in the release candidate's full run on WebKit (Q-2), and its track was marked refused.
+    if (isAbort(e)) return 'closed';
     // Refused at configure or decode time: logged, and handed to the caller so the message can say why.
     console.warn(`An audio track does not decode with ${how}`, e);
     onFail?.(`${how}: ${e instanceof Error ? e.message : String(e)}`);
@@ -138,10 +141,16 @@ export async function playableAudioTrack(input: Input, onFail?: (reason: string)
     if (attempt) await new Promise((r) => setTimeout(r, RETRY_MS));
     for (const track of ranked) {
       if (!attempt && refused.has(track)) continue;
-      if (await decodesFirst(new AudioBufferSink(track), 'WebCodecs', onFail)) { refused.delete(track); return track; }
+      const ok = await decodesFirst(new AudioBufferSink(track), 'WebCodecs', onFail);
+      if (ok === 'closed') return null; // nobody is listening any more
+      if (ok) { refused.delete(track); return track; }
       refused.add(track);
     }
-    for (const track of ranked) if (await decodesFirst(new NativeSink(track), 'decodeAudioData', onFail)) return track;
+    for (const track of ranked) {
+      const ok = await decodesFirst(new NativeSink(track), 'decodeAudioData', onFail);
+      if (ok === 'closed') return null;
+      if (ok) return track;
+    }
   }
   return null;
 }
