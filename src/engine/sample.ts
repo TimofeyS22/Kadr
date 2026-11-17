@@ -4,6 +4,7 @@ import {
   AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, QUALITY_MEDIUM, WebMOutputFormat,
   getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
 } from 'mediabunny';
+import { soundQuality } from './soundBitrate';
 import { MemoryTarget } from './memTarget';
 import { produce } from 'immer';
 import { anim, createProject, createTextClip, createVideoClip } from '../core/defaults';
@@ -82,10 +83,13 @@ async function synthClip(scene: number): Promise<Asset> {
   const ctx = canvas.getContext('2d')!;
   const video = new CanvasSource(canvas, { codec, bitrate: QUALITY_MEDIUM, onEncodedPacket: matchStreamRange });
   output.addVideoTrack(video, { frameRate: FPS });
-  const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, bitrate: QUALITY_MEDIUM }) : null;
+  // The sound at the rate every sound of Kadr gets (Q-31): «medium» was ~72 kbit/s of stereo on WebKit, and the sample's
+  // music is what an export of the sample project encodes again.
+  const music = audioCodec ? await synthMusic(scene) : null;
+  const audio = audioCodec && music ? new AudioBufferSource({ codec: audioCodec, quality: await soundQuality(audioCodec, music.numberOfChannels, music.sampleRate) }) : null;
   if (audio) output.addAudioTrack(audio);
   await output.start();
-  if (audio) await audio.add(await synthMusic(scene));
+  if (audio && music) await audio.add(music);
   for (let i = 0; i < DUR * FPS; i++) {
     drawScene(ctx, scene, i / FPS);
     await video.add(i / FPS, 1 / FPS);

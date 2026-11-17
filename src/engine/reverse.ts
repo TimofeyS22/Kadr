@@ -16,6 +16,7 @@ import { ResilientSink, playableAudioTrack } from './sound';
 import { matchStreamRange } from './videoRange';
 import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
+import { soundQuality } from './soundBitrate';
 import { correctPixels, decodedAs709, hdrTransfer, sdMatrix } from './hdr';
 import { letGo } from '../lib/canvas';
 
@@ -66,7 +67,9 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     const ctx = canvas.getContext('2d')!;
     const vSource = new CanvasSource(canvas, { codec: vCodec, bitrate: QUALITY_HIGH, onEncodedPacket: matchStreamRange });
     output.addVideoTrack(vSource, { frameRate: fps });
-    const aSource = aCodec ? new AudioBufferSource({ codec: aCodec, bitrate: QUALITY_HIGH }) : null;
+    // The rate every sound of Kadr gets, and the one the encoder-delay probe measures at (Q-31): «high» was ~72 kbit/s of
+    // stereo on WebKit, and a delay measured at another setting could put the reversed sound off its picture (V-159).
+    const aSource = aCodec && audio ? new AudioBufferSource({ codec: aCodec, quality: await soundQuality(aCodec, Math.min(2, audio.numberOfChannels), audio.sampleRate) }) : null;
     if (aSource) output.addAudioTrack(aSource);
     started = { output, sources: [vSource, ...(aSource ? [aSource] : [])] };
     await output.start();
