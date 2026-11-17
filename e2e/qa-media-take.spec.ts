@@ -108,9 +108,13 @@ test('every second of a take reaches storage on its own, so a crash loses at mos
   await page.getByRole('button', { name: 'Camera', exact: true }).click();
   await page.getByRole('button', { name: 'Start recording' }).click();
   await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 10_000 }); // after 3-2-1
-  await page.waitForTimeout(6500);
-  const pieces = (await store(page)).filter((k) => k.key.startsWith('t:'));
-  expect(pieces.length, 'about one piece a second after 6.5 s of recording').toBeGreaterThanOrEqual(5);
+  // Five pieces by ten seconds of recording: a second each, with room for a slow machine's recorder and storage (the cloud
+  // runners took 6.5 s and more for five, SW-A-21). The defect gave 9 s as a header and one piece, so it never gets there.
+  const started = Date.now();
+  await expect.poll(async () => (await store(page)).filter((k) => k.key.startsWith('t:')).length, {
+    message: 'about one piece a second: five by ten seconds of recording', timeout: 10_000, intervals: [500],
+  }).toBeGreaterThanOrEqual(5);
+  test.info().annotations.push({ type: 'five pieces after', description: `${((Date.now() - started) / 1000).toFixed(1)} s` });
   await page.getByRole('button', { name: 'Stop recording' }).click();
   await expect(page.locator('.tl-row.main .clip-video')).toHaveCount(1, { timeout: 30_000 });
 });
