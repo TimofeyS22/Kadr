@@ -118,6 +118,12 @@ test('a music download that hangs: the reel is still made, says why the music is
   await (await chooser).setFiles(fx('reel_ru.mp4'));
   await page.getByRole('button', { name: 'Download and make the reel', exact: true }).click({ timeout: 60_000 }); // the question before the first model download (audit V-181)
   const done = page.locator('.reel-done');
+  // Russian speech under an English interface: since docs/20 (ADR-С2, С3) the reel asks once more whether to take the
+  // Russian model, and this test waited behind that question at any load (SW-E4-3). «Not now» keeps the model at work:
+  // what is tested here is the music.
+  const russian = page.getByRole('group', { name: 'Speech model download' }).filter({ hasText: 'This is Russian speech' });
+  await expect(done.or(russian)).toBeVisible({ timeout: 300_000 });
+  if (await russian.isVisible()) await russian.getByRole('button', { name: 'Not now', exact: true }).click();
   await expect(done).toBeVisible({ timeout: 300_000 });
   await expect(done).toContainText('Music was not added: Could not download the track');
   await expect(page.locator('.tl-row.audio .clip')).toHaveCount(0);
