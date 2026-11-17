@@ -3,6 +3,8 @@
 // branch alike, 31–40 ms with the GPU (load 3.6–5, 2026-11-17). Android Chrome has a GPU, so these run with it, as
 // qa-overlay-speed and the perf project do. Timing tests: --workers=1, in quiet minutes.
 import { expect, test } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
@@ -100,7 +102,7 @@ test('a tap is answered within 200 ms while a 1080p video exports', async ({ pag
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
   await page.getByRole('button', { name: 'Export' }).first().click();
   await page.getByRole('radio', { name: 'Video', exact: true }).click();
-  if (info.project.name === 'android-chromium') await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  if (info.project.name.includes('chromium')) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 }); // speed-chromium as android-chromium
   await page.getByRole('button', { name: 'Export video' }).click();
   await page.evaluate(() => { (window as unknown as { __holds: number[] }).__holds = []; });
   const progress = page.locator('.export-progress');
@@ -120,4 +122,67 @@ test('a tap is answered within 200 ms while a 1080p video exports', async ({ pag
   console.log(`main thread held during export (${info.project.name}): ${delays.length} beats, median ${Math.round(sorted[sorted.length >> 1] ?? 0)} ms, p95 ${Math.round(p95)} ms, max ${Math.round(sorted.at(-1) ?? 0)} ms, export ${Math.round((Date.now() - t0) / 1000)} s`);
   expect(delays.length, 'heartbeats measured').toBeGreaterThan(20);
   expect(Math.round(sorted.at(-1) ?? 0), `the longest the main thread was held during export (a tap waits that long): budget ${INPUT_DELAY_MS} ms`).toBeLessThanOrEqual(INPUT_DELAY_MS);
+});
+
+// A 4K overlay does not make the export slow (owner, 2026-10-30; moved here from qa-overlay-speed, which keeps what the
+// file holds): WebKit took each video frame into WebGL through a 2D canvas, ~11–28 ms a layer, and a 30 s project with a
+// 4K overlay took 44–122 s; now frames go to WebGL as the decoder made them (8–27 s on a loaded Mac, 5.5 s at load 4).
+// The overlay is 4K HEVC on WebKit, an iPhone's own; Playwright's Chromium has no HEVC decoder, so 4K H.264 there.
+test('a 30 s project with a 4K overlay exports within its own length, frames handed to WebGL in under 15 ms each', async ({ page }, info) => {
+  const MAIN = 'phone_1080_h264.mp4', OVERLAY = info.project.name.includes('webkit') ? 'phone_4k_hevc.mov' : 'phone_4k_h264.mp4';
+  test.skip(![MAIN, OVERLAY].every((f) => fs.existsSync(fx(f))), 'needs npm run fixtures');
+  test.setTimeout(600_000);
+  await page.addInitScript(() => {
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
+    localStorage.setItem('kadr.locale', 'en');
+    localStorage.setItem('kadr.hint.move', '1');
+    localStorage.setItem('kadr.iosVideoTip.v3', '1');
+    localStorage.setItem('kadr.undoMoved.v1', '1');
+    localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false }));
+    Object.defineProperty(navigator, 'canShare', { value: undefined }); // headless WebKit has no share sheet
+    const w = window as unknown as { __upload: { ms: number } };
+    w.__upload = { ms: 0 };
+    const tex = WebGL2RenderingContext.prototype.texImage2D;
+    WebGL2RenderingContext.prototype.texImage2D = function (this: WebGL2RenderingContext, ...a: unknown[]) {
+      const src = a[a.length - 1];
+      if (!(src instanceof HTMLCanvasElement) && !(typeof VideoFrame !== 'undefined' && src instanceof VideoFrame)) return (tex as (...x: unknown[]) => void).apply(this, a);
+      const t = performance.now();
+      (tex as (...x: unknown[]) => void).apply(this, a);
+      w.__upload.ms += performance.now() - t;
+    } as typeof tex;
+  });
+  const tool = (name: string) => page.getByRole('button', { name, exact: true });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  let chooser = page.waitForEvent('filechooser');
+  await tool('Media').click();
+  await (await chooser).setFiles([fx(MAIN)]);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
+  await page.getByRole('button', { name: 'Close tools' }).click();
+  chooser = page.waitForEvent('filechooser');
+  await tool('Overlay').click();
+  await (await chooser).setFiles([fx(OVERLAY)]);
+  await expect(page.locator('.tl-row.overlay .clip, .toast.error')).toHaveCount(1, { timeout: 60_000 });
+  await expect(page.locator('.toast.error')).toHaveCount(0);
+  await tool('Export').first().click();
+  await page.getByRole('radio', { name: 'Video', exact: true }).click();
+  await page.getByRole('radio', { name: 'TikTok, Reels, Shorts' }).click();
+  await page.evaluate(() => { (window as unknown as { __upload: { ms: number } }).__upload = { ms: 0 }; });
+  const t0 = Date.now();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 300_000 });
+  const seconds = (Date.now() - t0) / 1000;
+  const msPerFrame = (await page.evaluate(() => (window as unknown as { __upload: { ms: number } }).__upload.ms)) / (30 * 30);
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  const file = info.outputPath('overlay.mp4');
+  await (await dl).saveAs(file);
+  const duration = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).toString());
+  console.log(`overlay export (${info.project.name}): ${seconds.toFixed(1)} s for ${duration.toFixed(1)} s with a 4K overlay; frames into WebGL ${msPerFrame.toFixed(1)} ms each`);
+  expect(Math.abs(duration - 30), 'the whole 30 s is in the file').toBeLessThan(0.2);
+  // Before (WebKit): ~39 ms per frame for the two layers, 2.4–5 ms after even on a loaded Mac; Chromium ~0.1 ms.
+  expect(msPerFrame, 'time spent handing video frames to WebGL, ms per frame').toBeLessThan(15);
+  // The export budget (CLAUDE.md §5: at least real time).
+  expect(seconds, 'a 30 s project with a 4K overlay exports within its own length').toBeLessThan(30);
 });
