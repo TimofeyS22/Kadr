@@ -14,6 +14,8 @@ public/mediapipe
 fixtures/*.jpg
 fixtures/*.wav
 fixtures/*.aiff
+# The phone video set (V-201): real recordings stay off git; README there says what is real.
+fixtures/real
 test-results
 playwright-report
 scripts/.music-cache/

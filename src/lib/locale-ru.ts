@@ -870,6 +870,7 @@ export const RU: Record<string, string> = {
   'This device could not process the video. Close other apps and try again.': 'Устройство не смогло обработать видео. Закройте другие приложения и попробуйте снова.',
   'restored': 'восстановлено',
   'A camera recording that was cut short is back in the project.': 'Запись с камеры, которая оборвалась, вернулась в проект.',
+  'A voice-over that was cut short is back in the project.': 'Закадровый голос, который оборвался, вернулся в проект.',
   'Soft shadow': 'Мягкая',
   'ALL CAPS': 'ВСЕ ЗАГЛАВНЫЕ',
   'Gradient color': 'Цвет градиента',

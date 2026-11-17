@@ -1,15 +1,18 @@
-// Project backup: a stored (uncompressed) zip with project.json and media/<assetId>, streamed with fflate.
-import { Zip, ZipPassThrough, strFromU8, strToU8 } from 'fflate';
+// Project backup: a stored (uncompressed) zip with project.json and media/<assetId>, streamed (zipwrite.ts, ZIP64 past
+// 4 GiB: SW-A-10).
+import { strFromU8 } from 'fflate';
 import { uid } from '../core/defaults';
 import { repairBackup } from '../core/restore';
 import { normalizeProject, remapAssets, withUsedAssets } from '../core/timeline';
 import { SCHEMA_VERSION, type Project } from '../core/types';
-import { deleteBlob, openMedia, putBlob, saveProject } from '../storage/db';
+import { deleteBlob, openMedia, putCopy, saveProject } from '../storage/db';
+import type { StoredMedia } from '../storage/chunks';
 import { ensureRoom } from './importer';
 import { MediaError } from './media';
 import { diskFile } from './opfs';
 import { within } from '../lib/limits';
 import { zipEntries, zipEntryBlob, type ZipEntry } from './zipread';
+import { ZipWriter } from './zipwrite';
 
 /** The file system gets this long to open the backup file; then the backup is made in memory. */
 const DISK_MS = 5000;
@@ -24,20 +27,11 @@ export async function exportBackup(p: Project, onProgress?: (f: number) => void)
   const opening = diskFile('backup', 'zip');
   const disk = await within(opening, DISK_MS, () => { void opening.then((late) => late?.drop()); return null; });
   const parts: Uint8Array<ArrayBuffer>[] = [];
-  let writing: Promise<void> = Promise.resolve();
-  let finished!: () => void, failed!: (e: unknown) => void;
-  const done = new Promise<void>((res, rej) => { finished = res; failed = rej; });
-  const zip = new Zip((err, data, final) => {
-    if (err) { failed(err); return; }
-    if (disk) writing = writing.then(() => disk.writable.write(data as Uint8Array<ArrayBuffer>));
-    else parts.push(data as Uint8Array<ArrayBuffer>);
-    if (final) finished();
-  });
+  // Each piece is on the disk before the next is read: at most one piece of media is in memory at a time.
+  const zip = new ZipWriter(disk ? (data) => disk.writable.write(data) : (data) => parts.push(data));
   try {
-    const missing = await addEntries(zip, p, () => writing, onProgress);
-    await done;
+    const missing = await addEntries(zip, p, onProgress);
     if (!disk) return { blob: new Blob(parts, { type: 'application/zip' }), missing };
-    await writing;
     await disk.writable.close();
     return { blob: new Blob([await disk.file()], { type: 'application/zip' }), missing };
   } catch (e) {
@@ -46,38 +40,39 @@ export async function exportBackup(p: Project, onProgress?: (f: number) => void)
   }
 }
 
-/** project.json and every media file and font, read and zipped piece by piece; `written` waits for the disk. */
-async function addEntries(zip: Zip, whole: Project, written: () => Promise<void>, onProgress?: (f: number) => void): Promise<number> {
+/** A stored file's bytes, a piece at a time; the reader is let go when the zip stops early. */
+async function* pieces(media: StoredMedia): AsyncGenerator<Uint8Array<ArrayBuffer>> {
+  if (!(media instanceof Blob)) {
+    // Kept in chunks: read as it is zipped, not put together into a Blob first (audit V-253).
+    for (let at = 0; at < media.size; at += PIECE) yield await media.read(at, Math.min(media.size, at + PIECE));
+    return;
+  }
+  const reader = media.stream().getReader();
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      yield value;
+    }
+  } finally {
+    void reader.cancel().catch(() => undefined); // a no-op after the last piece; mid-file it lets the file go
+  }
+}
+
+/** project.json and every media file and font, read and zipped piece by piece. */
+async function addEntries(zip: ZipWriter, whole: Project, onProgress?: (f: number) => void): Promise<number> {
   const p = withUsedAssets(whole); // what the user deleted from the project stays out of its copies (audit V-126)
-  const meta = new ZipPassThrough('project.json');
-  zip.add(meta);
-  meta.push(strToU8(JSON.stringify(p)), true);
+  const json = new TextEncoder().encode(JSON.stringify(p));
+  await zip.add('project.json', json.length, [json]);
   const ids = [...Object.keys(p.assets), ...Object.values(p.fonts ?? {}).map((f) => f.blobId)]; // media and the user's fonts
   let missing = 0;
   for (let i = 0; i < ids.length; i++) {
     const media = await openMedia(ids[i]);
     if (!media) { missing++; continue; } // told to the person now, not on the day the copy is needed (audit V-236)
-    const entry = new ZipPassThrough(`media/${ids[i]}`);
-    zip.add(entry);
-    if (media instanceof Blob) {
-      const reader = media.stream().getReader();
-      for (;;) {
-        const { value, done: end } = await reader.read();
-        if (end) break;
-        entry.push(value);
-        await written(); // the disk keeps up: at most one piece of media is in memory at a time
-      }
-    } else {
-      // Kept in chunks: read as it is zipped, not put together into a Blob first (audit V-253).
-      for (let at = 0; at < media.size; at += PIECE) {
-        entry.push(await media.read(at, Math.min(media.size, at + PIECE)));
-        await written();
-      }
-    }
-    entry.push(new Uint8Array(0), true);
+    await zip.add(`media/${ids[i]}`, media.size, pieces(media));
     onProgress?.((i + 1) / ids.length);
   }
-  zip.end();
+  await zip.end();
   return missing;
 }
 
@@ -141,7 +136,8 @@ export async function importBackup(file: Blob): Promise<{ project: Project; drop
   try {
     for (const [old, id] of ids) {
       const blob = files.get(`media/${old}`);
-      if (blob) { await putBlob(id, new Blob([blob], { type: p.assets[id]?.mime ?? '' })); written.push(id); }
+      // Its bytes, not the slice of the backup: WebKit keeps a stored slice of a file as the whole file (SW-A-4).
+      if (blob) { await putCopy(id, blob, p.assets[id]?.mime ?? ''); written.push(id); }
       else delete p.assets[id];
     }
   } catch (e) {
