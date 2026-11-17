@@ -1,0 +1,307 @@
+{
+  "lane": "l",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.12",
+  "started": "2026-11-17T07:54:18.849Z",
+  "finished": "2026-11-17T08:00:37.312Z",
+  "results": [
+    {
+      "id": "D-1",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "версия в подвале",
+          "value": "v1.9.12",
+          "unit": "",
+          "limit": "= v1.9.12",
+          "ok": true
+        }
+      ],
+      "measured": {
+        "version": "v1.9.12"
+      },
+      "s": 4
+    },
+    {
+      "id": "D-6",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "клипов после закрыть-открыть",
+          "value": 2,
+          "unit": "",
+          "limit": "= 2",
+          "ok": true
+        },
+        {
+          "name": "проект тот же (дорожки, места, длины)",
+          "value": "main:video@0.000+2.000,video@2.000+4.000",
+          "unit": "",
+          "limit": "main:video@0.000+2.000,video@2.000+4.000",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "before": "main:video@0.000+2.000,video@2.000+4.000",
+        "after": "main:video@0.000+2.000,video@2.000+4.000",
+        "clips": 2
+      },
+      "s": 12
+    },
+    {
+      "id": "D-3",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "строк субтитров",
+          "value": 27,
+          "unit": "",
+          "limit": "≥ 1",
+          "ok": true
+        },
+        {
+          "name": "слов неверно (WER)",
+          "value": 3.9,
+          "unit": " %",
+          "limit": "≤ 12 %",
+          "ok": true
+        },
+        {
+          "name": "пунктуация есть",
+          "value": true,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "от тапа до строк (со скачиванием модели, если её не было)",
+          "value": 87.506,
+          "unit": " с",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "seconds": 87.506,
+        "lines": 27,
+        "werPercent": 3.9,
+        "punctuation": true,
+        "text": "всем привет, с вами снова я сегодня покажу, как я за пятнадцать минут смонтировал ролик прямо на телефоне. сначала добавляю видео из галереи убираю лишние паузы, потом подставляю музыку, чтобы она сов"
+      },
+      "s": 93
+    },
+    {
+      "id": "D-4",
+      "status": "LOOK",
+      "checks": [
+        {
+          "name": "рилс собран",
+          "value": "0:04.2 → 0:04.2Субтитры: 9 слов, произносимое слово подсвечиваетсяЗаголовок: «Привет, это видеоредактор Кад.»Музыка: «Lullabies For The End Of The World #1», ти",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "тосты и ошибки",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "look": "«0:04.2 → 0:04.2Субтитры: 9 слов, произносимое слово подсвечиваетсяЗаголовок: «Привет, это видеоредактор Кад.»Музыка: «Lullabies For The End Of The World #1», ти»: паузы убраны, субтитры, заголовок — по снимкам l5-tools",
+      "measured": {
+        "rows": 1
+      }
+    },
+    {
+      "id": "D-5 (файл)",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "видео в файле",
+          "value": "h264",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "потеряно кадров",
+          "value": 0.7599899999999877,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "длительность",
+          "value": 4.025333,
+          "unit": " с",
+          "limit": "4 ± 0,1 с",
+          "ok": true
+        },
+        {
+          "name": "звук в файле",
+          "value": "aac",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "меньшая сторона",
+          "value": 1080,
+          "unit": " px",
+          "limit": "≥ 1080 px",
+          "ok": true
+        },
+        {
+          "name": "пар «белый кадр + писк»",
+          "value": 2,
+          "unit": "",
+          "limit": "= 2",
+          "ok": true
+        },
+        {
+          "name": "худший сдвиг звука",
+          "value": 14,
+          "unit": " мс",
+          "limit": "≤ 33 мс",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "length": 4,
+        "file": {
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1080,
+          "height": 1920,
+          "frames": 120,
+          "duration": 4.025333,
+          "fps": 29.8,
+          "audio": "aac"
+        },
+        "sync": {
+          "flashes": [
+            1,
+            2.5
+          ],
+          "offsets": [
+            -2,
+            14
+          ]
+        }
+      },
+      "s": 39
+    },
+    {
+      "id": "V-169",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "контекстов WebGL потеряно не по воле страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true
+        },
+        {
+          "name": "отказов в контексте",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true
+        },
+        {
+          "name": "отказов в 2D-холсте",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true
+        },
+        {
+          "name": "стоп-кадров на таймлайне",
+          "value": 5,
+          "unit": "",
+          "limit": "= 5",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "gl": {
+          "nulls2d": 0,
+          "lost": 0,
+          "nulls": 0,
+          "made": 1,
+          "dropped": 0
+        },
+        "images": 5
+      },
+      "s": 47
+    }
+  ]
+}
