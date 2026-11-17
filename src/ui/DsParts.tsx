@@ -195,7 +195,7 @@ function EditorStage({ plain }: { plain?: boolean }) {
       const step = (e.shiftKey ? 1 : 0.1) * (e.key === 'ArrowRight' ? 1 : -1);
       change(setDur(film, p.id, p.dur + (edge === 'out' ? step : -step)));
     },
-    onPointerDown: (e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); trim.current = { id: e.pointerId, edge, x: e.clientX, from: p.dur, base: film }; },
+    onPointerDown: (e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a pointer already gone (SW-U-12) */ } trim.current = { id: e.pointerId, edge, x: e.clientX, from: p.dur, base: film }; },
     onPointerMove: (e: PointerEvent<HTMLSpanElement>) => {
       const t = trim.current;
       if (!t || t.id !== e.pointerId) return;

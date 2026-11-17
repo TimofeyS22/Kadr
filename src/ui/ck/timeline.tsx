@@ -65,7 +65,7 @@ export function MiniStrip({ label, value, valueText, onSeek, children }: MiniStr
   };
   return (
     <div className="ck-mini" role="slider" tabIndex={0} aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value * 100)} aria-valuetext={valueText}
-      onPointerDown={(e) => { if (id.current !== null) return; id.current = e.pointerId; e.currentTarget.setPointerCapture(e.pointerId); seek(e); }}
+      onPointerDown={(e) => { if (id.current !== null) return; id.current = e.pointerId; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a pointer already gone (SW-U-12) */ } seek(e); }}
       onPointerMove={(e) => { if (e.pointerId === id.current) seek(e); }}
       onPointerUp={(e) => { if (e.pointerId === id.current) id.current = null; }} onPointerCancel={(e) => { if (e.pointerId === id.current) id.current = null; }}
       onKeyDown={key}>

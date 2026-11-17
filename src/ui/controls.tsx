@@ -122,7 +122,7 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
   const down = (e: PointerEvent<HTMLElement>) => {
     if ((e.target as HTMLElement).closest('button')) return;
     drag.current = { y0: e.clientY, y: e.clientY, t: e.timeStamp, v: 0, on: false };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a pointer already gone (SW-U-12) */ }
   };
   const move = (e: PointerEvent<HTMLElement>) => {
     const d = drag.current;
