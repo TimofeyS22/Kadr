@@ -308,10 +308,12 @@ await sweep({
         await c.closeTools();
         const r = await c.jsAsync(`const done = arguments[arguments.length - 1], P = window.__kadrPerf, el = document.querySelector('.tl-scroll');
           const play = () => [...document.querySelectorAll('button')].find((e) => e.offsetParent !== null && e.getAttribute('aria-label') === 'Play');
+          // A gap counts only while Kadr plays (Pause on screen): a jump may stop playback, and a stop is not a freeze.
+          const playing = () => [...document.querySelectorAll('button')].some((e) => e.offsetParent !== null && e.getAttribute('aria-label') === 'Pause');
           play()?.click(); let last = performance.now(), n = P.drawn, worst = 0, jumps = 0; const t0 = last;
           const targets = [70, 12, 55, 88, 3, 40, 75, 21, 63, 9, 47, 81, 30, 59, 16, 85, 36, 68, 5, 52, 78, 25, 44, 90, 14, 61, 33, 72, 50, 7];
           const jump = setInterval(() => { el.scrollLeft = targets[jumps++ % targets.length] * 60; play()?.click(); }, 4000);
-          const tick = () => { const now = performance.now(); if (P.drawn !== n) { worst = Math.max(worst, now - last); last = now; n = P.drawn; }
+          const tick = () => { const now = performance.now(); if (P.drawn !== n || !playing()) { if (P.drawn !== n) worst = Math.max(worst, now - last); last = now; n = P.drawn; }
             if (now - t0 < 120000) setTimeout(tick, 20); else { clearInterval(jump); done({ worstGapMs: Math.round(worst), jumps }); } }; tick();`);
         await c.tap('Pause').catch(() => undefined);
         const page = await c.page();
@@ -357,7 +359,8 @@ await sweep({
       ids: ['V-243'], price: 5,
       tools: { name: 'tools-v243', scenarios: ['color-601'] },
       judge: (rows) => {
-        const r = rows[0], off = r?.note?.levelsOff;
+        // l5-tools throws past its own limit (6 levels) with the numbers in its words: they are the measurement.
+        const r = rows[0], off = r?.note?.levelsOff ?? (() => { try { return JSON.parse(/levels: (\{[^}]*\})/.exec(r?.error ?? '')[1]); } catch { return null; } })();
         if (!off) return [judge('V-243', [], { error: r?.error ?? 'нет строки color-601' })];
         return [judge('V-243', [atMost('превью', off.preview, 6, ' ур.'), atMost('фото', off.photo, 6, ' ур.'), atMost('видео', off.video, 6, ' ур.')])];
       },

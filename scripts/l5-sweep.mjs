@@ -93,7 +93,9 @@ export async function sweep({ lane, title, items, manual = [] }) {
           : [holds('вкладка жива', false, 'страница потеряла состояние', 'жива')];
         judged = judge(it.id, [...own.checks, ...tab], { look: own.look });
       } catch (e) {
-        judged = judge(it.id, [], { error: String(e.message ?? e).slice(0, 300) });
+        const words = String(e.message ?? e);
+        // An export that fails in Kadr's words is a verdict on the product, not a broken scenario.
+        judged = words.startsWith('Export failed') ? judge(it.id, [holds('экспорт дошёл до файла', false, words.slice(0, 200), 'да')]) : judge(it.id, [], { error: words.slice(0, 300) });
         await ctx.shot(`fail-${it.id.replace(/[^\w-]+/g, '_')}`).catch(() => undefined);
       }
       report({ ...judged, measured, s: Math.round((Date.now() - t) / 1000) });

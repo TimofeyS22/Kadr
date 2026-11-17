@@ -3,7 +3,7 @@
 // pushed in place of the Photos picker, the exported file pulled to the Mac in pieces, counters the page keeps for the
 // rows (decoders, WebGL contexts, toasts). Taken from scripts/l5-tools.mjs, whose scenarios keep their own copy.
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, resolve } from 'node:path';
 import { avOffsets, brokenPackets, joins, parseEbur128, parseVolume, probeSummary } from './l5-verdict.mjs';
 
@@ -78,9 +78,20 @@ export async function connect({ url, out, port = Number(process.env.L5_PORT ?? 4
   mkdirSync(out, { recursive: true });
   const driver = spawn('safaridriver', ['-p', String(port)], { stdio: 'ignore' });
   await sleep(2000);
+  // Every WebDriver call, with its time and outcome, into L5_OUT/trace.log (L5_TRACE=1): where a run broke off.
+  const trace = (line) => { if (process.env.L5_TRACE) appendFileSync(join(out, 'trace.log'), `${new Date().toISOString()} ${line}\n`); };
   async function call(method, path, body, ms = 330_000) {
-    const res = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(ms) });
+    const what = `${method} ${path.split('/').slice(3).join('/') || path}`, t = Date.now();
+    let res;
+    try {
+      res = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(ms) });
+    } catch (e) {
+      // undici's «fetch failed» hides its cause (a reset socket, a timeout): it goes into the words of the row.
+      trace(`${what} ${Date.now() - t} ms FAILED ${e.cause?.code ?? e.cause?.message ?? e.message}`);
+      throw new Error(`${e.message}${e.cause ? ` (${e.cause.code ?? e.cause.message})` : ''} on ${what} after ${Math.round((Date.now() - t) / 1000)} s`);
+    }
     const json = await res.json();
+    trace(`${what} ${Date.now() - t} ms${json.value?.error ? ` ${json.value.error}` : ''}`);
     if (json.value?.error) throw new Error(`${json.value.error}: ${json.value.message}`);
     return json.value;
   }
