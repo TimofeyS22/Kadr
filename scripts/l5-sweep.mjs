@@ -9,7 +9,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { connect, sleep } from './l5-session.mjs';
-import { ERROR, judge, line, mdRow, none, holds, toolsRows, totals } from './l5-verdict.mjs';
+import { ERROR, holds, judge, line, mdRow, none, toolsRows, totals } from './l5-verdict.mjs';
 
 /**
  * The price of a failure for the person (docs/16 §6), the order of the run: 1 work lost, 2 no file, 3 does not open,
@@ -73,7 +73,10 @@ export async function sweep({ lane, title, items, manual = [] }) {
       // A row that needs empty site data (a cold start) gets a session of its own: each starts with none.
       if (it.newSession) await release();
       if (!ctx) {
-        ctx = await connect({ url, out });
+        try { ctx = await connect({ url, out }); } catch (e) {
+          report(judge(it.id, [], { error: String(e.message ?? e).slice(0, 300) }));
+          continue;
+        }
         console.log(`  устройство: ${ctx.session.capabilities['safari:deviceName'] ?? ctx.session.capabilities.browserName}, iOS ${ctx.session.capabilities['safari:platformVersion'] ?? '—'}`);
       }
       console.log(`· [${PRICE[it.price]}] ${it.id}`);

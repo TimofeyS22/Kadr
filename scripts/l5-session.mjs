@@ -86,10 +86,11 @@ export async function connect({ url, out, port = Number(process.env.L5_PORT ?? 4
   }
   const caps = process.env.L5_MAC ? { browserName: 'safari' } : { browserName: 'safari', platformName: 'ios', 'safari:useSimulator': false, ...(process.env.L5_UDID ? { 'safari:deviceUDID': process.env.L5_UDID } : { 'safari:deviceType': 'iPhone' }) };
   let session;
-  // After a session ends the phone refuses a new one for 20–60 s (reports/L5 — журнал.md): 9 tries, 20 s apart.
-  for (let attempt = 1; !session; attempt++) {
+  // After a session ends the phone refuses a new one for 20–60 s (reports/L5 — журнал.md): tries 20 s apart for 4 min.
+  const until = Date.now() + 240_000;
+  while (!session) {
     try { session = await call('POST', '/session', { capabilities: { alwaysMatch: caps } }, 90_000); } catch (e) {
-      if (attempt >= 9) { driver.kill(); throw new Error(`no session: ${e.message}`); }
+      if (Date.now() > until) { driver.kill(); throw new Error(`no session: ${e.message}`); }
       console.log(`  (телефон не дал сессию: ${e.message.slice(0, 80)} — ещё раз через 20 с)`);
       await sleep(20_000);
     }
