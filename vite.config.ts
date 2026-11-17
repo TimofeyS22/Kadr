@@ -159,9 +159,9 @@ export default defineConfig({
             // requests (audio preview streaming) go to the network: a cached full response can't answer them.
             urlPattern: ({ url }) => /\/music\/music\.json$/.test(url.pathname),
             handler: 'StaleWhileRevalidate',
-            // No list kept and no network: the page gets a 503 it handles («not available right now»), not a refusal of the
-            // whole request, which WebKit also reported as an unhandled error of the page (SW-D-7).
-            options: { cacheName: 'kadr-music-list', plugins: [{ handlerDidError: async () => new Response(null, { status: 503, statusText: 'Offline' }) }] },
+            // No list kept and no network: the page gets an answer marked so, which it says as «the server did not answer»
+            // (S-1-6), not a refusal of the whole request, which WebKit also reported as an unhandled page error (SW-D-7).
+            options: { cacheName: 'kadr-music-list', plugins: [{ handlerDidError: async () => new Response(null, { status: 503, statusText: 'Offline', headers: { 'x-kadr-no-network': '1' } }) }] },
           },
           {
             urlPattern: ({ url, request }) => /\/music\/tracks\//.test(url.pathname) && !request.headers.has('range'),

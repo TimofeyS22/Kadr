@@ -587,6 +587,9 @@ let manifest: Promise<MusicManifest> | null = null;
 export function loadManifest(): Promise<MusicManifest> {
   const unavailable = () => new MediaError('The music library is not available right now');
   manifest ??= within(fetch(musicUrl('music.json')).then((r) => {
+    // The service worker's own answer when it has neither the network nor a kept list (vite.config.ts, SW-D-7): what
+    // happened is that the server did not answer, and the person is told that, as for a refused request (S-1-6).
+    if (r.headers.get('x-kadr-no-network')) throw new MediaError(navigator.onLine ? 'The server did not answer. Try again in a minute, or on another network.' : 'No internet connection.');
     if (!r.ok) throw unavailable();
     return r.json() as Promise<MusicManifest>;
   }), MUSIC_STALL_MS, () => { throw unavailable(); });
