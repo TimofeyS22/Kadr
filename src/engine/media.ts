@@ -273,6 +273,13 @@ class VideoStream {
   private afterKey = false;
   /** The time of the last read: the same frame drawn again is neither a scrub step nor playing. */
   private lastT = Number.NaN;
+  /**
+   * Where a decoder failed, up to the next keyframe: those frames are decoded one at a time, by a decoder that stops at each
+   * (`keyframe`), and a fresh one starts at the keyframe. A decoder runs ahead of what is shown: one that failed crossing
+   * into the next group of pictures — the iPhone's VP9 decoder where the frame size changes (V-232) — failed again from
+   * the same keyframe at every retry, and the export stopped with «decoder stopped».
+   */
+  private split: { from: number; at: number } | null = null;
   private abandon!: (e: Error) => void;
   /** Rejects when the stream is closed: whoever waits for a silent decoder is let go at once. */
   private readonly closing = new Promise<never>((_, reject) => { this.abandon = reject; });
@@ -371,6 +378,7 @@ class VideoStream {
         // The scrub's keyframe decoder goes too: a phone that took one decoder back has none to spare for an idle one.
         this.dropKeys();
         await this.reset();
+        if (attempt === 0) { const at = await this.keyAfter(t); this.split = at === null ? null : { from: t, at }; }
         if (attempt >= DECODE_RETRIES) throw new MediaError(DECODER_FAILED, { error: errorText(first) });
         if (attempt > 0) {
           this.starved?.();
@@ -435,6 +443,14 @@ class VideoStream {
       s.close();
       return f;
     }
+    if (this.split && t >= this.split.at - 1e-6) this.split = null; // past it: a fresh decoder from its keyframe
+    if (this.split && t >= this.split.from - 1e-6) {
+      const s = await this.keyframe(t); // the frame at t, decoded up to it and no further
+      if (!s || this.closed) { s?.close(); return null; }
+      const f = this.show(s, true, frameMax);
+      s.close();
+      return f;
+    }
     if (far) {
       await this.reset();
       if (this.closed) return null;
@@ -451,6 +467,17 @@ class VideoStream {
     const c = this.cur;
     if (!c || this.closed) return null;
     return this.show(c, true, frameMax);
+  }
+
+  /** The time of the first keyframe after `t`, or null (none, or the index cannot say). */
+  private async keyAfter(t: number): Promise<number | null> {
+    try {
+      const p = await this.answer(this.packets.getPacket(t), () => undefined);
+      const k = p && (await this.answer(this.packets.getNextKeyPacket(p), () => undefined));
+      return k && k.timestamp > t + 1e-6 ? k.timestamp : null;
+    } catch {
+      return null; // without a keyframe to stop at, a retry starts over as before
+    }
   }
 
   /** A keyframe through the scrub's decoder, made at the first step and let go once the finger rests or it fails. */
