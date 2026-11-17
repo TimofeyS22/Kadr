@@ -1,0 +1,456 @@
+{
+  "lane": "a",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.12",
+  "started": "2026-11-17T09:30:50.983Z",
+  "finished": "2026-11-17T09:35:35.810Z",
+  "results": [
+    {
+      "id": "Q-4, SW-A-4",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "длина восстановленного",
+          "value": 90,
+          "unit": " с",
+          "limit": "90 ± 0,05 с",
+          "ok": true
+        },
+        {
+          "name": "восстановленный проект рисует кадр 0:45",
+          "value": false,
+          "unit": "",
+          "limit": "да",
+          "ok": false
+        },
+        {
+          "name": "кадр 0:45 до и после",
+          "value": 126.27425925925925,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": false
+        },
+        {
+          "name": "копия",
+          "value": 1.436,
+          "unit": " с",
+          "limit": "≤ 15 с",
+          "ok": true
+        },
+        {
+          "name": "восстановление",
+          "value": 1.385,
+          "unit": " с",
+          "limit": "≤ 15 с",
+          "ok": true
+        },
+        {
+          "name": "размер копии",
+          "value": 62.6,
+          "unit": " МБ",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "экспорт восстановленного дошёл до файла",
+          "value": "Export failed: The sound of “long_1.mp4” cannot be decoded in this browser | DetailsKadr 1.9.12, 2026-11-17T09:32:17.333Z iPhone, iOS 18.7, Safari 26.5 export: MediaError: The sound of “…” cannot be decoded in this browser — Input has an unsupported or unrecognizable format.Copy for supportNothing is sent by itself. File names and your text are not in it. | log [[{\"at\":1794907891166,\"version\":\"1.9.12\",\"where\":\"editor\",\"kind\":\"UnsupportedInputFormatError\",\"message\":\"Input has an unsupported or unrecognizable format.\",\"device\":\"iPhone, iOS 18.7, Safari 26.5\"},{\"at\":1794907921589,\"version\":\"1.9.12\",\"where\":\"export\",\"kind\":\"UnsupportedInputFormatError\",\"message\":\"Input has an unsupported or unrecognizable format.\",\"device\":\"iPhone, iOS 18.7, Safari 26.5\"},{\"at\":1794907937333,\"version\":\"1.9.12\",\"where\":\"export\",\"kind\":\"MediaError\",\"message\":\"The sound of “…” cannot be decoded in this browser — Input has an unsupported or unrecognizable format.\",\"device\":\"iPhone, iOS 18.7, Safari 26.5\"}]]",
+          "unit": "",
+          "limit": "да",
+          "ok": false
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 1,
+          "unit": "",
+          "limit": "= 0",
+          "ok": false,
+          "detail": [
+            "Something went wrong. The details are under “Details”.Details"
+          ]
+        }
+      ],
+      "measured": {
+        "length": 90,
+        "restored": 90,
+        "backupS": 1.436,
+        "restoreS": 1.385,
+        "backupMb": 62.6,
+        "drawn": false,
+        "frame45": 126.27425925925925,
+        "file": null,
+        "failed": "Export failed: The sound of “long_1.mp4” cannot be decoded in this browser | DetailsKadr 1.9.12, 2026-11-17T09:32:17.333Z iPhone, iOS 18.7, Safari 26.5 export: MediaError: The sound of “…” cannot be decoded in this browser — Input has an unsupported or unrecognizable format.Copy for supportNothing is sent by itself. File names and your text are not in it. | log [[{\"at\":1794907891166,\"version\":\"1.9.12\",\"where\":\"editor\",\"kind\":\"UnsupportedInputFormatError\",\"message\":\"Input has an unsupported or unrecognizable format.\",\"device\":\"iPhone, iOS 18.7, Safari 26.5\"},{\"at\":1794907921589,\"version\":\"1.9.12\",\"where\":\"export\",\"kind\":\"UnsupportedInputFormatError\",\"message\":\"Input has an unsupported or unrecognizable format.\",\"device\":\"iPhone, iOS 18.7, Safari 26.5\"},{\"at\":1794907937333,\"version\":\"1.9.12\",\"where\":\"export\",\"kind\":\"MediaError\",\"message\":\"The sound of “…” cannot be decoded in this browser — Input has an unsupported or unrecognizable format.\",\"device\":\"iPhone, iOS 18.7, Safari 26.5\"}]]"
+      },
+      "s": 82
+    },
+    {
+      "id": "V-159",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "avsync.mp4: пар «белый кадр + писк»",
+          "value": 2,
+          "unit": "",
+          "limit": "= 2",
+          "ok": true
+        },
+        {
+          "name": "avsync.mp4: худший сдвиг звука",
+          "value": 19,
+          "unit": " мс",
+          "limit": "≤ 33 мс",
+          "ok": true
+        },
+        {
+          "name": "avsync.mp4: пакеты перевёрнутого звука не по 1024",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "avsync_long.mp4: пар «белый кадр + писк»",
+          "value": 8,
+          "unit": "",
+          "limit": "= 8",
+          "ok": true
+        },
+        {
+          "name": "avsync_long.mp4: худший сдвиг звука",
+          "value": 14,
+          "unit": " мс",
+          "limit": "≤ 33 мс",
+          "ok": true
+        },
+        {
+          "name": "avsync_long.mp4: пакеты перевёрнутого звука не по 1024",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "avsync.mp4": {
+          "pairs": 2,
+          "sync": {
+            "flashes": [
+              1.466667,
+              2.966667
+            ],
+            "offsets": [
+              2,
+              19
+            ]
+          },
+          "packets": {
+            "codec": "aac",
+            "broken": []
+          }
+        },
+        "avsync_long.mp4": {
+          "pairs": 8,
+          "sync": {
+            "flashes": [
+              0.966667,
+              4.966667,
+              8.966667,
+              12.966667,
+              16.966667,
+              20.966667,
+              24.966667,
+              28.966667
+            ],
+            "offsets": [
+              3,
+              14,
+              3,
+              14,
+              3,
+              14,
+              3,
+              14
+            ]
+          },
+          "packets": {
+            "codec": "aac",
+            "broken": []
+          }
+        }
+      },
+      "s": 40
+    },
+    {
+      "id": "Q-9, SW-A-2",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "отклик (первый кадр) p95",
+          "value": 34,
+          "unit": " мс",
+          "limit": "≤ 100 мс",
+          "ok": true
+        },
+        {
+          "name": "точный кадр после перемотки p95",
+          "value": 51,
+          "unit": " мс",
+          "limit": "≤ 150 мс",
+          "ok": true
+        },
+        {
+          "name": "перемоток мимо места",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true
+        },
+        {
+          "name": "воспроизведение",
+          "value": 60.1,
+          "unit": " кадр/с",
+          "limit": "≥ 29 кадр/с",
+          "ok": true
+        },
+        {
+          "name": "пропуски кадров",
+          "value": 0,
+          "unit": " %",
+          "limit": "≤ 3 %",
+          "ok": true
+        },
+        {
+          "name": "после «Паузы» экран против «Фото» (худшая из 3)",
+          "value": 0.4868827160493827,
+          "unit": "",
+          "limit": "≤ 4",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "steps": [
+          {
+            "want": 12,
+            "t": 12,
+            "first": 29,
+            "exact": 103
+          },
+          {
+            "want": 187,
+            "t": 187,
+            "first": 34,
+            "exact": 51
+          },
+          {
+            "want": 64,
+            "t": 64,
+            "first": 28,
+            "exact": 41
+          },
+          {
+            "want": 221,
+            "t": 221,
+            "first": 20,
+            "exact": 34
+          },
+          {
+            "want": 33,
+            "t": 33,
+            "first": 29,
+            "exact": 42
+          },
+          {
+            "want": 150,
+            "t": 150,
+            "first": 34,
+            "exact": 46
+          },
+          {
+            "want": 98,
+            "t": 98,
+            "first": 29,
+            "exact": 42
+          },
+          {
+            "want": 239,
+            "t": 239,
+            "first": 29,
+            "exact": 43
+          },
+          {
+            "want": 5,
+            "t": 5,
+            "first": 35,
+            "exact": 48
+          },
+          {
+            "want": 171,
+            "t": 171,
+            "first": 28,
+            "exact": 41
+          },
+          {
+            "want": 121,
+            "t": 121,
+            "first": 30,
+            "exact": 42
+          },
+          {
+            "want": 45,
+            "t": 45,
+            "first": 17,
+            "exact": 30
+          },
+          {
+            "want": 203,
+            "t": 203,
+            "first": 21,
+            "exact": 34
+          },
+          {
+            "want": 77,
+            "t": 77,
+            "first": 23,
+            "exact": 35
+          },
+          {
+            "want": 140,
+            "t": 140,
+            "first": 16,
+            "exact": 27
+          },
+          {
+            "want": 18,
+            "t": 18,
+            "first": 21,
+            "exact": 34
+          },
+          {
+            "want": 229,
+            "t": 229,
+            "first": 27,
+            "exact": 39
+          },
+          {
+            "want": 109,
+            "t": 109,
+            "first": 25,
+            "exact": 36
+          },
+          {
+            "want": 58,
+            "t": 58,
+            "first": 18,
+            "exact": 30
+          },
+          {
+            "want": 196,
+            "t": 196,
+            "first": 17,
+            "exact": 30
+          }
+        ],
+        "fps": 60.1,
+        "pauses": [
+          0.4868827160493827,
+          0.4868827160493827,
+          0.4868827160493827
+        ]
+      },
+      "s": 69
+    },
+    {
+      "id": "V-248",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "p90 шага до первого кадра",
+          "value": 34,
+          "unit": " мс",
+          "limit": "≤ 100 мс",
+          "ok": true
+        },
+        {
+          "name": "декодеров на 40 шагов",
+          "value": 40,
+          "unit": "",
+          "limit": "≤ 42",
+          "ok": true
+        },
+        {
+          "name": "шагов мимо места",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true
+        },
+        {
+          "name": "тосты и ошибки",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "худший шаг",
+          "value": 36,
+          "unit": " мс",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "точный кадр p50",
+          "value": 75,
+          "unit": " мс",
+          "limit": "записать",
+          "ok": true
+        }
+      ],
+      "measured": {
+        "rows": 1
+      }
+    }
+  ]
+}
