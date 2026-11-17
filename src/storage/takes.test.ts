@@ -164,12 +164,12 @@ describe('a take in storage and its lock', () => {
     const fresh = await import('./db');
     const add = vi.spyOn(window, 'addEventListener'), remove = vi.spyOn(window, 'removeEventListener');
     const a = new fresh.TakeWriter('l'), b = new fresh.TakeWriter('l');
-    expect(add.mock.calls.filter(([type]) => type === 'beforeunload')).toHaveLength(1);
+    expect(add.mock.calls.filter(([type]) => String(type) === 'beforeunload')).toHaveLength(1);
     await a.discard();
     await a.discard();
-    expect(remove.mock.calls.filter(([type]) => type === 'beforeunload'), 'one take still records').toHaveLength(0);
+    expect(remove.mock.calls.filter(([type]) => String(type) === 'beforeunload'), 'one take still records').toHaveLength(0);
     await b.release();
-    expect(remove.mock.calls.filter(([type]) => type === 'beforeunload')).toHaveLength(1);
+    expect(remove.mock.calls.filter(([type]) => String(type) === 'beforeunload')).toHaveLength(1);
     add.mockRestore(); remove.mockRestore();
   });
 
