@@ -85,10 +85,15 @@ describe('the rows of l5-tools', () => {
     expect(statuses(leased(2))[0]).toBe('PASS');
     expect(statuses(leased(3))[0]).toBe('FAIL');
   });
-  it('runs lost to the cable are not counted, but at most 2 of the planned may be lost', () => {
+  it('runs lost to the cable are not counted; with more than 2 of the planned lost there is too little to say (ERROR)', () => {
     const lost = (k: number) => runs(60, (i) => (i < k ? { name: 's1-camera', ok: false, error: 'TypeError: fetch failed' } : run()));
     expect(statuses(lost(2))).toEqual(['PASS', 'PASS']);
-    expect(statuses(lost(3))[0]).toBe('FAIL');
+    expect(statuses(lost(3))).toEqual(['ERROR', 'ERROR']);
+  });
+  it('runs where the camera never recorded (its question unanswered) are not counted: too few is an ERROR, not a FAIL', () => {
+    const rows = runs(60, (i) => (i === 0 ? run() : { name: 's1-camera', ok: false, error: 'recording: not within 15 s' }));
+    expect(statuses(rows)).toEqual(['ERROR', 'ERROR']);
+    expect(V.cameraRuns(rows, 60)[0].error).toContain('камера не записывала в 59');
   });
   it('a take that did not land fails S-1-12; fewer than 100 takes is not enough to say', () => {
     const [, s112] = V.cameraRuns(runs(60, (i) => (i === 3 ? { name: 's1-camera', ok: false, error: 'takes that did not land: [{"take":2,"got":"no clip in 40 s"}]' } : run())), 60);
@@ -167,6 +172,8 @@ describe('captions and the run’s choice of rows', () => {
     expect(picked('V-248', 4, 'V-24', undefined)).toBe(true);
     expect(picked(['S-1-13, S-1-13-1 (М3)', 'S-1-12'], 1, 'S-1-12', undefined)).toBe(true);
     expect(picked('V-248', 4, 'V-171', undefined)).toBe(false);
+    expect(picked(['S-1-13, S-1-13-1 (М3)', 'S-1-12'], 1, 'М3', undefined)).toBe(false); // the run of 2026-11-17 took it by «М3»
+    expect(picked('М3, цена «Стоп»', 4, 'М3', undefined)).toBe(true);
     expect(picked('V-248', 4, undefined, '1,2')).toBe(false);
     expect(picked('SW-A-19', 1, undefined, '1,2')).toBe(true);
   });

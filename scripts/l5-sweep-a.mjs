@@ -110,13 +110,16 @@ await sweep({
         await c.watch();
         await c.projectId();
         const restored = await c.timelineLength();
-        await c.exactAt(45);
+        // A restored project that draws nothing is SW-A-4 itself (v1.9.11: the restored files are the whole backup):
+        // a verdict, not a broken scenario. So is an export of it that fails.
+        const drawn = await c.exactAt(45).then(() => true, () => false);
         const frameAfter = rgb(await c.previewShot('q-4-after-45s'));
-        const { file: video } = await c.exportAs({ preset: 'TikTok, Reels, Shorts', file: 'q-4-restored.mp4' });
-        return { length, restored, backupS, restoreS, backupMb: Math.round(statSync(file).size / 1e5) / 10, frame45: meanAbsDiff(frameBefore, frameAfter), file: probe(video) };
+        const done = await c.exportAs({ preset: 'TikTok, Reels, Shorts', file: 'q-4-restored.mp4' }).catch((e) => ({ failed: e.message }));
+        return { length, restored, backupS, restoreS, backupMb: Math.round(statSync(file).size / 1e5) / 10, drawn, frame45: meanAbsDiff(frameBefore, frameAfter), file: done.file ? probe(done.file) : null, failed: done.failed ?? null };
       },
-      judge: (m) => [near('длина восстановленного', m.restored, m.length, 0.05, ' с'), atMost('кадр 0:45 до и после', m.frame45, 3), atMost('копия', m.backupS, 15, ' с'), atMost('восстановление', m.restoreS, 15, ' с'),
-        record('размер копии', m.backupMb, ' МБ'), ...wholeFile(m.file, { duration: m.length, tolerance: 0.1 })],
+      judge: (m) => [near('длина восстановленного', m.restored, m.length, 0.05, ' с'), holds('восстановленный проект рисует кадр 0:45', m.drawn, m.drawn, 'да'), atMost('кадр 0:45 до и после', m.frame45, 3),
+        atMost('копия', m.backupS, 15, ' с'), atMost('восстановление', m.restoreS, 15, ' с'), record('размер копии', m.backupMb, ' МБ'),
+        ...(m.file ? wholeFile(m.file, { duration: m.length, tolerance: 0.1 }) : [holds('экспорт восстановленного дошёл до файла', false, m.failed, 'да')])],
     },
     {
       id: 'V-159', price: 2,

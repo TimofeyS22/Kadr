@@ -105,8 +105,15 @@ const shownOnScreen = (row) => (row.toasts?.length ?? 0) > 0 || (row.note?.takes
  * take that failed to land. Runs lost to the link are not counted, and at most 2 of the planned may be lost.
  */
 export function cameraRuns(rows, planned) {
-  const counted = rows.filter((r) => !lostToLink(r));
+  // A run whose camera never recorded (Safari's question about the camera unanswered: it asks on every new page) says
+  // nothing about the takes, like a run lost to the cable: neither is counted.
+  const noCamera = (r) => /recording: not within|Allow on the phone|Start recording/.test(r.error ?? '');
+  const counted = rows.filter((r) => !lostToLink(r) && !noCamera(r));
   const n = counted.length;
+  if (n < planned - 2) {
+    const why = `засчитано ${n} из ${planned}: камера не записывала в ${rows.filter(noCamera).length} (вопрос о камере без ответа), связь оборвалась в ${rows.filter(lostToLink).length}`;
+    return [judge('S-1-13, S-1-13-1 (М3)', [], { error: why }), judge('S-1-12', [], { error: why })];
+  }
   const empty = counted.filter((r) => r.note?.strips && r.note.strips.thumbs < r.note.strips.clips);
   const quiet = counted.filter((r) => r.note?.leases && r.note.leases.renewed === 0);
   const unlanded = counted.filter((r) => /takes that did not land|no clip in 40 s/.test(r.error ?? ''));

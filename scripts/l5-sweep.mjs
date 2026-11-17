@@ -16,12 +16,15 @@ import { ERROR, holds, judge, line, mdRow, none, toolsRows, totals } from './l5-
  * 4 slow, 5 inconvenient.
  */
 export const PRICE = { 1: 'потеря работы', 2: 'нет файла', 3: 'не открывается', 4: 'медленно', 5: 'неудобно' };
-/** Whether a row is picked by L5_ONLY (an ID or a part of one, comma-separated) and L5_PRICE (prices, e.g. 1,2). */
+/**
+ * Whether a row is picked by L5_ONLY (IDs or their beginnings, comma-separated: «V-24» picks V-248, «М3» picks «М3, цена
+ * «Стоп»» and not «S-1-13, S-1-13-1 (М3)») and L5_PRICE (prices, e.g. 1,2).
+ */
 export function picked(ids, price, only = process.env.L5_ONLY, prices = process.env.L5_PRICE) {
   const list = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
   if (prices && !list(prices).includes(String(price))) return false;
   if (!only) return true;
-  return [ids].flat().some((id) => list(only).some((w) => id.includes(w)));
+  return [ids].flat().some((id) => list(only).some((w) => id.startsWith(w)));
 }
 
 /** Runs `scripts/l5-tools.mjs` with the scenarios given; returns its rows. A phone that refuses the session is asked again. */
