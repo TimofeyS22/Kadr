@@ -47,7 +47,14 @@ async function captionsHeap(page: Page, locale: 'en' | 'ru'): Promise<number[]> 
   await page.getByRole('button', { name: ui.close }).click();
   await page.getByRole('button', { name: ui.captions, exact: true }).click();
   await page.getByRole('button', { name: ui.agree, exact: true }).click({ timeout: 30_000 }); // the question before the first download (V-181)
-  await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 400_000 });
+  // English interface, Russian speech (docs/20 ADR-С2): the run starts with Whisper and offers the Russian model once
+  // the language is known. This check is about Whisper's heap, so the offer is declined and Whisper reads on (SW-E4-2:
+  // the test waited 400 s on a question it never answered).
+  const russian = page.locator('.model-ask', { hasText: 'This is Russian speech' });
+  await expect(async () => {
+    if (await russian.isVisible()) await russian.getByRole('button', { name: 'Not now', exact: true }).click();
+    await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 1000 });
+  }).toPass({ timeout: 400_000 });
   await expect(page.locator('.toast.error')).toHaveCount(0);
   const worker = page.workers().filter((w) => /asr\.worker/.test(w.url())).at(-1);
   expect(worker, 'the speech worker is still there to ask').toBeTruthy();

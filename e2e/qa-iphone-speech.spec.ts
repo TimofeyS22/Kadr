@@ -55,7 +55,7 @@ test('?diag on an iPhone-like device: the speech engine starts with a 1 GB heap,
   expect(urls.some((u) => u.includes('asyncify'))).toBe(false);
 
   // The Russian model downloads, fits in the capped heap and reads the live speech sample.
-  await page.getByRole('button', { name: 'Русская речь, 225 MB' }).click();
+  await page.getByRole('button', { name: /^Русская речь, 225 (МБ|MB)$/ }).click(); // «МБ» in the Russian interface (the test waited ten minutes for «MB»)
   await expect(report(page)).toContainText(/## Speech model: ru\nresult: (ok|FAILED)/, { timeout: 500_000 });
   const ru = (await report(page).textContent())?.split('## Speech model: ru')[1] ?? '';
   console.log(`diag ${browserName}, GigaAM with a 1 GB heap:${ru}`);
