@@ -8,6 +8,7 @@ import { openInput } from './source';
 import { correctPixels, decodedAs709, hdrTransfer, sdMatrix, type Hdr } from './hdr';
 import type { AssetKind } from '../core/types';
 import { mark } from '../lib/perf';
+import { letGo } from '../lib/canvas';
 import type { ThumbIn, ThumbJob, ThumbPost, ThumbReply } from './thumbs.worker';
 import { getBlob, getPeaks, openReader, putPeaks } from '../storage/db';
 import type { ChunkedMedia, StoredMedia } from '../storage/chunks';
@@ -258,7 +259,7 @@ class VideoStream {
   private flip = 0;
   private shown: StreamFrame | null = null;
   /** The decoder frame handed out last: a copy of the sample's, so it stays valid if Mediabunny closes the sample. */
-  private out: { sample: VideoSample; frame: VideoFrame } | null = null;
+  private out: { sample: VideoSample; frame: VideoFrame; picture: Picture } | null = null;
   /** The decoder of a scrub's keyframes, while the finger moves (V-248). */
   private keys: KeyDecoder | null = null;
   private keysIdle: ReturnType<typeof setTimeout> | undefined;
@@ -385,13 +386,16 @@ class VideoStream {
     // A frame of another shape than the track's (the size changes inside the file) is fitted only on the canvas path; the
     // frame path would stretch it over the slot, on WebKit alone (audit V-232).
     const sameShape = Math.abs(s.displayWidth * this.height - s.displayHeight * this.width) <= 0.02 * s.displayHeight * this.width;
-    if (exact && sameShape && Math.max(s.codedWidth, s.codedHeight) <= frameMax) {
+    // A scrub's keyframe goes the same way as an exact frame: through a 2D canvas WebKit copied every step on the CPU into
+    // WebGL, and a 1080p step missed 100 ms (SW-A-16). The frame is a copy, so it outlives the sample closed after it.
+    if (sameShape && Math.max(s.codedWidth, s.codedHeight) <= frameMax) {
       if (this.out?.sample !== s) {
         this.out?.frame.close();
-        this.out = { sample: s, frame: s.toVideoFrame() };
+        const frame = s.toVideoFrame();
+        this.out = { sample: s, frame, picture: { image: frame, width: this.width, height: this.height, turn: { rotation: s.rotation, flip: s.flip }, timestamp: s.timestamp, exact, hdr: this.hdr, as601: decodedAs709(this.sd, s.colorSpace.matrix) } };
       }
       this.shown = null; // a scrub that finds no keyframe must not bring back an older canvas
-      return { image: this.out.frame, width: this.width, height: this.height, turn: { rotation: s.rotation, flip: s.flip }, timestamp: s.timestamp, exact, hdr: this.hdr, as601: decodedAs709(this.sd, s.colorSpace.matrix) };
+      return { ...this.out.picture, exact };
     }
     if (this.shown?.timestamp !== s.timestamp || this.shown.exact !== exact) {
       this.canvases ??= [0, 1].map(() => Object.assign(document.createElement('canvas'), { width: this.width, height: this.height }));
@@ -415,8 +419,8 @@ class VideoStream {
       const key = await this.answer(this.packets.getKeyPacket(t), () => undefined);
       this.afterKey = true;
       const s = await this.keyframe(key?.timestamp ?? t);
-      if (!s || this.closed) { s?.close(); return this.shown && this.canvasPicture(this.shown); }
-      const f = this.show(s, false, 0);
+      if (!s || this.closed) { s?.close(); return this.out ? { ...this.out.picture, exact: false } : this.shown && this.canvasPicture(this.shown); }
+      const f = this.show(s, false, frameMax);
       s.close();
       return f;
     }
@@ -468,6 +472,10 @@ class VideoStream {
     this.abandon(new Error('The stream was closed'));
     this.dropKeys();
     void this.reset();
+    // Its two canvases go with it, not with the next garbage collection (audit V-169).
+    this.canvases?.forEach(letGo);
+    this.canvases = null;
+    this.shown = null;
   }
 }
 
@@ -784,7 +792,11 @@ export async function captureFrame(assetId: string, t: number): Promise<Blob> {
       correctPixels(image.data, f);
       ctx.putImageData(image, 0, 0);
     }
-    return await new Promise<Blob>((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new MediaError('Could not encode the frame'))), 'image/jpeg', 0.92));
+    try {
+      return await new Promise<Blob>((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new MediaError('Could not encode the frame'))), 'image/jpeg', 0.92));
+    } finally {
+      letGo(c); // a full-size frame: not left to the collector (audit V-169)
+    }
   } finally {
     pool.dispose();
   }

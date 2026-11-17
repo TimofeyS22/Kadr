@@ -17,6 +17,7 @@ import { matchStreamRange } from './videoRange';
 import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
 import { correctPixels, decodedAs709, hdrTransfer, sdMatrix } from './hdr';
+import { letGo } from '../lib/canvas';
 
 export const MAX_REVERSE_S = 60;
 const WINDOW_S = 0.5;
@@ -39,6 +40,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
   if (s1 - s0 > MAX_REVERSE_S) throw new MediaError('Reverse works on clips up to {n} s. Split the clip first.', { n: MAX_REVERSE_S });
   const input = await openInput(media);
   let started: { output: Output; sources: { close(): void }[] } | null = null;
+  let canvas: HTMLCanvasElement | null = null;
   try {
     const video = await input.getPrimaryVideoTrack();
     if (!video) throw new MediaError('No video in this clip');
@@ -58,7 +60,7 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     const mp4 = vCodec === 'avc';
     const aCodec = audio ? await getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus']) : null;
     const output = new Output({ format: mp4 ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new MemoryTarget() });
-    const canvas = document.createElement('canvas');
+    canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
@@ -106,11 +108,19 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
       stop();
       const start = Math.max(s0, end - WINDOW_S);
       const frames: WrappedCanvas[] = [];
-      for await (const f of sink.canvases(start, end)) { stop(); if (f.timestamp < end - 1e-6 && (f.timestamp >= start - 1e-6 || start <= s0)) frames.push(f); }
+      // Every frame comes on a canvas of its own (no pool: a window of a variable-rate file may hold more frames than a
+      // pool, and a reused canvas would show another frame). Each is let go as soon as it is drawn or passed over: a 60 s
+      // clip made ~1800 of them, left to the collector (audit V-169: 111 MP a 4 s reverse in the e2e).
+      for await (const f of sink.canvases(start, end)) {
+        stop();
+        if (f.timestamp < end - 1e-6 && (f.timestamp >= start - 1e-6 || start <= s0)) frames.push(f);
+        else letGo(f.canvas);
+      }
       for (const f of frames.reverse()) {
         stop();
         const t = Math.max(0, s1 - Math.max(s0, f.timestamp) - frameDur);
         ctx.drawImage(f.canvas, 0, 0);
+        letGo(f.canvas);
         if (hdr || as601) {
           const image = ctx.getImageData(0, 0, width, height);
           correctPixels(image.data, { hdr, as601 });
@@ -131,5 +141,6 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
     throw e;
   } finally {
     input.dispose();
+    letGo(canvas); // the reversed clip's frame size: not left to the collector (audit V-169)
   }
 }

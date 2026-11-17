@@ -8,6 +8,7 @@ import { MediaPool } from './media';
 import { resolveDrawables } from './render';
 import { frameDrawn } from '../lib/perf';
 import { TextRasterizer } from './text';
+import { letGo } from '../lib/canvas';
 
 const PREVIEW_MAX_DIM = 1280;
 const PRELOAD_S = 0.7;
@@ -78,7 +79,8 @@ export class Player {
     // The preview's canvas goes with the editor (or is replaced after a GPU loss): its context goes with it. Kept, one a
     // visit piled up until the browser dropped the oldest (SW-D-4). React's test unmount in development keeps the canvas
     // on the page and attaches it again, so the context is let go only once the canvas has left.
-    if (comp) setTimeout(() => { if (!comp.canvas.isConnected) comp.releaseContext(); }, 0);
+    // Its pixels too, not at the next collection (audit V-169).
+    if (comp) setTimeout(() => { if (!comp.canvas.isConnected) { comp.releaseContext(); letGo(comp.canvas); } }, 0);
   }
 
   onFrame(fn: () => void): () => void {
@@ -254,6 +256,7 @@ export class Player {
       c.height = Math.round(src.height * s);
       c.getContext('2d')!.drawImage(src, 0, 0, c.width, c.height);
       url = c.toDataURL('image/jpeg', 0.7);
+      letGo(c); // made for every project thumbnail: not left to the collector (audit V-169)
     } catch { /* tainted or lost context */ }
     for (const w of this.thumbWaiters.splice(0)) w(url);
   }

@@ -9,6 +9,7 @@ import { MemoryTarget } from './memTarget';
 import { diskFile } from './opfs';
 import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
+import { letGo } from '../lib/canvas';
 import { Limiter, limitedGain } from '../core/dsp';
 import { WholeFrames, encoderPieces } from './wholeFrames';
 import { buildFrame } from '../core/frame';
@@ -542,5 +543,6 @@ async function gifOnce(p: Project, onProgress: (f: number) => void, signal: Abor
     return { blob: new Blob([gif.bytes() as Uint8Array<ArrayBuffer>], { type: 'image/gif' }), fileName: `${fileBase(p)}.gif`, seconds: (performance.now() - started) / 1000 };
   } finally {
     r.dispose();
+    letGo(ctx.canvas); // read back every frame: not left to the collector (audit V-169)
   }
 }

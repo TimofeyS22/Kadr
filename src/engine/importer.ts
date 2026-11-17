@@ -6,6 +6,7 @@ import { within } from '../lib/limits';
 import { openReader, putBlob, requestPersistence, type TakeWriter } from '../storage/db';
 import { MediaMissing } from '../storage/reader';
 import { MediaError, probe } from './media';
+import { letGo } from '../lib/canvas';
 
 export const MAX_FILE_BYTES = 4 * 1024 ** 3;
 
@@ -125,7 +126,11 @@ async function toDecodableImage(file: Blob): Promise<Blob> {
     c.width = img.naturalWidth;
     c.height = img.naturalHeight;
     c.getContext('2d')!.drawImage(img, 0, 0);
-    return await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new MediaError('This image format is not supported'))), 'image/jpeg', 0.92));
+    try {
+      return await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new MediaError('This image format is not supported'))), 'image/jpeg', 0.92));
+    } finally {
+      letGo(c); // a photo's full size, up to 48 MP: not left to the collector (audit V-169)
+    }
   } catch {
     throw new MediaError('This image format is not supported');
   } finally {

@@ -212,3 +212,42 @@ test('a GPU reset on the first decoder frame is not a refusal: the export starts
     expect(y.reduce((s, v) => s + v, 0) / y.length, `the picture at ${t} s`).toBeGreaterThan(40);
   }
 });
+
+// A scrub's keyframe reaches WebGL as the decoder's frame on WebKit, as an exact frame does (SW-A-16): it went through a
+// 2D canvas, which WebKit copies on the CPU (~11 ms a 1080p layer), and a 1080p step missed the 100 ms of CLAUDE.md §5
+// (p90 104–146 ms on a phone's file, lane A, 2026-11-16). Counted at texImage2D; the time from each scroll to the first
+// frame drawn elsewhere is printed (budgets: qa-budgets, measured in quiet minutes).
+test('a scrub on WebKit hands each keyframe to WebGL as the decoder frame, not through a 2D canvas', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '16:9' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Media', exact: true }).click();
+  await (await chooser).setFiles(fx(MAIN));
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(1, { timeout: 60_000 });
+  await page.waitForTimeout(1500); // thumbnails and peaks are made right after an import
+  await page.evaluate(() => { (window as unknown as { __upload: { canvases: number; ms: number } }).__upload = { canvases: 0, ms: 0 }; });
+  const steps: number[] = [];
+  for (const target of [12.4, 3.1, 25.7, 18.2, 7.9, 28.3, 0.6, 21.5, 15.1, 9.8, 26.6, 4.4]) {
+    steps.push(await page.evaluate(async (target) => {
+      type P = { last: { t: number; at: number } };
+      const P = (window as unknown as { __kadrPerf: P }).__kadrPerf;
+      const el = document.querySelector('.tl-scroll')!;
+      const from = P.last.t;
+      const t0 = performance.now();
+      el.scrollLeft = (target / 30) * (el.scrollWidth - el.clientWidth);
+      while (performance.now() - t0 < 10_000) {
+        await new Promise((r) => setTimeout(r, 2));
+        if (P.last.at > t0 && Math.abs(P.last.t - from) > 1) return P.last.at - t0;
+      }
+      return 10_000;
+    }, target));
+  }
+  const upload = await page.evaluate(() => (window as unknown as { __upload: { canvases: number; ms: number } }).__upload);
+  const s = [...steps].sort((a, b) => a - b);
+  const q = (x: number) => Math.round(s[Math.min(s.length - 1, Math.floor(x * s.length))]);
+  console.log(`scrub steps (${info.project.name}): p50 ${q(0.5)} ms, p95 ${q(0.95)} ms, max ${Math.round(s.at(-1)!)} ms; frames through a 2D canvas ${upload.canvases}`);
+  expect(steps.every((t) => t < 10_000), 'every scrub step drew a frame').toBe(true);
+  if (info.project.name === 'iphone-webkit') expect(upload.canvases, 'scrub keyframes uploaded to WebGL through a 2D canvas').toBe(0);
+});

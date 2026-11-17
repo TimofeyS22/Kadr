@@ -1,36 +1,39 @@
-// Person segmentation for "Remove background": MediaPipe selfie segmenter (on device, ~250 KB model).
-import type { ImageSegmenter, ImageSource } from '@mediapipe/tasks-vision';
+// Person segmentation for "Remove background": MediaPipe selfie segmenter (on device, ~250 KB model). It runs in the
+// vision worker (audit V-167): the mask read back from the GPU held up the page's thread every frame.
+import type { ImageSegmenter } from '@mediapipe/tasks-vision';
 import type { SegMask } from './text';
 import { modelLoad } from './modelLoad';
-import { SEGMENTER_MODEL, visionFiles } from './vision';
+import { askVision, visionFiles, visionWorker } from './vision';
+import { loadSegmenter, personConfidence, personSeen } from './visionCore';
 
+/** On the page, where no worker can run it (vision.ts). */
 let segmenter: Promise<ImageSegmenter> | null = null;
+/** In the worker: loaded once, with the same time limit and offline message as on the page. */
+let warmed: Promise<unknown> | null = null;
 
 function getSegmenter(): Promise<ImageSegmenter> {
-  segmenter ??= modelLoad((async () => {
-    const { ImageSegmenter } = await import('@mediapipe/tasks-vision');
-    const make = (delegate: 'GPU' | 'CPU') => ImageSegmenter.createFromOptions(visionFiles(), {
-      baseOptions: { modelAssetPath: SEGMENTER_MODEL(), delegate },
-      runningMode: 'IMAGE',
-      outputCategoryMask: false,
-      outputConfidenceMasks: true,
-    });
-    // GPU is fastest, but its setup can fail or stall on weak or busy devices: fall back to CPU after 8 s.
-    const gpu = make('GPU');
-    const timeout = new Promise<null>((r) => setTimeout(() => r(null), 8000));
-    try {
-      const seg = await Promise.race([gpu, timeout]);
-      if (seg) return seg;
-      void gpu.then((late) => late.close(), () => undefined);
-    } catch { /* GPU unavailable */ }
-    return make('CPU');
-  })(), (late) => late.close());
+  segmenter ??= modelLoad(loadSegmenter(visionFiles('page')), (late) => late.close());
   segmenter.catch(() => { segmenter = null; });
   return segmenter;
 }
 
 /** Loads the model ahead of time (e.g. when the user turns the feature on). */
-export const warmSegmenter = (): Promise<unknown> => getSegmenter();
+export function warmSegmenter(): Promise<unknown> {
+  const w = visionWorker();
+  if (!w) return getSegmenter();
+  // A model that arrives after the limit stays in the worker, ready for the next try.
+  warmed ??= modelLoad(askVision(w, { op: 'warm', model: 'segmenter' }), () => undefined);
+  warmed.catch(() => { warmed = null; });
+  return warmed;
+}
+
+/** The worker's answer for a copy of `image`, or undefined when there is no worker (any more): the page answers then. */
+async function inWorker(op: 'mask' | 'person', image: TexImageSource) {
+  if (!visionWorker()) return undefined;
+  await warmSegmenter();
+  const w = visionWorker();
+  return w ? askVision(w, { op, image: await createImageBitmap(image as ImageBitmapSource) }) : undefined;
+}
 
 const cache = new Map<string, SegMask>();
 const previous = new Map<string, { t: number; w: number; h: number; data: Uint8Array }>();
@@ -52,42 +55,23 @@ function smoothInTime(key: string, data: Uint8Array, w: number, h: number): void
   if (previous.size > 8) previous.delete(previous.keys().next().value!);
 }
 
-/** Person mask for an image; `key` identifies the exact frame so paused previews don't recompute. */
 /** Does the segmenter see a person covering at least 1% of this picture? */
 export async function hasPerson(image: TexImageSource): Promise<boolean> {
-  const seg = await getSegmenter();
-  const result = seg.segment(image as ImageSource);
-  try {
-    const masks = result.confidenceMasks ?? [];
-    const m = masks.length > 1 ? masks[1] : masks[0];
-    if (!m) return false;
-    const f = m.getAsFloat32Array();
-    let n = 0;
-    for (let i = 0; i < f.length; i++) if (f[i] > 0.5) n++;
-    return n > f.length * 0.01;
-  } finally {
-    result.close();
-  }
+  const out = await inWorker('person', image);
+  if (out && 'person' in out) return out.person;
+  return personSeen(await getSegmenter(), image);
 }
 
+/** Person mask for an image; `key` identifies the exact frame so paused previews don't recompute. */
 export async function personMask(key: string, image: TexImageSource): Promise<SegMask | null> {
   const hit = cache.get(key);
   if (hit) return hit;
-  const seg = await getSegmenter();
-  const result = seg.segment(image as ImageSource);
-  try {
-    const masks = result.confidenceMasks ?? [];
-    const m = masks.length > 1 ? masks[1] : masks[0]; // multi-class models put "person" at index 1
-    if (!m) return null;
-    const f = m.getAsFloat32Array();
-    const data = new Uint8Array(f.length);
-    for (let i = 0; i < f.length; i++) data[i] = Math.round(Math.min(1, Math.max(0, f[i])) * 255);
-    smoothInTime(key, data, m.width, m.height);
-    const mask: SegMask = { data, w: m.width, h: m.height, key };
-    cache.set(key, mask);
-    if (cache.size > 12) cache.delete(cache.keys().next().value!);
-    return mask;
-  } finally {
-    result.close();
-  }
+  const out = await inWorker('mask', image);
+  const m = out && 'mask' in out ? out.mask : personConfidence(await getSegmenter(), image);
+  if (!m) return null;
+  smoothInTime(key, m.data, m.w, m.h);
+  const mask: SegMask = { data: m.data, w: m.w, h: m.h, key };
+  cache.set(key, mask);
+  if (cache.size > 12) cache.delete(cache.keys().next().value!);
+  return mask;
 }

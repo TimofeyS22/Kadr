@@ -64,8 +64,15 @@ test('no 4 GiB reservations: a reel, a video export to memory, an audio export a
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
   await (await chooser).setFiles(fx('reel_ru.mp4'));
-  await page.getByRole('button', { name: 'Download and make the reel', exact: true }).click({ timeout: 60_000 }); // the question before the first model download (audit V-181)
-  await expect(page.locator('.reel-done')).toBeVisible({ timeout: 300_000 });
+  // The question before a model download (audit V-181) comes once for the first model, and once more when the speech
+  // turns out Russian and the Russian model reads it better (docs/20): each is answered (SW-B-4: the test waited at the
+  // second for 300 s, on v1.9.11 already).
+  const ask = page.getByRole('button', { name: 'Download and make the reel', exact: true });
+  await ask.click({ timeout: 60_000 });
+  await expect(async () => {
+    if (await ask.isVisible()) await ask.click();
+    await expect(page.locator('.reel-done')).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 300_000 });
   const afterReel = await reserved(page);
   await page.getByRole('button', { name: 'Watch the reel' }).click();
   await expect(page.locator('.sheet')).toHaveCount(0);
@@ -117,5 +124,81 @@ test('an iPhone-sized address space: after two exports the speech heap still fit
   await tool(page, 'Captions').click();
   await page.getByRole('button', { name: 'Download and make captions', exact: true }).click({ timeout: 30_000 }); // the question before the first model download (audit V-181)
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 300_000 });
+  await expect(page.locator('.toast.error')).toHaveCount(0);
+});
+
+// Canvases are given back, not left to the collector (audit V-169): on an iPhone every canvas of a page draws on one
+// memory limit, and full-size frames waiting for a collection make the next canvas fail. Every canvas the page makes is
+// counted (the test keeps them, so nothing is collected under it); what still has pixels after an action, outside the
+// document, is what the page left to the collector. Done three times, that must not grow: a freeze frame (a full-size
+// frame through captureFrame), a reverse and a scrub of twelve steps.
+test('freeze frames, a reverse and a scrub leave no canvas with its pixels to the collector (V-169)', async ({ page }, info) => {
+  test.setTimeout(400_000);
+  await page.addInitScript(() => {
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
+    localStorage.setItem('kadr.locale', 'en');
+    localStorage.setItem('kadr.hint.move', '1');
+    localStorage.setItem('kadr.iosVideoTip.v3', '1');
+    localStorage.setItem('kadr.undoMoved.v1', '1');
+    const made: (HTMLCanvasElement | OffscreenCanvas)[] = ((window as unknown as { __canvases: unknown[] }).__canvases = []) as never;
+    const create = Document.prototype.createElement;
+    Document.prototype.createElement = function (this: Document, name: string, ...rest: unknown[]) {
+      const el = (create as (...a: unknown[]) => HTMLElement).call(this, name, ...rest);
+      if (String(name).toLowerCase() === 'canvas') made.push(el as HTMLCanvasElement);
+      return el;
+    } as typeof create;
+    if (typeof OffscreenCanvas !== 'undefined') {
+      const Native = OffscreenCanvas;
+      const Counted = new Proxy(Native, { construct(target, args: [number, number], newTarget) { const c = Reflect.construct(target, args, newTarget) as OffscreenCanvas; made.push(c); if (new Error().stack?.includes('copyFrameIfNeeded')) (c as unknown as { __android: boolean }).__android = true; return c; } });
+      Object.defineProperty(window, 'OffscreenCanvas', { value: Counted, writable: true, configurable: true });
+    }
+  });
+  // Mediabunny's own copy of each decoded frame on Chromium for Android (one canvas a decoder, SW-B-6) is counted apart.
+  const left = (android = false) => page.evaluate((android) => (window as unknown as { __canvases: (HTMLCanvasElement | OffscreenCanvas)[] }).__canvases
+    .filter((c) => !(c instanceof HTMLCanvasElement && c.isConnected) && !!(c as unknown as { __android?: boolean }).__android === android)
+    .reduce((mp, c) => mp + (c.width * c.height) / 1e6, 0), android);
+  await page.goto('./');
+  // A tool of the clip: from the ribbon, or from «All tools» where the ribbon does not show it (UI-5).
+  const use = async (name: string) => {
+    if (!(await tool(page, name).count())) await page.getByRole('button', { name: 'All tools' }).click();
+    await tool(page, name).last().click();
+  };
+  const areas: number[] = [], android: number[] = [];
+  // Each round in a project of its own, left at the end: what a round made and did not give back stays counted.
+  for (let round = 0; round < 3; round++) {
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.locator('.aspect-card', { hasText: '16:9' }).click();
+    const chooser = page.waitForEvent('filechooser');
+    await tool(page, 'Media').click();
+    await (await chooser).setFiles(fx('landscape.mp4'));
+    const video = page.locator('.tl-row.main .clip').first();
+    await expect(video).toHaveCount(1, { timeout: 60_000 });
+    // The freeze frame is taken under the playhead: 2 s into the 6 s clip.
+    await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = (el.scrollWidth - el.clientWidth) / 3; });
+    await page.waitForTimeout(400);
+    await use('Freeze');
+    await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
+    await expect(page.locator('.tl-row.main .clip-image')).toHaveCount(1, { timeout: 30_000 });
+    const part = page.locator('.tl-row.main .clip:not(.clip-image)').last(); // the 4 s after the freeze frame
+    await expect(async () => {
+      if (!(await part.getAttribute('class'))?.includes(' sel')) await part.click();
+      await expect(part).toHaveClass(/ sel/, { timeout: 1000 });
+    }).toPass({ timeout: 10_000 });
+    await use('Reverse');
+    await expect(page.locator('.busy')).toHaveCount(0, { timeout: 120_000 });
+    if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
+    await page.evaluate(async () => {
+      const el = document.querySelector('.tl-scroll')!;
+      for (const f of [0.6, 0.1, 0.8, 0.3, 0.95, 0.05, 0.5, 0.7, 0.2, 0.9, 0.4, 0.15]) { el.scrollLeft = f * (el.scrollWidth - el.clientWidth); await new Promise((r) => setTimeout(r, 120)); }
+    });
+    await page.getByRole('button', { name: 'Back to projects' }).click();
+    await expect(page.getByRole('button', { name: 'New project' })).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1500);
+    areas.push(Math.round((await left()) * 100) / 100);
+    android.push(Math.round((await left(true)) * 100) / 100);
+  }
+  console.log(`canvas megapixels outside the page after each round (${info.project.name}): ${areas.join(', ')}; mediabunny's Android frame copies (SW-B-6): ${android.join(', ')}`);
+  expect(areas[2], 'megapixels of canvases left with their pixels after round 3, against round 1').toBeLessThanOrEqual(areas[0] + 0.1);
+  expect(android[2], "megapixels of mediabunny's Android frame copies after round 3, against round 1 (SW-B-6)").toBeLessThanOrEqual(android[0] + 0.1);
   await expect(page.locator('.toast.error')).toHaveCount(0);
 });

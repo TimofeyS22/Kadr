@@ -4,12 +4,69 @@
 // at /mediapipe/ and /models/, or with a model fetched from a "latest" URL.
 import loader from '@mediapipe/tasks-vision/vision_wasm_internal.js?url';
 import binary from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url';
+// The same runtime as an ES module that sets `globalThis.ModuleFactory` itself, for the worker: a module worker cannot
+// `importScripts`, and the classic loader's `var ModuleFactory` stays inside a module ("ModuleFactory not set").
+import moduleLoader from '@mediapipe/tasks-vision/vision_wasm_module_internal.js?url';
+import moduleBinary from '@mediapipe/tasks-vision/vision_wasm_module_internal.wasm?url';
 import faceModel from './mediapipe/blaze_face_short_range.tflite?url';
 import segmenterModel from './mediapipe/selfie_segmenter.tflite?url';
+import type { VisionFiles } from './visionCore';
+import type { VisionAsk, VisionOut } from './vision.worker';
 
 const abs = (url: string) => new URL(url, location.href).href;
 
-/** The runtime files for `createFromOptions` (SIMD build: every browser Kadr supports has WebAssembly SIMD). */
-export const visionFiles = () => ({ wasmLoaderPath: abs(loader), wasmBinaryPath: abs(binary) });
-export const FACE_MODEL = () => abs(faceModel);
-export const SEGMENTER_MODEL = () => abs(segmenterModel);
+/**
+ * The runtime and model files (SIMD build: every browser Kadr supports has WebAssembly SIMD), as absolute URLs: the
+ * page loads the classic runtime through a <script>, the worker the module one.
+ */
+export const visionFiles = (where: 'page' | 'worker'): VisionFiles => ({
+  wasmLoaderPath: abs(where === 'page' ? loader : moduleLoader),
+  wasmBinaryPath: abs(where === 'page' ? binary : moduleBinary),
+  faceModel: abs(faceModel),
+  segmenterModel: abs(segmenterModel),
+});
+
+/**
+ * The vision worker (vision.worker.ts, audit V-167): the detector and the segmenter run there, not on the page's thread.
+ * Null where a worker cannot run them (no Worker, OffscreenCanvas or createImageBitmap), or once the worker itself has
+ * failed: the page then runs the same code (visionCore.ts), as it always did before.
+ */
+let worker: Worker | null | undefined;
+let nextId = 1;
+const waiting = new Map<number, { resolve: (o: VisionOut) => void; reject: (e: Error) => void }>();
+
+export function visionWorker(): Worker | null {
+  if (worker !== undefined) return worker;
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') return (worker = null);
+  try {
+    worker = new Worker(new URL('./vision.worker.ts', import.meta.url), { type: 'module' });
+  } catch {
+    return (worker = null);
+  }
+  worker.onmessage = (e: MessageEvent<VisionOut>) => {
+    const w = waiting.get(e.data.id);
+    waiting.delete(e.data.id);
+    if (!w) return;
+    if ('error' in e.data) w.reject(new Error(e.data.error));
+    else w.resolve(e.data);
+  };
+  // The worker's own code did not run (its file gone after a deploy, a browser that refuses it): what waits fails, and
+  // the next request runs on the page.
+  worker.onerror = (e) => {
+    e.preventDefault();
+    worker?.terminate();
+    worker = null;
+    for (const w of waiting.values()) w.reject(new Error(e.message || 'The vision worker stopped'));
+    waiting.clear();
+  };
+  return worker;
+}
+
+/** One request to the worker. `image` is handed over (transferred): the caller passes a copy it does not need. */
+export function askVision(w: Worker, req: VisionAsk): Promise<VisionOut> {
+  const id = nextId++;
+  return new Promise<VisionOut>((resolve, reject) => {
+    waiting.set(id, { resolve, reject });
+    w.postMessage({ ...req, id, files: visionFiles('worker') }, 'image' in req ? [req.image] : []);
+  });
+}

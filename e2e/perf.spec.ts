@@ -1,6 +1,7 @@
 // Performance benchmark (docs/04-performance-prompt.md, scenario S1): 4 × 60 s 1080p clips, CPU slowed 4×.
 // Prints a JSON report; budgets are asserted once the baseline is known.
 import { expect, test, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -167,4 +168,72 @@ test('S3: cutout playback', async ({ page }, info) => {
   };
   console.log('PERF cutout', JSON.stringify(report));
   writeFileSync(info.outputPath('cutout.json'), JSON.stringify(report));
+});
+
+// G-6: memory of what is heavy — MediaPipe (faces and cutout), noise reduction, a 4K phone video, a 15-minute clip.
+// A Mac's numbers, not a phone's: the phone's are the L5 queue (B). Peak resident memory of the browser's processes
+// under this test (renderer, GPU, workers), sampled every 250 ms, and the page's JS heap. Printed, with no bound: the
+// budget is the phone's, which a Mac cannot stand for.
+function treeRssMb(root: number): number {
+  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,rss=']).toString().trim().split('\n').map((l) => l.trim().split(/\s+/).map(Number));
+  const kids = new Map<number, number[]>();
+  for (const [pid, ppid] of rows) kids.set(ppid, [...(kids.get(ppid) ?? []), pid]);
+  const rss = new Map(rows.map(([pid, , kb]) => [pid, kb]));
+  let sum = 0;
+  const walk = (p: number) => { for (const k of kids.get(p) ?? []) { sum += rss.get(k) ?? 0; walk(k); } };
+  walk(root);
+  return Math.round(sum / 1024);
+}
+const G6 = [
+  { name: 'faces and cutout', files: ['walk.mp4'], aspect: '16:9', play: 5 },
+  { name: 'noise reduction', files: ['speech_en.mp4'], aspect: '9:16', play: 5 },
+  { name: '4K phone video', files: ['phone_4k_h264.mp4'], aspect: '9:16', play: 10 },
+  { name: '15-minute clip', files: ['long_15m.mp4'], aspect: '16:9', play: 10 },
+] as const;
+for (const s of G6) test(`G-6: memory with ${s.name}`, async ({ page }, info) => {
+  test.setTimeout(600_000);
+  await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.locale', 'en'); localStorage.setItem('kadr.hint.move', '1'); localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false })); });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Performance.enable');
+  const heapMb = async () => round(((await cdp.send('Performance.getMetrics')).metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? 0) / 1e6);
+  let peak = 0;
+  const sampler = setInterval(() => { peak = Math.max(peak, treeRssMb(process.pid)); }, 250);
+  try {
+    await page.goto('./');
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.locator('.aspect-card', { hasText: s.aspect }).click();
+    await expect(page.locator('.preview-canvas')).toBeVisible();
+    const idle = treeRssMb(process.pid);
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Media', exact: true }).click();
+    await (await chooser).setFiles(s.files.map(fx));
+    const clip = page.locator('.tl-row.main .clip').first();
+    await expect(clip).toHaveCount(1, { timeout: 300_000 });
+    await expect(async () => { if (!(await clip.getAttribute('class'))?.includes(' sel')) await clip.click(); await expect(clip).toHaveClass(/ sel/, { timeout: 1000 }); }).toPass({ timeout: 10_000 });
+    if (s.name === 'faces and cutout') {
+      await page.getByRole('button', { name: 'Hide faces', exact: true }).click();
+      const hide = page.getByRole('switch', { name: 'Hide faces automatically' });
+      await hide.click();
+      await expect(hide).toBeChecked({ timeout: 120_000 });
+      await page.getByRole('button', { name: 'Done' }).click();
+      await page.getByRole('button', { name: 'Cutout', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Cutout', exact: true })).toHaveAttribute('aria-pressed', 'true', { timeout: 120_000 });
+    } else if (s.name === 'noise reduction') {
+      await page.getByRole('button', { name: 'Volume', exact: true }).click();
+      const noise = page.getByRole('switch', { name: 'Reduce background noise' });
+      await noise.click();
+      await expect(noise).toBeChecked({ timeout: 120_000 });
+      await page.getByRole('button', { name: 'Done' }).click();
+    }
+    const heapReady = await heapMb();
+    await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = 0; });
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.waitForTimeout(s.play * 1000);
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    const report = { scenario: s.name, idleMb: idle, peakMb: peak, heapReadyMb: heapReady, heapAfterPlayMb: await heapMb() };
+    console.log('PERF G-6', JSON.stringify(report));
+    writeFileSync(info.outputPath('g6.json'), JSON.stringify(report));
+  } finally {
+    clearInterval(sampler);
+  }
 });
