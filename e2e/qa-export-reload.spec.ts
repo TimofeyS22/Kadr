@@ -79,3 +79,16 @@ test('a finished export let go without saving is not offered after a reload, and
   await page.waitForTimeout(3000);
   await expect(page.getByRole('dialog', { name: 'Export' }), 'a file let go is not offered').toHaveCount(0);
 });
+
+test('«Done» on a file not saved, then the way home and back into the project: not offered, nothing of it stays (SW-A-15, G-3)', async ({ page }) => {
+  test.setTimeout(300_000);
+  await exported(page);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.toast').filter({ hasText: 'not saved yet' }), 'it warns: the person has answered').toBeVisible();
+  await page.goto('./'); // home by the address: the sheet never closes, its own clean-up never runs
+  await page.getByRole('button', { name: /^Open / }).first().click();
+  await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(3000);
+  await expect(page.getByRole('dialog', { name: 'Export' }), 'a file the person said «Done» to is not offered').toHaveCount(0);
+  await expect.poll(() => kept(page), { timeout: 10_000 }).toEqual(NOTHING);
+});

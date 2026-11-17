@@ -59,9 +59,21 @@ async function fromDisk(name: string): Promise<Blob | undefined> {
   }
 }
 
+/**
+ * Export files no note names: a sheet closed with the file not kept removes it as it goes, and a page that went first
+ * (a reload right after «Done», a way home) left it on the disk until the next export (SW-A-15, Chromium in the cloud).
+ */
+async function sweep(keep: string | undefined): Promise<void> {
+  try {
+    const root = await navigator.storage.getDirectory();
+    for await (const name of root.keys()) if (name.startsWith('export-') && name !== keep) await root.removeEntry(name).catch(() => undefined);
+  } catch { /* no file system here */ }
+}
+
 /** On opening a project: whether a file of it is kept; if so it is read back and held for the export sheet. */
 export async function findKeptExport(project: string): Promise<boolean> {
   const note = read();
+  await sweep(note?.disk);
   if (!note || note.project !== project) return false;
   const blob = note.disk ? await fromDisk(note.disk) : await getBlob(STORED).catch(() => undefined);
   if (!blob?.size) { dropKeptExport(); return false; }

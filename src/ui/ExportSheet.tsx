@@ -105,8 +105,11 @@ export function ExportSheet() {
   const [saved, setSaved] = useState(false);
   const save = (r: ExportResult) => void saveFile(r.blob, r.fileName).then((ok) => { if (ok) { setSaved(true); dropKeptExport(); } });
   useHoldUpdates(phase.kind === 'running' || phase.kind === 'done'); // a reload would lose the export or the file
+  const unsaved = phase.kind === 'done' && !saved && !(phase.quick && !IOS);
+  // «Done» on a file not saved is the person's answer, even the tap that only warns: it is no longer offered after a
+  // reload or a way home (lead's decision after G-3's test: only an export cut off before the person decided comes back).
   useSheetGuard(phase.kind === 'running' ? t('The export is still running. Tap again to stop it.')
-    : phase.kind === 'done' && !saved && !(phase.quick && !IOS) ? t('The video is not saved yet. Tap again to discard it.') : null);
+    : unsaved ? t('The video is not saved yet. Tap again to discard it.') : null, unsaved ? dropKeptExport : undefined);
   const [format, setFormat] = useState<Format>(back?.extra?.made?.format ?? 'video');
   const [loudness, setLoudness] = useState(prefs.evenLoudness);
   const [quick, setQuick] = useState(prefs.quick);

@@ -34,11 +34,11 @@ export function useMedia(query: string): boolean {
  * While this sheet holds work closing it would lose (an export, captions being made, a file not saved yet), `message`
  * says what: the first close warns, a second one closes (audit V-225: Done, a swipe or Esc silently threw it away).
  */
-export function useSheetGuard(message: string | null): void {
+export function useSheetGuard(message: string | null, onLeave?: () => void): void {
   useEffect(() => {
     if (!message) return;
-    useEditor.setState({ sheetGuard: message });
-    return () => useEditor.setState({ sheetGuard: null });
+    useEditor.setState({ sheetGuard: message, sheetLeave: onLeave ?? null });
+    return () => useEditor.setState({ sheetGuard: null, sheetLeave: null });
   }, [message]);
 }
 

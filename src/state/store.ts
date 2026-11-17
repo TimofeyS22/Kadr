@@ -76,6 +76,8 @@ export interface EditorState {
   openSheet(s: SheetId | null, transitionFor?: string): void;
   /** What closing the open sheet would lose, in words; the first attempt says it, a second one closes. */
   sheetGuard: string | null;
+  /** Told of every attempt to leave the open sheet while it guards something, warned or not: the person decided. */
+  sheetLeave: (() => void) | null;
   /** An export is running: it renders the project as it was when it began, so nothing may look as if it changed it. */
   locked: boolean;
   /** Whether what the open sheet holds may be left (closed, or a step back inside it): false the first time a guard is up,
@@ -174,9 +176,11 @@ export const useEditor = create<EditorState>()((set, get) => ({
   toggleMulti: (id) => set((s) => ({ multi: s.multi?.includes(id) ? s.multi.filter((x) => x !== id) : [...(s.multi ?? []), id] })),
   openSheet: (sheet, transitionFor) => set({ sheet, transitionFor: transitionFor ?? null }),
   sheetGuard: null,
+  sheetLeave: null,
   locked: false,
   leaveSheet: () => {
     const guard = get().sheetGuard;
+    get().sheetLeave?.();
     if (guard && performance.now() - warnedAt > GUARD_MS) {
       warnedAt = performance.now();
       get().toast(guard);
