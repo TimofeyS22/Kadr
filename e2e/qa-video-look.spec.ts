@@ -78,8 +78,10 @@ test('look tools at their ends: every Adjust value at its top and at its bottom,
   test.setTimeout(900_000);
   const clips = mainClips(page);
   await newProject(page);
-  // Natural tones for the colour ends; the bars for the crop corner and the blur.
-  await importFiles(page, 'Media', ['walk.mp4', 'person.jpg', 'photo.png', 'landscape.mp4']);
+  // Natural tones for the colour ends; the fractal again for the crop corner and the blur: its corner at 4× still holds
+  // colour and edges. The bars' corners at 4× are one flat bar (cyan 0,254,254): a frame of one colour at the gamut's edge
+  // measures the encoder's rounding there (CI WebKit: 255 → 253, cast 2.00), not whether the file is the preview.
+  await importFiles(page, 'Media', ['walk.mp4', 'person.jpg', 'photo.png', 'photo.png']);
   await expect(clips).toHaveCount(4);
   const middles = await clips.evaluateAll((els) => els.map((e) => ((e as HTMLElement).offsetLeft - (els[0] as HTMLElement).offsetLeft + (e as HTMLElement).offsetWidth / 2) / 60));
   const adjustAll = async (k: number, key: 'Home' | 'End') => {
@@ -101,7 +103,7 @@ test('look tools at their ends: every Adjust value at its top and at its bottom,
   await page.getByRole('button', { name: 'Done' }).click();
   await importLut(page, cube(info, 'my-swap-lut', ([r, g, b]) => [b, g, r]));
   await effect(page, 'Glitch', 'End');
-  // Bars: 9:16 crop at 4×, panned to the bottom right corner, and Blur at full strength.
+  // The fractal: 9:16 crop at 4×, panned to the bottom right corner, and Blur at full strength.
   await selectClip(page, clips.nth(3));
   await tool(page, 'Crop').click();
   await page.getByRole('radio', { name: '9:16' }).click();
@@ -111,8 +113,8 @@ test('look tools at their ends: every Adjust value at its top and at its bottom,
   await page.getByRole('button', { name: 'Done' }).click();
   await effect(page, 'Blur', 'End');
   await closeTools(page);
-  const names = ['video: every Adjust value at its top', 'photo: every Adjust value at its bottom', 'photo: Cyber 100%, LUT, Glitch 100%', 'bars: 9:16 at 4× in the corner, Blur 100%'];
-  // The bars at 4× fill the frame with bright colour: their limit is that of bright full frames (editor.spec «in motion», 2:
+  const names = ['video: every Adjust value at its top', 'photo: every Adjust value at its bottom', 'photo: Cyber 100%, LUT, Glitch 100%', 'fractal: 9:16 at 4× in the corner, Blur 100%'];
+  // The fractal's corner at 4× fills the frame with bright colour: its limit is that of bright full frames (editor.spec «in motion», 2:
   // matching ≤ 0.83, export-only temperature +0.3 gave 4.9–6.1); the others are mostly dark or soft, 0.8 as «look tools».
   await expectSameFrames(page, info, 'WYSIWYG look ends', names.map((name, k) => ({ name, t: middles[k], ...(k === 3 ? { maxCast: 2 } : {}) })), 0.8);
 });

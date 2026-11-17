@@ -14,7 +14,9 @@ test('the arrows of a greyed-out value do nothing behind its sheet; once it is l
   await expect(mainClips(page)).toHaveCount(1);
   await closeTools(page);
   await selectClip(page, mainClips(page).first()); // the tap puts the playhead where it lands
-  const at = await playhead(page);
+  // Where it settles: a slow machine moves it after the selection shows (CI 2026-11-17 read 0, then 2.57).
+  let at = -1;
+  await expect.poll(async () => { const now = await playhead(page); const settled = now === at && now > 0; at = now; return settled; }, { message: 'the tap has put the playhead' }).toBe(true);
   await tool(page, 'Filters').click();
   const intensity = sheet(page).getByRole('slider', { name: 'Intensity' });
   await expect(intensity, 'no filter yet: Intensity is greyed out').toHaveAttribute('aria-disabled', 'true');
