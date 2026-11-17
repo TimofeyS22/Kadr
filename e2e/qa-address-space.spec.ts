@@ -199,5 +199,6 @@ test('freeze frames, a reverse and a scrub leave no canvas with its pixels to th
   }
   console.log(`canvas megapixels outside the page after each round (${info.project.name}): ${areas.join(', ')}; mediabunny's Android frame copies (SW-B-6): ${android.join(', ')}`);
   expect(areas[2], 'megapixels of canvases left with their pixels after round 3, against round 1').toBeLessThanOrEqual(areas[0] + 0.1);
+  expect(android[2], "megapixels of mediabunny's Android frame copies after round 3, against round 1 (SW-B-6)").toBeLessThanOrEqual(android[0] + 0.1);
   await expect(page.locator('.toast.error')).toHaveCount(0);
 });

@@ -26,11 +26,26 @@ export function patientProbe(code: string): string {
   return code.replace(PROBE, `await Promise.race([detectAudioEncoderPrimingShift(this.encodingConfig.codec, encoderConfig.codec).catch(() => 0), new Promise((r) => setTimeout(r, ${PROBE_MS}, 0))]) /* Kadr: scripts/no-reserve.ts */`);
 }
 
+// On Chromium for Android, mediabunny copies every decoded frame through a 2D canvas of its own (copyFrameIfNeeded, one
+// a video decoder) and never lets it go: a closed decoder left a 1280×720 canvas with its pixels to the garbage collector,
+// ~20 MP a round of the V-169 test (SW-B-6). Closing the decoder now makes that canvas empty and forgets it.
+const MEDIA_SINK = /[\\/]mediabunny[\\/]dist[\\/]modules[\\/]src[\\/]media-sink\.js$/;
+const DECODER_CLOSE_END = /(this\.sampleQueue\.length = 0;\s*\n)(\s*\}\s*\n\}\s*\nlet mergerWorkerUrl = null;)/;
+
+/** The source of mediabunny's media-sink.js with the video decoder's frame-copy canvas released when it closes. */
+export function releaseFrameCopy(code: string): string {
+  if (!DECODER_CLOSE_END.test(code) || !code.includes('this.frameCopyContext = context;')) {
+    throw new Error('mediabunny VideoDecoderWrapper changed: check scripts/no-reserve.ts (SW-B-6)');
+  }
+  return code.replace(DECODER_CLOSE_END, '$1        if (this.frameCopyContext) { this.frameCopyContext.canvas.width = 0; this.frameCopyContext.canvas.height = 0; this.frameCopyContext = null; } // Kadr: scripts/no-reserve.ts (SW-B-6)\n$2');
+}
+
 /** For Vite and its dependency pre-bundling (Rolldown): the same transforms. */
 export const noReservePlugin = {
   name: 'kadr-no-reserve',
   transform(code: string, id: string) {
     if (FILE.test(id)) return { code: noReserve(code), map: null };
+    if (MEDIA_SINK.test(id)) return { code: releaseFrameCopy(code), map: null };
     return MEDIA_SOURCE.test(id) ? { code: patientProbe(code), map: null } : null;
   },
 };
