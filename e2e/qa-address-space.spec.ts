@@ -64,8 +64,15 @@ test('no 4 GiB reservations: a reel, a video export to memory, an audio export a
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^Reel in 1 tap/ }).click();
   await (await chooser).setFiles(fx('reel_ru.mp4'));
-  await page.getByRole('button', { name: 'Download and make the reel', exact: true }).click({ timeout: 60_000 }); // the question before the first model download (audit V-181)
-  await expect(page.locator('.reel-done')).toBeVisible({ timeout: 300_000 });
+  // The question before a model download (audit V-181) comes once for the first model, and once more when the speech
+  // turns out Russian and the Russian model reads it better (docs/20): each is answered (SW-B-4: the test waited at the
+  // second for 300 s, on v1.9.11 already).
+  const ask = page.getByRole('button', { name: 'Download and make the reel', exact: true });
+  await ask.click({ timeout: 60_000 });
+  await expect(async () => {
+    if (await ask.isVisible()) await ask.click();
+    await expect(page.locator('.reel-done')).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 300_000 });
   const afterReel = await reserved(page);
   await page.getByRole('button', { name: 'Watch the reel' }).click();
   await expect(page.locator('.sheet')).toHaveCount(0);
