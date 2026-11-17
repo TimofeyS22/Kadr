@@ -23,8 +23,9 @@ type Shared = { name: string; type: string; size: number; b64: string; afterTap:
 /** share() has to start inside the tap: iOS refuses it once the tap has gone stale. It starts in the same task today. */
 const MAX_AFTER_TAP_MS = 1000;
 
-/** The browser's share sheet: answers as told, keeps what it was handed. */
-const fakeSheet = (page: Page, answer: 'ok' | 'AbortError' | 'NotAllowedError') => page.addInitScript((how) => {
+type Answer = 'ok' | 'AbortError' | 'NotAllowedError';
+/** The browser's share sheet: answers as told, call by call (the last answer stays), keeps what it was handed. */
+const fakeSheet = (page: Page, ...answers: Answer[]) => page.addInitScript((said) => {
   const w = window as unknown as { __shared: Shared | null; __tries: number; __tap: number };
   w.__shared = null;
   w.__tries = 0;
@@ -34,6 +35,7 @@ const fakeSheet = (page: Page, answer: 'ok' | 'AbortError' | 'NotAllowedError') 
   Object.defineProperty(navigator, 'share', { value: async (d: ShareData) => {
     w.__tries++;
     const afterTap = performance.now() - w.__tap;
+    const how = said[Math.min(w.__tries, said.length) - 1];
     if (how !== 'ok') throw new DOMException('refused', how);
     const f = d.files![0];
     const bytes = new Uint8Array(await f.arrayBuffer());
@@ -41,7 +43,7 @@ const fakeSheet = (page: Page, answer: 'ok' | 'AbortError' | 'NotAllowedError') 
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     w.__shared = { name: f.name, type: f.type, size: f.size, b64: btoa(bin), afterTap, count: d.files!.length };
   } });
-}, answer);
+}, answers);
 
 async function finishedExport(page: Page) {
   await page.goto('./');
@@ -104,14 +106,30 @@ test('the person closes the share sheet: the file is kept, nothing pretends it w
   expect(downloads, 'turning the sheet down is not a request to download').toBe(0);
 });
 
-test('the browser refuses the share (the tap has expired): the file is downloaded instead, and it is whole', async ({ page }, info) => {
+test('the browser refuses the share sheet (the tap has expired): it is said, the file stays unsaved, and the next tap hands over the whole file (V-138)', async ({ page }, info) => {
   test.setTimeout(240_000);
-  await fakeSheet(page, 'NotAllowedError');
+  // On an iPhone the first tap after an export can be refused (V-138). A download in its place goes to Files, not Photos,
+  // and used to count as saved: «Done» then let the file go without a word.
+  await fakeSheet(page, 'NotAllowedError', 'ok');
   await finishedExport(page);
-  const dl = page.waitForEvent('download');
+  let downloads = 0;
+  page.on('download', () => { downloads++; });
   await page.getByRole('button', { name: 'Save / Share' }).click();
-  const file = info.outputPath((await dl).suggestedFilename());
-  await (await dl).saveAs(file);
+  await expect(page.locator('.toast').filter({ hasText: 'The menu did not open: tap the button again.' }), 'the refusal is said').toBeVisible();
   expect(await tries(page)).toBe(1);
-  expect(probeFile(file).kinds).toEqual(['audio', 'video']);
+  expect(downloads, 'no download in the sheet\'s place').toBe(0);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(notSaved(page), 'not saved: closing still warns').toBeVisible();
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible();
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  await expect.poll(() => page.evaluate(() => !!(window as unknown as { __shared: unknown }).__shared)).toBe(true);
+  const s = await page.evaluate(() => (window as unknown as { __shared: Shared }).__shared);
+  expect(await tries(page)).toBe(2);
+  expect(s.afterTap, 'the second share() starts inside its tap too').toBeLessThanOrEqual(MAX_AFTER_TAP_MS);
+  const file = info.outputPath(s.name);
+  fs.writeFileSync(file, Buffer.from(s.b64, 'base64'));
+  const pr = probeFile(file);
+  expect(pr.kinds).toEqual(['audio', 'video']);
+  expect(Math.abs(pr.duration - 6)).toBeLessThan(0.15);
+  expect(downloads).toBe(0);
 });
