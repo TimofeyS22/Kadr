@@ -83,8 +83,14 @@ export async function connect({ url, out, port = Number(process.env.L5_PORT ?? 4
   async function call(method, path, body, ms = 330_000) {
     const what = `${method} ${path.split('/').slice(3).join('/') || path}`, t = Date.now();
     let res;
+    const send = () => fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(ms) });
     try {
-      res = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(ms) });
+      // safaridriver drops a connection that idled while the Mac worked (ffprobe of a 4K file, ffmpeg making 200 MB):
+      // the next request meets a dead socket and is reset at once, before the phone saw it. It is sent once more.
+      res = await send().catch((e) => {
+        if (Date.now() - t < 2000 && /ECONNRESET|EPIPE|UND_ERR_SOCKET|other side closed/.test(`${e.cause?.code} ${e.cause?.message}`)) { trace(`${what} reset at once, sent again`); return send(); }
+        throw e;
+      });
     } catch (e) {
       // undici's «fetch failed» hides its cause (a reset socket, a timeout): it goes into the words of the row.
       trace(`${what} ${Date.now() - t} ms FAILED ${e.cause?.code ?? e.cause?.message ?? e.message}`);
