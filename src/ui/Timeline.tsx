@@ -8,6 +8,7 @@ import {
 import type { Asset, Clip, Project, Track, TrackKind, TransitionType } from '../core/types';
 import { TRANSITION_LABELS } from './transitionNames';
 import { PEAKS_PER_SEC, thumbnails, waveform, type Thumb } from '../engine/media';
+import { letGo } from '../lib/canvas';
 import { player } from '../engine/player';
 import { useEditor } from '../state/store';
 import { addMedia } from './actions';
@@ -432,6 +433,9 @@ const ClipFace = memo(function ClipFace({ clip, asset, zoom, height }: { clip: C
   const volume = 'volume' in clip ? clip.volume : 1;
 
   const drawn = useRef(false);
+  // A clip's film strip or wave gives its pixels back when the clip leaves the timeline, not at the next collection
+  // (audit V-169). Only once it has left: React's test unmount in development keeps the canvas on the page.
+  useEffect(() => { const cv = ref.current; return () => { setTimeout(() => { if (cv && !cv.isConnected) letGo(cv); }, 0); }; }, []);
   useEffect(() => {
     const cv = ref.current;
     if (!cv || !asset || clip.kind === 'text' || clip.kind === 'caption') return;
