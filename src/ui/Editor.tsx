@@ -12,6 +12,7 @@ import { exportSizeLabel, openExportSettings, startExport } from './exportPrefs'
 import { forgetThumbs } from '../engine/media';
 import { loadMediabunny } from '../engine/mediabunny';
 import { importStored } from '../engine/importer';
+import { findKeptExport } from '../engine/keptExport';
 import { uid } from '../core/defaults';
 import { addFiles, placeAssets, placeVoice, deleteMulti, deleteSelected, duplicateMulti, duplicateSelected, splitAtPlayhead, outdatedSoundClips, prepareStaleSounds, withBusy } from './actions';
 import { formatTime } from './format';
@@ -126,6 +127,8 @@ export function Editor({ id }: { id: string }) {
       // Media no clip reaches any more (deleted from the project; undo does not outlive the session) leaves the device.
       for (const old of Object.keys(p.assets)) if (!q.assets[old]) void deleteBlob(old).catch(() => undefined);
       useEditor.getState().open(produce(q, (d) => { normalizeProject(d); }));
+      // A finished export of this project that a reload cut off before it was saved: offered again (SW-A-15).
+      void findKeptExport(p.id).then((kept) => { if (kept && alive) useEditor.getState().openSheet('export'); });
       const task = useEditor.getState().startTask;
       if (task) { useEditor.setState({ startTask: null }); runStartTask(task); }
       // Sound processed before v1.2.1 was ~44 ms behind the picture: rebuild it once, so nothing drifts or goes missing.

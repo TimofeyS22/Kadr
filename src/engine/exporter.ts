@@ -10,6 +10,7 @@ import { diskFile } from './opfs';
 import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
 import { Limiter, limitedGain } from '../core/dsp';
+import { WholeFrames, encoderPieces } from './wholeFrames';
 import { buildFrame } from '../core/frame';
 import { withoutGuides } from '../core/music';
 import { avcBaseline } from '../core/avc';
@@ -44,6 +45,8 @@ export interface Film { frames: number; take(picture: HTMLCanvasElement, slot: n
 
 export interface ExportResult {
   blob: Blob; fileName: string; seconds: number;
+  /** The file's name in the origin-private file system, where the export streamed it: a reload finds it there (SW-A-15). */
+  disk?: string;
   /** The project has sound, but this browser encodes none: the file is silent, and the person is told. */
   noSound?: boolean;
 }
@@ -109,6 +112,7 @@ class MixStream {
   readonly total: number;
   private done = 0;
   private limiter: Limiter | null = null;
+  private readonly frames = new WholeFrames(2);
   /** `skip`: samples to drop at the start, where the encoder puts its priming (see engine/encoderDelay). */
   constructor(private readonly p: Project, private readonly pool: MediaPool, duration: number, private skip = 0) {
     this.total = Math.round(duration * SAMPLE_RATE);
@@ -149,8 +153,24 @@ class MixStream {
     this.limiter = new Limiter(2, SAMPLE_RATE, await limitedGain(pass, 2, SAMPLE_RATE, PLATFORM_LUFS, 12), -1);
   }
 
-  /** Next window of audio; may be null for a window the limiter holds back entirely. */
-  async read(): Promise<AudioBuffer | null> {
+  /**
+   * Next pieces of the mix for the encoder, in whole codec frames (SW-A-14): WebKit's encoder stamps the packets of each
+   * piece from the piece's start, and 2 s windows (93.75 AAC frames) left a short packet at every seam, the sound up to
+   * 19 ms off its stamps. None while less than a grain is held (or the limiter holds a window back); the last read
+   * carries the tail.
+   */
+  async read(): Promise<AudioBuffer[]> {
+    const b = await this.mixed();
+    const out = [b ? this.frames.push([b.getChannelData(0), b.getChannelData(1)]) : null, this.finished ? this.frames.flush() : null];
+    return out.flatMap((piece) => (piece ? [...encoderPieces(piece)] : [])).map((part) => {
+      const res = new AudioBuffer({ length: part[0].length, numberOfChannels: 2, sampleRate: SAMPLE_RATE });
+      part.forEach((c, i) => res.copyToChannel(c as Float32Array<ArrayBuffer>, i));
+      return res;
+    });
+  }
+
+  /** The next window of the mix, levelled and without the priming; null for a window the limiter holds back. */
+  private async mixed(): Promise<AudioBuffer | null> {
     const next = Math.min(this.total, this.done + AUDIO_WINDOW_S * SAMPLE_RATE);
     const buf = await renderAudioWindow(this.p, this.pool, this.done / SAMPLE_RATE, next / SAMPLE_RATE, SAMPLE_RATE);
     this.done = next;
@@ -170,7 +190,7 @@ class MixStream {
 // MessageChannel instead of setTimeout: timers are throttled to ~1/s in background tabs, messages are not.
 const yieldToUi = () => new Promise<void>((r) => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
 
-type Target = { target: StreamTarget; result: () => Promise<Blob> };
+type Target = { target: StreamTarget; result: () => Promise<{ blob: Blob; disk?: string }> };
 
 /** The browser gets this long to say which codecs it can encode (docs/12 G2): a query that never answers is a failure. */
 const CAPS_MS = 10_000;
@@ -242,7 +262,7 @@ async function openStream(ext: string, type: string): Promise<(Target & { drop: 
   if (!disk) return null; // OPFS unavailable (private mode, old browser)
   return {
     target: new StreamTarget(disk.writable, { chunked: true }),
-    result: async () => new Blob([await disk.file()], { type }),
+    result: async () => { const file = await disk.file(); return { blob: new Blob([file], { type }), disk: file.name }; },
     drop: disk.drop,
   };
 }
@@ -261,7 +281,7 @@ async function openTarget(ext: string, type: string): Promise<Target> {
   if (got) return got;
   void stream.then((s) => s?.drop());
   const target = new MemoryTarget();
-  return { target, result: async () => target.blob(type) };
+  return { target, result: async () => ({ blob: target.blob(type) }) };
 }
 
 /** A GPU reset during the export gets this many fresh starts; a device that keeps losing it is told so. */
@@ -386,7 +406,7 @@ async function exportOnce(
     const count = Math.max(1, Math.round(duration * opts.fps));
     const shown = film ? filmFrames(count, film.frames) : null;
     const pumpAudio = async (untilS: number) => {
-      while (audio && mix.due(untilS)) { const b = await mix.read(); if (b) await audio.add(b); }
+      while (audio && mix.due(untilS)) for (const b of await mix.read()) await audio.add(b);
     };
     for (let i = 0; i < count; i++) {
       if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
@@ -405,8 +425,8 @@ async function exportOnce(
     video.close();
     audio?.close();
     await encoding(output.finalize());
-    const blob = await result();
-    return { blob, fileName: `${fileBase(p)}.${mp4 ? 'mp4' : 'webm'}`, seconds: (performance.now() - started) / 1000, noSound: !audio && soundEntries(p).length > 0 };
+    const { blob, disk } = await result();
+    return { blob, disk, fileName: `${fileBase(p)}.${mp4 ? 'mp4' : 'webm'}`, seconds: (performance.now() - started) / 1000, noSound: !audio && soundEntries(p).length > 0 };
   } catch (e) {
     // A stuck encoder holds a graceful end forever: after a stall, or a Cancel that cannot end within ABANDON_MS,
     // the encoders are closed outright.
@@ -449,8 +469,7 @@ export async function exportAudio(whole: Project, loudness: boolean, onProgress:
     if (loudness) await mix.normalize(signal, (f) => onProgress(f * pre));
     while (!mix.finished) {
       if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
-      const b = await mix.read();
-      if (b) await audio.add(b);
+      for (const b of await mix.read()) await audio.add(b);
       onProgress(pre + (1 - pre) * mix.progress);
       await yieldToUi();
     }

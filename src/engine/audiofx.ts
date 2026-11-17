@@ -12,6 +12,7 @@ import { abandon } from './abandon';
 import { renderAudioWindow } from './audio';
 import { importFile } from './importer';
 import { encoderDelay } from './encoderDelay';
+import { WholeFrames, encoderPieces } from './wholeFrames';
 import { MediaError, MediaPool } from './media';
 import { offlineAware } from './modelLoad';
 
@@ -73,16 +74,25 @@ async function processAssetAudio(
     skip -= k;
     const n = Math.min((chans[0]?.length ?? 0) - k, total - emitted);
     if (n <= 0) return;
-    const buf = new AudioBuffer({ length: n, numberOfChannels: proc.channels, sampleRate: SR });
-    chans.forEach((c, i) => buf.copyToChannel(c.subarray(k, k + n) as Float32Array<ArrayBuffer>, i));
-    await source.add(buf);
     emitted += n;
+    await toEncoder(frames.push(chans.map((c) => c.subarray(k, k + n))));
+  };
+  // Whole codec frames only (SW-A-14): WebKit stamps each piece's packets from its start, and 10 s windows left a short
+  // packet at every seam, the processed sound up to 19 ms off its stamps.
+  const frames = new WholeFrames(proc.channels);
+  const toEncoder = async (piece: Float32Array[] | null) => {
+    for (const part of piece ? encoderPieces(piece) : []) {
+      const buf = new AudioBuffer({ length: part[0].length, numberOfChannels: proc.channels, sampleRate: SR });
+      part.forEach((c, i) => buf.copyToChannel(c as Float32Array<ArrayBuffer>, i));
+      await source.add(buf);
+    }
   };
   try {
     await output.start();
     await eachWindow(p, assetId, proc.channels, async (input, done) => { await emit(proc.process(input)); onProgress(done); }, signal);
     await emit(proc.flush());
     if (emitted < total) await emit(Array.from({ length: proc.channels }, () => new Float32Array(total - emitted))); // keep exact length
+    await toEncoder(frames.flush());
     source.close();
     await output.finalize();
     const type = mp4 ? 'audio/mp4' : 'audio/webm';
@@ -190,7 +200,7 @@ const shifterLatency = new Map<number, number>();
  * 40 ms early, at 0.72 it is ≈ 0 — and the library does not report it, so it is measured once per pitch with a tone
  * burst through a fresh instance (matches the shift measured on speech to ±2 ms).
  */
-async function pitchShifter(pitch: number, channels: 1 | 2): Promise<Shifter> {
+export async function pitchShifter(pitch: number, channels: 1 | 2): Promise<Shifter> {
   const { SoundTouch } = await import('@soundtouchjs/core');
   const make = () => { const st = new SoundTouch({ sampleRate: SR }); st.pitch = pitch; return st; };
   const run = (st: InstanceType<typeof SoundTouch>, chans: Float32Array[]): Float32Array[] => {
@@ -208,20 +218,36 @@ async function pitchShifter(pitch: number, channels: 1 | 2): Promise<Shifter> {
   };
   let latency = shifterLatency.get(pitch);
   if (latency === undefined) {
+    // Sixteen bursts, at 300 Hz and 1 kHz, that fall at every phase of SoundTouch's windows (the shift does not depend on
+    // the frequency: -53 ms on average at pitch 2 for 150 Hz to 3 kHz and noise, with a spread of 27 ms).
+    // One burst read it at one phase only: at pitch 2 the onsets then sat 7 to 31 ms early, up to 62 ms at 0.5× (SW-A-13).
+    // An onset is where 10 ms of sound first pass 0.01 RMS (-40 dB, as ffmpeg's silencedetect hears it).
     const st = make();
-    const on = Math.round(0.3 * SR), x = new Float32Array(SR);
-    for (let i = on; i < on + 0.4 * SR; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * 300 * (i - on)) / SR);
+    const gap = Math.round(0.4113 * SR), burst = Math.round(0.12 * SR);
+    const x = new Float32Array(gap * 17 + SR);
+    const starts: number[] = [];
+    for (let k = 0; k < 16; k++) {
+      const on = gap * (k + 1), f = k % 2 ? 1000 : 300;
+      starts.push(on);
+      for (let i = 0; i < burst; i++) x[on + i] = 0.5 * Math.sin((2 * Math.PI * f * i) / SR);
+    }
     const parts: Float32Array[] = [];
     for (let a = 0; a < x.length; a += 4096) parts.push(run(st, [x.subarray(a, a + 4096)])[0]);
     parts.push(run(st, [new Float32Array(SR)])[0]);
-    let idx = 0, found = -1;
-    for (const part of parts) {
-      const k = part.findIndex((v) => Math.abs(v) > 0.05);
-      if (k >= 0) { found = idx + k; break; }
-      idx += part.length;
-    }
-    const inputOnset = on + Math.ceil(Math.asin(0.1) / ((2 * Math.PI * 300) / SR)); // where the burst itself crosses 0.05
-    latency = found < 0 ? 0 : found - inputOnset;
+    const y = new Float32Array(parts.reduce((n, q) => n + q.length, 0));
+    parts.reduce((o, q) => { y.set(q, o); return o + q.length; }, 0);
+    const onset = (z: Float32Array, from: number) => {
+      for (let i = Math.max(0, from); i + 480 < z.length; i += 48) {
+        let e = 0;
+        for (let k = i; k < i + 480; k++) e += z[k] * z[k];
+        if (e / 480 > 1e-4) return i;
+      }
+      return -1;
+    };
+    const shifts = starts.map((on) => { const was = onset(x, on - 4800), now = onset(y, on - Math.round(0.15 * SR)); return now < 0 ? null : now - was; })
+      .filter((d): d is number => d !== null);
+    // The middle of their range, not the mean: the bursts sample the phases unevenly, and what must hold is the worst onset.
+    latency = shifts.length ? Math.round((Math.min(...shifts) + Math.max(...shifts)) / 2) : 0;
     shifterLatency.set(pitch, latency);
   }
   const st = make();
