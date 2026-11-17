@@ -1,0 +1,506 @@
+{
+  "lane": "a",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.11",
+  "started": "2026-11-17T01:25:42.124Z",
+  "finished": "2026-11-17T01:42:31.404Z",
+  "results": [
+    {
+      "id": "SW-A-19",
+      "status": "ERROR",
+      "checks": [],
+      "error": "recording (Allow the microphone on the phone): not within 90 s",
+      "s": 123
+    },
+    {
+      "id": "Q-4, SW-A-4",
+      "status": "ERROR",
+      "checks": [],
+      "error": "the exact frame at 45 s: not within 30 s",
+      "s": 71
+    },
+    {
+      "id": "V-159",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "avsync.mp4: пар «белый кадр + писк»",
+          "value": 2,
+          "unit": "",
+          "limit": "= 2",
+          "ok": true
+        },
+        {
+          "name": "avsync.mp4: худший сдвиг звука",
+          "value": 38,
+          "unit": " мс",
+          "limit": "≤ 33 мс",
+          "ok": false
+        },
+        {
+          "name": "avsync.mp4: пакеты перевёрнутого звука не по 1024",
+          "value": 3,
+          "unit": "",
+          "limit": "= 0",
+          "ok": false,
+          "detail": [
+            "0.916 s: 1920",
+            "1.937 s: 896",
+            "2.937 s: 896"
+          ]
+        },
+        {
+          "name": "avsync_long.mp4: пар «белый кадр + писк»",
+          "value": 8,
+          "unit": "",
+          "limit": "= 8",
+          "ok": true
+        },
+        {
+          "name": "avsync_long.mp4: худший сдвиг звука",
+          "value": 27,
+          "unit": " мс",
+          "limit": "≤ 33 мс",
+          "ok": true
+        },
+        {
+          "name": "avsync_long.mp4: пакеты перевёрнутого звука не по 1024",
+          "value": 29,
+          "unit": "",
+          "limit": "= 0",
+          "ok": false,
+          "detail": [
+            "0.916 s: 1920",
+            "1.937 s: 896",
+            "2.937 s: 896"
+          ]
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "avsync.mp4": {
+          "pairs": 2,
+          "sync": {
+            "flashes": [
+              1.466667,
+              2.966667
+            ],
+            "offsets": [
+              2,
+              38
+            ]
+          },
+          "packets": {
+            "codec": "aac",
+            "broken": [
+              "0.916 s: 1920",
+              "1.937 s: 896",
+              "2.937 s: 896"
+            ]
+          }
+        },
+        "avsync_long.mp4": {
+          "pairs": 8,
+          "sync": {
+            "flashes": [
+              0.966667,
+              4.966667,
+              8.966667,
+              12.966667,
+              16.966667,
+              20.966667,
+              24.966667,
+              28.966667
+            ],
+            "offsets": [
+              3,
+              27,
+              6,
+              27,
+              6,
+              27,
+              6,
+              27
+            ]
+          },
+          "packets": {
+            "codec": "aac",
+            "broken": [
+              "0.916 s: 1920",
+              "1.937 s: 896",
+              "2.937 s: 896",
+              "3.937 s: 896",
+              "4.937 s: 896",
+              "5.937 s: 896",
+              "6.937 s: 896",
+              "7.937 s: 896",
+              "8.916 s: 1920",
+              "9.937 s: 896",
+              "10.937 s: 896",
+              "11.937 s: 896",
+              "12.937 s: 896",
+              "13.937 s: 896",
+              "14.937 s: 896",
+              "15.937 s: 896",
+              "16.916 s: 1920",
+              "17.937 s: 896",
+              "18.937 s: 896",
+              "19.937 s: 896",
+              "20.937 s: 896",
+              "21.937 s: 896",
+              "22.937 s: 896",
+              "23.937 s: 896",
+              "24.916 s: 1920",
+              "25.937 s: 896",
+              "26.937 s: 896",
+              "27.937 s: 896",
+              "28.937 s: 896"
+            ]
+          }
+        }
+      },
+      "s": 32
+    },
+    {
+      "id": "М3, цена «Стоп»",
+      "status": "ERROR",
+      "checks": [],
+      "error": "\"Start recording\" ready: not within 90 s",
+      "s": 93
+    },
+    {
+      "id": "Q-9, SW-A-2",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "отклик (первый кадр) p95",
+          "value": 36,
+          "unit": " мс",
+          "limit": "≤ 100 мс",
+          "ok": true
+        },
+        {
+          "name": "точный кадр после перемотки p95",
+          "value": 54,
+          "unit": " мс",
+          "limit": "≤ 150 мс",
+          "ok": true
+        },
+        {
+          "name": "перемоток мимо места",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true
+        },
+        {
+          "name": "воспроизведение",
+          "value": 60.1,
+          "unit": " кадр/с",
+          "limit": "≥ 29 кадр/с",
+          "ok": true
+        },
+        {
+          "name": "пропуски кадров",
+          "value": 0,
+          "unit": " %",
+          "limit": "≤ 3 %",
+          "ok": true
+        },
+        {
+          "name": "после «Паузы» экран против «Фото» (худшая из 3)",
+          "value": 0.5163065843621399,
+          "unit": "",
+          "limit": "≤ 4",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "steps": [
+          {
+            "want": 12,
+            "t": 12,
+            "first": 33,
+            "exact": 110
+          },
+          {
+            "want": 187,
+            "t": 187,
+            "first": 39,
+            "exact": 54
+          },
+          {
+            "want": 64,
+            "t": 64,
+            "first": 31,
+            "exact": 45
+          },
+          {
+            "want": 221,
+            "t": 221,
+            "first": 26,
+            "exact": 39
+          },
+          {
+            "want": 33,
+            "t": 33,
+            "first": 24,
+            "exact": 40
+          },
+          {
+            "want": 150,
+            "t": 150,
+            "first": 30,
+            "exact": 46
+          },
+          {
+            "want": 98,
+            "t": 98,
+            "first": 28,
+            "exact": 40
+          },
+          {
+            "want": 239,
+            "t": 239,
+            "first": 36,
+            "exact": 48
+          },
+          {
+            "want": 5,
+            "t": 5,
+            "first": 30,
+            "exact": 47
+          },
+          {
+            "want": 171,
+            "t": 171,
+            "first": 30,
+            "exact": 43
+          },
+          {
+            "want": 121,
+            "t": 121,
+            "first": 33,
+            "exact": 45
+          },
+          {
+            "want": 45,
+            "t": 45,
+            "first": 30,
+            "exact": 44
+          },
+          {
+            "want": 203,
+            "t": 203,
+            "first": 29,
+            "exact": 41
+          },
+          {
+            "want": 77,
+            "t": 77,
+            "first": 30,
+            "exact": 41
+          },
+          {
+            "want": 140,
+            "t": 140,
+            "first": 30,
+            "exact": 43
+          },
+          {
+            "want": 18,
+            "t": 18,
+            "first": 32,
+            "exact": 44
+          },
+          {
+            "want": 229,
+            "t": 229,
+            "first": 30,
+            "exact": 41
+          },
+          {
+            "want": 109,
+            "t": 109,
+            "first": 30,
+            "exact": 43
+          },
+          {
+            "want": 58,
+            "t": 58,
+            "first": 32,
+            "exact": 44
+          },
+          {
+            "want": 196,
+            "t": 196,
+            "first": 34,
+            "exact": 46
+          }
+        ],
+        "fps": 60.1,
+        "pauses": [
+          0.5163065843621399,
+          0.5163065843621399,
+          0.5163065843621399
+        ]
+      },
+      "s": 81
+    },
+    {
+      "id": "V-248",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "p90 шага до первого кадра",
+          "value": 36,
+          "unit": " мс",
+          "limit": "≤ 100 мс",
+          "ok": true
+        },
+        {
+          "name": "декодеров на 40 шагов",
+          "value": 80,
+          "unit": "",
+          "limit": "≤ 42",
+          "ok": false
+        },
+        {
+          "name": "шагов мимо места",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true
+        },
+        {
+          "name": "тосты и ошибки",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "худший шаг",
+          "value": 42,
+          "unit": " мс",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "точный кадр p50",
+          "value": 79,
+          "unit": " мс",
+          "limit": "записать",
+          "ok": true
+        }
+      ],
+      "measured": {
+        "rows": 1
+      }
+    },
+    {
+      "id": "S-1-13, S-1-13-1 (М3)",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "засчитано прогонов",
+          "value": 24,
+          "unit": "",
+          "limit": "≥ 58",
+          "ok": false
+        },
+        {
+          "name": "прогонов с ошибкой на экране",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "прогонов с пустой полосой кадров",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "прогонов без новых аренд",
+          "value": 1,
+          "unit": "",
+          "limit": "≥ 24",
+          "ok": false
+        },
+        {
+          "name": "прогонов, где вкладка умерла",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "rows": 24
+      }
+    },
+    {
+      "id": "S-1-12",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "дублей снято",
+          "value": 5,
+          "unit": "",
+          "limit": "≥ 100",
+          "ok": false
+        },
+        {
+          "name": "прогонов с дублем, который не лёг",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "note": "фонового экспорта в сценарии нет: дубли подряд с паузой 1,5 с",
+      "measured": {
+        "rows": 24
+      }
+    }
+  ]
+}

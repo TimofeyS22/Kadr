@@ -1,0 +1,482 @@
+{
+  "lane": "e",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.11",
+  "started": "2026-11-17T00:48:38.966Z",
+  "finished": "2026-11-17T01:11:15.036Z",
+  "results": [
+    {
+      "id": "V-259 · C-B2",
+      "status": "ERROR",
+      "checks": [],
+      "error": "fetch failed (ECONNRESET) on POST execute/sync after 0 s",
+      "s": 269
+    },
+    {
+      "id": "V-190",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "файл 4K целый (длина ± 0,1 с)",
+          "value": "3 из 3",
+          "unit": "",
+          "limit": "3 из 3",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": [
+        {
+          "length": 120,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 3600,
+          "duration": 120.025333,
+          "fps": 30,
+          "audio": "aac"
+        },
+        {
+          "length": 120,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 3600,
+          "duration": 120.025333,
+          "fps": 30,
+          "audio": "aac"
+        },
+        {
+          "length": 120,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 3600,
+          "duration": 120.025333,
+          "fps": 30,
+          "audio": "aac"
+        }
+      ],
+      "s": 465
+    },
+    {
+      "id": "V-171 · V-160 · V-257 · C-C1",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "декодеров открыто в покое",
+          "value": 1,
+          "unit": "",
+          "limit": "≤ 2",
+          "ok": true
+        },
+        {
+          "name": "декодеров открыто в экспорте",
+          "value": 3,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "видео в файле",
+          "value": "h264",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "потеряно кадров",
+          "value": 0.7599900000000162,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "длительность",
+          "value": 60.025333,
+          "unit": " с",
+          "limit": "60 ± 0,15 с",
+          "ok": true
+        },
+        {
+          "name": "звук в файле",
+          "value": "aac",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "превью не замерзает: худший промежуток между кадрами",
+          "value": 27,
+          "unit": " мс",
+          "limit": "≤ 1000 мс",
+          "ok": true
+        },
+        {
+          "name": "счётчик",
+          "value": "декодеры страницы (воркеры не видны), как в e2e",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "idle": 1,
+        "exporting": 3,
+        "file": {
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1920,
+          "height": 1080,
+          "frames": 1800,
+          "duration": 60.025333,
+          "fps": 30,
+          "audio": "aac"
+        },
+        "worstGapMs": 27
+      },
+      "s": 95
+    },
+    {
+      "id": "V-173",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "кадр после скраба ≤ 100 мс",
+          "value": "10 из 10",
+          "unit": "",
+          "limit": "10 из 10",
+          "ok": true
+        },
+        {
+          "name": "первый кадр, мс",
+          "value": "44, 53, 46, 50, 50, 50, 47, 52, 48, 47",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "точный кадр, мс",
+          "value": "62, 78, 77, 68, 75, 72, 61, 85, 70, 74",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": [
+        {
+          "to": 1.6,
+          "first": 44,
+          "exact": 62
+        },
+        {
+          "to": 4,
+          "first": 53,
+          "exact": 78
+        },
+        {
+          "to": 5.9,
+          "first": 46,
+          "exact": 77
+        },
+        {
+          "to": 7.7,
+          "first": 50,
+          "exact": 68
+        },
+        {
+          "to": 11.8,
+          "first": 50,
+          "exact": 75
+        },
+        {
+          "to": 14,
+          "first": 50,
+          "exact": 72
+        },
+        {
+          "to": 16.5,
+          "first": 47,
+          "exact": 61
+        },
+        {
+          "to": 19.4,
+          "first": 52,
+          "exact": 85
+        },
+        {
+          "to": 22.7,
+          "first": 48,
+          "exact": 70
+        },
+        {
+          "to": 26.3,
+          "first": 47,
+          "exact": 74
+        }
+      ],
+      "s": 33
+    },
+    {
+      "id": "V-139",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "сообщения со словами движка",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "кадры вернулись (худший промежуток)",
+          "value": 77,
+          "unit": " мс",
+          "limit": "≤ 1500 мс",
+          "ok": true
+        },
+        {
+          "name": "прыжков",
+          "value": 29,
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "worstGapMs": 77,
+        "jumps": 29,
+        "engine": []
+      },
+      "s": 164
+    },
+    {
+      "id": "V-103",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "небо: «No person found», картинка цела",
+          "value": "3 из 3",
+          "unit": "",
+          "limit": "3 из 3",
+          "ok": true
+        },
+        {
+          "name": "человек: фон убран",
+          "value": "3 из 3",
+          "unit": "",
+          "limit": "3 из 3",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": [
+        {
+          "kind": "sky",
+          "said": "No person found in this clip, so the background stays.",
+          "on": false,
+          "clips": 1
+        },
+        {
+          "kind": "person",
+          "said": "Background removed. Works best with people in the frame.",
+          "on": true,
+          "clips": 1
+        },
+        {
+          "kind": "sky",
+          "said": "No person found in this clip, so the background stays.",
+          "on": false,
+          "clips": 1
+        },
+        {
+          "kind": "person",
+          "said": "Background removed. Works best with people in the frame.",
+          "on": true,
+          "clips": 1
+        },
+        {
+          "kind": "sky",
+          "said": "No person found in this clip, so the background stays.",
+          "on": false,
+          "clips": 1
+        },
+        {
+          "kind": "person",
+          "said": "Background removed. Works best with people in the frame.",
+          "on": true,
+          "clips": 1
+        }
+      ],
+      "s": 67
+    },
+    {
+      "id": "V-232",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "экспорт дошёл до файла",
+          "value": "Export failed: The video decoder of this device stopped. Close other apps, or restart the browser, and try again.",
+          "unit": "",
+          "limit": "да",
+          "ok": false
+        }
+      ],
+      "s": 8
+    },
+    {
+      "id": "V-243",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "превью",
+          "value": 8,
+          "unit": " ур.",
+          "limit": "≤ 6 ур.",
+          "ok": false
+        },
+        {
+          "name": "фото",
+          "value": 3,
+          "unit": " ур.",
+          "limit": "≤ 6 ур.",
+          "ok": true
+        },
+        {
+          "name": "видео",
+          "value": 4,
+          "unit": " ур.",
+          "limit": "≤ 6 ур.",
+          "ok": true
+        }
+      ],
+      "measured": {
+        "rows": 1
+      }
+    },
+    {
+      "id": "V-176",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "хранилище через минуту сверх исходного",
+          "value": 1.4,
+          "unit": " МБ",
+          "limit": "≤ 5 МБ",
+          "ok": true
+        },
+        {
+          "name": "импортировано",
+          "value": 195.4,
+          "unit": " МБ",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "baseMb": 4,
+        "afterMb": 5.4,
+        "bigMb": 195.4
+      },
+      "s": 190
+    }
+  ]
+}

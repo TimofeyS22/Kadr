@@ -1,0 +1,138 @@
+{
+  "lane": "b",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.11",
+  "started": "2026-11-17T01:24:56.005Z",
+  "finished": "2026-11-17T01:25:42.066Z",
+  "results": [
+    {
+      "id": "V-167, F-07 (воркер)",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "вырез включён",
+          "value": true,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "«Вырез» включился",
+          "value": 1.915,
+          "unit": " с",
+          "limit": "≤ 30 с",
+          "ok": true
+        },
+        {
+          "name": "«Скрыть лица» включились",
+          "value": 0.71,
+          "unit": " с",
+          "limit": "≤ 30 с",
+          "ok": true
+        },
+        {
+          "name": "MediaPipe в странице (script)",
+          "value": 2,
+          "unit": "",
+          "limit": "= 0",
+          "ok": false,
+          "detail": [
+            "https://timofeys22.github.io/Kadr/assets/vision_wasm_internal-DfxxaBYC.js",
+            "https://timofeys22.github.io/Kadr/assets/vision_wasm_internal-DfxxaBYC.js"
+          ]
+        },
+        {
+          "name": "«No person found» на человеке",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "look": "край выреза — снимок v-167-cutout-edge.png против Mac",
+      "measured": {
+        "cutoutS": 1.915,
+        "cutoutOn": true,
+        "facesS": 0.71,
+        "scripts": [
+          "https://timofeys22.github.io/Kadr/assets/vision_wasm_internal-DfxxaBYC.js",
+          "https://timofeys22.github.io/Kadr/assets/vision_wasm_internal-DfxxaBYC.js"
+        ],
+        "said": []
+      },
+      "s": 21
+    },
+    {
+      "id": "V-167 (отклик)",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "касание «Скорость» → лист нарисован",
+          "value": 48,
+          "unit": " мс",
+          "limit": "≤ 100 мс",
+          "ok": true
+        },
+        {
+          "name": "кадров превью в секунду",
+          "value": 60,
+          "unit": "",
+          "limit": "≥ 15",
+          "ok": true
+        },
+        {
+          "name": "лист открылся",
+          "value": 48,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "касание",
+          "value": "click() в странице, без задержки пальца",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "sheetMs": 48,
+        "fps": 60
+      },
+      "s": 11
+    }
+  ]
+}

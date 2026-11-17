@@ -1,0 +1,92 @@
+{
+  "lane": "a",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": null,
+  "started": "2026-11-17T01:44:08.005Z",
+  "finished": "2026-11-17T01:45:14.834Z",
+  "results": [
+    {
+      "id": "Q-4, SW-A-4",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "длина восстановленного",
+          "value": 90,
+          "unit": " с",
+          "limit": "90 ± 0,05 с",
+          "ok": true
+        },
+        {
+          "name": "восстановленный проект рисует кадр 0:45",
+          "value": true,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "кадр 0:45 до и после",
+          "value": 0,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "копия",
+          "value": 0.553,
+          "unit": " с",
+          "limit": "≤ 15 с",
+          "ok": true
+        },
+        {
+          "name": "восстановление",
+          "value": 1.631,
+          "unit": " с",
+          "limit": "≤ 15 с",
+          "ok": true
+        },
+        {
+          "name": "размер копии",
+          "value": 62.6,
+          "unit": " МБ",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "экспорт восстановленного дошёл до файла",
+          "value": "Export failed: The sound of “long_1.mp4” cannot be decoded in this browser",
+          "unit": "",
+          "limit": "да",
+          "ok": false
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "length": 90,
+        "restored": 90,
+        "backupS": 0.553,
+        "restoreS": 1.631,
+        "backupMb": 62.6,
+        "drawn": true,
+        "frame45": 0,
+        "file": null,
+        "failed": "Export failed: The sound of “long_1.mp4” cannot be decoded in this browser"
+      },
+      "s": 59
+    }
+  ]
+}

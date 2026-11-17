@@ -1,0 +1,613 @@
+{
+  "lane": "c",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.11",
+  "started": "2026-11-17T01:19:11.248Z",
+  "finished": "2026-11-17T01:24:55.904Z",
+  "results": [
+    {
+      "id": "Q-11 (WYSIWYG на GPU iPhone)",
+      "status": "LOOK",
+      "checks": [
+        {
+          "name": "видео, Adjust в верх: превью−фото, средняя разница",
+          "value": 0.8673251028806584,
+          "unit": "",
+          "limit": "≤ 4",
+          "ok": true
+        },
+        {
+          "name": "видео, Adjust в верх: превью−кадр видео, средняя разница",
+          "value": 0.9402880658436213,
+          "unit": "",
+          "limit": "≤ 6",
+          "ok": true
+        },
+        {
+          "name": "видео, Adjust в верх: худший блок 15×15",
+          "value": 4.435555555555555,
+          "unit": "",
+          "limit": "≤ 20",
+          "ok": true
+        },
+        {
+          "name": "видео, Adjust в верх: цветовой сдвиг",
+          "value": 0.2056172839506173,
+          "unit": "",
+          "limit": "≤ 0,8",
+          "ok": true
+        },
+        {
+          "name": "фото, Adjust в низ: превью−фото, средняя разница",
+          "value": 0.5666666666666667,
+          "unit": "",
+          "limit": "≤ 4",
+          "ok": true
+        },
+        {
+          "name": "фото, Adjust в низ: превью−кадр видео, средняя разница",
+          "value": 0.5338888888888889,
+          "unit": "",
+          "limit": "≤ 6",
+          "ok": true
+        },
+        {
+          "name": "фото, Adjust в низ: худший блок 15×15",
+          "value": 3.8666666666666667,
+          "unit": "",
+          "limit": "≤ 20",
+          "ok": true
+        },
+        {
+          "name": "фото, Adjust в низ: цветовой сдвиг",
+          "value": 0.48333333333333334,
+          "unit": "",
+          "limit": "≤ 0,8",
+          "ok": true
+        },
+        {
+          "name": "фото, Cyber 100% + Glitch: превью−фото, средняя разница",
+          "value": 1.1218518518518519,
+          "unit": "",
+          "limit": "≤ 4",
+          "ok": true
+        },
+        {
+          "name": "фото, Cyber 100% + Glitch: превью−кадр видео, средняя разница",
+          "value": 1.3651440329218107,
+          "unit": "",
+          "limit": "≤ 6",
+          "ok": true
+        },
+        {
+          "name": "фото, Cyber 100% + Glitch: худший блок 15×15",
+          "value": 2.8666666666666667,
+          "unit": "",
+          "limit": "≤ 20",
+          "ok": true
+        },
+        {
+          "name": "фото, Cyber 100% + Glitch: цветовой сдвиг",
+          "value": 0.13666666666666666,
+          "unit": "",
+          "limit": "≤ 0,8",
+          "ok": true
+        },
+        {
+          "name": "полосы 9:16 ×4 в углу + Blur: превью−фото, средняя разница",
+          "value": 0.3333333333333333,
+          "unit": "",
+          "limit": "≤ 4",
+          "ok": true
+        },
+        {
+          "name": "полосы 9:16 ×4 в углу + Blur: превью−кадр видео, средняя разница",
+          "value": 0.3333333333333333,
+          "unit": "",
+          "limit": "≤ 6",
+          "ok": true
+        },
+        {
+          "name": "полосы 9:16 ×4 в углу + Blur: худший блок 15×15",
+          "value": 1,
+          "unit": "",
+          "limit": "≤ 20",
+          "ok": true
+        },
+        {
+          "name": "полосы 9:16 ×4 в углу + Blur: цветовой сдвиг",
+          "value": 1,
+          "unit": "",
+          "limit": "≤ 2",
+          "ok": true
+        },
+        {
+          "name": "видео в файле",
+          "value": "h264",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "потеряно кадров",
+          "value": 0.03998999999998887,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "look": "снимки q-11-preview-*.png и q-11-photo-*.jpg — глазами, если цифры на границе",
+      "measured": {
+        "points": [
+          {
+            "name": "видео, Adjust в верх",
+            "t": 2.5,
+            "cast": 0.8,
+            "checks": [
+              {
+                "name": "видео, Adjust в верх: превью−фото, средняя разница",
+                "value": 0.8673251028806584,
+                "unit": "",
+                "limit": "≤ 4",
+                "ok": true
+              },
+              {
+                "name": "видео, Adjust в верх: превью−кадр видео, средняя разница",
+                "value": 0.9402880658436213,
+                "unit": "",
+                "limit": "≤ 6",
+                "ok": true
+              },
+              {
+                "name": "видео, Adjust в верх: худший блок 15×15",
+                "value": 4.435555555555555,
+                "unit": "",
+                "limit": "≤ 20",
+                "ok": true
+              },
+              {
+                "name": "видео, Adjust в верх: цветовой сдвиг",
+                "value": 0.2056172839506173,
+                "unit": "",
+                "limit": "≤ 0,8",
+                "ok": true
+              }
+            ]
+          },
+          {
+            "name": "фото, Adjust в низ",
+            "t": 6.5,
+            "cast": 0.8,
+            "checks": [
+              {
+                "name": "фото, Adjust в низ: превью−фото, средняя разница",
+                "value": 0.5666666666666667,
+                "unit": "",
+                "limit": "≤ 4",
+                "ok": true
+              },
+              {
+                "name": "фото, Adjust в низ: превью−кадр видео, средняя разница",
+                "value": 0.5338888888888889,
+                "unit": "",
+                "limit": "≤ 6",
+                "ok": true
+              },
+              {
+                "name": "фото, Adjust в низ: худший блок 15×15",
+                "value": 3.8666666666666667,
+                "unit": "",
+                "limit": "≤ 20",
+                "ok": true
+              },
+              {
+                "name": "фото, Adjust в низ: цветовой сдвиг",
+                "value": 0.48333333333333334,
+                "unit": "",
+                "limit": "≤ 0,8",
+                "ok": true
+              }
+            ]
+          },
+          {
+            "name": "фото, Cyber 100% + Glitch",
+            "t": 9.5,
+            "cast": 0.8,
+            "checks": [
+              {
+                "name": "фото, Cyber 100% + Glitch: превью−фото, средняя разница",
+                "value": 1.1218518518518519,
+                "unit": "",
+                "limit": "≤ 4",
+                "ok": true
+              },
+              {
+                "name": "фото, Cyber 100% + Glitch: превью−кадр видео, средняя разница",
+                "value": 1.3651440329218107,
+                "unit": "",
+                "limit": "≤ 6",
+                "ok": true
+              },
+              {
+                "name": "фото, Cyber 100% + Glitch: худший блок 15×15",
+                "value": 2.8666666666666667,
+                "unit": "",
+                "limit": "≤ 20",
+                "ok": true
+              },
+              {
+                "name": "фото, Cyber 100% + Glitch: цветовой сдвиг",
+                "value": 0.13666666666666666,
+                "unit": "",
+                "limit": "≤ 0,8",
+                "ok": true
+              }
+            ]
+          },
+          {
+            "name": "полосы 9:16 ×4 в углу + Blur",
+            "t": 14,
+            "cast": 2,
+            "checks": [
+              {
+                "name": "полосы 9:16 ×4 в углу + Blur: превью−фото, средняя разница",
+                "value": 0.3333333333333333,
+                "unit": "",
+                "limit": "≤ 4",
+                "ok": true
+              },
+              {
+                "name": "полосы 9:16 ×4 в углу + Blur: превью−кадр видео, средняя разница",
+                "value": 0.3333333333333333,
+                "unit": "",
+                "limit": "≤ 6",
+                "ok": true
+              },
+              {
+                "name": "полосы 9:16 ×4 в углу + Blur: худший блок 15×15",
+                "value": 1,
+                "unit": "",
+                "limit": "≤ 20",
+                "ok": true
+              },
+              {
+                "name": "полосы 9:16 ×4 в углу + Blur: цветовой сдвиг",
+                "value": 1,
+                "unit": "",
+                "limit": "≤ 2",
+                "ok": true
+              }
+            ]
+          }
+        ],
+        "video": {
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1080,
+          "height": 1920,
+          "frames": 510,
+          "duration": 17.001333,
+          "fps": 30,
+          "audio": "aac"
+        }
+      },
+      "s": 25
+    },
+    {
+      "id": "SW-C-1, SW-C-4",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "клипов звука после двух «Извлечь звук»",
+          "value": 2,
+          "unit": "",
+          "limit": "= 1",
+          "ok": false
+        },
+        {
+          "name": "«This clip has no sound» при экспорте",
+          "value": 2,
+          "unit": "",
+          "limit": "= 0",
+          "ok": false,
+          "detail": [
+            "Sound processing failed: This clip has no soundDetails",
+            "Export failed: This clip has no sound"
+          ]
+        },
+        {
+          "name": "экспорт дошёл до файла",
+          "value": "Export failed: This clip has no sound",
+          "unit": "",
+          "limit": "да",
+          "ok": false
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 1,
+          "unit": "",
+          "limit": "= 0",
+          "ok": false,
+          "detail": [
+            "Sound processing failed: This clip has no soundDetails"
+          ]
+        }
+      ],
+      "measured": {
+        "tracks": {
+          "audioClips": 2,
+          "audioRows": 2
+        },
+        "length": 2,
+        "file": null,
+        "failed": "Export failed: This clip has no sound",
+        "noSound": [
+          "Sound processing failed: This clip has no soundDetails",
+          "Export failed: This clip has no sound"
+        ]
+      },
+      "s": 15
+    },
+    {
+      "id": "Q-13, Q-14 на iPhone",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "вырез включён",
+          "value": true,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "«Вырезать фон»",
+          "value": 2.953,
+          "unit": " с",
+          "limit": "≤ 60 с",
+          "ok": true
+        },
+        {
+          "name": "«Скрыть лица» (авто)",
+          "value": 0.742,
+          "unit": " с",
+          "limit": "≤ 60 с",
+          "ok": true
+        },
+        {
+          "name": "«Авторефрейм»",
+          "value": 3.115,
+          "unit": " с",
+          "limit": "≤ 60 с",
+          "ok": true
+        },
+        {
+          "name": "экспорт",
+          "value": 106.698,
+          "unit": " с",
+          "limit": "≤ 90 с",
+          "ok": false
+        },
+        {
+          "name": "видео в файле",
+          "value": "h264",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "потеряно кадров",
+          "value": 0.7599900000000162,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "длительность",
+          "value": 30.025333,
+          "unit": " с",
+          "limit": "30 ± 0,1 с",
+          "ok": true
+        },
+        {
+          "name": "меньшая сторона",
+          "value": 1080,
+          "unit": " px",
+          "limit": "≥ 1080 px",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "cutoutS": 2.953,
+        "cutoutOn": true,
+        "facesS": 0.742,
+        "reframeS": 3.115,
+        "exportS": 106.698,
+        "length": 30,
+        "file": {
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1080,
+          "height": 1920,
+          "frames": 900,
+          "duration": 30.025333,
+          "fps": 30,
+          "audio": "aac"
+        }
+      },
+      "s": 128
+    },
+    {
+      "id": "Q-10 реверс",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "«Отмена» убирает оверлей",
+          "value": 74,
+          "unit": " мс",
+          "limit": "≤ 3000 мс",
+          "ok": true
+        },
+        {
+          "name": "«Отмена» нашлась",
+          "value": 74,
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "реверс 60 с 1080p",
+          "value": 45.662,
+          "unit": " с",
+          "limit": "≤ 60 с",
+          "ok": true
+        },
+        {
+          "name": "реверс включён",
+          "value": true,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "двойной реверс: разница кадра 2 с",
+          "value": 0,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "пик памяти вкладки",
+          "value": "Web Inspector",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "cancelMs": 74,
+        "fullS": 45.662,
+        "reversedOn": true,
+        "sameFrame": 0
+      },
+      "s": 72
+    },
+    {
+      "id": "SW-D-4",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "контекстов WebGL потеряно не по воле страницы",
+          "value": 48,
+          "unit": "",
+          "limit": "= 0",
+          "ok": false
+        },
+        {
+          "name": "отказов в контексте",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true
+        },
+        {
+          "name": "кадров превью за 2 с воспроизведения",
+          "value": 122,
+          "unit": "",
+          "limit": "≥ 20",
+          "ok": true
+        },
+        {
+          "name": "яркость превью",
+          "value": 81.654052734375,
+          "unit": "",
+          "limit": "≥ 10",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "gl": {
+          "nulls2d": 0,
+          "lost": 48,
+          "nulls": 0,
+          "made": 64,
+          "dropped": 0
+        },
+        "drawn": 122,
+        "luma": 81.654052734375
+      },
+      "s": 75
+    }
+  ]
+}
