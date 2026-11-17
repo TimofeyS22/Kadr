@@ -197,9 +197,9 @@ describe('a size picked at an earlier export', () => {
 
 describe('what is said before an export (S-1-5)', () => {
   it('the size estimate follows size, quality, frame rate and length', () => {
-    expect(estimateMb(1080, 30, 'standard', 8)).toBeCloseTo(10, 6); // 10 Mbit/s × 8 s
-    expect(estimateMb(1080, 60, 'high', 60)).toBeCloseTo(10 * 1.5 * 1.4 * 60 / 8, 6);
-    expect(estimateMb(2160, 30, 'standard', 3600)).toBeCloseTo(35 * 3600 / 8, 6);
+    expect(estimateMb(1080, 30, 'standard', 8)).toBeCloseTo(10.16, 6); // 10 Mbit/s of picture and 0.16 of sound × 8 s
+    expect(estimateMb(1080, 60, 'high', 60)).toBeCloseTo((10 * 1.5 * 1.4 + 0.16) * 60 / 8, 6);
+    expect(estimateMb(2160, 30, 'standard', 3600)).toBeCloseTo((35 + 0.16) * 3600 / 8, 6);
   });
   it('a ten-hour video is long, and its file does not fit in 2 GB; a short one is neither', () => {
     const mb = estimateMb(1080, 30, 'high', 36000);
