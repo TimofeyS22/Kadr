@@ -57,10 +57,11 @@ test('UI-4: a landscape video in 9:16 says what the black bars are, once, with t
   const bars = await edges(page);
   expect(Math.max(bars.top, bars.bottom), 'before: black above and below').toBeLessThan(12);
   await fill.click();
+  // Said at once and gone in seconds: read before the frame is waited for (on a loaded Mac the redraw took longer than the plate stays).
+  await expect(page.locator('.toast').filter({ hasText: 'Обрезано по центру' })).toBeVisible();
   await expect(note(page), 'answered: gone').toHaveCount(0);
   // The frame is read until it is drawn: on a loaded Mac a redraw can take longer than a fixed wait.
   await expect.poll(async () => { const e = await edges(page); return Math.min(e.top, e.bottom); }, { message: 'the picture reaches the top and the bottom of the frame', timeout: 15_000 }).toBeGreaterThan(20);
-  await expect(page.locator('.toast').filter({ hasText: 'Обрезано по центру' })).toBeVisible();
   await page.getByRole('button', { name: 'Отменить' }).click();
   await expect.poll(async () => { const e = await edges(page); return Math.max(e.top, e.bottom); }, { message: 'one Undo: the bars are back', timeout: 15_000 }).toBeLessThan(12);
   await expect(note(page), 'and the note is not said again').toHaveCount(0);

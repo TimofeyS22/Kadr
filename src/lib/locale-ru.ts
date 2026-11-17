@@ -932,7 +932,7 @@ export const RU: Record<string, string> = {
   'The video is wider than the frame: black bars above and below.': 'Видео шире кадра: сверху и снизу чёрные поля.',
   'The video is narrower than the frame: black bars at the sides.': 'Видео уже кадра: по бокам чёрные поля.',
   'Fill the frame': 'Заполнить кадр',
-  'Frame like the video': 'Формат как у видео',
+  'Frame like the video': 'Формат как у\u00a0видео', // «у» never ends a line (the art director)
   'Cropped from the centre. To move it: Crop or Auto reframe.': 'Обрезано по центру. Сдвинуть — в «Кадрировать» или «Авто-рефрейм».',
   'Back: close tools': 'Назад: закрыть инструменты',
   'Done: finish selecting': 'Готово: закончить выбор',
