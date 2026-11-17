@@ -108,11 +108,19 @@ export async function reverseClipSource(p: Project, clip: VideoClip, onProgress:
       stop();
       const start = Math.max(s0, end - WINDOW_S);
       const frames: WrappedCanvas[] = [];
-      for await (const f of sink.canvases(start, end)) { stop(); if (f.timestamp < end - 1e-6 && (f.timestamp >= start - 1e-6 || start <= s0)) frames.push(f); }
+      // Every frame comes on a canvas of its own (no pool: a window of a variable-rate file may hold more frames than a
+      // pool, and a reused canvas would show another frame). Each is let go as soon as it is drawn or passed over: a 60 s
+      // clip made ~1800 of them, left to the collector (audit V-169: 111 MP a 4 s reverse in the e2e).
+      for await (const f of sink.canvases(start, end)) {
+        stop();
+        if (f.timestamp < end - 1e-6 && (f.timestamp >= start - 1e-6 || start <= s0)) frames.push(f);
+        else letGo(f.canvas);
+      }
       for (const f of frames.reverse()) {
         stop();
         const t = Math.max(0, s1 - Math.max(s0, f.timestamp) - frameDur);
         ctx.drawImage(f.canvas, 0, 0);
+        letGo(f.canvas);
         if (hdr || as601) {
           const image = ctx.getImageData(0, 0, width, height);
           correctPixels(image.data, { hdr, as601 });

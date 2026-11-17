@@ -157,38 +157,42 @@ test('freeze frames, a reverse and a scrub leave no canvas with its pixels to th
     .filter((c) => !(c instanceof HTMLCanvasElement && c.isConnected))
     .reduce((mp, c) => mp + (c.width * c.height) / 1e6, 0));
   await page.goto('./');
-  await page.getByRole('button', { name: 'New project' }).click();
-  await page.locator('.aspect-card', { hasText: '16:9' }).click();
-  const chooser = page.waitForEvent('filechooser');
-  await tool(page, 'Media').click();
-  await (await chooser).setFiles(fx('landscape.mp4'));
-  const clips = page.locator('.tl-row.main .clip');
-  await expect(clips).toHaveCount(1, { timeout: 60_000 });
-  const select = async () => {
-    const clip = clips.first();
-    await expect(async () => {
-      if (!(await clip.getAttribute('class'))?.includes(' sel')) await clip.click();
-      await expect(clip).toHaveClass(/ sel/, { timeout: 1000 });
-    }).toPass({ timeout: 10_000 });
+  // A tool of the clip: from the ribbon, or from «All tools» where the ribbon does not show it (UI-5).
+  const use = async (name: string) => {
+    if (!(await tool(page, name).count())) await page.getByRole('button', { name: 'All tools' }).click();
+    await tool(page, name).last().click();
   };
-  const scrub = () => page.evaluate(async () => {
-    const el = document.querySelector('.tl-scroll')!;
-    for (const f of [0.6, 0.1, 0.8, 0.3, 0.95, 0.05, 0.5, 0.7, 0.2, 0.9, 0.4, 0.15]) { el.scrollLeft = f * (el.scrollWidth - el.clientWidth); await new Promise((r) => setTimeout(r, 120)); }
-    el.scrollLeft = 0;
-    await new Promise((r) => setTimeout(r, 300));
-  });
   const areas: number[] = [];
+  // Each round in a project of its own, left at the end: what a round made and did not give back stays counted.
   for (let round = 0; round < 3; round++) {
-    await select();
-    await tool(page, 'Freeze').click();
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.locator('.aspect-card', { hasText: '16:9' }).click();
+    const chooser = page.waitForEvent('filechooser');
+    await tool(page, 'Media').click();
+    await (await chooser).setFiles(fx('landscape.mp4'));
+    const video = page.locator('.tl-row.main .clip').first();
+    await expect(video).toHaveCount(1, { timeout: 60_000 });
+    // The freeze frame is taken under the playhead: 2 s into the 6 s clip.
+    await page.locator('.tl-scroll').evaluate((el) => { el.scrollLeft = (el.scrollWidth - el.clientWidth) / 3; });
+    await page.waitForTimeout(400);
+    await use('Freeze');
     await expect(page.locator('.busy')).toHaveCount(0, { timeout: 60_000 });
-    await expect(page.locator('.tl-row.main .clip-image')).toHaveCount(round + 1, { timeout: 30_000 });
-    await select();
-    await tool(page, 'Reverse').click();
+    await expect(page.locator('.tl-row.main .clip-image')).toHaveCount(1, { timeout: 30_000 });
+    const part = page.locator('.tl-row.main .clip:not(.clip-image)').last(); // the 4 s after the freeze frame
+    await expect(async () => {
+      if (!(await part.getAttribute('class'))?.includes(' sel')) await part.click();
+      await expect(part).toHaveClass(/ sel/, { timeout: 1000 });
+    }).toPass({ timeout: 10_000 });
+    await use('Reverse');
     await expect(page.locator('.busy')).toHaveCount(0, { timeout: 120_000 });
     if (await page.getByRole('button', { name: 'Close tools' }).isVisible()) await page.getByRole('button', { name: 'Close tools' }).click();
-    await scrub();
-    await page.waitForTimeout(1500); // streams nobody uses are let go after a moment
+    await page.evaluate(async () => {
+      const el = document.querySelector('.tl-scroll')!;
+      for (const f of [0.6, 0.1, 0.8, 0.3, 0.95, 0.05, 0.5, 0.7, 0.2, 0.9, 0.4, 0.15]) { el.scrollLeft = f * (el.scrollWidth - el.clientWidth); await new Promise((r) => setTimeout(r, 120)); }
+    });
+    await page.getByRole('button', { name: 'Back to projects' }).click();
+    await expect(page.getByRole('button', { name: 'New project' })).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1500);
     areas.push(Math.round((await left()) * 100) / 100);
   }
   console.log(`canvas megapixels outside the page after each round (${info.project.name}): ${areas.join(', ')}`);
