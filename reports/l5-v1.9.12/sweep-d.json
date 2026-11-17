@@ -1,0 +1,44 @@
+{
+  "lane": "d",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": null,
+  "started": "2026-11-17T09:17:32.354Z",
+  "finished": "2026-11-17T09:17:52.540Z",
+  "results": [
+    {
+      "id": "C-H1",
+      "status": "ERROR",
+      "checks": [],
+      "error": "javascript error: A JavaScript exception occured: The operation is insecure.",
+      "s": 0
+    },
+    {
+      "id": "SW-A-14",
+      "status": "ERROR",
+      "checks": [],
+      "error": "javascript error: A JavaScript exception occured: The operation is insecure.",
+      "s": 0
+    },
+    {
+      "id": "SW-A-13",
+      "status": "ERROR",
+      "checks": [],
+      "error": "javascript error: A JavaScript exception occured: The operation is insecure.",
+      "s": 0
+    },
+    {
+      "id": "Q-31",
+      "status": "ERROR",
+      "checks": [],
+      "error": "javascript error: A JavaScript exception occured: The operation is insecure.",
+      "s": 0
+    },
+    {
+      "id": "SW-D-3",
+      "status": "ERROR",
+      "checks": [],
+      "error": "javascript error: A JavaScript exception occured: The operation is insecure.",
+      "s": 0
+    }
+  ]
+}
