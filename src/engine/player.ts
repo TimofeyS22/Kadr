@@ -132,6 +132,9 @@ export class Player {
     cancelAnimationFrame(this.raf);
     this.audio.stop();
     this.onPlayingChange?.(false);
+    // That moment is drawn: the screen kept the last frame drawn while playing, up to 5 frames before it where the page
+    // got few frames (a busy phone), and «Save photo» saved a frame the person had not seen (SW-A-2).
+    this.requestRender();
   }
 
   toggle(): void { if (this.playing) this.pause(); else this.play(); }
