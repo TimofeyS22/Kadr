@@ -307,3 +307,23 @@ test('SW-U-4: the ribbon fades only where more tools lie — under «Все» wh
   expect(await faded(), 'at the end the last tool is not faded: nothing lies beyond it').not.toMatch(/gradient\(90deg, (rgb\(0, 0, 0\)|black) calc/);
   expect(await tools.evaluate((el) => el.hasAttribute('data-more-end'))).toBe(false);
 });
+
+// ---- the ribbon's observer under strain (lane D saw «ResizeObserver loop completed with undelivered notifications» once,
+// under load, on WebKit, in a test that enters the editor and leaves for Home) ----
+test('SW-U-9: the editor raises no «ResizeObserver loop» through window resizes, picking a piece and leaving for Home', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await sampleEditor(page, 'ru');
+  const sizes: [number, number][] = [[375, 812], [320, 640], [393, 852], [360, 740], [375, 667], [414, 896]];
+  for (let round = 0; round < 3; round++) {
+    for (const [width, height] of sizes) { await page.setViewportSize({ width, height }); await page.waitForTimeout(40); }
+    await page.locator('.tl-row.main .clip').first().click();
+    for (const [width, height] of [...sizes].reverse()) { await page.setViewportSize({ width, height }); await page.waitForTimeout(40); }
+    await page.locator('.toolbar .tool-back').click();
+    await page.getByRole('button', { name: 'К проектам' }).click();
+    await page.getByRole('button', { name: /^Открыть «?Пример/ }).first().click();
+    await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
+  }
+  await page.waitForTimeout(500);
+  expect(errors.filter((e) => e.includes('ResizeObserver')), 'no ResizeObserver loop in the page').toEqual([]);
+});
