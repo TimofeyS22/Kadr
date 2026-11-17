@@ -3,7 +3,7 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { hideOverFrame } from './over-frame';
+import { closeFrameFit, hideOverFrame } from './over-frame';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 const tool = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -64,6 +64,7 @@ const tilePainted = (page: Page, name: string) => expect.poll(async () => (await
 
 /** Mean colour distance between neighbouring channels in a screenshot of the preview: how colourful it looks. */
 async function previewChroma(page: Page) {
+  await closeFrameFit(page);
   const shot = await page.locator('.preview-canvas').screenshot({ type: 'png', style: hideOverFrame() });
   const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-vf', 'scale=64:36', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { input: shot, maxBuffer: 1 << 20 });
   let sum = 0;

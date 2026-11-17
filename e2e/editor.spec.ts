@@ -4,7 +4,7 @@ import path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
 import { switchableNetwork } from './network';
 import { compareSound } from './soundMatch';
-import { hideOverFrame } from './over-frame';
+import { closeFrameFit, hideOverFrame } from './over-frame';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
@@ -2360,6 +2360,7 @@ const meanAbsDiff = (a: Buffer, b: Buffer) => { let s = 0; for (let i = 0; i < a
 async function previewAt(page: Page, info: { outputPath: (n: string) => string }, t: number): Promise<string> {
   await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, t * 60);
   await page.waitForTimeout(1000);
+  await closeFrameFit(page);
   const canvas = page.locator('.preview-canvas');
   const whole = info.outputPath(`preview-${t}-element.png`);
   const shoot = () => canvas.screenshot({ style: hideOverFrame() }); // a tip or note lying over the preview is not in the export
@@ -4903,6 +4904,7 @@ const toastErrors = (page: Page) => page.evaluate(() => (window as unknown as { 
 /** The average brightness of what the preview shows, 0..255. */
 async function previewBrightness(page: Page, info: TestInfo, name: string): Promise<number> {
   const file = info.outputPath(`${name}.png`);
+  await closeFrameFit(page);
   await page.locator('.preview-canvas').screenshot({ path: file, style: hideOverFrame() });
   const { execFileSync } = await import('node:child_process');
   return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', 'scale=1:1,format=gray', '-f', 'rawvideo', '-'])[0];
@@ -5306,7 +5308,7 @@ test('captions have the same look settings as text: outline, second outline, sha
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close tools' }).click();
   await srtCaptions(page);
-  const shot = async (n: string) => { await page.locator('.caption-row input').first().focus(); await page.waitForTimeout(800); const f = info.outputPath(`${n}.png`); await page.locator('.preview-canvas').screenshot({ path: f, style: hideOverFrame('.sel-box') }); return gray(f); };
+  const shot = async (n: string) => { await closeFrameFit(page); await page.locator('.caption-row input').first().focus(); await page.waitForTimeout(800); const f = info.outputPath(`${n}.png`); await page.locator('.preview-canvas').screenshot({ path: f, style: hideOverFrame('.sel-box') }); return gray(f); };
   const plain = await shot('plain');
   const outline = page.getByRole('switch', { name: 'Outline', exact: true });
   if (!(await outline.isChecked())) await outline.check();

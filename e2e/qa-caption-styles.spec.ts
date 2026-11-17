@@ -7,7 +7,7 @@ import path from 'node:path';
 import { CAPTION_CATEGORIES, CAPTION_PRESETS, TEXT_PRESETS } from '../src/core/presets';
 import { FONT_IDS } from '../src/core/types';
 import type { StylesReport } from '../src/ui/StylesCheck';
-import { hideOverFrame } from './over-frame';
+import { closeFrameFit, hideOverFrame } from './over-frame';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 const pageErrors: string[] = [];
@@ -88,6 +88,7 @@ async function previewAt(page: Page, info: TestInfo, t: number, name: string): P
   // Nothing selected: a selection box lies over the preview and is not in the export. Escape every time — the box of
   // a selected caption is hidden only while the playhead is outside the caption, and comes back at `t`.
   await page.keyboard.press('Escape');
+  await closeFrameFit(page);
   await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, t * 60);
   // While seeking the preview first shows the nearest keyframe, then the exact frame: the picture is taken from that
   // one (on a busy Mac the exact video frame came after a fixed 0.9 s wait, and the video, not the caption, differed).

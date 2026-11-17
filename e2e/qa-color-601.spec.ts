@@ -6,7 +6,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { hideOverFrame } from './over-frame';
+import { closeFrameFit, hideOverFrame } from './over-frame';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 const tool = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -67,6 +67,7 @@ const seek = (page: Page, s: number) => page.locator('.tl-scroll').evaluate((el,
 test('a BT.601 video keeps its colours in the preview, a photo, the video, a freeze frame and a reversed clip', async ({ page }, info) => {
   test.setTimeout(240_000);
   await open(page, 'bt601.mp4');
+  await closeFrameFit(page);
   await seek(page, 1);
   await page.waitForTimeout(600);
   const preview = bands(['-i', 'pipe:0'], await page.locator('.preview-canvas').screenshot({ style: hideOverFrame() }));

@@ -4,7 +4,7 @@ import { expect, test, type Locator, type Page, type TestInfo } from '@playwrigh
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { hideOverFrame } from './over-frame';
+import { closeFrameFit, hideOverFrame } from './over-frame';
 
 export const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 type Out = { outputPath: (n: string) => string };
@@ -206,6 +206,7 @@ export function worstBlockCast(a: Buffer, b: Buffer): number {
 export async function previewAt(page: Page, info: Out, t: number): Promise<string> {
   await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, t * 60);
   await page.waitForTimeout(1000);
+  await closeFrameFit(page);
   const canvas = page.locator('.preview-canvas');
   const whole = info.outputPath(`preview-${t.toFixed(3)}-element.png`);
   // What lies over the frame is not in the file: the shared list (toasts, tips, the black-bars note), and a selected

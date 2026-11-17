@@ -5,7 +5,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { hideOverFrame } from './over-frame';
+import { closeFrameFit, hideOverFrame } from './over-frame';
 
 export const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
@@ -203,6 +203,7 @@ export async function putProject<T>(page: Page, edit: (p: T) => void) {
 export async function previewAt(page: Page, info: TestInfo, t: number): Promise<string> {
   await page.locator('.tl-scroll').evaluate((el, x) => { el.scrollLeft = x; }, t * 60);
   await page.waitForTimeout(600);
+  await closeFrameFit(page);
   const canvas = page.locator('.preview-canvas');
   // What lies over the picture and is not in the file (toasts, tips, the black-bars note; the selection box, the guides).
   const shoot = () => canvas.screenshot({ style: hideOverFrame('.sel-box, .guide') });
