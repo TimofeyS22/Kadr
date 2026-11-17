@@ -1,15 +1,17 @@
 // Verification, lane E4 (docs/21 §5), row SW-C-7: Cancel during the sound phase of a reverse. qa-media-reverse.spec.ts
 // taps Cancel 1 s in and allows 5 s; on a quiet Mac the sound phase of 60 s is over by then, and with every Cancel check
 // of the sound phase taken out that test stayed green on both engines. Here the page itself taps Cancel the moment the
-// reverse builds its first sound buffer (the sound phase comes first), and the frame phase must never start: not one
-// video frame is decoded after the tap. No threshold in seconds: a sound phase deaf to Cancel runs to its end and the
-// frame phase decodes a frame before it hears it.
+// reverse builds its first sound buffer (the sound phase comes first). Then the sound phase stops reading — a deaf one
+// reads the rest of the 60 s, thousands of buffers — and the frame phase never starts: no decoder is made after the tap.
+// No threshold in seconds. Lane C, 2026-11-17: frames decoded after the tap were counted from every decoder, and on
+// Chromium the colour probe's decoder (V-243, made before the sound phase) still hands out frames after the tap — 3 to 10
+// of them, 4 runs of 5 red with the reverse stopped in 0.04 s. Only decoders made after the tap count now.
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 
-interface Rev { armed: boolean; cancelAt: number; buffers: number; framesAfter: number; goneAt: number }
+interface Rev { armed: boolean; cancelAt: number; buffers: number; buffersAfter: number; framesAfter: number; lateFrames: number; goneAt: number }
 
 test('Cancel tapped as the reverse reads its first sound is heard in the sound phase: no frame is decoded after it (SW-C-7)', async ({ page }, info) => {
   test.setTimeout(300_000);
@@ -17,7 +19,7 @@ test('Cancel tapped as the reverse reads its first sound is heard in the sound p
     localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
     localStorage.setItem('kadr.locale', 'en'); localStorage.setItem('kadr.hint.move', '1'); localStorage.setItem('kadr.iosVideoTip.v3', '1');
     const w = window as unknown as { __rev: Rev };
-    const r: Rev = (w.__rev = { armed: false, cancelAt: 0, buffers: 0, framesAfter: 0, goneAt: 0 });
+    const r: Rev = (w.__rev = { armed: false, cancelAt: 0, buffers: 0, buffersAfter: 0, framesAfter: 0, lateFrames: 0, goneAt: 0 });
     // The sound phase: every buffer of the clip's sound is an AudioBuffer made on this thread (Mediabunny's toAudioBuffer).
     const AB = window.AudioBuffer;
     window.AudioBuffer = class extends AB {
@@ -25,16 +27,18 @@ test('Cancel tapped as the reverse reads its first sound is heard in the sound p
         super(o);
         if (!r.armed) return;
         r.buffers++;
-        if (r.cancelAt) return;
+        if (r.cancelAt) { r.buffersAfter++; return; }
         const cancel = [...document.querySelectorAll<HTMLButtonElement>('.busy button')].find((b) => /Cancel/.test(b.textContent ?? ''));
         if (cancel) { r.cancelAt = performance.now(); cancel.click(); }
       }
     } as typeof AudioBuffer;
-    // The frame phase: every frame the reverse decodes.
+    // The frame phase: a decoder made after the tap is the frame phase starting (CanvasSink makes its own). Frames a decoder
+    // made before it still hands out — the colour probe's — are counted apart, for the log.
     const VD = window.VideoDecoder;
     if (VD) window.VideoDecoder = class extends VD {
       constructor(init: VideoDecoderInit) {
-        super({ ...init, output: (f) => { if (r.cancelAt) r.framesAfter++; init.output(f); } });
+        const late = !r.cancelAt;
+        super({ ...init, output: (f) => { if (r.cancelAt) { if (late) r.lateFrames++; else r.framesAfter++; } init.output(f); } });
       }
     };
     new MutationObserver(() => { if (r.cancelAt && !r.goneAt && !document.querySelector('.busy')) r.goneAt = performance.now(); })
@@ -55,9 +59,11 @@ test('Cancel tapped as the reverse reads its first sound is heard in the sound p
   const busy = page.locator('.busy');
   await expect(busy, 'a cancelled reverse ends').toHaveCount(0, { timeout: 180_000 });
   const r = await page.evaluate(() => (window as unknown as { __rev: Rev }).__rev);
-  console.log(`reverse cancelled in its sound phase (${info.project.name}): ${r.buffers} sound buffers made, ${r.framesAfter} frames decoded after Cancel, overlay gone ${((r.goneAt - r.cancelAt) / 1000).toFixed(2)} s after it`);
+  console.log(`reverse cancelled in its sound phase (${info.project.name}): ${r.buffers} sound buffers made, ${r.buffersAfter} after Cancel; ${r.framesAfter} frames from decoders made after it (${r.lateFrames} late ones of the colour probe); overlay gone ${((r.goneAt - r.cancelAt) / 1000).toFixed(2)} s after it`);
   expect(r.cancelAt, 'Cancel was tapped during the sound phase').toBeGreaterThan(0);
-  expect(r.framesAfter, 'frames decoded after Cancel: the frame phase started, Cancel was not heard while the sound was read').toBe(0);
+  // A few were on their way when it was tapped; a sound phase deaf to Cancel reads the remaining minute of sound.
+  expect(r.buffersAfter, 'sound buffers read after Cancel: the sound phase did not hear it').toBeLessThanOrEqual(10);
+  expect(r.framesAfter, 'frames from a decoder made after Cancel: the frame phase started').toBe(0);
   await expect(clip, 'the clip is as it was').toHaveCount(1);
   await expect(page.locator('.toast.error')).toHaveCount(0);
 });
