@@ -1,0 +1,243 @@
+name: E2E (full)
+
+# The whole e2e suite of a commit, on the engines and with the strictness of the Mac run (docs/21 §7): the production
+# build with the speech models next to it, the fixtures of `npm run fixtures`, one worker per machine, no retries.
+# Started by `scripts/ci-e2e.sh <ref>`, which pushes the commit to ci/e2e; never by main or a pull request (deploy.yml
+# tests those). Deploys nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch or tag to test
+        required: true
+        default: main
+      args:
+        description: Extra Playwright arguments (files, -g …); empty runs everything
+        required: false
+        default: ''
+  push:
+    branches: ['ci/**']
+
+permissions:
+  contents: read
+
+env:
+  REF: ${{ inputs.ref || github.sha }}
+  # Both engines on macOS arm64, as on the Mac (docs/21 §7; measured 2026-11-16 on 9d67632). Linux WebKit decodes and
+  # encodes through GStreamer, not VideoToolbox: A/V sync, BT.601 colour, 60 fps export and the smoke test differ.
+  # Linux Chromium has no AAC encoder and records no MP4: 40 red against 18 on macOS. Intel macOS has no GPU for WebKit
+  # (21 of 22 export tests red) and runs Chromium 2.5 times slower. GitHub gives 5 macOS runners at a time, so the
+  # suite is cut into exactly 5 pieces, each with both engines: one wave, one wait for runners. (macos-26 is the Mac's
+  # own system; runs-on cannot read env, so it is written out in the two jobs below.)
+  E2E_SHARDS: 5
+  FIXTURES: |
+    fixtures/*.mp4
+    fixtures/*.mov
+    fixtures/*.m4a
+    fixtures/*.webm
+    fixtures/*.png
+    fixtures/*.jpg
+    fixtures/*.aiff
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_INSTALL_CLEANUP: '1'
+  HOMEBREW_NO_ENV_HINTS: '1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      shards: ${{ steps.args.outputs.shards }}
+      count: ${{ steps.args.outputs.count }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.REF }}
+      # scripts/ci-e2e.sh puts the arguments of a partial run next to the commit it pushes.
+      - id: args
+        env:
+          INPUT_ARGS: ${{ inputs.args }}
+        run: |
+          args="$INPUT_ARGS"
+          [ -f .github/ci-e2e-args ] && args="$(tr '\n' ' ' < .github/ci-e2e-args)"
+          echo "Testing $(git rev-parse HEAD) ${args:+with: $args}"
+          n=$E2E_SHARDS
+          [ -n "$args" ] && n=1 # a partial run takes one machine, not all five
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+          echo "shards=$(jq -nc --argjson n "$n" '[range(1; $n + 1)]')" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # The build gate.sh makes: base "/", no typecheck (deploy.yml runs it on every pull request and push to main).
+      - name: Production build
+        run: node scripts/copy-assets.mjs && npx vite build --logLevel warn
+      # Without the models on the site, captions wait for Hugging Face and fail slowly for reasons not in the code.
+      - name: Cache the speech models
+        uses: actions/cache@v6
+        with:
+          path: scripts/.model-cache
+          key: models-${{ hashFiles('src/engine/models.json') }}
+          restore-keys: models-
+      - name: Put the speech models on the site
+        run: node scripts/mirror-models.mjs dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist
+          retention-days: 1
+          compression-level: 1
+          include-hidden-files: true
+
+  # The fixtures (`npm run fixtures` and the live speech) live in the cache under the hash of the scripts that make them:
+  # looking them up takes a Linux runner, and only a changed script waits for a macOS one to make them again.
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+      hit: ${{ steps.look.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.REF }}
+      - id: key
+        run: echo "key=fixtures-${{ hashFiles('scripts/make-fixtures.sh', 'scripts/make-hdr-frame.py', 'scripts/fetch-live-speech.mjs', 'e2e/eval/texts.json') }}" >> "$GITHUB_OUTPUT"
+      - id: look
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.FIXTURES }}
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+
+  # On macOS: the speech in the fixtures is spoken by `say` (Samantha, Milena, …) and the phone-like files are encoded
+  # as on the Mac.
+  fixtures-make:
+    needs: fixtures
+    if: needs.fixtures.outputs.hit != 'true'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.REF }}
+      - name: Make the fixtures
+        run: |
+          brew install ffmpeg
+          npm run fixtures
+          node scripts/fetch-live-speech.mjs
+          ls -l fixtures
+      - uses: actions/cache/save@v6
+        with:
+          path: ${{ env.FIXTURES }}
+          key: ${{ needs.fixtures.outputs.key }}
+
+  e2e:
+    needs: [build, fixtures, fixtures-make]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.fixtures.result == 'success' && needs.fixtures-make.result != 'failure' }}
+    name: e2e ${{ matrix.shard }}/${{ strategy.job-total }}
+    runs-on: macos-26
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.build.outputs.shards) }}
+    env:
+      PLAYWRIGHT_BLOB_OUTPUT_NAME: shard-${{ matrix.shard }}.zip
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.REF }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: ffmpeg (the tests read the exported files with it)
+        run: brew install ffmpeg && ffmpeg -version | head -1
+      - run: npx playwright install webkit chromium
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.FIXTURES }}
+          key: ${{ needs.fixtures.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Serve the build
+        run: |
+          npx vite preview --outDir "$RUNNER_TEMP/dist" --port 4191 --strictPort --host 127.0.0.1 > "$RUNNER_TEMP/preview.log" 2>&1 &
+          for _ in $(seq 60); do curl -sf http://127.0.0.1:4191/ > /dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/preview.log"; exit 1
+      - name: Playwright
+        env:
+          E2E_URL: http://127.0.0.1:4191/
+          NEW_DIST: ${{ runner.temp }}/dist
+          INPUT_ARGS: ${{ inputs.args }}
+        # One worker and no retries, as on the Mac. Arguments of a partial run: one per line in .github/ci-e2e-args
+        # (scripts/ci-e2e.sh keeps "-g 'two words'" whole), or the dispatch input split at spaces.
+        run: |
+          set --
+          if [ -f .github/ci-e2e-args ]; then
+            while IFS= read -r a; do set -- "$@" "$a"; done < .github/ci-e2e-args
+          else
+            # shellcheck disable=SC2086
+            set -- $INPUT_ARGS
+          fi
+          npx playwright test --project=iphone-webkit --project=android-chromium --shard="${{ matrix.shard }}/${{ strategy.job-total }}" \
+            --fully-parallel --workers=1 --retries=0 --reporter=list,blob "$@"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: blob-${{ matrix.shard }}
+          path: blob-report
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: failures-${{ matrix.shard }}
+          path: test-results
+          retention-days: 7
+
+  summary:
+    needs: [build, e2e]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: blob-*
+          path: blob-reports
+          merge-multiple: true
+      # -c: the shards ran on other machines (other test folders); the config names the one to report.
+      - name: Merge the shards
+        run: |
+          mkdir -p blob-reports
+          npx playwright merge-reports -c playwright.config.ts --reporter=json blob-reports > report.json
+          npx playwright merge-reports -c playwright.config.ts --reporter=html blob-reports > /dev/null
+      - name: Summary
+        run: node scripts/ci-e2e-summary.mjs report.json blob-reports "${{ needs.build.outputs.count }}" summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-summary
+          path: |
+            summary.md
+            report.json
+          retention-days: 30
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-report
+          path: playwright-report
+          retention-days: 7
