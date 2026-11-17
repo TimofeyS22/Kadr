@@ -22,6 +22,8 @@ await sweep({
         await c.tool('Cutout');
         await c.waitFor('the cutout', async () => (await c.toolOn('Cutout')) || (await c.js("return [...document.querySelectorAll('.toast')].some((e) => /Background removed|No person found/.test(e.textContent))")), 120_000);
         const cutoutS = (Date.now() - t) / 1000;
+        const cutoutOn = await c.toolOn('Cutout'); // «No person found» also ends the wait, with the cutout off
+        const said = (await c.page()).notes.filter((n) => /No person found/.test(n)); // before the next page wipes them
         await c.closeTools();
         await sleep(1000);
         await c.shot('v-167-cutout-edge');
@@ -39,10 +41,9 @@ await sweep({
         await c.tap('Play');
         await sleep(5000);
         await c.tap('Pause').catch(() => undefined);
-        const said = (await c.page()).notes.filter((n) => /No person found/.test(n));
-        return { cutoutS, facesS, scripts: [...cutoutScripts, ...(await c.js(INPAGE))], said };
+        return { cutoutS, cutoutOn, facesS, scripts: [...cutoutScripts, ...(await c.js(INPAGE))], said };
       },
-      judge: (m) => ({ checks: [atMost('«Вырез» включился', m.cutoutS, 30, ' с'), atMost('«Скрыть лица» включились', m.facesS, 30, ' с'), none('MediaPipe в странице (script)', m.scripts), none('«No person found» на человеке', m.said)], look: 'край выреза — снимок v-167-cutout-edge.png против Mac' }),
+      judge: (m) => ({ checks: [holds('вырез включён', m.cutoutOn, m.cutoutOn, 'да'), atMost('«Вырез» включился', m.cutoutS, 30, ' с'), atMost('«Скрыть лица» включились', m.facesS, 30, ' с'), none('MediaPipe в странице (script)', m.scripts), none('«No person found» на человеке', m.said)], look: 'край выреза — снимок v-167-cutout-edge.png против Mac' }),
     },
     {
       id: 'V-167 (отклик)', price: 4,

@@ -95,11 +95,14 @@ await sweep({
         await c.tap('Done');
         await c.closeTools();
         const length = await c.timelineLength();
-        const { file } = await c.exportAs({ preset: 'TikTok, Reels, Shorts', file: 'sw-c-4-silent-2x.mp4' });
+        // The defect is the export failing with «This clip has no sound»: that is a verdict, not a broken scenario.
+        const done = await c.exportAs({ preset: 'TikTok, Reels, Shorts', file: 'sw-c-4-silent-2x.mp4' }).catch((e) => ({ failed: e.message }));
         const notes = (await c.page()).notes;
-        return { tracks, length, file: probe(file), noSound: notes.filter((n) => /has no sound|нет звука/i.test(n)) };
+        const noSound = [...notes, done.failed ?? ''].filter((n) => /has no sound|нет звука/i.test(n));
+        return { tracks, length, file: done.file ? probe(done.file) : null, failed: done.failed ?? null, noSound };
       },
-      judge: (m) => [equals('клипов звука после двух «Извлечь звук»', m.tracks.audioClips, 1), none('«This clip has no sound» при экспорте', m.noSound), ...wholeFile(m.file, { duration: m.length, audio: false })],
+      judge: (m) => [equals('клипов звука после двух «Извлечь звук»', m.tracks.audioClips, 1), none('«This clip has no sound» при экспорте', m.noSound),
+        ...(m.file ? wholeFile(m.file, { duration: m.length, audio: false }) : [holds('экспорт дошёл до файла', false, m.failed, 'да')])],
     },
     {
       id: 'Q-13, Q-14 на iPhone', price: 2,
@@ -113,6 +116,7 @@ await sweep({
         await c.tool('Cutout');
         await c.waitFor('the cutout', async () => (await c.toolOn('Cutout')) || (await c.js("return [...document.querySelectorAll('.toast')].some((e) => /Background removed|No person found/.test(e.textContent))")), 180_000);
         took.cutoutS = (Date.now() - t) / 1000;
+        took.cutoutOn = await c.toolOn('Cutout'); // «No person found» also ends the wait, with the cutout off
         await c.selectClip();
         t = Date.now();
         await c.tool('Hide faces');
@@ -132,7 +136,7 @@ await sweep({
         const { file, ms } = await c.exportAs({ preset: 'TikTok, Reels, Shorts', file: 'q-13-export.mp4' });
         return { ...took, exportS: ms / 1000, length, file: probe(file) };
       },
-      judge: (m) => [atMost('«Вырезать фон»', m.cutoutS, 60, ' с'), atMost('«Скрыть лица» (авто)', m.facesS, 60, ' с'), atMost('«Авторефрейм»', m.reframeS, 60, ' с'),
+      judge: (m) => [holds('вырез включён', m.cutoutOn, m.cutoutOn, 'да'), atMost('«Вырезать фон»', m.cutoutS, 60, ' с'), atMost('«Скрыть лица» (авто)', m.facesS, 60, ' с'), atMost('«Авторефрейм»', m.reframeS, 60, ' с'),
         atMost('экспорт', m.exportS, 3 * m.length, ' с'), ...wholeFile(m.file, { duration: m.length, audio: false, minHeight: 1080 })],
     },
     {
@@ -151,7 +155,8 @@ await sweep({
         await sleep(1000);
         await c.selectClip();
         const fullMs = await reverse(c, 300_000);
-        const on = !!(await c.stored())?.tracks.find((t) => t.kind === 'main').clips[0].reversedFrom;
+        // The veil goes before the reverse is committed; the save follows ~600 ms later.
+        const on = await c.waitFor('the reverse saved', async () => !!(await c.stored())?.tracks.find((t) => t.kind === 'main').clips[0]?.reversedFrom, 15_000).catch(() => false);
         // Twice over on the counter: the frame at 2 s is the same as before the first reverse.
         await c.fresh(['counter.mp4'], { aspect: '16:9' });
         await c.exactAt(2);

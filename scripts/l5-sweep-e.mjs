@@ -177,6 +177,9 @@ await sweep({
       run: async (c) => {
         const loads = [];
         for (let k = 1; k <= Number(process.env.L5_COLD_LOADS ?? 5); k++) {
+          // From the second load on: the service worker and its caches are taken away first. Safari's own HTTP cache
+          // stays (a page cannot clear it): these loads are «without the app's cache», the first one is the cold one.
+          if (k > 1) await c.jsAsync("const done = arguments[arguments.length - 1]; (async () => { for (const r of await navigator.serviceWorker?.getRegistrations?.() ?? []) await r.unregister(); for (const k of await caches.keys()) await caches.delete(k); })().then(() => done(true), (e) => done(String(e)));");
           await c.call('POST', `${c.S}/url`, { url: `${c.url}?l5cold=${k}` });
           const home = await c.waitFor('home', () => c.js("const b = [...document.querySelectorAll('button')].find((e) => e.offsetParent !== null && ['New project', 'Новый проект'].includes((e.getAttribute('aria-label') || e.textContent).trim())); return b ? Math.round(performance.now()) : null;"), 30_000);
           const sample = await c.jsAsync(`const done = arguments[arguments.length - 1];
@@ -189,7 +192,8 @@ await sweep({
         }
         return loads;
       },
-      judge: (m) => [kOfN('главная ≤ 3000 мс (не позже)', m, (r) => r.home <= 3000, m.length), kOfN('пример ≤ 5000 мс', m, (r) => r.sample >= 0 && r.sample <= 5000, m.length),
+      judge: (m) => [atMost('холодный запуск: главная (не позже)', m[0]?.home, 3000, ' мс'), atMost('холодный запуск: пример', m[0]?.sample, 5000, ' мс'),
+        kOfN('без кэша приложения: главная ≤ 3000 мс', m.slice(1), (r) => r.home <= 3000, m.length - 1), kOfN('без кэша приложения: пример ≤ 5000 мс', m.slice(1), (r) => r.sample >= 0 && r.sample <= 5000, m.length - 1),
         record('главная, мс', m.map((r) => r.home).join(', ')), record('пример, мс', m.map((r) => r.sample).join(', '))],
       page: false,
     },

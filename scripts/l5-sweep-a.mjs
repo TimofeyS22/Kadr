@@ -59,22 +59,26 @@ await sweep({
         await c.tool('Record');
         await c.enabled('Start recording', 90_000);
         await c.tap('Start recording');
-        await c.waitFor('recording', () => c.has('Stop recording'), 20_000);
+        // The microphone is asked for on Start: a person taps «Allow» on the phone.
+        await c.waitFor('recording (Allow the microphone on the phone)', () => c.has('Stop recording'), 90_000);
         const t0 = Date.now();
         await sleep(10_000);
         const recordedS = (Date.now() - t0) / 1000;
         // A reload (WebDriver «Refresh»): the same address with its #/p/… would be a move inside the page, not a new one.
         await c.call('POST', `${c.S}/refresh`, {});
         await c.waitFor('the editor again', () => c.js("return !!document.querySelector('.preview-canvas')"), 60_000);
-        const said = await c.waitFor('the voice-over back', () => c.js("const t = [...document.querySelectorAll('.toast')].map((e) => e.textContent); return document.querySelectorAll('.tl-row.audio .clip').length > 0 ? { toasts: t } : null;"), 30_000).catch(() => ({ toasts: [] }));
         await c.watch();
-        const p = await c.stored();
-        const voices = p?.tracks.filter((t) => t.kind === 'audio').flatMap((t) => t.clips) ?? [];
+        // The clip is committed first; the toast comes after the take's pieces are deleted (lane-a-rc2 Editor.tsx), and
+        // the save ~600 ms after the commit. Both are waited for; the toasts are read off the page and off the watcher.
+        const said = await c.waitFor('the voice-over and its toast', () => c.js("const t = [...new Set([...document.querySelectorAll('.toast')].map((e) => e.textContent).concat(window.__l5?.notes ?? []))]; return document.querySelectorAll('.tl-row.audio .clip').length > 0 && t.some((x) => /voice/i.test(x)) ? { toasts: t } : null;"), 30_000)
+          .catch(async () => ({ toasts: await c.js("return [...document.querySelectorAll('.toast')].map((e) => e.textContent).concat(window.__l5?.notes ?? [])") }));
+        const voicesOf = (p) => p?.tracks.filter((t) => t.kind === 'audio').flatMap((t) => t.clips) ?? [];
+        const voices = await c.waitFor('the voice-over saved', async () => { const v = voicesOf(await c.stored()); return v.length ? v : null; }, 10_000).catch(() => []);
         await c.call('POST', `${c.S}/refresh`, {});
         await c.waitFor('the editor a third time', () => c.js("return !!document.querySelector('.preview-canvas')"), 60_000);
         await sleep(3000);
         await c.watch();
-        const again = (await c.stored())?.tracks.filter((t) => t.kind === 'audio').flatMap((t) => t.clips) ?? [];
+        const again = voicesOf(await c.stored());
         return { recordedS, voices: voices.map((v) => v.duration), toasts: said.toasts, afterSecondReload: again.length };
       },
       judge: (m) => [equals('клипов озвучки после перезагрузки', m.voices.length, 1), atLeast('длина озвучки', m.voices[0], m.recordedS - 1.5, ' с'),
@@ -125,8 +129,8 @@ await sweep({
           await c.waitFor('the reverse to start', () => c.js("return !!document.querySelector('.busy')"), 10_000).catch(() => undefined);
           await c.idle(300_000);
           await c.closeTools();
-          const clip = (await c.stored()).tracks.find((t) => t.kind === 'main').clips[0];
-          if (!clip.reversedFrom) throw new Error(`${name}: the clip is not reversed`);
+          // The veil goes before the reverse is committed, and the save follows ~600 ms later (actions.ts, Editor.tsx).
+          const clip = await c.waitFor(`${name}: the reverse saved`, async () => (await c.stored())?.tracks.find((t) => t.kind === 'main').clips[0]?.reversedFrom && (await c.stored()).tracks.find((t) => t.kind === 'main').clips[0], 15_000);
           const stored = await c.pullAsset(clip.assetId, `v-159-${name}-reversed-asset`);
           const { file } = await c.exportAs({ preset: 'Small file', loud: false, file: `v-159-${name}` });
           out[name] = { pairs, sync: avSync(file), packets: packets(stored) };
