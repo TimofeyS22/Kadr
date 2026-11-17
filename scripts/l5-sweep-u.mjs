@@ -56,6 +56,7 @@ const tool = (name) => js(`const t = [...document.querySelectorAll('.toolbar .to
 const done = () => js("const b = document.querySelector('.sheet .sheet-head .ck-btn'); if (b) b.click();");
 
 const result = { site: URL_, device: process.env.L5_MAC ? 'Safari on the Mac' : 'iPhone', when: new Date().toISOString(), checks: [], errors: [] };
+const check = (name, ok, detail) => { result.checks.push({ name, ok, detail }); console.log(`${ok ? '✓' : '✗'} ${name}${detail ? ` — ${detail}` : ''}`); };
 
 const pick = () => js("const el = document.querySelector('.tl-row.main .clip'), r = el.getBoundingClientRect(); const at = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, pointerId: 7, pointerType: 'touch', isPrimary: true, button: 0 }; el.dispatchEvent(new PointerEvent('pointerdown', { ...at, buttons: 1 })); el.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 })); el.click();");
 const back = () => js("const b = document.querySelector('.toolbar .tool-back'); if (b) b.click();");
@@ -130,6 +131,7 @@ try {
     h.dispatchEvent(ev(arguments[0] ? 'pointercancel' : 'pointerup', y0 + 240, 0)); return true;`, cancel);
   await waitFor('«Трансформация»', () => tool('Трансформация'), 10_000);
   await sleep(900);
+  const errsBefore = await js('return window.__errs.length');
   await swipe(true);
   await sleep(500);
   const kept = await js("const s = document.querySelector('.sheet'); return !!s && !s.style.transform");
@@ -137,6 +139,10 @@ try {
   await swipe(false);
   await sleep(700);
   check('Q-33: a swipe down the header closes the sheet', await js("return !document.querySelector('.sheet')"));
+  // The swipes are the script's own pointer events: WebKit refuses setPointerCapture for a pointer id no finger holds
+  // (NotFoundError), which a real finger's live pointer never meets. Only those, and only from the swipes, are not counted.
+  const synthetic = await js("const e = window.__errs; let k = 0; for (let i = e.length - 1; i >= arguments[0]; i--) if (/NotFoundError/.test(e[i])) { e.splice(i, 1); k++; } return k;", errsBefore);
+  if (synthetic) console.log(`  (${synthetic} NotFoundError from the script's synthetic swipes — setPointerCapture of a pointer no finger holds — not counted)`);
   await back();
   const errs = await js('return window.__errs');
   check('no page errors', errs.length === 0, errs.join(' | '));
