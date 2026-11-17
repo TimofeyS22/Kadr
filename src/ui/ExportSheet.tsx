@@ -5,7 +5,7 @@ import { projectDuration } from '../core/timeline';
 import { roundLeft, timeLeft } from '../core/exportProgress';
 import type { ExportResult, Film } from '../engine/exporter';
 import { GIF_FPS, MAX_GIF_S, gifSize, outputSize, supportedResolutions, type Resolution } from '../engine/exportSizes';
-import { downloadFile, saveFile } from '../engine/save';
+import { downloadFile, offerFile } from '../engine/save';
 import { SIZE_NAME as LABEL, exportPrefs, openedAtSize, rememberSizes, savePrefs } from './exportPrefs';
 import { releaseSpeechModel } from '../engine/captions';
 import { player } from '../engine/player';
@@ -103,7 +103,11 @@ export function ExportSheet() {
     return () => { useEditor.setState({ locked: false }); player.locked = false; };
   }, [phase.kind]);
   const [saved, setSaved] = useState(false);
-  const save = (r: ExportResult) => void saveFile(r.blob, r.fileName).then((ok) => { if (ok) { setSaved(true); dropKeptExport(); } });
+  // A sheet the browser refused to show (V-138) leaves the file unsaved and says so: the next tap offers it again.
+  const save = (r: ExportResult) => void offerFile(r.blob, r.fileName).then((o) => {
+    if (o === 'saved') { setSaved(true); dropKeptExport(); }
+    if (o === 'refused') useEditor.getState().toast(t('The menu did not open: tap the button again.'));
+  });
   useHoldUpdates(phase.kind === 'running' || phase.kind === 'done'); // a reload would lose the export or the file
   const unsaved = phase.kind === 'done' && !saved && !(phase.quick && !IOS);
   // «Done» on a file not saved is the person's answer, even the tap that only warns: it is no longer offered after a

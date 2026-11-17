@@ -16,6 +16,7 @@ export const RU: Record<string, string> = {
   'Project name': 'Название проекта',
   'Open {name}': 'Открыть «{name}»',
   'Save a backup of {name}': 'Сохранить копию «{name}»',
+  'The menu did not open: tap the button again.': 'Меню не открылось: нажмите кнопку ещё раз.',
   'Rename {name}': 'Переименовать «{name}»',
   'Delete {name}': 'Удалить «{name}»',
   'Delete “{name}”? Its media will be removed from this device.': 'Удалить «{name}»? Его медиафайлы тоже будут удалены с устройства.',
