@@ -6,6 +6,8 @@ import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { CAPTION_PRESETS, TEXT_PRESETS } from '../src/core/presets';
+import type { StylesReport } from '../src/ui/StylesCheck';
 
 const fx = (n: string) => path.join(import.meta.dirname, '..', 'fixtures', n);
 test.use({ launchOptions: { args: ['--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] } });
@@ -185,4 +187,26 @@ test('a 30 s project with a 4K overlay exports within its own length, frames han
   expect(msPerFrame, 'time spent handing video frames to WebGL, ms per frame').toBeLessThan(15);
   // The export budget (CLAUDE.md §5: at least real time).
   expect(seconds, 'a 30 s project with a 4K overlay exports within its own length').toBeLessThan(30);
+});
+
+// Every caption and text template draws within half a 30 fps frame at the preview's size (moved from
+// qa-caption-styles, which keeps whether each reads on any background): a caption is drawn again only when it changes
+// (a word, a karaoke step). Chromium's CPU is slowed 4×, a mid-range phone as in the perf bench (docs/04); WebKit
+// cannot be slowed, and on a busy Mac its times float: there a template may take at most 2.5× the slowest style before
+// v1.5 measured in the same run, and never fails under 16 ms. It was red in every cloud run on WebKit (integration-3).
+const LEGACY_TEXT = TEXT_PRESETS.slice(0, TEXT_PRESETS.findIndex((p) => p.id === 'rounded')).map((p) => p.id);
+
+test('every caption and text template draws within half a 30 fps frame at the preview size (?styles)', async ({ page, browserName }, info) => {
+  test.setTimeout(600_000);
+  const slowed = browserName === 'chromium';
+  if (slowed) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('./?styles');
+  await page.waitForFunction(() => (window as unknown as { __kadrStyles?: StylesReport }).__kadrStyles?.done, null, { timeout: 540_000, polling: 1000 });
+  const r = await page.evaluate(() => (window as unknown as { __kadrStyles: StylesReport }).__kadrStyles);
+  const isNew = (x: StylesReport['rows'][number]) => (x.kind === 'caption' ? CAPTION_PRESETS.findIndex((p) => p.id === x.id) >= 9 : !LEGACY_TEXT.includes(x.id));
+  const stat = (xs: typeof r.rows, k: 'ms' | 'msPreview') => { const v = xs.map((x) => x[k]).sort((a, b) => a - b); return `median ${v[v.length >> 1]}, max ${v[v.length - 1]}`; };
+  const budget = slowed ? 16 : Math.max(16, 2.5 * Math.max(...r.rows.filter((x) => !isNew(x)).map((x) => x.msPreview)));
+  console.log(`?styles (${info.project.name}${slowed ? ', CPU 4× slower' : ''}): ${r.rows.length} drawings. Preview size (540×960): before v1.5 ${stat(r.rows.filter((x) => !isNew(x)), 'msPreview')} ms, v1.5 ${stat(r.rows.filter(isNew), 'msPreview')} ms. Export size (1080×1920): before ${stat(r.rows.filter((x) => !isNew(x)), 'ms')}, v1.5 ${stat(r.rows.filter(isNew), 'ms')} ms. Slowest: ${[...r.rows].sort((a, b) => b.msPreview - a.msPreview).slice(0, 5).map((x) => `${x.kind} ${x.id} ${x.msPreview}/${x.ms}`).join(', ')}. Budget ${budget} ms`);
+  expect(r.rows.length, 'templates drawn').toBeGreaterThan(CAPTION_PRESETS.length);
+  expect(r.rows.filter((x) => x.msPreview > budget).map((x) => `${x.kind} ${x.id} ${x.lang}: ${x.msPreview} ms at preview size (budget ${budget})`)).toEqual([]);
 });
