@@ -267,7 +267,15 @@ export async function connect({ url, out, port = Number(process.env.L5_PORT ?? 4
       const now = await js("return document.querySelector('.ck-work-now')?.textContent ?? ''").catch(() => '');
       throw new Error(`${e.message}${now ? ` (на экране: ${now})` : ''}`);
     });
-    if (ready.startsWith('Export failed')) throw new Error(ready);
+    if (ready.startsWith('Export failed')) {
+      // «Something went wrong» says nothing: the sheet's «Details» and Kadr's own error log (lib/errorLog) say what failed.
+      const details = await js("const d = document.querySelector('details.error-more'); if (!d) return ''; d.open = true; return d.textContent.replace(/\\s+/g, ' ').trim().slice(0, 500);").catch(() => '');
+      const log = await jsAsync(`const done = arguments[arguments.length - 1]; const o = indexedDB.open('kadr-log');
+        o.onsuccess = () => { try { const r = o.result.transaction('log').objectStore('log').getAll(); r.onsuccess = () => done(JSON.stringify(r.result.slice(-1)).slice(0, 700)); r.onerror = () => done(''); } catch (e) { done(''); } };
+        o.onerror = () => done('');`).catch(() => '');
+      await shot(`export-failed-${Date.now()}`).catch(() => undefined);
+      throw new Error(`${ready}${details ? ` | ${details}` : ''}${log ? ` | log ${log}` : ''}`);
+    }
     const took = Date.now() - t;
     await tap(['Save / Share', 'Save', 'Сохранить / Поделиться', 'Сохранить'], 10_000).catch(() => undefined);
     const pulled = file ? await pull(file) : null;
