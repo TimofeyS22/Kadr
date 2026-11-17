@@ -8,6 +8,8 @@ import { sweep } from './l5-sweep.mjs';
 import { atLeast, atMost, glChecks, inSync, near, none, record, wholeFile } from './l5-verdict.mjs';
 
 const audioSeconds = (file) => Number(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=duration', '-of', 'csv=p=0', file], { encoding: 'utf8' }).trim());
+/** The sound's codec, bitrate (kbit/s) and sample rate, as ffprobe reads the file (Q-31: AAC 160k/128k from 39e0c77). */
+const audioStream = (file) => { const [codec, rate, bits] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_name,sample_rate,bit_rate', '-of', 'csv=p=0', file], { encoding: 'utf8' }).trim().split(','); return { codec, sampleRate: Number(rate), kbps: Math.round(Number(bits) / 1000) }; };
 /** The sound sheets show «Processing the sound on this device…» for a while after a change: Done waits for it. */
 async function soundSettled(c) {
   await c.waitFor('the sound processed', () => c.js("return !document.querySelector('.inline-progress')"), 180_000);
@@ -77,9 +79,10 @@ await sweep({
         await c.fresh(['eval_ru_live_music.mp4']);
         const length = await c.timelineLength();
         const { file } = await c.exportAs({ preset: 'TikTok, Reels, Shorts', loud: true, file: 'q-31-even.mp4' });
-        return { length, loud: loudness(file), audioS: audioSeconds(file), file: probe(file) };
+        return { length, loud: loudness(file), audioS: audioSeconds(file), sound: audioStream(file), file: probe(file) };
       },
-      judge: (m) => [near('громкость', m.loud.lufs, -14, 1, ' LUFS'), atMost('пик (сэмпл)', m.loud.samplePeak, -0.9, ' dBFS'), record('истинный пик', m.loud.truePeak, ' dBTP'),
+      judge: (m) => [near('громкость', m.loud.lufs, -14, 1, ' LUFS'), atMost('пик (сэмпл)', m.loud.samplePeak, -0.9, ' dBFS'), atMost('истинный пик', m.loud.truePeak, -1, ' dBTP'),
+        record('звук', `${m.sound.codec} ${m.sound.kbps} кбит/с, ${m.sound.sampleRate} Гц`),
         near('звук до конца: длина звука', m.audioS, m.file.duration, 0.1, ' с'), ...wholeFile(m.file, { duration: m.length, tolerance: 0.1 })],
     },
     {
