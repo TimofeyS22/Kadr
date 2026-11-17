@@ -6,6 +6,7 @@ import {
   type Quality,
 } from 'mediabunny';
 import { MemoryTarget } from './memTarget';
+import { soundQuality } from './soundBitrate';
 import { diskFile } from './opfs';
 import { abandon } from './abandon';
 import { encoderDelay } from './encoderDelay';
@@ -58,6 +59,14 @@ const AUDIO_WINDOW_S = 2;
 const AUDIO_PACKETS_PER_S = 60;
 
 export const PLATFORM_LUFS = -14;
+/**
+ * «Even loudness» holds the true peak here, dBTP, measured between the samples (8× oversampled). At −1 dBFS of samples
+ * the AAC encoder lifted live speech under music to −0.8 in the file, on WebKit and the iPhone (Q-31, L5). The peak bar
+ * comes before the loudness goal (AES TD1004, EBU R128 for lossy streams): a sound whose loudness lives in its peaks
+ * (clicks, hard percussion) comes out under −14 LUFS rather than squashed to reach it; speech, whose rare peaks the
+ * limiter shaves without costing loudness, reaches it.
+ */
+const PLATFORM_CEILING_DBTP = -1.5;
 
 const fileBase = (p: Project) => p.name.replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim() || 'kadr';
 
@@ -151,7 +160,8 @@ class MixStream {
         await yieldToUi();
       }
     };
-    this.limiter = new Limiter(2, SAMPLE_RATE, await limitedGain(pass, 2, SAMPLE_RATE, PLATFORM_LUFS, 12), -1);
+    const gain = await limitedGain(pass, 2, SAMPLE_RATE, PLATFORM_LUFS, 12, PLATFORM_CEILING_DBTP, undefined, true);
+    this.limiter = new Limiter(2, SAMPLE_RATE, gain, PLATFORM_CEILING_DBTP, undefined, undefined, true);
   }
 
   /**
@@ -390,7 +400,7 @@ async function exportOnce(
     onEncodedPacket: (packet, meta) => { encoder.packets++; matchStreamRange(packet, meta); },
   });
   output.addVideoTrack(video, { frameRate: opts.fps, maximumPacketCount: Math.ceil(duration * opts.fps) + 8 });
-  const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, bitrate: QUALITY_HIGH }) : null;
+  const audio = audioCodec ? new AudioBufferSource({ codec: audioCodec, quality: await soundQuality(audioCodec, 2, SAMPLE_RATE) }) : null;
   if (audio) output.addAudioTrack(audio, { maximumPacketCount: Math.ceil(duration * AUDIO_PACKETS_PER_S) + 64 });
   // The encoder's priming is taken off the start so the sound meets the picture.
   const mix = new MixStream(p, frames.pool, duration, audioCodec ? await encoderDelay(audioCodec, 2, SAMPLE_RATE) : 0);
@@ -460,7 +470,7 @@ export async function exportAudio(whole: Project, loudness: boolean, onProgress:
   if (!codec) throw new MediaError('This browser cannot encode audio');
   const m4a = codec === 'aac';
   const output = new Output({ format: m4a ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new MemoryTarget() });
-  const audio = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
+  const audio = new AudioBufferSource({ codec, quality: await soundQuality(codec, 2, SAMPLE_RATE) });
   output.addAudioTrack(audio);
   const pool = new MediaPool(16);
   const mix = new MixStream(p, pool, duration, await encoderDelay(codec, 2, SAMPLE_RATE));

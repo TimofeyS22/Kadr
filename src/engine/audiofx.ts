@@ -1,9 +1,10 @@
 // Offline sound processing into derived assets (noise reduction, pitch compensation for speed changes).
 // A derived asset is played instead of the source, so preview and export hear exactly the same thing.
 import {
-  AudioBufferSource, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, getFirstEncodableAudioCodec,
+  AudioBufferSource, Mp4OutputFormat, Output, WebMOutputFormat, getFirstEncodableAudioCodec,
 } from 'mediabunny';
 import { MemoryTarget } from './memTarget';
+import { soundQuality } from './soundBitrate';
 import { Limiter, limitedGain, voiceChain } from '../core/dsp';
 import { VOICE_LABEL, VOICE_PITCH, voiceStages, type VoiceId } from '../core/voicefx';
 import { SOUND_SYNC, expectedAudioKey, keepsPitch } from '../core/timeline';
@@ -62,7 +63,7 @@ async function processAssetAudio(
   if (!codec) throw new MediaError('This browser cannot encode audio');
   const mp4 = codec === 'aac';
   const output = new Output({ format: mp4 ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new MemoryTarget() });
-  const source = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
+  const source = new AudioBufferSource({ codec, quality: await soundQuality(codec, proc.channels, SR) });
   output.addAudioTrack(source);
   // The encoder puts its priming ahead of the sound: that many samples are dropped here, and the decoded result
   // lines up with the source to the sample (before v1.2 every processed sound was ~44 ms late, see encoderDelay).

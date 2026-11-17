@@ -113,6 +113,54 @@ export class LoudnessMeter {
   }
 }
 
+/** Samples each side of a point between two samples that the true-peak interpolation reads (16 taps in all). */
+const TP_SIDE = 8;
+/**
+ * 8× oversampling for the true peak (seven points between a sample and the next): a Hann-windowed sinc of 16 taps per
+ * point, each summing to 1. The AAC encoder and a player's converter draw the waveform between the samples; a
+ * sample-peak limiter at −1 dBFS let it reach −0.8 in the file (Q-31). 4× (BS.1770) reads up to 0.3 dB under the peak
+ * at 16 kHz, and under is what a ceiling must not be; at 8× it is under 0.1 dB.
+ */
+const TP_PHASES: Float32Array[] = [1, 2, 3, 4, 5, 6, 7].map((k) => k / 8).map((f) => {
+  const h = Float32Array.from({ length: 2 * TP_SIDE }, (_, j) => {
+    const x = j - (TP_SIDE - 1) - f; // the tap's sample, from the point
+    const sinc = x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x);
+    return sinc * (0.5 + 0.5 * Math.cos((Math.PI * x) / (TP_SIDE + 1)));
+  });
+  const sum = h.reduce((a, b) => a + b, 0);
+  return h.map((v) => v / sum);
+});
+
+/** The true peak of one channel, sample by sample, `TP_SIDE` samples late (the interpolation reads ahead). */
+export class TruePeak {
+  private readonly x = new Float32Array(2 * TP_SIDE);
+  private i = 0; // where the next sample goes: the oldest held
+
+  /**
+   * Takes the next sample; returns the peak of the sample `TP_SIDE` before it and of the waveform up to the one after
+   * that. The filter runs only where the waveform can rise between them — it turns there (a monotonic stretch peaks at
+   * its ends) and the samples are within 6 dB of `floor` (a limiter needs nothing below its ceiling): the 87 s of live
+   * speech under music took 10× longer with it run at every sample.
+   */
+  next(v: number, floor = 0): number {
+    const x = this.x, n = x.length, i = this.i;
+    x[i] = v;
+    this.i = (i + 1) % n;
+    const at = (k: number) => x[(this.i + TP_SIDE - 1 + k + n) % n]; // k = 0: the sample TP_SIDE before the newest
+    const a = at(0), b = at(1), s = a < 0 ? -a : a, s1 = b < 0 ? -b : b;
+    if (2 * Math.max(s, s1) <= floor) return s;
+    if ((a - at(-1)) * (at(2) - b) > 0 && (b - a) * (a - at(-1)) > 0) return s; // rising or falling through: no peak between
+    let peak = s;
+    for (const h of TP_PHASES) {
+      let y = 0;
+      for (let t = 0; t < n; t++) y += h[t] * x[(this.i + t) % n]; // oldest to newest
+      if (y < 0) y = -y;
+      if (y > peak) peak = y;
+    }
+    return peak;
+  }
+}
+
 /**
  * Lookahead peak limiter with gain applied first. Output is delayed by `lookahead` samples internally, but
  * the class compensates: `process` returns the same number of samples it was given, starting at time 0, and
@@ -130,8 +178,14 @@ export class Limiter {
   private gain = 1;
   private skip: number;
 
-  constructor(private readonly channels: number, sr: number, private readonly preGain = 1, ceilingDb = -1, lookaheadS = 0.005, releaseS = 0.08) {
+  /** Per channel when the ceiling is of the true peak (`truePeak`): the waveform between samples, not only the samples. */
+  private readonly tp: TruePeak[] | null;
+
+  constructor(private readonly channels: number, sr: number, private readonly preGain = 1, ceilingDb = -1, lookaheadS = 0.005, releaseS = 0.08, truePeak = false) {
     this.la = Math.max(1, Math.round(lookaheadS * sr));
+    // The true peak comes TP_SIDE samples late: the lookahead still covers each sample when it leaves.
+    if (truePeak && this.la <= TP_SIDE) this.la = TP_SIDE + 1;
+    this.tp = truePeak ? Array.from({ length: channels }, () => new TruePeak()) : null;
     this.ceil = 10 ** (ceilingDb / 20);
     this.rel = Math.exp(-1 / (releaseS * sr));
     this.delay = Array.from({ length: channels }, () => new Float32Array(this.la + 1));
@@ -143,7 +197,11 @@ export class Limiter {
   private step(frame: number[], out: Float32Array[], o: number): number {
     const n = this.la + 1, i = this.pos % n;
     let peak = 0;
-    for (let c = 0; c < this.channels; c++) { const v = frame[c] * this.preGain; this.delay[c][i] = v; peak = Math.max(peak, Math.abs(v)); }
+    for (let c = 0; c < this.channels; c++) {
+      const v = frame[c] * this.preGain;
+      this.delay[c][i] = v;
+      peak = Math.max(peak, this.tp ? this.tp[c].next(v, this.ceil) : Math.abs(v));
+    }
     this.peaks[i] = peak;
     // Sliding max over the last la+1 samples.
     const size = this.dq.length;
@@ -198,7 +256,7 @@ export function normalizeGain(measured: number, target: number, maxBoostDb: numb
  */
 export async function limitedGain(
   pass: (each: (chans: Float32Array[]) => void) => Promise<void>, channels: number, sr: number, target: number, maxBoostDb: number,
-  ceilingDb = -1, passes = 4,
+  ceilingDb = -1, passes = 4, truePeak = false,
 ): Promise<number> {
   const raw = new LoudnessMeter(channels, sr);
   let peak = 0;
@@ -208,11 +266,12 @@ export async function limitedGain(
   });
   const measured = raw.integrated();
   const first = normalizeGain(measured, target, maxBoostDb);
-  if (!Number.isFinite(measured) || peak * first <= 10 ** (ceilingDb / 20)) return first;
+  // A true peak is at most 6 dB over the samples (TruePeak's own bound): under that the limiter would not act.
+  if (!Number.isFinite(measured) || peak * first * (truePeak ? 2 : 1) <= 10 ** (ceilingDb / 20)) return first;
   const most = Math.min(maxBoostDb, target - measured + maxBoostDb); // dB; the cap of normalizeGain, wherever the start
   const through = async (db: number) => {
     const meter = new LoudnessMeter(channels, sr);
-    const limiter = new Limiter(channels, sr, 10 ** (db / 20), ceilingDb);
+    const limiter = new Limiter(channels, sr, 10 ** (db / 20), ceilingDb, undefined, undefined, truePeak);
     await pass((chans) => meter.push(limiter.process(chans)));
     meter.push(limiter.flush());
     return meter.integrated();

@@ -3,9 +3,10 @@
 // its picture, and every processed sound (noise reduction, natural pitch, voice effects) added another 44 ms.
 // The delay is measured once per codec and channel count: a burst is encoded and decoded the way the app plays
 // sound (ResilientSink, by timestamp), and that many samples are then dropped before encoding.
-import { AudioBufferSource, BlobSource, Input, Mp4OutputFormat, Output, QUALITY_HIGH, WebMOutputFormat, type AudioCodec } from 'mediabunny';
+import { AudioBufferSource, BlobSource, Input, Mp4OutputFormat, Output, WebMOutputFormat, type AudioCodec } from 'mediabunny';
 import { READABLE } from './formats';
 import { MemoryTarget } from './memTarget';
+import { soundQuality } from './soundBitrate';
 import { ResilientSink } from './sound';
 
 const measured = new Map<string, Promise<number>>();
@@ -43,7 +44,8 @@ async function measure(codec: AudioCodec, channels: number, sr: number, signal: 
   for (let i = on; i < on + 0.1 * sr; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * f * (i - on)) / sr);
   const output = new Output({ format: codec === 'aac' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new MemoryTarget() });
   signal.addEventListener('abort', () => void output.cancel().catch(() => undefined)); // releases a codec that hung
-  const source = new AudioBufferSource({ codec, bitrate: QUALITY_HIGH });
+  // Encoded the way the sound it is measured for is (Q-31): a different rate or mode may prime differently.
+  const source = new AudioBufferSource({ codec, quality: await soundQuality(codec, channels, sr) });
   output.addAudioTrack(source);
   await output.start();
   const buf = new AudioBuffer({ length: len, numberOfChannels: channels, sampleRate: sr });
