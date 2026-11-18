@@ -42,6 +42,7 @@ describe('network messages', () => {
     const gated: Record<string, RegExp> = {
       'engine/captions.ts': /!navigator\.onLine/,
       'engine/modelLoad.ts': /navigator\.onLine \?/,
+      'engine/watchedFetch.ts': /!navigator\.onLine\) throw new Error\(OFFLINE\)/,
       'lib/telemetry.ts': /navigator\.onLine \?/,
       'lib/update.ts': /navigator\.onLine \?/,
       'ui/actions.ts': /navigator\.onLine \?/,

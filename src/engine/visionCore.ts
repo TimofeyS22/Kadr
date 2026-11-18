@@ -4,41 +4,60 @@ import type { FaceDetector, ImageSegmenter, ImageSource } from '@mediapipe/tasks
 import type { Rect } from '../core/types';
 import { mergeBoxes, tileStarts } from '../core/faceTiles';
 
-/** Absolute URLs of the runtime and the models, as the page's build names them (engine/vision.ts). */
-export interface VisionFiles { wasmLoaderPath: string; wasmBinaryPath: string; faceModel: string; segmenterModel: string }
+/**
+ * Absolute URLs of the runtime and the models, as the page's build names them (engine/vision.ts), and the runtime's
+ * own size in bytes (its download is counted against it).
+ */
+export interface VisionFiles { wasmLoaderPath: string; wasmBinaryPath: string; wasmBytes: number; faceModel: string; segmenterModel: string }
+
+/**
+ * MediaPipe reads the runtime from `runtime`, the bytes the page downloaded with its progress said (SW-L-3), through a
+ * blob: URL let go once the task is made; without them it fetches the file itself, saying nothing until it is done.
+ */
+async function withRuntime<T>(files: VisionFiles, runtime: Blob | undefined, make: (wasmBinaryPath: string) => Promise<T>): Promise<T> {
+  if (!runtime) return make(files.wasmBinaryPath);
+  const local = URL.createObjectURL(runtime);
+  try {
+    return await make(local);
+  } finally {
+    URL.revokeObjectURL(local);
+  }
+}
 type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 const ctx2d = (c: AnyCanvas) => c.getContext('2d') as Ctx;
 
-export async function loadDetector(files: VisionFiles): Promise<FaceDetector> {
+export async function loadDetector(files: VisionFiles, runtime?: Blob): Promise<FaceDetector> {
   const { FaceDetector } = await import('@mediapipe/tasks-vision');
   // On the CPU (WASM): the model reads 128x128, so a GPU call is mostly upload and read-back, and a frame takes
   // several (the tiles below). A 6 s export with hidden faces, 22 passes a frame (Mac): GPU 32 s in WebKit and 60-72 s
   // in Chromium, CPU 17.7 s and 12 s; with the 9 passes used now, CPU 9.3 s and 7.6 s (one pass before: 4 s, 5.5-8 s).
-  return FaceDetector.createFromOptions({ wasmLoaderPath: files.wasmLoaderPath, wasmBinaryPath: files.wasmBinaryPath }, {
+  return withRuntime(files, runtime, (wasmBinaryPath) => FaceDetector.createFromOptions({ wasmLoaderPath: files.wasmLoaderPath, wasmBinaryPath }, {
     baseOptions: { modelAssetPath: files.faceModel, delegate: 'CPU' },
     runningMode: 'IMAGE',
     minDetectionConfidence: 0.4,
-  });
+  }));
 }
 
-export async function loadSegmenter(files: VisionFiles): Promise<ImageSegmenter> {
+export async function loadSegmenter(files: VisionFiles, runtime?: Blob): Promise<ImageSegmenter> {
   const { ImageSegmenter } = await import('@mediapipe/tasks-vision');
-  const make = (delegate: 'GPU' | 'CPU') => ImageSegmenter.createFromOptions({ wasmLoaderPath: files.wasmLoaderPath, wasmBinaryPath: files.wasmBinaryPath }, {
-    baseOptions: { modelAssetPath: files.segmenterModel, delegate },
-    runningMode: 'IMAGE',
-    outputCategoryMask: false,
-    outputConfidenceMasks: true,
+  return withRuntime(files, runtime, async (wasmBinaryPath) => {
+    const make = (delegate: 'GPU' | 'CPU') => ImageSegmenter.createFromOptions({ wasmLoaderPath: files.wasmLoaderPath, wasmBinaryPath }, {
+      baseOptions: { modelAssetPath: files.segmenterModel, delegate },
+      runningMode: 'IMAGE',
+      outputCategoryMask: false,
+      outputConfidenceMasks: true,
+    });
+    // GPU is fastest, but its setup can fail or stall on weak or busy devices: fall back to CPU after 8 s.
+    const gpu = make('GPU');
+    const timeout = new Promise<null>((r) => setTimeout(() => r(null), 8000));
+    try {
+      const seg = await Promise.race([gpu, timeout]);
+      if (seg) return seg;
+      void gpu.then((late) => late.close(), () => undefined);
+    } catch { /* GPU unavailable */ }
+    return make('CPU');
   });
-  // GPU is fastest, but its setup can fail or stall on weak or busy devices: fall back to CPU after 8 s.
-  const gpu = make('GPU');
-  const timeout = new Promise<null>((r) => setTimeout(() => r(null), 8000));
-  try {
-    const seg = await Promise.race([gpu, timeout]);
-    if (seg) return seg;
-    void gpu.then((late) => late.close(), () => undefined);
-  } catch { /* GPU unavailable */ }
-  return make('CPU');
 }
 
 /** The frame is read once at most this big on its long side; every pass reads from that copy. */

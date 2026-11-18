@@ -8,7 +8,7 @@ import { findClip } from '../core/timeline';
 import { useEditor, type SheetId } from '../state/store';
 import {
   addMedia, addText, autoReframe, deleteMulti, deleteSelected, detachSelectedAudio, duplicateMulti, duplicateSelected, freezeFrame, multiToPlayhead, reverseSelected,
-  splitAtPlayhead, startCaptions, toggleCutout, toggleFlip,
+  preloadVision, splitAtPlayhead, startCaptions, toggleCutout, toggleFlip,
 } from './actions';
 import { t } from '../lib/i18n';
 // Chetko, stage Ч4 release 3 (docs/17): the ribbon of the system. The order, the names and the groups are those of 1.7.1;
@@ -24,6 +24,24 @@ const button = (x: Tool, run = x.run, hook: string | undefined = 'tool') => (
 );
 
 const sheet = (id: SheetId) => () => useEditor.getState().openSheet(id);
+
+/**
+ * A ref for the group of Cutout and Hide faces: scrolled into sight in the ribbon, it starts the vision runtime's
+ * download (SW-L-3). In sight from the start — a wide screen — it does not: that is only a picked clip.
+ */
+const whenScrolledTo = (el: HTMLDivElement | null) => {
+  if (!el || typeof IntersectionObserver === 'undefined') return;
+  let first = true;
+  const io = new IntersectionObserver(([e]) => {
+    const was = first;
+    first = false;
+    if (!e?.isIntersecting) return;
+    io.disconnect();
+    if (!was) preloadVision();
+  }, { threshold: 0.5 });
+  io.observe(el);
+  return () => io.disconnect();
+};
 
 export function Toolbar() {
   const [all, setAll] = useState(false);
@@ -119,8 +137,8 @@ export function Toolbar() {
     <>
       <Ribbon label={t('Tools')} hook="toolbar"
         start={kind ? <ToolButton hook="tool tool-back" icon={<X aria-hidden />} label={t('Back')} aria-label={t('Back: close tools')} onClick={() => useEditor.getState().select(null)} /> : undefined}
-        end={<ToolButton icon={<LayoutGrid aria-hidden />} label={t('All')} aria-label={t('All tools')} aria-haspopup="dialog" onClick={() => setAll(true)} />}>
-        {groups.map((group, i) => <div className="ck-ribbon-group" key={i}>{group.map((x) => button(x))}</div>)}
+        end={<ToolButton icon={<LayoutGrid aria-hidden />} label={t('All')} aria-label={t('All tools')} aria-haspopup="dialog" onClick={() => { setAll(true); if (kind === 'video' || kind === 'image') preloadVision(); }} />}>
+        {groups.map((group, i) => <div className="ck-ribbon-group" key={i} ref={group.includes(cutout) ? whenScrolledTo : undefined}>{group.map((x) => button(x))}</div>)}
       </Ribbon>
       <Sheet open={all} title={t('All tools')} closeLabel={t('Close')} closeIcon={<X aria-hidden />} onClose={() => setAll(false)}>
         {/* Built only while open: a closed copy of every tool would answer to the same names as the ribbon. */}

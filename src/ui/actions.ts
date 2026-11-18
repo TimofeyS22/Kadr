@@ -21,7 +21,8 @@ import { readBody, within } from '../lib/limits';
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor } from '../state/store';
 import { mark } from '../lib/perf';
-import { importNoteText, t } from '../lib/i18n';
+import { importNoteText, t, useLocale } from '../lib/i18n';
+import type { Got } from '../engine/watchedFetch';
 
 export type AddTarget = 'main' | 'overlay' | 'audio';
 
@@ -469,13 +470,16 @@ export async function prepareStaleSounds(onProgress: (f: number) => void, signal
   return editor().project;
 }
 
-/** Runs a long on-device job with the shared progress overlay; returns null if cancelled. */
-export async function withBusy<T>(label: string, job: (progress: (f: number) => void, signal: AbortSignal) => Promise<T>): Promise<T | null> {
+/**
+ * Runs a long on-device job with the shared progress overlay; returns null if cancelled. `progress` may say, for a
+ * while, other words than `label` (a model downloading first); without them the overlay says `label` again.
+ */
+export async function withBusy<T>(label: string, job: (progress: (f: number | null, saying?: string) => void, signal: AbortSignal) => Promise<T>): Promise<T | null> {
   const ac = new AbortController();
-  const set = (progress: number | null) => useEditorSet({ busy: { label, progress, cancel: () => ac.abort() } });
+  const set = (progress: number | null, saying = label) => useEditorSet({ busy: { label: saying, progress, cancel: () => ac.abort() } });
   set(null);
   try {
-    return await job((f) => set(f), ac.signal);
+    return await job((f, saying) => set(f, saying), ac.signal);
   } catch (e) {
     if ((e as Error).name !== 'AbortError') editor().toast(errorMessage(e), 'error');
     return null;
@@ -484,6 +488,34 @@ export async function withBusy<T>(label: string, job: (progress: (f: number) => 
   }
 }
 const useEditorSet = (patch: Partial<ReturnType<typeof editor>>) => useEditor.setState(patch);
+
+/** The vision runtime starts downloading on the person's intent (engine/vision.ts `preloadVision`, SW-L-3). */
+export const preloadVision = () => { import('../engine/vision').then((v) => v.preloadVision(), () => undefined); };
+
+/** «3.5» or «3,5»: megabytes as a person of the interface's language writes them. */
+const mb1 = (v: number) => new Intl.NumberFormat(useLocale.getState().locale === 'ru' ? 'ru-RU' : 'en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(v);
+
+/**
+ * The overlay while an on-device model downloads first (SW-L-3): how far it is, in megabytes when the server says, so
+ * a slow network looks slow, not dead. Once it is in, the job's own words come back.
+ */
+const downloading = (progress: (f: number | null, saying?: string) => void) => (g: Got) => {
+  if (g.share >= 1) progress(null);
+  else progress(g.share, g.mb ? t('Downloading the on-device model, once: {done} of {total} MB', { done: mb1(g.mb.done), total: mb1(g.mb.total) }) : t('Downloading the on-device model, once…'));
+};
+
+/**
+ * The job, or an AbortError as soon as the overlay's Cancel is pressed. A model download goes on behind it, for the
+ * next try: Cancel did nothing until it came (SW-L-3).
+ */
+function orCancel<T>(job: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const stop = () => reject(new DOMException('Cancelled', 'AbortError'));
+    if (signal.aborted) { stop(); return; }
+    signal.addEventListener('abort', stop, { once: true });
+    job.then(resolve, reject).finally(() => signal.removeEventListener('abort', stop));
+  });
+}
 
 export async function reverseSelected(): Promise<void> {
   const s = editor();
@@ -522,7 +554,11 @@ export async function reverseSelected(): Promise<void> {
 /** Turns automatic face hiding on (loading the on-device detector first) or off. */
 export async function setHideFaces(clipId: string, on: boolean): Promise<void> {
   if (on) {
-    const ok = await withBusy(t('Preparing face detection…'), async () => { await (await import('../engine/faces')).warmFaces(); return true; });
+    const ok = await withBusy(t('Preparing face detection…'), async (progress, signal) => {
+      const { warmFaces } = await import('../engine/faces');
+      await orCancel(warmFaces(downloading(progress)), signal);
+      return true;
+    });
     if (!ok) return;
   }
   editClip(clipId, (c) => {
@@ -669,9 +705,9 @@ export function toggleFlip(axis: 'x' | 'y'): void {
 }
 
 /** Is there a person at the start, the middle or the end of the clip (a video may be empty at any one of them)? */
-async function clipHasPerson(c: VideoClip | ImageClip): Promise<boolean> {
+async function clipHasPerson(c: VideoClip | ImageClip, download: (g: Got) => void, signal: AbortSignal): Promise<boolean> {
   const { hasPerson, warmSegmenter } = await import('../engine/segment');
-  await warmSegmenter();
+  await orCancel(warmSegmenter(download), signal);
   if (c.kind === 'image') {
     const blob = await getBlob(c.assetId);
     if (!blob) return false;
@@ -694,7 +730,7 @@ export async function toggleCutout(): Promise<void> {
   if (!f || (f.clip.kind !== 'video' && f.clip.kind !== 'image')) return;
   const on = !f.clip.removeBg;
   if (on) {
-    const found = await withBusy(t('Preparing person detection…'), async () => clipHasPerson(f.clip as VideoClip | ImageClip));
+    const found = await withBusy(t('Preparing person detection…'), async (progress, signal) => clipHasPerson(f.clip as VideoClip | ImageClip, downloading(progress), signal));
     if (found === undefined || found === null) return;
     // On a picture with nobody in it the cutout is a black frame, and "Background removed" said all was well (audit V-103).
     if (!found) { s.toast(t('No person found in this clip, so the background stays.')); return; }
@@ -734,7 +770,7 @@ export async function autoReframe(): Promise<void> {
   player.pause();
   const samples = await withBusy(t('Following the person in the shot…'), async (progress, signal) => {
     const [{ trackSubject }, { warmSegmenter }] = await Promise.all([import('../engine/reframe'), import('../engine/segment')]);
-    await warmSegmenter();
+    await orCancel(warmSegmenter(downloading(progress)), signal);
     return trackSubject(clip, progress, signal);
   });
   if (!samples || !unchanged(clip)) return;

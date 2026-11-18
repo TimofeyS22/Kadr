@@ -1,12 +1,12 @@
 // v0.6 sheets: video effects, hiding faces and areas, imported LUTs.
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { evalAnim, hasKeys, keyIndexAt, setAnim, toggleKey } from '../core/anim';
 import { anim } from '../core/defaults';
 import { EFFECTS } from '../core/effects';
 import { EFFECT_IDS, type EffectId, type ImageClip, type Privacy, type VideoClip } from '../core/types';
 import { t } from '../lib/i18n';
 import { useEditor } from '../state/store';
-import { editClip, importLut, setHideFaces } from './actions';
+import { editClip, importLut, preloadVision, setHideFaces } from './actions';
 import { Chips, ClipScrub, Slider, Toggle, Values, pct } from './controls';
 import { LookActions } from './LookControls';
 import { useLookTiles } from './lookTiles';
@@ -53,6 +53,7 @@ export function PrivacyBody({ clip }: { clip: MediaVisual }) {
   const local = time - clip.start;
   const outside = local < 0 || local > clip.duration;
   const pv: Privacy = clip.privacy ?? { faces: false, areas: [], style: 'blur' };
+  useEffect(preloadVision, []); // the face detector's runtime, while the person reads the sheet (SW-L-3)
   const set = (fn: (p: Privacy) => void, key?: string) => editClip(clip.id, (c) => {
     if (c.kind !== 'video' && c.kind !== 'image') return;
     c.privacy ??= { faces: false, areas: [], style: 'blur' };
