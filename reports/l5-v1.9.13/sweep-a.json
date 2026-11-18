@@ -1,0 +1,317 @@
+{
+  "lane": "a",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.13",
+  "started": "2026-11-18T12:56:42.184Z",
+  "finished": "2026-11-18T13:00:21.362Z",
+  "results": [
+    {
+      "id": "Q-4, SW-A-4",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "длина восстановленного",
+          "value": 90,
+          "unit": " с",
+          "limit": "90 ± 0,05 с",
+          "ok": true
+        },
+        {
+          "name": "восстановленный проект рисует кадр 0:45",
+          "value": true,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "кадр 0:45 до и после",
+          "value": 0,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "копия",
+          "value": 0.925,
+          "unit": " с",
+          "limit": "≤ 15 с",
+          "ok": true
+        },
+        {
+          "name": "восстановление",
+          "value": 0.649,
+          "unit": " с",
+          "limit": "≤ 15 с",
+          "ok": true
+        },
+        {
+          "name": "размер копии",
+          "value": 62.6,
+          "unit": " МБ",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "видео в файле",
+          "value": "h264",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "потеряно кадров",
+          "value": 0.12062999999989188,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "длительность",
+          "value": 90.004021,
+          "unit": " с",
+          "limit": "90 ± 0,1 с",
+          "ok": true
+        },
+        {
+          "name": "звук в файле",
+          "value": "aac",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "length": 90,
+        "restored": 90,
+        "backupS": 0.925,
+        "restoreS": 0.649,
+        "backupMb": 62.6,
+        "drawn": true,
+        "frame45": 0,
+        "file": {
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1920,
+          "height": 1080,
+          "frames": 2700,
+          "duration": 90.004021,
+          "fps": 30,
+          "audio": "aac"
+        },
+        "failed": null
+      },
+      "s": 107
+    },
+    {
+      "id": "Q-9, SW-A-2",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "отклик (первый кадр) p95",
+          "value": 24,
+          "unit": " мс",
+          "limit": "≤ 100 мс",
+          "ok": true
+        },
+        {
+          "name": "точный кадр после перемотки p95",
+          "value": 38,
+          "unit": " мс",
+          "limit": "≤ 150 мс",
+          "ok": true
+        },
+        {
+          "name": "перемоток мимо места",
+          "value": 13,
+          "unit": "",
+          "limit": "= 0",
+          "ok": false
+        },
+        {
+          "name": "воспроизведение",
+          "value": 60.1,
+          "unit": " кадр/с",
+          "limit": "≥ 29 кадр/с",
+          "ok": true
+        },
+        {
+          "name": "пропуски кадров",
+          "value": 0,
+          "unit": " %",
+          "limit": "≤ 3 %",
+          "ok": true
+        },
+        {
+          "name": "после «Паузы» экран против «Фото» (худшая из 3)",
+          "value": 0.4868827160493827,
+          "unit": "",
+          "limit": "≤ 4",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "steps": [
+          {
+            "want": 12,
+            "t": 12,
+            "first": 11,
+            "exact": 87
+          },
+          {
+            "want": 187,
+            "t": 187,
+            "first": 24,
+            "exact": 38
+          },
+          {
+            "want": 64,
+            "t": 64,
+            "first": 18,
+            "exact": 31
+          },
+          {
+            "want": 221,
+            "t": 221,
+            "first": 16,
+            "exact": 30
+          },
+          {
+            "want": 33,
+            "t": 33,
+            "first": 15,
+            "exact": 27
+          },
+          {
+            "want": 150,
+            "t": 150,
+            "first": 26,
+            "exact": 38
+          },
+          {
+            "want": 98,
+            "t": 98,
+            "first": 10,
+            "exact": 23
+          },
+          {
+            "want": 239,
+            "t": 98,
+            "first": 12,
+            "exact": 12
+          },
+          {
+            "want": 5,
+            "t": 239,
+            "first": 8,
+            "exact": 8
+          },
+          {
+            "want": 171,
+            "t": 5,
+            "first": 5,
+            "exact": 5
+          },
+          {
+            "want": 121,
+            "t": 171,
+            "first": 4,
+            "exact": 18
+          },
+          {
+            "want": 45,
+            "t": 121,
+            "first": 4,
+            "exact": 16
+          },
+          {
+            "want": 203,
+            "t": 45,
+            "first": 12,
+            "exact": 12
+          },
+          {
+            "want": 77,
+            "t": 203,
+            "first": 8,
+            "exact": 8
+          },
+          {
+            "want": 140,
+            "t": 77,
+            "first": 8,
+            "exact": 8
+          },
+          {
+            "want": 18,
+            "t": 77,
+            "first": 17,
+            "exact": 17
+          },
+          {
+            "want": 229,
+            "t": 18,
+            "first": 9,
+            "exact": 9
+          },
+          {
+            "want": 109,
+            "t": 229,
+            "first": 6,
+            "exact": 6
+          },
+          {
+            "want": 58,
+            "t": 229,
+            "first": 18,
+            "exact": 18
+          },
+          {
+            "want": 196,
+            "t": 58,
+            "first": 10,
+            "exact": 10
+          }
+        ],
+        "fps": 60.1,
+        "pauses": [
+          0.4868827160493827,
+          0.4868827160493827,
+          0.4868827160493827
+        ]
+      },
+      "s": 77
+    }
+  ]
+}
