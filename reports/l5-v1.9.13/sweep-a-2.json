@@ -1,0 +1,204 @@
+{
+  "lane": "a",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.13",
+  "started": "2026-11-18T13:15:52.003Z",
+  "finished": "2026-11-18T13:17:19.293Z",
+  "results": [
+    {
+      "id": "Q-9, SW-A-2",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "отклик (первый кадр) p95",
+          "value": 25,
+          "unit": " мс",
+          "limit": "≤ 100 мс",
+          "ok": true
+        },
+        {
+          "name": "точный кадр после перемотки p95",
+          "value": 40,
+          "unit": " мс",
+          "limit": "≤ 150 мс",
+          "ok": true
+        },
+        {
+          "name": "перемоток мимо места",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true
+        },
+        {
+          "name": "воспроизведение",
+          "value": 60.1,
+          "unit": " кадр/с",
+          "limit": "≥ 29 кадр/с",
+          "ok": true
+        },
+        {
+          "name": "пропуски кадров",
+          "value": 0,
+          "unit": " %",
+          "limit": "≤ 3 %",
+          "ok": true
+        },
+        {
+          "name": "после «Паузы» экран против «Фото» (худшая из 3)",
+          "value": 0.4868827160493827,
+          "unit": "",
+          "limit": "≤ 4",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "steps": [
+          {
+            "want": 12,
+            "t": 12,
+            "first": 11,
+            "exact": 86
+          },
+          {
+            "want": 187,
+            "t": 187,
+            "first": 25,
+            "exact": 39
+          },
+          {
+            "want": 64,
+            "t": 64,
+            "first": 27,
+            "exact": 40
+          },
+          {
+            "want": 221,
+            "t": 221,
+            "first": 9,
+            "exact": 21
+          },
+          {
+            "want": 33,
+            "t": 33,
+            "first": 21,
+            "exact": 34
+          },
+          {
+            "want": 150,
+            "t": 150,
+            "first": 19,
+            "exact": 36
+          },
+          {
+            "want": 98,
+            "t": 98,
+            "first": 8,
+            "exact": 22
+          },
+          {
+            "want": 239,
+            "t": 239,
+            "first": 19,
+            "exact": 32
+          },
+          {
+            "want": 5,
+            "t": 5,
+            "first": 17,
+            "exact": 29
+          },
+          {
+            "want": 171,
+            "t": 171,
+            "first": 23,
+            "exact": 35
+          },
+          {
+            "want": 121,
+            "t": 121,
+            "first": 21,
+            "exact": 33
+          },
+          {
+            "want": 45,
+            "t": 45,
+            "first": 20,
+            "exact": 31
+          },
+          {
+            "want": 203,
+            "t": 203,
+            "first": 8,
+            "exact": 19
+          },
+          {
+            "want": 77,
+            "t": 77,
+            "first": 7,
+            "exact": 19
+          },
+          {
+            "want": 140,
+            "t": 140,
+            "first": 18,
+            "exact": 30
+          },
+          {
+            "want": 18,
+            "t": 18,
+            "first": 25,
+            "exact": 39
+          },
+          {
+            "want": 229,
+            "t": 229,
+            "first": 12,
+            "exact": 25
+          },
+          {
+            "want": 109,
+            "t": 109,
+            "first": 19,
+            "exact": 31
+          },
+          {
+            "want": 58,
+            "t": 58,
+            "first": 23,
+            "exact": 36
+          },
+          {
+            "want": 196,
+            "t": 196,
+            "first": 19,
+            "exact": 31
+          }
+        ],
+        "fps": 60.1,
+        "pauses": [
+          0.4868827160493827,
+          0.4868827160493827,
+          0.4868827160493827
+        ]
+      },
+      "s": 77
+    }
+  ]
+}
