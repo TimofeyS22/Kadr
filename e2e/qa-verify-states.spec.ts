@@ -27,6 +27,22 @@ async function projectWith(page: Page, files: string[]) {
   await expect(page.locator('.tl-row.main .clip')).toHaveCount(files.length, { timeout: 60_000 });
 }
 
+/**
+ * The settings of the captions sheet, with the speech model's question answered «Not now». The question can come a
+ * moment after the settings are shown and take their place: the list counts only when it stays with no question.
+ */
+async function captionSettings(page: Page) {
+  const list = page.getByRole('combobox', { name: 'Language' });
+  const no = page.getByRole('button', { name: 'Not now', exact: true });
+  await expect(async () => {
+    if (await no.isVisible()) await no.click();
+    await expect(list).toBeVisible({ timeout: 2000 });
+    await page.waitForTimeout(1000);
+    await expect(no).toBeHidden({ timeout: 100 });
+    await expect(list).toBeVisible({ timeout: 100 });
+  }).toPass({ timeout: 60_000 });
+}
+
 /** Kadr's IndexedDB store of projects and media, inside the page. */
 const KV = `(async () => {
   const db = await new Promise((ok, ko) => { const r = indexedDB.open('kadr'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
@@ -105,11 +121,7 @@ test('with Russian chosen as the language, the model "Fast" is not offered (audi
   await page.getByRole('button', { name: 'Close tools' }).click();
   await page.locator('.toolbar').getByRole('button', { name: 'Captions', exact: true }).click();
   const list = page.getByRole('combobox', { name: 'Language' });
-  const no = page.getByRole('button', { name: 'Not now', exact: true });
-  await expect(async () => {
-    if (await no.isVisible()) await no.click();
-    await expect(list).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 30_000 });
+  await captionSettings(page);
   const recognition = page.getByRole('radiogroup', { name: 'Recognition' });
   await list.selectOption('');
   await expect(recognition.getByRole('radio', { name: /^Fast/ }), 'offered for an unknown language').toHaveCount(1);
@@ -128,11 +140,7 @@ test('the s typed into the language list picks a language and does not cut the v
   await expect.poll(async () => Number(await position.inputValue())).toBeGreaterThan(1);
   await page.locator('.toolbar').getByRole('button', { name: 'Captions', exact: true }).click();
   const list = page.getByRole('combobox', { name: 'Language' });
-  const no = page.getByRole('button', { name: 'Not now', exact: true });
-  await expect(async () => {
-    if (await no.isVisible()) await no.click();
-    await expect(list).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 30_000 });
+  await captionSettings(page);
   await list.focus();
   await page.keyboard.press('s');
   await page.waitForTimeout(500);
