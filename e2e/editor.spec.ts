@@ -2282,7 +2282,7 @@ async function captionsWithRussianModel(page: Page, file: string): Promise<strin
   return (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
 }
 
-test('Russian interface, one tap: the Russian model (GigaAM; FastConformer on an iPhone) captions Russian speech with punctuation and never downloads Whisper', async ({ page, browserName }) => {
+test('Russian interface, one tap: the Russian model (GigaAM) captions Russian speech with punctuation and never downloads Whisper', async ({ page }) => {
   test.setTimeout(500_000);
   await page.addInitScript(() => localStorage.setItem('kadr.locale', 'ru')); // runs after the English default
   await page.goto('./');
@@ -2300,10 +2300,10 @@ test('Russian interface, one tap: the Russian model (GigaAM; FastConformer on an
   const srt = (await fs.promises.readFile(await (await dl).path(), 'utf8')).toLowerCase();
   for (const w of ['привет', 'видеоредактор', 'работает', 'телефоне']) expect(srt).toContain(w);
   expect(srt).toMatch(/[.,!?]/); // both Russian models write punctuation
-  // The Russian model confirmed the language itself: Whisper (77 MB more) was never downloaded. The iPhone profile
-  // gets the compact model (docs/12 §6.3), the rest GigaAM.
+  // The Russian model confirmed the language itself: Whisper (77 MB more) was never downloaded. GigaAM on both
+  // engines (an iPhone starts with it since 2026-11-17).
   const cached = await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async (n) => (await (await caches.open(n)).keys()).map((r) => r.url)))).flat());
-  const [chosen, other] = browserName === 'webkit' ? ['fastconformer', 'gigaam'] : ['gigaam', 'fastconformer'];
+  const [chosen, other] = ['gigaam', 'fastconformer'];
   expect(cached.some((u) => u.includes(chosen))).toBe(true);
   expect(cached.filter((u) => u.includes(other))).toEqual([]);
   expect(cached.filter((u) => u.includes('whisper'))).toEqual([]);
@@ -2726,7 +2726,7 @@ test('captions offline before the first model download say what to do, not "Fail
   await context.setOffline(true);
   try {
     await tool(page, 'Субтитры').click();
-    // 225 МБ on Chromium (GigaAM), 132 МБ on the iPhone's engine (the compact model).
+    // 225 МБ: GigaAM, on both engines.
     await expect(page.locator('.toast.error')).toContainText(/Нет интернета\. Модель речи \(\d+ МБ\) скачивается один раз/, { timeout: 60_000 });
     await page.evaluate(() => (window as unknown as { __toastErrors: string[] }).__toastErrors.splice(0)); // the expected one
     await expect(page.locator('.toast.error')).toHaveCount(0, { timeout: 30_000 });

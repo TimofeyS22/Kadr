@@ -69,7 +69,8 @@ async function russianCaptions(page: Page, questions: RegExp[] = [/Один ра
   return page.locator('.clip-caption').textContent();
 }
 
-test('a phone (an iPhone; Android with 4 GB): Russian captions come from the compact model on Kadr\'s site — no GigaAM, no Whisper, no Hugging Face', async ({ page, context, browserName }) => {
+test('an Android phone with 4 GB: Russian captions come from the compact model on Kadr\'s site — no GigaAM, no Whisper, no Hugging Face', async ({ page, context, browserName }) => {
+  test.skip(browserName === 'webkit', 'an iPhone starts with GigaAM since 2026-11-17 (the owner, after Г4 of docs/20): the test below');
   test.setTimeout(500_000);
   if (browserName !== 'webkit') await page.addInitScript(() => Object.defineProperty(navigator, 'deviceMemory', { value: 4 }));
   await recordLoads(page);
@@ -84,8 +85,8 @@ test('a phone (an iPhone; Android with 4 GB): Russian captions come from the com
 });
 
 test('GigaAM does not fit in memory: the compact model takes over without an error (asked about first, as any download), and next time is chosen directly', async ({ page, context, browserName }) => {
-  test.skip(browserName === 'webkit', 'an iPhone starts with the compact model (test above)');
   test.setTimeout(600_000);
+  // An iPhone too: it starts with GigaAM, and an older one that cannot hold it gets the compact model this way.
   // 400 MB of heap at most: the compact model needs ~360, GigaAM ~480 (?diag, 2026-10-29).
   await memoryLimit(context, 400);
   await recordLoads(page);
@@ -96,7 +97,13 @@ test('GigaAM does not fit in memory: the compact model takes over without an err
   expect(from(urls, GIGAAM).length).toBeGreaterThan(0);
   expect(from(urls, FAST).length).toBeGreaterThan(0);
   expect(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('kadr.speech.tooBig') ?? '{}')))).toEqual(['ru']);
+  // The model that did not fit is taken off the device: its 225 MB would only take the compact model's room.
+  expect(await page.evaluate(async () => (await (await caches.open('kadr-model-parts')).keys()).filter((r) => r.url.includes('gigaam')).length)).toBe(0);
   // Next time, in a new project: straight to the compact model (now kept on the device: no question), GigaAM is not tried.
+  // WebKit's test profile keeps no Cache from one page to the next (measured 2026-11-18: 8 parts of the compact
+  // model before `goto`, 0 after), so the next visit is checked in Chromium only. A real iPhone keeps the model
+  // (L5, Г4 on v1.9.12: «она уже на устройстве» on the next page).
+  if (browserName === 'webkit') return;
   await russianCaptions(page, []);
   expect(await loads(page)).toEqual(['ru-fast']);
 });

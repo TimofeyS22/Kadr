@@ -143,13 +143,13 @@ test('Captions, the first time: the question names the size; "Not now" leaves ev
   expect((await seen(page)).errors).toEqual([]);
 });
 
-test('Russian interface: the question names the model this device would use, in Russian, and "Не сейчас" asks the network for nothing', async ({ page, context, browserName }) => {
+test('Russian interface: the question names the model this device would use, in Russian, and "Не сейчас" asks the network for nothing', async ({ page, context }) => {
   test.setTimeout(180_000);
   const asked = modelRequests(context);
   await watch(page, 'ru');
   await speechProject(page, 'ru', 'speech_ru.mp4');
-  // An iPhone gets the compact model (132 MB); a device with memory to spare, GigaAM (225 MB).
-  const mb = browserName === 'webkit' ? 132 : 225;
+  // GigaAM (225 MB) on both engines: an iPhone starts with it too since 2026-11-17.
+  const mb: number = 225;
   await tool(page, 'Субтитры').click();
   await expect(ask(page)).toContainText(`Один раз скачается ${mb} МБ, после этого субтитры работают без интернета.`);
   await page.waitForTimeout(QUIET_MS);
@@ -232,13 +232,13 @@ test('"Reel in 1 tap" in the editor: the same question, before any download', as
 
 test('speech that is not Russian under the Russian model: Whisper is asked about before it is downloaded, and "Не сейчас" ends the run without an error', async ({ page, context, browserName }) => {
   test.setTimeout(500_000);
-  // A phone's memory in Chromium too, so both engines start with the compact Russian model (an iPhone always does).
+  // A phone's memory in Chromium: it starts with the compact Russian model; an iPhone starts with GigaAM.
   if (browserName !== 'webkit') await page.addInitScript(() => Object.defineProperty(navigator, 'deviceMemory', { value: 4 }));
   const asked = modelRequests(context);
   await watch(page, 'ru');
   await speechProject(page, 'ru', 'speech_en.mp4'); // English speech, language "Auto"
   await tool(page, 'Субтитры').click();
-  await expect(ask(page)).toContainText('Один раз скачается 132 МБ');
+  await expect(ask(page)).toContainText(`Один раз скачается ${browserName === 'webkit' ? 225 : 132} МБ`);
   await ask(page).getByRole('button', { name: 'Скачать и сделать субтитры', exact: true }).click();
   // The Russian model listens, is not sure this is Russian, and Whisper is needed: asked, not taken.
   await expect(ask(page)).toContainText('Это не похоже на русскую речь', { timeout: 400_000 });
