@@ -32,7 +32,13 @@ const toasts = (page: Page) => page.evaluate(() => (window as unknown as { __see
 async function newProject(page: Page) {
   await page.goto('./');
   await page.getByRole('button', { name: 'New project' }).click();
-  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  // The format sheet rises from below the screen. On a slow machine Playwright may find its card «stable» at the start
+  // of the rise and press where the card is not yet: the press lands on the inert page under the sheet, nothing opens
+  // (SW-E3-2, run 44334092914). Press once the sheet has risen.
+  const sheet = page.getByRole('dialog', { name: 'Frame format' });
+  await expect(sheet).toBeVisible();
+  await sheet.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+  await sheet.locator('.aspect-card', { hasText: '9:16' }).click();
   await expect(page.locator('.preview-canvas')).toBeVisible();
 }
 
