@@ -202,3 +202,65 @@ test('freeze frames, a reverse and a scrub leave no canvas with its pixels to th
   expect(android[2], "megapixels of mediabunny's Android frame copies after round 3, against round 1 (SW-B-6)").toBeLessThanOrEqual(android[0] + 0.1);
   await expect(page.locator('.toast.error')).toHaveCount(0);
 });
+
+// A GPU reset while a frame goes to the encoder (SW-L-2, V-190): on an iPhone 15 a 4K export of 40 photos ended
+// «Something went wrong» with «InvalidStateError: Canvas has no frame» in 2 of 5 tries. WebKit says exactly that when
+// the canvas's WebGL context is lost (a GPU process reset under too little memory), and the loss came between the
+// frame drawn and the encoder taking it: the export's own «the graphics were reset» path, which starts it again, never
+// saw it. Here the context of the export's canvas is lost once, just as the encoder takes the tenth frame.
+test('a GPU reset as a frame goes to the encoder starts the export again, and the file is whole (SW-L-2)', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  const said: string[] = [];
+  page.on('console', (m) => { if (/GPU|graphics/i.test(m.text())) said.push(m.text().slice(0, 200)); });
+  await page.addInitScript(() => {
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
+    localStorage.setItem('kadr.locale', 'en');
+    localStorage.setItem('kadr.hint.move', '1');
+    localStorage.setItem('kadr.iosVideoTip.v3', '1');
+    localStorage.setItem('kadr.undoMoved.v1', '1');
+    localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false }));
+    Object.defineProperty(navigator, 'canShare', { value: undefined }); // headless WebKit has no share sheet
+    const w = window as unknown as { __reset: { frames: number; lost: number } };
+    w.__reset = { frames: 0, lost: 0 };
+    const Native = window.VideoFrame;
+    if (!Native) return;
+    window.VideoFrame = new Proxy(Native, {
+      construct(target, args: ConstructorParameters<typeof VideoFrame>, newTarget) {
+        const src = args[0];
+        if (src instanceof HTMLCanvasElement && src.width * src.height >= 1280 * 720 && ++w.__reset.frames === 10 && !w.__reset.lost) {
+          w.__reset.lost++;
+          (src.getContext('webgl2') as WebGL2RenderingContext | null)?.getExtension('WEBGL_lose_context')?.loseContext();
+        }
+        return Reflect.construct(target, args, newTarget) as VideoFrame;
+      },
+    });
+  });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '16:9' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await tool(page, 'Media').click();
+  await (await chooser).setFiles([fx('person.jpg'), fx('photo.png'), fx('crowd.png')]);
+  await expect(page.locator('.tl-row.main .clip')).toHaveCount(3, { timeout: 60_000 });
+  await page.getByRole('button', { name: 'Export' }).first().click();
+  await page.getByRole('radio', { name: 'Video', exact: true }).click();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  const ready = page.getByText(/Ready: .* MB/), failed = page.locator('details.error-more');
+  await expect(ready.or(failed).first()).toBeVisible({ timeout: 240_000 });
+  const reset = await page.evaluate(() => (window as unknown as { __reset: { frames: number; lost: number } }).__reset);
+  let why = '';
+  if (await failed.isVisible()) {
+    await failed.locator('summary').click();
+    why = (await failed.locator('xpath=..').innerText()).replace(/\s+/g, ' ').slice(0, 300);
+  }
+  console.log(`GPU reset at the 10th frame (${info.project.name}): contexts lost ${reset.lost}, frames handed over ${reset.frames}; ${why ? `failed: ${why}` : 'ready'}; said: ${said.join(' | ') || '-'}`);
+  expect(reset.lost, 'the export canvas lost its context once').toBe(1);
+  expect(why, 'the export starts again after a GPU reset instead of failing').toBe('');
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  const file = info.outputPath('reset.mp4');
+  await (await dl).saveAs(file);
+  const duration = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).toString());
+  console.log(`the file after the reset (${info.project.name}): ${duration.toFixed(2)} s`);
+  expect(duration, 'three photos are in the file, not the frames before the reset').toBeGreaterThan(5);
+});

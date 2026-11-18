@@ -111,6 +111,20 @@ class FrameRenderer {
     // A refused decoder frame left a layer out of this frame: the export starts again, its videos through canvases.
     if (this.compositor.everLost || this.compositor.isLost() || this.compositor.framesFailed) throw new MediaError(GPU_LOST);
   }
+  /**
+   * The encoder could not take the frame from the canvas: was it the context that went? WebKit says only «Canvas has
+   * no frame» (InvalidStateError) for a canvas whose WebGL context is lost, and the loss of a GPU process reaches the page
+   * a moment after the call failed: on an iPhone 15 a 4K export ended «Something went wrong» there instead of starting
+   * again, as a lost context does (SW-L-2, V-190).
+   */
+  async lostWith(e: unknown): Promise<boolean> {
+    if (this.compositor.everLost || this.compositor.isLost()) return true;
+    if (!(e instanceof DOMException) || e.name !== 'InvalidStateError') return false;
+    if (/canvas has no frame/i.test(e.message)) return true;
+    await new Promise((r) => setTimeout(r, 200));
+    return this.compositor.everLost || this.compositor.isLost();
+  }
+  /** Everything the export drew with goes back at once: textures deleted, the canvas made 0×0, the context let go. */
   dispose(): void {
     this.pool.dispose();
     this.compositor.dispose(true);
@@ -425,7 +439,13 @@ async function exportOnce(
       await guard.race(pumpAudio(t + 1));
       await guard.race(frames.draw(t));
       for (const k of shown?.get(i) ?? []) film!.take(frames.canvas, k);
-      await encoding(video.add(t, 1 / opts.fps));
+      try {
+        await encoding(video.add(t, 1 / opts.fps));
+      } catch (e) {
+        if (!(await frames.lostWith(e))) throw e;
+        console.warn('the encoder could not take the frame: the GPU context was lost', e);
+        throw new MediaError(GPU_LOST);
+      }
       guard.tick();
       onProgress(pre + ((i + 1) / count) * (1 - pre));
       if (i % 8 === 0) await yieldToUi();

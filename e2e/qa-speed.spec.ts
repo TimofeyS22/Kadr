@@ -210,3 +210,70 @@ test('every caption and text template draws within half a 30 fps frame at the pr
   expect(r.rows.length, 'templates drawn').toBeGreaterThan(CAPTION_PRESETS.length);
   expect(r.rows.filter((x) => x.msPreview > budget).map((x) => `${x.kind} ${x.id} ${x.lang}: ${x.msPreview} ms at preview size (budget ${budget})`)).toEqual([]);
 });
+
+// A 4K export gives its GPU memory back when it ends (SW-L-2, V-190). On an iPhone 15 a 4K export of 40 photos that
+// came after other 4K exports lost its GPU at its start («Canvas has no frame»). WebKit's GPU process held each finished
+// export's 4K canvas, ~128 MB: the context was let go before the canvas was made 0×0, and after a loss WebKit gives
+// nothing back whatever is done to the canvas. Measured here as the phone would feel it: WebKit's GPU process
+// (`footprint`, macOS) after two 4K exports in a row — the second may leave at most 64 MB more than the first did
+// (main: 129 MB more, 259 → 388 MB; with the canvas made 0×0 first, 33 MB).
+test('a second 4K export in a row leaves WebKit\'s GPU process no fuller than the first (SW-L-2)', async ({ playwright, browserName }, info) => {
+  test.skip(browserName !== 'webkit' || process.platform !== 'darwin', 'WebKit\'s GPU process, measured with macOS footprint');
+  test.setTimeout(600_000);
+  const dir = info.outputPath('photos');
+  fs.mkdirSync(dir, { recursive: true });
+  const photos = Array.from({ length: 10 }, (_, i) => {
+    const f = path.join(dir, `p-${String(i).padStart(2, '0')}.jpg`);
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', `testsrc2=s=4000x3000:r=1:d=1,hue=h=${i * 9}`, '-frames:v', '1', '-q:v', '3', f]);
+    return f;
+  });
+  const gpuPids = () => execFileSync('pgrep', ['-f', 'com.apple.WebKit.GPU']).toString().split(/\s+/).filter(Boolean).map(Number);
+  const before = new Set((() => { try { return gpuPids(); } catch { return []; } })());
+  const browser = await playwright.webkit.launch();
+  try {
+    const page = await (await browser.newContext({ ...playwright.devices['iPhone 15'], baseURL: process.env.E2E_URL ?? 'http://localhost:4191/', acceptDownloads: true })).newPage();
+    await page.addInitScript(() => {
+      localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
+      localStorage.setItem('kadr.locale', 'en'); localStorage.setItem('kadr.hint.move', '1');
+      localStorage.setItem('kadr.iosVideoTip.v3', '1'); localStorage.setItem('kadr.undoMoved.v1', '1');
+      localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false }));
+      Object.defineProperty(navigator, 'canShare', { value: undefined });
+    });
+    await page.goto('./');
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.locator('.aspect-card', { hasText: '16:9' }).click();
+    await expect(page.locator('.preview-canvas')).toBeVisible();
+    const gpu = gpuPids().filter((p) => !before.has(p));
+    expect(gpu, 'one GPU process came with this browser').toHaveLength(1);
+    const mb = () => {
+      const out = execFileSync('footprint', ['-p', String(gpu[0]), '-f', 'bytes', '--noCategories']).toString();
+      return Math.round(Number((/phys_footprint:\s*(\d+)/.exec(out) ?? /Footprint:\s*(\d+)/i.exec(out))?.[1]) / 1048576);
+    };
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Media', exact: true }).click();
+    await (await chooser).setFiles(photos);
+    await expect(page.locator('.tl-row.main .clip')).toHaveCount(photos.length, { timeout: 120_000 });
+    await page.waitForTimeout(5000);
+    const after = [mb()];
+    for (let k = 1; k <= 2; k++) {
+      await page.getByRole('button', { name: 'Export' }).first().click();
+      await page.getByRole('radio', { name: 'Video', exact: true }).click();
+      await page.getByRole('radio', { name: 'Best quality' }).click();
+      await page.getByRole('button', { name: 'Export video' }).click();
+      await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 300_000 });
+      const dl = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Save / Share' }).click();
+      const file = info.outputPath(`4k-${k}.mp4`);
+      await (await dl).saveAs(file);
+      expect(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=height', '-of', 'csv=p=0', file]).toString().trim(), 'a 4K file').toBe('2160');
+      fs.rmSync(file);
+      await page.getByRole('button', { name: 'Done' }).click();
+      await page.waitForTimeout(8000);
+      after.push(mb());
+    }
+    console.log(`WebKit GPU process (${info.project.name}): ${after[0]} MB after the import, ${after[1]} MB after the first 4K export, ${after[2]} MB after the second`);
+    expect(after[2] - after[1], 'MB the second 4K export left in the GPU process beyond the first').toBeLessThanOrEqual(64);
+  } finally {
+    await browser.close();
+  }
+});

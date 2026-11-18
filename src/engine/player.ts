@@ -80,7 +80,7 @@ export class Player {
     // visit piled up until the browser dropped the oldest (SW-D-4). React's test unmount in development keeps the canvas
     // on the page and attaches it again, so the context is let go only once the canvas has left.
     // Its pixels too, not at the next collection (audit V-169).
-    if (comp) setTimeout(() => { if (!comp.canvas.isConnected) { comp.releaseContext(); letGo(comp.canvas); } }, 0);
+    if (comp) setTimeout(() => { if (!comp.canvas.isConnected) { comp.releaseContext(); } }, 0);
   }
 
   onFrame(fn: () => void): () => void {

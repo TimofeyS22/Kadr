@@ -7,6 +7,7 @@ import { ADJUST_KEYS, type BlendMode, type LutData } from '../core/types';
 import type { Drawable } from './text';
 import { BT709_AS_601, type Hdr } from './hdr';
 import { MediaError, type Turn } from './media';
+import { letGo } from '../lib/canvas';
 import { WEBKIT } from '../lib/device';
 
 const VS = `#version 300 es
@@ -684,8 +685,15 @@ export class Compositor {
     if (loseContext) this.releaseContext();
   }
 
-  /** Gives the GPU context back now, not when the garbage collector gets to it (only for canvases that are thrown away). */
+  /**
+   * Gives the GPU context and its buffers back now, not when the garbage collector gets to it (only for canvases that
+   * are thrown away). The canvas is made 0×0 first: WebKit keeps a lost context's buffers whatever is done to the canvas
+   * afterwards. Four 4K canvases held 530 MB of its GPU process with their contexts lost and then made 0×0; four made
+   * 0×0 while live gave back 383 of their 511 MB at once (SW-L-2). A 4K export that came after other 4K exports lost
+   * its GPU at its start on an iPhone 15.
+   */
   releaseContext(): void {
+    letGo(this.canvas);
     this.gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }
