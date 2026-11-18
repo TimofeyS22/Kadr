@@ -322,6 +322,7 @@ export function Editor({ id }: { id: string }) {
       className={`editor ck-editor ${sheetOpen ? 'sheet-open' : ''}`}
       data-sheet={sheetOpen || undefined}
       data-keep-top={keepTop || undefined}
+      data-frame-fit={frameFit ? '' : undefined}
       onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => {

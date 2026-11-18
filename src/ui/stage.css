@@ -7,6 +7,10 @@
 /* ---- the field and the frame ---- */
 .ck-stage { background: var(--surface-field); }
 .ck-stage-frame { display: block; border-radius: 0; box-shadow: none; }
+/* While the note about black bars is up (UI-4), the frame's edge is drawn: the field round the frame is black like the
+   bars, so the bars could not be seen as bars (the owner: «не понимаю о каких полосах ты говоришь»). A white dashed line
+   outside the frame — never on the picture, so never in the file — and gone with the note. */
+.ck-editor[data-frame-fit] .ck-stage-frame { outline: 2px dashed var(--mark-was); outline-offset: 0; } /* close to the picture: 6 px to the header and the strip, not 2 (the art director) */
 
 /* ---- the selected text or picture (ObjectFrame): a white line with a dark edge, a corner handle 44 px to a finger ---- */
 /* As thick as a held piece on the timeline, with a dark edge on both sides: it holds on white video too. Above the safe
