@@ -81,7 +81,7 @@ test('?diag where even 1 GB is refused: the heap steps down and says what was re
   await expect(report(page)).toContainText(/heap: [\d.]+ MB of 512 MB max\nheap refused: 1024 MB, 768 MB/);
 });
 
-test('iPhone-like memory, Russian interface, one tap: Russian captions (the compact model on an iPhone)', async ({ page, context }) => {
+test('iPhone-like memory, Russian interface, one tap: Russian captions (GigaAM, the default on an iPhone since 2026-11-17)', async ({ page, context }) => {
   test.setTimeout(500_000);
   await likeIphone(context, [1024]);
   await page.addInitScript(() => { localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1'); localStorage.setItem('kadr.hint.move', '1'); });

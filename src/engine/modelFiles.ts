@@ -251,6 +251,18 @@ export async function missingBytes(repo: string): Promise<number> {
 }
 
 /**
+ * Removes a speech model's files from the device: one that turned out too big for this device's memory would only
+ * take 225 MB of its storage, and the lighter model that replaces it is downloaded next to it (in a WebKit test
+ * profile the second model's parts were then refused: «model parts were not kept (storage)»). Never throws.
+ */
+export async function dropModelFiles(repo: string): Promise<void> {
+  try {
+    const cache = await caches.open(PARTS_CACHE);
+    await Promise.all((await cache.keys()).filter((r) => r.url.includes(`/${repo}/`)).map((r) => cache.delete(r)));
+  } catch { /* no storage: nothing was kept */ }
+}
+
+/**
  * Asks the browser to keep this site's data when the device runs low on space (navigator.storage.persist): without
  * it the model parts are "best effort" and may be evicted, and the next captions would download 130–225 MB again
  * (docs/20 ADR-С1). Asked once, when a download the person agreed to starts; Safari and Chromium answer without a

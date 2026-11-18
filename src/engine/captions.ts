@@ -9,7 +9,7 @@ import type { CaptionWord, Project } from '../core/types';
 import type { AsrModel, AsrRequest, AsrResponse } from './asr.worker';
 import { renderAudioWindow, soundEntries } from './audio';
 import { MediaError, MediaPool } from './media';
-import { DOWNLOAD_STOPPED, PARTS_CACHE, SPEECH_REPOS, keepModelsThroughPressure, missingBytes } from './modelFiles';
+import { DOWNLOAD_STOPPED, PARTS_CACHE, SPEECH_REPOS, dropModelFiles, keepModelsThroughPressure, missingBytes } from './modelFiles';
 import type { HeapInfo } from './wasmMemory';
 import { IOS } from '../lib/device';
 import { useLocale } from '../lib/i18n';
@@ -47,8 +47,10 @@ const LIGHTER: Partial<Record<AsrModel, AsrModel>> = { ru: 'ru-fast', small: 'ba
 const WORKING_KEY = 'kadr.speech.working', TOO_BIG_KEY = 'kadr.speech.tooBig', TOO_BIG_MS = 14 * 864e5;
 const tooBigAt = (): Partial<Record<AsrModel, number>> => { try { return JSON.parse(localStorage.getItem(TOO_BIG_KEY) ?? '{}') as Partial<Record<AsrModel, number>>; } catch { return {}; } };
 const tooBig = (): AsrModel[] => Object.entries(tooBigAt()).filter(([, at]) => Date.now() - (at ?? 0) < TOO_BIG_MS).map(([m]) => m as AsrModel);
-function rememberTooBig(m: AsrModel): void {
+/** Marks `m` as too big for this device and takes its files off it: they would only take the lighter model's room. */
+function rememberTooBig(m: AsrModel): Promise<void> {
   try { localStorage.setItem(TOO_BIG_KEY, JSON.stringify({ ...tooBigAt(), [m]: Date.now() })); } catch { /* storage off */ }
+  return dropModelFiles(SPEECH_REPOS[m]);
 }
 let working: AsrModel | null = null;
 function markWorking(): void {
@@ -61,7 +63,7 @@ const setWorking = (m: AsrModel | null) => { working = m; markWorking(); };
 if (typeof document !== 'undefined') {
   try {
     const died = JSON.parse(sessionStorage.getItem(WORKING_KEY) ?? 'null') as { model: AsrModel; at: number } | null;
-    if (died && Date.now() - died.at < 30 * 60_000) { rememberTooBig(died.model); console.warn(`this tab ended while ${died.model} was working: it is too big for this device`); }
+    if (died && Date.now() - died.at < 30 * 60_000) { void rememberTooBig(died.model); console.warn(`this tab ended while ${died.model} was working: it is too big for this device`); }
     sessionStorage.removeItem(WORKING_KEY);
   } catch { /* storage off */ }
   document.addEventListener('visibilitychange', markWorking);
@@ -76,15 +78,22 @@ export function fittingModel(m: AsrModel): AsrModel {
   return m;
 }
 
-/** A phone or tablet whose memory does not hold GigaAM: every iPhone and iPad (docs/12 §1.2), Android with ≤ 4 GB. */
-const smallMemory = () => IOS || ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
+/**
+ * A phone whose memory does not hold GigaAM: Android with ≤ 4 GB. An iPhone is not one since 2026-11-17 (the owner's
+ * decision after Г4 of docs/20 on an iPhone 15, v1.9.12: three GigaAM pages in a row, Safari alive, 21 % of words
+ * wrong under music against 44 % from the compact model). Safari does not tell how much memory an iPhone has, so an
+ * older one that cannot hold GigaAM finds out by trying: the tab is ended, the model is marked too big for this
+ * device (`rememberTooBig`), and the compact model reads from then on.
+ */
+const smallMemory = () => !IOS && ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
 
 /**
- * Where the interface is Russian (its speech is mostly Russian): GigaAM, or on a phone FastConformer (docs/12 §6.3).
+ * Where the interface is Russian (its speech is mostly Russian): GigaAM, or FastConformer on an Android phone with
+ * little memory (docs/12 §6.3).
  * Elsewhere Whisper base.
  */
 export const defaultAsrModel = (): AsrModel => (useLocale.getState().locale === 'ru' ? russianModel() : fittingModel('base'));
-/** The model that reads Russian speech on this device: GigaAM, on a phone FastConformer, or the one that fits. */
+/** The model that reads Russian speech on this device: GigaAM, FastConformer where memory is short, or the one that fits. */
 const russianModel = (): AsrModel => fittingModel(smallMemory() ? 'ru-fast' : 'ru');
 /**
  * The model `auto` starts a run with: the one for the language the person named; with no language named, the one
@@ -450,7 +459,7 @@ async function transcribeWith(
       const lighter = tooBigFor(loaded) ? LIGHTER[m] : undefined;
       if (!lighter) throw engineError(loaded.message, 'Could not load the speech model ({error})');
       console.warn(`speech model ${m} does not fit in this device's memory; ${lighter} takes over:`, loaded.message);
-      rememberTooBig(m);
+      await rememberTooBig(m);
       m = lighter;
       why = 'memory';
     }
@@ -460,7 +469,7 @@ async function transcribeWith(
     const lighter = tooBigFor(r) ? LIGHTER[engine] : undefined;
     if (!lighter) return false;
     console.warn(`speech model ${engine} ran out of memory; ${lighter} takes over:`, r.message);
-    rememberTooBig(engine);
+    await rememberTooBig(engine);
     engine = await load(lighter, 'memory');
     if (isRussian(engine)) russian = engine;
     segment();
