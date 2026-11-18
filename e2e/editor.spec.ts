@@ -5334,13 +5334,18 @@ test('captions have the same look settings as text: outline, second outline, sha
   await page.getByRole('switch', { name: 'ALL CAPS' }).check();
   await page.getByRole('switch', { name: 'Background', exact: true }).check();
   await page.getByRole('switch', { name: 'A box for each line' }).check();
-  await expect.poll(() => savedProject(page), { timeout: 5000 }).toContain('"outline2"');
-  const p = JSON.parse(await savedProject(page)) as { tracks: { clips: { kind: string; style?: Record<string, unknown> }[] }[] };
-  const style = p.tracks.flatMap((t) => t.clips).find((c) => c.kind === 'caption')!.style!;
-  expect((style.stroke as { color: string }).color).toBe('#ff3b30');
-  expect((style.copies as { depth: boolean }[])[0].depth).toBe(true);
-  expect(style.uppercase).toBe(true);
-  expect((style.background as { lines: boolean }).lines).toBe(true);
+  // Edits in a row are saved together, but the first of them reaches the disk within 2.5 s: on a slow machine a save
+  // can hold the first switches and not yet the last ones. What is checked is what is saved once all of them are (SW-E3-1).
+  const saved = async () => {
+    const p = JSON.parse((await savedProject(page)) || '{"tracks":[]}') as { tracks: { clips: { kind: string; style?: Record<string, unknown> }[] }[] };
+    const style = p.tracks.flatMap((t) => t.clips).find((c) => c.kind === 'caption')?.style ?? {};
+    return {
+      stroke: (style.stroke as { color?: string } | null)?.color, outline2: !!style.outline2,
+      depth: (style.copies as { depth?: boolean }[] | undefined)?.[0]?.depth, uppercase: style.uppercase,
+      lines: (style.background as { lines?: boolean } | null)?.lines,
+    };
+  };
+  await expect.poll(saved, { timeout: 10_000 }).toEqual({ stroke: '#ff3b30', outline2: true, depth: true, uppercase: true, lines: true });
   const styled = await shot('styled');
   expect(changed(plain, styled, 12), 'the picture shows it').toBeGreaterThan(0.002);
 });
