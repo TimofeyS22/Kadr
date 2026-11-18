@@ -128,7 +128,9 @@ export function renderHub(lang: Lang, site: string): string {
 <a class="cta" href="../">${esc(ui.cta)}</a>
 <p class="note">${esc(ui.ctaNote)}</p>
 <h2>${esc(ui.why)}</h2>
-<ul>${ui.whyItems.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>`;
+<ul>${ui.whyItems.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
+<h2>${esc(ui.add)}</h2>
+<p>${esc(ui.addText)}</p>`;
   const alternates = Object.fromEntries(LANGS.map((l) => [l, site + hubPath(l)])) as Record<Lang, string>;
   const other = lang === 'ru' ? 'en' : 'ru';
   return layout({
