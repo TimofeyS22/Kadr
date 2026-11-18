@@ -87,7 +87,7 @@
   --dur-value: 180ms;
   --dur-undo: 200ms;
   --dur-mode: 220ms;
-  --dur-sheet-in: 260ms;
+  --dur-sheet-in: 220ms;
   --dur-sheet-out: 200ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-soft: ease-out;
