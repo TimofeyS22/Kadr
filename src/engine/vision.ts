@@ -11,9 +11,17 @@ import moduleBinary from '@mediapipe/tasks-vision/vision_wasm_module_internal.wa
 import faceModel from './mediapipe/blaze_face_short_range.tflite?url';
 import segmenterModel from './mediapipe/selfie_segmenter.tflite?url';
 import type { VisionFiles } from './visionCore';
+import { watchedBlob, type Got } from './watchedFetch';
 import type { VisionAsk, VisionModel, VisionOut } from './vision.worker';
 
 const abs = (url: string) => new URL(url, location.href).href;
+
+/**
+ * The runtimes' own sizes in bytes, as the package ships them (vision.test.ts checks them against node_modules). A
+ * server that compresses the file on the way says only the compressed length: the share downloaded is counted
+ * against these (SW-L-3).
+ */
+export const RUNTIME_BYTES = { page: 11_756_954, worker: 11_756_972 } as const;
 
 /**
  * The runtime and model files (SIMD build: every browser Kadr supports has WebAssembly SIMD), as absolute URLs: the
@@ -22,6 +30,7 @@ const abs = (url: string) => new URL(url, location.href).href;
 export const visionFiles = (where: 'page' | 'worker'): VisionFiles => ({
   wasmLoaderPath: abs(where === 'page' ? loader : moduleLoader),
   wasmBinaryPath: abs(where === 'page' ? binary : moduleBinary),
+  wasmBytes: RUNTIME_BYTES[where],
   faceModel: abs(faceModel),
   segmenterModel: abs(segmenterModel),
 });
@@ -41,7 +50,7 @@ const waiting = new Map<number, { worker: Worker; resolve: (o: VisionOut) => voi
 export function visionWorker(model: VisionModel): Worker | null {
   const known = workers.get(model);
   if (known !== undefined) return known;
-  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') {
+  if (!workersPossible()) {
     workers.set(model, null);
     return null;
   }
@@ -88,6 +97,49 @@ export function bitmapAt(image: TexImageSource, side: number): Promise<ImageBitm
   const k = side / Math.max(w, h);
   if (!(k < 1)) return createImageBitmap(image as ImageBitmapSource);
   return createImageBitmap(image as ImageBitmapSource, { resizeWidth: Math.max(1, Math.round(w * k)), resizeHeight: Math.max(1, Math.round(h * k)), resizeQuality: 'medium' });
+}
+
+/**
+ * The runtime's bytes (11.8 MB; 3.5 MB on the wire, gzipped), downloaded by the page and not by MediaPipe (SW-L-3).
+ * MediaPipe's own fetch said nothing until it was done, and with a 60 s limit on the whole load a slow network on the
+ * iPhone was told «the server did not answer». One download at a time for a runtime, whatever model or worker waits;
+ * each `progress` hears it until it is in. The bytes are not kept: the next load reads them from the cache.
+ */
+const downloads = new Map<string, Promise<Blob>>();
+const listeners = new Map<string, Set<(g: Got) => void>>();
+/** Runtimes whose download failed in this page: the next try goes past the HTTP cache (watchedBlob). */
+const failed = new Set<string>();
+/** A runtime came whole in this page (it is in the cache now), or is coming for a preload: none is started again. */
+let preloaded = false;
+
+export function runtimeBytes(where: 'page' | 'worker', progress?: (g: Got) => void): Promise<Blob> {
+  const { wasmBinaryPath: url, wasmBytes } = visionFiles(where);
+  const ears = listeners.get(url) ?? new Set();
+  listeners.set(url, ears);
+  if (progress) ears.add(progress);
+  let bytes = downloads.get(url);
+  if (!bytes) {
+    bytes = watchedBlob(url, wasmBytes, 'application/wasm', (g) => ears.forEach((f) => f(g)), { fresh: failed.has(url) })
+      .then((b) => { preloaded = true; return b; }, (e: unknown) => { failed.add(url); throw e; })
+      .finally(() => downloads.delete(url));
+    downloads.set(url, bytes);
+  }
+  return progress ? bytes.finally(() => ears.delete(progress)) : bytes;
+}
+
+const workersPossible = () => typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined' && typeof createImageBitmap !== 'undefined';
+
+/**
+ * The runtime downloaded ahead, when the person shows they may want it: the Hide faces sheet or the panel of all tools
+ * opened, the ribbon scrolled to Cutout (SW-L-3, lead's decision: on intent, not on a picked clip — Safari says nothing
+ * of a metered network, so a picked clip would cost every newcomer 3.5 MB). Between the sheet and the tap a few
+ * seconds pass; a tap before the end joins this download and its overlay says how far it is. A failure is not said: the
+ * tap tries again and says why. The bytes are not kept: the tap reads them from the cache.
+ */
+export function preloadVision(): void {
+  if (preloaded || !navigator.onLine) return;
+  preloaded = true;
+  runtimeBytes(workersPossible() ? 'worker' : 'page').catch(() => { preloaded = false; });
 }
 
 /** One request to the worker. `image` is handed over (transferred): the caller passes a copy it does not need. */

@@ -3,28 +3,37 @@
 import type { ImageSegmenter } from '@mediapipe/tasks-vision';
 import type { SegMask } from './text';
 import { modelLoad } from './modelLoad';
-import { askVision, bitmapAt, visionFiles, visionWorker } from './vision';
+import { askVision, bitmapAt, runtimeBytes, visionFiles, visionWorker } from './vision';
 import { loadSegmenter, personConfidence, personSeen } from './visionCore';
+import type { Got } from './watchedFetch';
 
 /** On the page, where no worker can run it (vision.ts). */
 let segmenter: Promise<ImageSegmenter> | null = null;
 /** In the worker: loaded once, with the same time limit and offline message as on the page. */
 let warmed: Promise<unknown> | null = null;
+/** Who hears the runtime's download while the segmenter loads (SW-L-3); each piece also keeps the load alive. */
+const ears = new Set<(g: Got) => void>();
+const tell = (alive: () => void) => (g: Got) => { alive(); ears.forEach((f) => f(g)); };
 
 function getSegmenter(): Promise<ImageSegmenter> {
-  segmenter ??= modelLoad(loadSegmenter(visionFiles('page')), (late) => late.close());
+  segmenter ??= modelLoad(async (alive) => loadSegmenter(visionFiles('page'), await runtimeBytes('page', tell(alive))), (late) => late.close());
   segmenter.catch(() => { segmenter = null; });
   return segmenter;
 }
 
-/** Loads the model ahead of time (e.g. when the user turns the feature on). */
-export function warmSegmenter(): Promise<unknown> {
+/** Loads the model ahead of time (e.g. when the user turns the feature on); `progress` hears the runtime's download. */
+export function warmSegmenter(progress?: (g: Got) => void): Promise<unknown> {
+  if (progress) ears.add(progress);
   const w = visionWorker('segmenter');
-  if (!w) return getSegmenter();
-  // A model that arrives after the limit stays in the worker, ready for the next try.
-  warmed ??= modelLoad(askVision(w, { op: 'warm', model: 'segmenter' }), () => undefined);
-  warmed.catch(() => { warmed = null; });
-  return warmed;
+  let p: Promise<unknown>;
+  if (!w) p = getSegmenter();
+  else {
+    // A model that arrives after the limit stays in the worker, ready for the next try.
+    warmed ??= modelLoad(async (alive) => askVision(w, { op: 'warm', model: 'segmenter', runtime: await runtimeBytes('worker', tell(alive)) }), () => undefined);
+    warmed.catch(() => { warmed = null; });
+    p = warmed;
+  }
+  return progress ? p.finally(() => ears.delete(progress)) : p;
 }
 
 /**

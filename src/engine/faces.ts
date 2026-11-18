@@ -3,27 +3,37 @@
 import type { FaceDetector } from '@mediapipe/tasks-vision';
 import type { Rect } from '../core/types';
 import { modelLoad } from './modelLoad';
-import { askVision, visionFiles, visionWorker } from './vision';
+import { askVision, runtimeBytes, visionFiles, visionWorker } from './vision';
 import { detectFaces, loadDetector } from './visionCore';
+import type { Got } from './watchedFetch';
 
 /** On the page, where no worker can run it (vision.ts). */
 let detector: Promise<FaceDetector> | null = null;
 /** In the worker: loaded once, with the same time limit and offline message as on the page. */
 let warmed: Promise<unknown> | null = null;
+/** Who hears the runtime's download while the detector loads (SW-L-3); each piece also keeps the load alive. */
+const ears = new Set<(g: Got) => void>();
+const tell = (alive: () => void) => (g: Got) => { alive(); ears.forEach((f) => f(g)); };
 
 function getDetector(): Promise<FaceDetector> {
-  detector ??= modelLoad(loadDetector(visionFiles('page')), (late) => late.close());
+  detector ??= modelLoad(async (alive) => loadDetector(visionFiles('page'), await runtimeBytes('page', tell(alive))), (late) => late.close());
   detector.catch(() => { detector = null; });
   return detector;
 }
 
-export function warmFaces(): Promise<unknown> {
+/** Loads the detector ahead of time; `progress` hears the runtime's download, if there is one. */
+export function warmFaces(progress?: (g: Got) => void): Promise<unknown> {
+  if (progress) ears.add(progress);
   const w = visionWorker('faces');
-  if (!w) return getDetector();
-  // A model that arrives after the limit stays in the worker, ready for the next try.
-  warmed ??= modelLoad(askVision(w, { op: 'warm', model: 'faces' }), () => undefined);
-  warmed.catch(() => { warmed = null; });
-  return warmed;
+  let p: Promise<unknown>;
+  if (!w) p = getDetector();
+  else {
+    // A model that arrives after the limit stays in the worker, ready for the next try.
+    warmed ??= modelLoad(async (alive) => askVision(w, { op: 'warm', model: 'faces', runtime: await runtimeBytes('worker', tell(alive)) }), () => undefined);
+    warmed.catch(() => { warmed = null; });
+    p = warmed;
+  }
+  return progress ? p.finally(() => ears.delete(progress)) : p;
 }
 
 const cache = new Map<string, Rect[]>();

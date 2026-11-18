@@ -9,7 +9,7 @@ import { detectFaces, loadDetector, loadSegmenter, personConfidence, personSeen,
 export type VisionModel = 'faces' | 'segmenter';
 /** What the page asks for. */
 export type VisionAsk =
-  | { op: 'warm'; model: VisionModel }
+  | { op: 'warm'; model: VisionModel; runtime?: Blob } // the runtime the page downloaded (SW-L-3)
   | { op: 'faces'; image: ImageBitmap; w: number; h: number }
   | { op: 'mask'; image: ImageBitmap }
   | { op: 'person'; image: ImageBitmap };
@@ -47,13 +47,13 @@ const factories = new Map<string, unknown>();
 
 let detector: Promise<FaceDetector> | null = null;
 let segmenter: Promise<ImageSegmenter> | null = null;
-const getDetector = (files: VisionFiles) => {
-  detector ??= loadDetector(files);
+const getDetector = (files: VisionFiles, runtime?: Blob) => {
+  detector ??= loadDetector(files, runtime);
   detector.catch(() => { detector = null; }); // tried again on the next request
   return detector;
 };
-const getSegmenter = (files: VisionFiles) => {
-  segmenter ??= loadSegmenter(files);
+const getSegmenter = (files: VisionFiles, runtime?: Blob) => {
+  segmenter ??= loadSegmenter(files, runtime);
   segmenter.catch(() => { segmenter = null; });
   return segmenter;
 };
@@ -63,7 +63,7 @@ const scratch = new OffscreenCanvas(1, 1);
 async function answer(m: VisionIn): Promise<VisionOut> {
   switch (m.op) {
     case 'warm':
-      await (m.model === 'faces' ? getDetector(m.files) : getSegmenter(m.files));
+      await (m.model === 'faces' ? getDetector(m.files, m.runtime) : getSegmenter(m.files, m.runtime));
       return { id: m.id, ready: true };
     case 'faces':
       return { id: m.id, faces: detectFaces(await getDetector(m.files), m.image, m.w, m.h, frame, scratch) };
