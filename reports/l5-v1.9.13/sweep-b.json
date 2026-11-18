@@ -1,0 +1,23 @@
+{
+  "lane": "b",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.13",
+  "started": "2026-11-18T12:52:00.594Z",
+  "finished": "2026-11-18T12:56:41.838Z",
+  "results": [
+    {
+      "id": "V-167, F-07 (воркер)",
+      "status": "ERROR",
+      "checks": [],
+      "error": "the cutout: not within 120 s",
+      "s": 135
+    },
+    {
+      "id": "V-167 (отклик)",
+      "status": "ERROR",
+      "checks": [],
+      "error": "faces hidden: not within 120 s",
+      "s": 135
+    }
+  ]
+}
