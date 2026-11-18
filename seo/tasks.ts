@@ -18,6 +18,8 @@ export interface TaskPage {
 export const UI: Record<Lang, {
   cta: string; ctaNote: string; how: string; why: string; whyItems: string[]; faq: string; more: string; all: string;
   hubTitle: string; hubDescription: string; hubH1: string; hubIntro: string; open: string; footer: string; other: string;
+  /** How a video gets in (V-148, docs/16 §8): Safari keeps sites out of the iPhone's Share menu, so the hub says the way that works. */
+  add: string; addText: string;
 }> = {
   ru: {
     cta: 'Открыть Kadr', ctaNote: 'Бесплатно, без регистрации и установки',
@@ -34,6 +36,8 @@ export const UI: Record<Lang, {
     hubH1: 'Видеоредактор, который открывается по ссылке',
     hubIntro: 'Kadr — монтаж коротких роликов прямо в браузере телефона. Ничего не нужно устанавливать, видео обрабатывается на самом устройстве. Выберите задачу:',
     open: 'Открыть', footer: 'Kadr — приватный видеоредактор. Видео обрабатывается на вашем устройстве.', other: 'English',
+    add: 'Как добавить видео',
+    addText: 'Откройте Kadr и выберите видео на телефоне. На iPhone — из «Фото» или «Файлов»: в меню «Поделиться» Kadr не появится, Safari не пускает туда сайты.',
   },
   en: {
     cta: 'Open Kadr', ctaNote: 'Free, no sign-up, nothing to install',
@@ -50,6 +54,8 @@ export const UI: Record<Lang, {
     hubH1: 'A video editor that opens from a link',
     hubIntro: 'Kadr edits short videos right in your phone’s browser. Nothing to install, and your video is processed on the device itself. Pick a task:',
     open: 'Open', footer: 'Kadr — a private video editor. Your video is processed on your device.', other: 'Русский',
+    add: 'How to add a video',
+    addText: 'Open Kadr and pick a video on your phone. On an iPhone, from Photos or Files: Kadr won’t appear in its Share menu, because Safari doesn’t let websites in there.',
   },
 };
 

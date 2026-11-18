@@ -66,6 +66,14 @@ describe('task pages (docs/08 C)', () => {
     }
   });
 
+  it('the hub says how a video gets in on an iPhone: from Photos or Files, not the Share menu, which Safari keeps from sites (V-148, docs/16 §8)', () => {
+    const said: Record<string, RegExp[]> = {
+      ru: [/<h2>Как добавить видео<\/h2>/, /На iPhone — из «Фото» или «Файлов»/, /в меню «Поделиться» Kadr не появится/],
+      en: [/<h2>How to add a video<\/h2>/, /On an iPhone, from Photos or Files/, /Kadr won’t appear in its Share menu/],
+    };
+    for (const l of LANGS) for (const re of said[l]) expect(decode(files[`${l}/index.html`]), `${l}: ${re}`).toMatch(re);
+  });
+
   it('canonical and hreflang are absolute; the sitemap lists every page', () => {
     for (const [f, s] of html) {
       expect(tag(s, /<link rel="canonical" href="(.*?)">/), f).toBe(SITE + f.replace(/index\.html$/, ''));
