@@ -114,7 +114,7 @@ export default defineConfig({
     taskPages,
     VitePWA({
       registerType: 'prompt', // the app decides when a new version takes over (src/main.tsx)
-      includeAssets: ['icon.svg'],
+      includeAssets: ['icon.svg', 'apple-touch-icon.png'], // the iPhone's Home Screen takes a PNG, not the SVG
       manifest: {
         name: 'Kadr — video editor',
         short_name: 'Kadr',
