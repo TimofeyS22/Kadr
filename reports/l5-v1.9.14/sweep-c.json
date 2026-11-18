@@ -1,0 +1,113 @@
+{
+  "lane": "c",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.14",
+  "started": "2026-11-18T20:40:40.686Z",
+  "finished": "2026-11-18T20:42:57.000Z",
+  "results": [
+    {
+      "id": "Q-13, Q-14 на iPhone",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "вырез включён",
+          "value": true,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "«Вырезать фон»",
+          "value": 43.045,
+          "unit": " с",
+          "limit": "≤ 60 с",
+          "ok": true
+        },
+        {
+          "name": "«Скрыть лица» (авто)",
+          "value": 0.948,
+          "unit": " с",
+          "limit": "≤ 60 с",
+          "ok": true
+        },
+        {
+          "name": "«Авторефрейм»",
+          "value": 1.92,
+          "unit": " с",
+          "limit": "≤ 60 с",
+          "ok": true
+        },
+        {
+          "name": "экспорт",
+          "value": 54.255,
+          "unit": " с",
+          "limit": "≤ 90 с",
+          "ok": true
+        },
+        {
+          "name": "видео в файле",
+          "value": "h264",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "потеряно кадров",
+          "value": 0.4400100000000293,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "длительность",
+          "value": 30.014667,
+          "unit": " с",
+          "limit": "30 ± 0,1 с",
+          "ok": true
+        },
+        {
+          "name": "меньшая сторона",
+          "value": 1080,
+          "unit": " px",
+          "limit": "≥ 1080 px",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "cutoutS": 43.045,
+        "cutoutOn": true,
+        "facesS": 0.948,
+        "reframeS": 1.92,
+        "exportS": 54.255,
+        "length": 30,
+        "file": {
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1080,
+          "height": 1920,
+          "frames": 900,
+          "duration": 30.014667,
+          "fps": 30,
+          "audio": "aac"
+        }
+      },
+      "s": 127
+    }
+  ]
+}

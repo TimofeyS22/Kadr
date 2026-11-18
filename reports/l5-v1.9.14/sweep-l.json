@@ -1,0 +1,26 @@
+{
+  "lane": "l",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.14",
+  "started": "2026-11-18T20:40:15.295Z",
+  "finished": "2026-11-18T20:40:40.473Z",
+  "results": [
+    {
+      "id": "D-1",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "версия в подвале",
+          "value": "v1.9.14",
+          "unit": "",
+          "limit": "= v1.9.14",
+          "ok": true
+        }
+      ],
+      "measured": {
+        "version": "v1.9.14"
+      },
+      "s": 14
+    }
+  ]
+}

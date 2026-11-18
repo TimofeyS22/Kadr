@@ -1,0 +1,132 @@
+{
+  "lane": "b",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.14",
+  "started": "2026-11-18T20:42:57.737Z",
+  "finished": "2026-11-18T20:44:32.821Z",
+  "results": [
+    {
+      "id": "V-167, F-07 (воркер)",
+      "status": "LOOK",
+      "checks": [
+        {
+          "name": "вырез включён",
+          "value": true,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "«Вырез» включился",
+          "value": 5.401,
+          "unit": " с",
+          "limit": "≤ 30 с",
+          "ok": true
+        },
+        {
+          "name": "«Скрыть лица» включились",
+          "value": 1.042,
+          "unit": " с",
+          "limit": "≤ 30 с",
+          "ok": true
+        },
+        {
+          "name": "MediaPipe в странице (script)",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "«No person found» на человеке",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "look": "край выреза — снимок v-167-cutout-edge.png против Mac",
+      "measured": {
+        "cutoutS": 5.401,
+        "cutoutOn": true,
+        "facesS": 1.042,
+        "scripts": [],
+        "said": []
+      },
+      "s": 69
+    },
+    {
+      "id": "V-167 (отклик)",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "касание «Скорость» → лист нарисован",
+          "value": 48,
+          "unit": " мс",
+          "limit": "≤ 100 мс",
+          "ok": true
+        },
+        {
+          "name": "кадров превью в секунду",
+          "value": 60.4,
+          "unit": "",
+          "limit": "≥ 15",
+          "ok": true
+        },
+        {
+          "name": "лист открылся",
+          "value": 48,
+          "unit": "",
+          "limit": "да",
+          "ok": true
+        },
+        {
+          "name": "касание",
+          "value": "click() в странице, без задержки пальца",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "sheetMs": 48,
+        "fps": 60.4
+      },
+      "s": 11
+    }
+  ]
+}
