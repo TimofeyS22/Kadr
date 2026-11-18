@@ -79,15 +79,26 @@ export function FrameFitNote({ fit, close }: { fit: Fit; close: () => void }) {
     const [width, height] = ASPECTS[fit.format];
     Object.assign(d.settings, { aspect: fit.format, width, height });
   });
+  // One row (SW-U-11): the frame is what the answer is about, and in a card of 136 px it was 126 px wide on a 667 px
+  // screen. A raised strip says it is a message, not a row of controls; the answers and the close keep together and go
+  // under the words when the row is too narrow (a large text size). The format carries its own shape, so «16:9» reads as
+  // something to tap; the white answer comes last, under the thumb and away from Play (the art director). The whole
+  // sentence is read first by a screen reader; each answer's name holds its word (WCAG 2.5.3).
+  const shape = fit.format ? ASPECTS[fit.format] : null;
+  const k = shape ? 16 / Math.max(shape[0], shape[1]) : 0;
   return (
-    <div className="ck-frame-fit" role="note">
-      <div className="ck ck-editor-tip">
-        <span>{fit.wider ? t('The video is wider than the frame: black bars above and below.') : t('The video is narrower than the frame: black bars at the sides.')}</span>
+    <div className="ck ck-frame-fit" role="note">
+      <span className="ck-sr">{fit.wider ? t('The video is wider than the frame: black bars above and below.') : t('The video is narrower than the frame: black bars at the sides.')}</span>
+      <span className="ck-frame-fit-what" aria-hidden>{t('Black bars')}</span>
+      <div className="ck-frame-fit-answers">
+        {fit.format && shape && (
+          <Button aria-label={t('Frame format {format}', { format: fit.format })} onClick={format}
+            icon={<span className="ck-frame-fit-shape" style={{ width: `${shape[0] * k}px`, height: `${shape[1] * k}px` }} aria-hidden />}>
+            {fit.format}
+          </Button>
+        )}
+        <Button variant="primary" aria-label={t('Crop to fill the frame')} onClick={fill}>{t('Crop to fill')}</Button>
         <IconButton label={t('Close')} onClick={close}><X aria-hidden /></IconButton>
-        <div className="ck-frame-fit-actions">
-          <Button variant="primary" onClick={fill}>{t('Fill the frame')}</Button>
-          {fit.format && <Button onClick={format}>{t('Frame like the video')}</Button>}
-        </div>
       </div>
     </div>
   );

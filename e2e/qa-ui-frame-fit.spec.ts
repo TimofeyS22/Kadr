@@ -1,6 +1,8 @@
 // Lane U of the sweep (docs/21), row UI-4: a landscape video in a 9:16 project sat in black bars, said only inside
 // «Кадрировать» (reports/Chetko — аудит интерфейса.md §7). Rule Ж10 of docs/17; the art director's choice: once per
-// project, after the first piece of the main row, a note with «Заполнить кадр» and «Формат как у видео».
+// project, after the first piece of the main row, a note with «Заполнить кадр» and the video's format («Формат кадра 16:9»).
+// Since SW-U-11 it is one raised row: «Чёрные поля», the format with its shape, «Заполнить», close; the whole sentence
+// is there for a screen reader, first.
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -46,9 +48,11 @@ async function edges(page: Page) {
 test('UI-4: a landscape video in 9:16 says what the black bars are, once, with the two ways out in reach of the thumb; «Заполнить кадр» fills the frame and one Undo brings the bars back', async ({ page }) => {
   await newProjectWith(page, 'landscape.mp4');
   await expect(note(page), 'said right after the video came').toBeVisible({ timeout: 2_000 });
-  await expect(note(page)).toContainText('Видео шире кадра: сверху и снизу чёрные поля.');
+  await expect(note(page), 'the whole sentence, read first by a screen reader').toContainText('Видео шире кадра: сверху и снизу чёрные поля.');
   const fill = note(page).getByRole('button', { name: 'Заполнить кадр' });
-  const format = note(page).getByRole('button', { name: 'Формат как у видео' });
+  const format = note(page).getByRole('button', { name: 'Формат кадра 16:9' });
+  await expect(fill, 'the word on it is in its name (WCAG 2.5.3)').toHaveText('Заполнить');
+  await expect(format).toHaveText('16:9');
   for (const b of [fill, format, note(page).getByRole('button', { name: 'Закрыть' })]) {
     const box = (await b.boundingBox())!;
     expect(Math.min(box.width, box.height), 'a finger takes it').toBeGreaterThanOrEqual(44);
@@ -71,9 +75,9 @@ test('UI-4: a landscape video in 9:16 says what the black bars are, once, with t
   await expect(note(page), 'nor after a reload').toHaveCount(0);
 });
 
-test('UI-4: «Формат как у видео» gives the project the video\'s format; a closed note stays closed', async ({ page }) => {
+test('UI-4: «16:9» gives the project the video\'s format; a closed note stays closed', async ({ page }) => {
   await newProjectWith(page, 'landscape.mp4');
-  await note(page).getByRole('button', { name: 'Формат как у видео' }).click();
+  await note(page).getByRole('button', { name: 'Формат кадра 16:9' }).click();
   await expect(note(page)).toHaveCount(0);
   await expect.poll(() => page.locator('.preview-canvas').evaluate((c) => { const r = c.getBoundingClientRect(); return Math.round((r.width / r.height) * 100) / 100; })).toBeCloseTo(16 / 9, 1);
   await newProjectWith(page, 'landscape.mp4');
@@ -99,6 +103,29 @@ test('UI-4: no note where there are no bars to speak of — a portrait video in 
   await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1_000);
   await expect(note(page), 'a project opened with its pieces is never told').toHaveCount(0);
+});
+
+// SW-U-11: in the flow the note took 136 px, and the frame it speaks of was 126 px wide on a 667 px screen — a decision
+// about the picture made over a picture hard to see. One row of 60 px keeps the frame.
+test('UI-4 (SW-U-11): while the note is up, the 9:16 frame keeps its size on a 667 px screen — one row, not a card — and its edge is drawn', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await newProjectWith(page, 'landscape.mp4');
+  await expect(note(page)).toBeVisible({ timeout: 2_000 });
+  await page.waitForTimeout(600);
+  const tall = Math.round((await note(page).boundingBox())!.height);
+  const frame = await page.locator('.preview-canvas').evaluate((c) => Math.round(c.clientWidth));
+  console.log(`SW-U-11: the note ${tall} px tall, the frame ${frame} px wide`);
+  expect(tall, 'one row').toBeLessThanOrEqual(64);
+  expect(frame, 'the frame stays a picture to judge').toBeGreaterThanOrEqual(160);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'nothing goes sideways').toBe(true);
+  // The field round the frame is black like the bars: while the note speaks of them, the frame's edge is drawn — a white
+  // dashed line outside the picture — and it goes with the note (the owner could not see which bars were meant).
+  // An outline is drawn outside the element's box: the line lies round the picture, never on it.
+  const edge = () => page.locator('.preview-canvas').evaluate((c) => getComputedStyle(c).outlineStyle);
+  expect(await edge(), 'the frame\'s edge is shown').toBe('dashed');
+  await note(page).getByRole('button', { name: 'Закрыть' }).click();
+  await expect(note(page)).toHaveCount(0);
+  expect(await edge(), 'and goes with the note').toBe('none');
 });
 
 // SW-U-7: the note was placed once, above the row under the frame as it stood when the note came. A text or a sound then

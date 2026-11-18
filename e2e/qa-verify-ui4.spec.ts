@@ -34,5 +34,5 @@ test('UI-4: a portrait recording stored on its side, as a phone keeps it, is por
   await expect(note(page), 'a portrait recording fills 9:16, whatever way it is stored').toHaveCount(0);
   await newProjectWith(page, '16:9', 'rotated.mp4');
   await expect(note(page), 'in 16:9 the same recording leaves bars at its sides').toContainText('narrower than the frame');
-  await expect(page.getByRole('button', { name: 'Frame like the video' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Frame format 9:16' })).toBeVisible();
 });
