@@ -61,6 +61,12 @@ async function speechProject(page: Page, locale: 'en' | 'ru', file: string) {
 }
 
 const ask = (page: Page) => page.locator('.model-ask');
+/**
+ * The sheet rises from 32 px below its place (`ck-panel-in`): its boxes are measured once it has risen. In the cloud a
+ * box read mid-rise put the lower answer 7 px under the window (SW-E3-5, runs 44017452808 and 44409049405).
+ */
+const risen = (page: Page) => ask(page).evaluate((el) => Promise.all((el.closest('.ck-panel') ?? el).getAnimations({ subtree: true })
+  .filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))));
 /** Long enough for a download to have begun: before the fix the first model request left within a second of the tap. */
 const QUIET_MS = 3000;
 
@@ -272,6 +278,7 @@ test('the question fits a 375 px phone, in Russian and on mobile data: no sidewa
   await tool(page, 'Субтитры').click();
   await expect(ask(page)).toBeVisible();
   await expect(ask(page)).toContainText('Сейчас вы на мобильном интернете.');
+  await risen(page);
   const box = await page.evaluate(() => {
     const el = document.querySelector('.model-ask')!, body = el.closest('.sheet-body')!;
     return {
@@ -299,6 +306,7 @@ test('the question fits a 375 px phone, in Russian and on mobile data: no sidewa
   await tool(page, 'Рилс в 1 тап').click();
   await page.getByRole('button', { name: 'Сделать рилс', exact: true }).click();
   await expect(ask(page)).toContainText('Сейчас вы на мобильном интернете.');
+  await risen(page);
   const reel = await page.evaluate(() => {
     const el = document.querySelector('.model-ask')!, body = el.closest('.sheet-body')!;
     return { text: el.querySelector('p')!.getBoundingClientRect().top, body: body.getBoundingClientRect().top, last: [...el.querySelectorAll('button')].pop()!.getBoundingClientRect().bottom, height: innerHeight };
