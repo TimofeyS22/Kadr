@@ -32,19 +32,23 @@ async function take(c, seconds) {
 }
 /** The S1 project of docs/04: four 60 s 1080p videos (long_1–4.mp4). */
 const S1 = ['long_1.mp4', 'long_2.mp4', 'long_3.mp4', 'long_4.mp4'];
-/** One scrub step: the playhead moved by scrolling, then the first frame drawn at its time and the exact one (ms). */
-const STEP = `const done = arguments[arguments.length - 1], x = arguments[0];
+/**
+ * One scrub step: the playhead moved by scrolling to `x`, then the first frame drawn near the time it asks for and the
+ * exact one (ms). Only frames within 0.2 s of that time count: v1.9.13 draws the old position again after a scroll, and a
+ * step that took that frame read the previous step's time (13 of 20 «missed» on 2026-11-18).
+ */
+const STEP = `const done = arguments[arguments.length - 1], x = arguments[0], want = arguments[1];
   (async () => {
     const P = window.__kadrPerf, el = document.querySelector('.tl-scroll'), t0 = performance.now();
     el.scrollLeft = x;
-    let first = 0, t = NaN;
+    let first = 0;
     while (performance.now() - t0 < 30000) {
       await new Promise((ok) => setTimeout(ok, 2));
-      if (P.last.at <= t0) continue;
-      if (Number.isNaN(t)) t = P.last.t;
-      if (Math.abs(P.last.t - t) < 1e-3) { first ||= P.last.at - t0; if (P.last.exact) return { t, first, exact: P.last.at - t0 }; }
+      if (P.last.at <= t0 || (want !== null && Math.abs(P.last.t - want) > 0.2)) continue;
+      first ||= P.last.at - t0;
+      if (P.last.exact) return { t: P.last.t, first, exact: P.last.at - t0 };
     }
-    return { t, first: first || 30000, exact: 30000 };
+    return { t: P.last.t, first: first || 30000, exact: 30000 };
   })().then(done, (e) => done({ error: String(e) }));`;
 
 await sweep({
@@ -173,9 +177,9 @@ await sweep({
         await c.fresh(S1, { aspect: '16:9' });
         await c.waitFor('four clips', async () => (await c.count('.tl-row.main .clip')) === 4, 180_000);
         await sleep(3000);
-        const zoom = 600 / (await c.jsAsync(STEP, 600)).t;
+        const zoom = 600 / (await c.jsAsync(STEP, 600, null)).t;
         const steps = [];
-        for (const s of [12, 187, 64, 221, 33, 150, 98, 239, 5, 171, 121, 45, 203, 77, 140, 18, 229, 109, 58, 196]) steps.push({ want: s, ...(await c.jsAsync(STEP, Math.round(s * zoom))) });
+        for (const s of [12, 187, 64, 221, 33, 150, 98, 239, 5, 171, 121, 45, 203, 77, 140, 18, 229, 109, 58, 196]) steps.push({ want: s, ...(await c.jsAsync(STEP, Math.round(s * zoom), s)) });
         // Playback 20 s from the start: frames drawn against 30 a second.
         await c.seek(0);
         await sleep(1500);
