@@ -140,10 +140,13 @@ async function push(name) {
   await js("window.__l5.files.push(new File(window.__l5.parts, arguments[0], { type: arguments[1] })); window.__l5.parts = [];", name, type);
 }
 const RU = { 'New project': 'Новый проект', Media: 'Медиа' };
+/** The version in the home footer of the page under test ("v1.9.14"), read by `fresh`: a result names what it measured. */
+let siteVersion = null;
 async function fresh(files, { ru = false, aspect = '9:16' } = {}) {
   await call('POST', `${S}/url`, { url: URL_ });
   await js(`localStorage.setItem('kadr.tips','99');localStorage.setItem('kadr.locale',arguments[0]);localStorage.setItem('kadr.hint.move','1');localStorage.setItem('kadr.iosVideoTip.v3','1');localStorage.setItem('kadr.iosFormatCard.v1','1');localStorage.setItem('kadr.exportPrefs',JSON.stringify({quick:false}));`, ru ? 'ru' : 'en');
   await call('POST', `${S}/url`, { url: URL_ });
+  siteVersion = await waitFor('the version in the footer', () => js("return document.querySelector('.home-foot, .ck-home-foot')?.textContent.match(/v\\d+\\.\\d+\\.\\d+/)?.[0] ?? null"), 15_000).catch(() => null);
   await tap(ru ? RU['New project'] : 'New project', 60_000);
   // Only a card on screen: the sheet's cards can be in the page while it is closed, and a click there does nothing. When
   // the sheet did not open (a tap that came while the page was still starting), "New project" is pressed again.
@@ -291,7 +294,7 @@ async function liveSpeech(file, limit) {
   const wrong = wer(TEXTS.ru_live, r.lines.join(' '));
   if (r.asks.some((a) => /77|не похоже/.test(a))) throw new Error(`Whisper was asked for: ${JSON.stringify(r.asks)}`);
   if (limit && wrong > limit) throw new Error(`${wrong}% of words wrong, the limit is ${limit}%`);
-  return { werPercent: wrong, seconds: r.seconds, asks: r.asks, said: r.said, notes: r.notes };
+  return { version: siteVersion, werPercent: wrong, seconds: r.seconds, asks: r.asks, said: r.said, notes: r.notes };
 }
 
 /** Captions of a live sample with GigaAM picked under "Recognition" (the phone's default is the compact model). */
@@ -308,7 +311,7 @@ async function gigaamSpeech(file) {
     return (await count('.caption-row')) >= 1;
   }, 600_000);
   const r = await heard();
-  return { werPercent: wer(TEXTS.ru_live, (await captionLines()).join(' ')), seconds: Math.round((Date.now() - t) / 100) / 10, asks: r.asks, said: r.said, notes: r.notes };
+  return { version: siteVersion, werPercent: wer(TEXTS.ru_live, (await captionLines()).join(' ')), seconds: Math.round((Date.now() - t) / 100) / 10, asks: r.asks, said: r.said, notes: r.notes };
 }
 
 const SCENARIOS = {
@@ -771,7 +774,7 @@ const SCENARIOS = {
     const text = r.lines.join(' ').toLowerCase();
     const wrong = wer(TEXTS.ru, text);
     if (!text.includes('привет') || wrong > 25) throw new Error(`not read by the Russian model: ${wrong}% wrong, "${text.slice(0, 80)}"`);
-    return { werPercent: wrong, seconds: r.seconds, asks: r.asks, said: r.said, notes: r.notes };
+    return { version: siteVersion, werPercent: wrong, seconds: r.seconds, asks: r.asks, said: r.said, notes: r.notes };
   },
   // Г4 on the whole path: GigaAM chosen by hand reads the live samples in the editor, and the tab lives.
   'captions-gigaam-live': () => gigaamSpeech('eval_ru_live.mp4'),
