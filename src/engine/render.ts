@@ -40,16 +40,19 @@ export async function resolveDrawables(
     })());
   }
   await Promise.all(jobs.values());
-  // Person masks for layers with "Remove background" (computed after decoding; cached per frame).
-  await Promise.all([...cutout].map(async (slot) => {
-    const d = slot ? out.get(slot) : undefined;
-    if (d) d.seg = (await personMask(d.key, d.image).catch(() => null)) ?? undefined;
-  }));
-  // Face boxes for layers that hide faces (cached per frame, like person masks).
-  await Promise.all([...faces].map(async (slot) => {
-    const d = slot ? out.get(slot) : undefined;
-    // Fail closed: if detection fails, hide the whole picture rather than show faces the user asked to hide.
-    if (d) d.faces = await faceBoxes(d.key, d.image, d.w, d.h).catch(() => [{ x: 0, y: 0, w: 1, h: 1 }]);
-  }));
+  // Person masks for layers with "Remove background" and face boxes for layers that hide faces, computed after decoding
+  // and cached per frame. Both at once: each model has a worker of its own (vision.ts), and in turn a frame with both
+  // waited for their sum (SW-L-1).
+  await Promise.all([
+    ...[...cutout].map(async (slot) => {
+      const d = slot ? out.get(slot) : undefined;
+      if (d) d.seg = (await personMask(d.key, d.image).catch(() => null)) ?? undefined;
+    }),
+    ...[...faces].map(async (slot) => {
+      const d = slot ? out.get(slot) : undefined;
+      // Fail closed: if detection fails, hide the whole picture rather than show faces the user asked to hide.
+      if (d) d.faces = await faceBoxes(d.key, d.image, d.w, d.h).catch(() => [{ x: 0, y: 0, w: 1, h: 1 }]);
+    }),
+  ]);
   return out;
 }

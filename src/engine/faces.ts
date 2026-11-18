@@ -18,7 +18,7 @@ function getDetector(): Promise<FaceDetector> {
 }
 
 export function warmFaces(): Promise<unknown> {
-  const w = visionWorker();
+  const w = visionWorker('faces');
   if (!w) return getDetector();
   // A model that arrives after the limit stays in the worker, ready for the next try.
   warmed ??= modelLoad(askVision(w, { op: 'warm', model: 'faces' }), () => undefined);
@@ -31,10 +31,11 @@ let frameCanvas: HTMLCanvasElement | null = null;
 let scratch: HTMLCanvasElement | null = null;
 
 async function detect(image: TexImageSource, w: number, h: number): Promise<Rect[]> {
-  if (visionWorker()) {
+  if (visionWorker('faces')) {
     await warmFaces();
-    const ww = visionWorker(); // the worker may have stopped meanwhile: the page takes over
+    const ww = visionWorker('faces'); // the worker may have stopped meanwhile: the page takes over
     if (ww) {
+      // The frame as it is: scaled to the detector's 1280 px on the page first, the export was no faster (SW-L-1).
       const out = await askVision(ww, { op: 'faces', image: await createImageBitmap(image as ImageBitmapSource), w, h });
       if ('faces' in out) return out.faces;
     }

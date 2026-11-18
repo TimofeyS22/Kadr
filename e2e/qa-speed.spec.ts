@@ -210,3 +210,102 @@ test('every caption and text template draws within half a 30 fps frame at the pr
   expect(r.rows.length, 'templates drawn').toBeGreaterThan(CAPTION_PRESETS.length);
   expect(r.rows.filter((x) => x.msPreview > budget).map((x) => `${x.kind} ${x.id} ${x.lang}: ${x.msPreview} ms at preview size (budget ${budget})`)).toEqual([]);
 });
+
+// The person tools in an export (SW-L-1, Q-13/Q-14 on an iPhone 15: 107 s for a 30 s 1080p clip with Cutout, Hide
+// faces and Auto reframe, the threshold 3× its length). On the Mac the same build took 1.6× less than the phone (v1.9.12,
+// WebKit, 68 s), so the Mac's budget is 1.8× the length (54 s): above it the phone misses its 90 s. Where it went: the
+// mask (the segmenter answers at the size of what it is given — a 1080p frame gave a 1920×1080 mask to read back, turn
+// into bytes, smooth and upload, every frame) and the nine face passes, in turn in one worker. Now the segmenter gets
+// the frame at most 512 px long, and each model has its own worker.
+test('a 30 s 1080p clip with Cutout, Hide faces and Auto reframe exports within 1.8× its length, its masks at most 512 px', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  const clip = info.outputPath('walk-30s-1080p.mp4');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-stream_loop', '5', '-i', fx('walk.mp4'), '-vf', 'scale=1920:1080', '-t', '30', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', clip]);
+  await page.addInitScript(() => {
+    localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.iosFormatCard.v1', '1');
+    localStorage.setItem('kadr.locale', 'en');
+    localStorage.setItem('kadr.hint.move', '1');
+    localStorage.setItem('kadr.iosVideoTip.v3', '1');
+    localStorage.setItem('kadr.undoMoved.v1', '1');
+    localStorage.setItem('kadr.exportPrefs', JSON.stringify({ quick: false }));
+    Object.defineProperty(navigator, 'canShare', { value: undefined }); // headless WebKit has no share sheet
+    // What the vision workers answer: time from request to answer per kind, and the masks' sizes.
+    const q = { ops: {} as Record<string, { n: number; ms: number }>, maskSide: 0, toasts: [] as string[] };
+    (window as unknown as { __q: typeof q }).__q = q;
+    const NW = window.Worker;
+    window.Worker = class extends NW {
+      constructor(url: string | URL, opts?: WorkerOptions) {
+        super(url, opts);
+        if (!String(url).includes('vision')) return;
+        const sent = new Map<number, { op: string; t: number }>();
+        const post = this.postMessage.bind(this) as (m: unknown, t?: Transferable[]) => void;
+        this.postMessage = ((m: { id?: number; op?: string }, t?: Transferable[]) => {
+          if (m?.id) sent.set(m.id, { op: m.op ?? '?', t: performance.now() });
+          post(m, t);
+        }) as typeof this.postMessage;
+        this.addEventListener('message', (e: MessageEvent<{ id?: number; mask?: { w: number; h: number } | null }>) => {
+          if (e.data?.mask) q.maskSide = Math.max(q.maskSide, e.data.mask.w, e.data.mask.h);
+          const s = e.data?.id ? sent.get(e.data.id) : undefined;
+          if (!s) return;
+          sent.delete(e.data.id!);
+          const r = (q.ops[s.op] ??= { n: 0, ms: 0 });
+          r.n++; r.ms += performance.now() - s.t;
+        });
+      }
+    };
+    new MutationObserver(() => document.querySelectorAll('.toast').forEach((el) => { if (!q.toasts.includes(el.textContent ?? '')) q.toasts.push(el.textContent ?? ''); }))
+      .observe(document, { subtree: true, childList: true });
+  });
+  const tool = (name: string) => page.getByRole('button', { name, exact: true });
+  const use = async (name: string) => {
+    if (!(await tool(name).count())) await page.getByRole('button', { name: 'All tools' }).click();
+    await tool(name).click();
+  };
+  const clipEl = page.locator('.tl-row.main .clip').first();
+  const select = () => expect(async () => {
+    if (!(await clipEl.getAttribute('class'))?.includes(' sel')) await clipEl.click();
+    await expect(clipEl).toHaveClass(/ sel/, { timeout: 3000 });
+  }).toPass({ timeout: 30_000 });
+  const closeTools = async () => { const c = page.getByRole('button', { name: 'Close tools' }); if (await c.isVisible()) await c.click(); };
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await tool('Media').click();
+  await (await chooser).setFiles(clip);
+  await expect(clipEl).toHaveCount(1, { timeout: 60_000 });
+  await select();
+  await use('Cutout');
+  await expect(tool('Cutout')).toHaveAttribute('aria-pressed', 'true', { timeout: 180_000 });
+  await closeTools();
+  await select();
+  await use('Hide faces');
+  await page.getByRole('switch', { name: 'Hide faces automatically' }).click();
+  await expect(page.getByRole('switch', { name: 'Hide faces automatically' })).toBeChecked({ timeout: 180_000 });
+  await page.getByRole('button', { name: 'Done' }).click();
+  await closeTools();
+  await select();
+  await use('Auto reframe');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __q: { toasts: string[] } }).__q.toasts.some((x) => /Reframed/.test(x))), { timeout: 180_000 }).toBe(true);
+  await closeTools();
+  await tool('Export').first().click();
+  await page.getByRole('radio', { name: 'Video', exact: true }).click();
+  await page.getByRole('radio', { name: 'TikTok, Reels, Shorts' }).click();
+  await page.evaluate(() => { (window as unknown as { __q: { ops: object } }).__q.ops = {}; });
+  const t0 = Date.now();
+  await page.getByRole('button', { name: 'Export video' }).click();
+  await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 500_000 });
+  const seconds = (Date.now() - t0) / 1000;
+  const q = await page.evaluate(() => (window as unknown as { __q: { ops: Record<string, { n: number; ms: number }>; maskSide: number } }).__q);
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save / Share' }).click();
+  const file = info.outputPath('person-tools.mp4');
+  await (await dl).saveAs(file);
+  const [frames, duration] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-count_packets', '-show_entries', 'stream=nb_read_packets:format=duration', '-of', 'csv=p=0', file]).toString().trim().split(/\s+/).map(Number);
+  console.log(`person tools export (${info.project.name}): ${seconds.toFixed(1)} s for ${duration.toFixed(2)} s, ${frames} frames; ${Object.entries(q.ops).map(([k, r]) => `${k} ${(r.ms / r.n).toFixed(1)} ms × ${r.n}`).join(', ')}; masks ${q.maskSide} px long`);
+  expect(Math.abs(duration - 30), 'the whole 30 s is in the file').toBeLessThan(0.2);
+  expect(q.ops.mask?.n ?? 0, 'a mask for every frame').toBeGreaterThanOrEqual(899);
+  expect(q.ops.faces?.n ?? 0, 'faces looked for in every frame').toBeGreaterThanOrEqual(899);
+  expect(q.maskSide, 'the segmenter gets the frame at most 512 px long (it answers at that size)').toBeLessThanOrEqual(512);
+  expect(seconds, 'a 30 s 1080p clip with the person tools exports within 1.8× its length (54 s)').toBeLessThanOrEqual(54);
+});

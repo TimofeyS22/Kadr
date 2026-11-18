@@ -3,7 +3,7 @@
 import type { ImageSegmenter } from '@mediapipe/tasks-vision';
 import type { SegMask } from './text';
 import { modelLoad } from './modelLoad';
-import { askVision, visionFiles, visionWorker } from './vision';
+import { askVision, bitmapAt, visionFiles, visionWorker } from './vision';
 import { loadSegmenter, personConfidence, personSeen } from './visionCore';
 
 /** On the page, where no worker can run it (vision.ts). */
@@ -19,7 +19,7 @@ function getSegmenter(): Promise<ImageSegmenter> {
 
 /** Loads the model ahead of time (e.g. when the user turns the feature on). */
 export function warmSegmenter(): Promise<unknown> {
-  const w = visionWorker();
+  const w = visionWorker('segmenter');
   if (!w) return getSegmenter();
   // A model that arrives after the limit stays in the worker, ready for the next try.
   warmed ??= modelLoad(askVision(w, { op: 'warm', model: 'segmenter' }), () => undefined);
@@ -27,12 +27,20 @@ export function warmSegmenter(): Promise<unknown> {
   return warmed;
 }
 
+/**
+ * The segmenter reads 256×256 and answers at the size of the picture it is given: a 1080p frame came back as a
+ * 1920×1080 mask, read back from the GPU, turned into bytes, smoothed on the page's thread, sent and uploaded to WebGL —
+ * 2 M pixels a frame for an answer scaled up from 256 (SW-L-1). The worker gets the picture at most this big on its
+ * long side, and the compositor scales the mask up as MediaPipe did.
+ */
+const MASK_SIDE = 512;
+
 /** The worker's answer for a copy of `image`, or undefined when there is no worker (any more): the page answers then. */
 async function inWorker(op: 'mask' | 'person', image: TexImageSource) {
-  if (!visionWorker()) return undefined;
+  if (!visionWorker('segmenter')) return undefined;
   await warmSegmenter();
-  const w = visionWorker();
-  return w ? askVision(w, { op, image: await createImageBitmap(image as ImageBitmapSource) }) : undefined;
+  const w = visionWorker('segmenter');
+  return w ? askVision(w, { op, image: await bitmapAt(image, MASK_SIDE) }) : undefined;
 }
 
 const cache = new Map<string, SegMask>();
