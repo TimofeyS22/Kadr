@@ -5,6 +5,7 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { CAPTION_PRESETS, TEXT_PRESETS } from '../src/core/presets';
 import type { StylesReport } from '../src/ui/StylesCheck';
@@ -292,6 +293,7 @@ test('a 30 s 1080p clip with Cutout, Hide faces and Auto reframe exports within 
   await page.getByRole('radio', { name: 'Video', exact: true }).click();
   await page.getByRole('radio', { name: 'TikTok, Reels, Shorts' }).click();
   await page.evaluate(() => { (window as unknown as { __q: { ops: object } }).__q.ops = {}; });
+  const load0 = os.loadavg()[0];
   const t0 = Date.now();
   await page.getByRole('button', { name: 'Export video' }).click();
   await expect(page.getByText(/Ready: .* MB/)).toBeVisible({ timeout: 500_000 });
@@ -302,7 +304,7 @@ test('a 30 s 1080p clip with Cutout, Hide faces and Auto reframe exports within 
   const file = info.outputPath('person-tools.mp4');
   await (await dl).saveAs(file);
   const [frames, duration] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-count_packets', '-show_entries', 'stream=nb_read_packets:format=duration', '-of', 'csv=p=0', file]).toString().trim().split(/\s+/).map(Number);
-  console.log(`person tools export (${info.project.name}): ${seconds.toFixed(1)} s for ${duration.toFixed(2)} s, ${frames} frames; ${Object.entries(q.ops).map(([k, r]) => `${k} ${(r.ms / r.n).toFixed(1)} ms × ${r.n}`).join(', ')}; masks ${q.maskSide} px long`);
+  console.log(`person tools export (${info.project.name}): ${seconds.toFixed(1)} s for ${duration.toFixed(2)} s, ${frames} frames; ${Object.entries(q.ops).map(([k, r]) => `${k} ${(r.ms / r.n).toFixed(1)} ms × ${r.n}`).join(', ')}; masks ${q.maskSide} px long; load ${load0.toFixed(1)} → ${os.loadavg()[0].toFixed(1)}`);
   expect(Math.abs(duration - 30), 'the whole 30 s is in the file').toBeLessThan(0.2);
   expect(q.ops.mask?.n ?? 0, 'a mask for every frame').toBeGreaterThanOrEqual(899);
   expect(q.ops.faces?.n ?? 0, 'faces looked for in every frame').toBeGreaterThanOrEqual(899);
