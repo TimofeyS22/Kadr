@@ -9,5 +9,8 @@
     "ffprobe",
     "safaridriver"
   ],
-  "ignoreExportsUsedInFile": true
+  "ignoreExportsUsedInFile": true,
+  "ignore": [
+    "reports/**"
+  ]
 }
