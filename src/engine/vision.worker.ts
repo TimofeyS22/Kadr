@@ -1,11 +1,12 @@
 // "Hide faces" and "Cutout" off the main thread (audit V-167, F-07). The face detector makes nine passes a frame and the
 // segmenter reads its mask back from the GPU; on the page both held up the interface and the preview frame by frame.
-// Here they run in turn on pictures the page hands over (ImageBitmap, transferred), and only boxes and masks go back.
+// Here they run on pictures the page hands over (ImageBitmap, transferred), and only boxes and masks go back. The page
+// starts one worker for each model (vision.ts), so a frame's mask and its faces are worked out at the same time.
 import type { FaceDetector, ImageSegmenter } from '@mediapipe/tasks-vision';
 import type { Rect } from '../core/types';
 import { detectFaces, loadDetector, loadSegmenter, personConfidence, personSeen, type VisionFiles } from './visionCore';
 
-type VisionModel = 'faces' | 'segmenter';
+export type VisionModel = 'faces' | 'segmenter';
 /** What the page asks for. */
 export type VisionAsk =
   | { op: 'warm'; model: VisionModel }
