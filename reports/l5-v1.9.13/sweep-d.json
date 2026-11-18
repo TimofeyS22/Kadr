@@ -1,0 +1,294 @@
+{
+  "lane": "d",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.13",
+  "started": "2026-11-18T12:41:22.367Z",
+  "finished": "2026-11-18T12:44:12.324Z",
+  "results": [
+    {
+      "id": "SW-A-14",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "plain: пар «белый кадр + писк»",
+          "value": 8,
+          "unit": "",
+          "limit": "= 8",
+          "ok": true
+        },
+        {
+          "name": "plain: худший сдвиг звука",
+          "value": 0,
+          "unit": " мс",
+          "limit": "≤ 33 мс",
+          "ok": true
+        },
+        {
+          "name": "plain: пакеты звука не по 1024",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "even: пар «белый кадр + писк»",
+          "value": 8,
+          "unit": "",
+          "limit": "= 8",
+          "ok": true
+        },
+        {
+          "name": "even: худший сдвиг звука",
+          "value": 0,
+          "unit": " мс",
+          "limit": "≤ 33 мс",
+          "ok": true
+        },
+        {
+          "name": "even: пакеты звука не по 1024",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "echo: пар «белый кадр + писк»",
+          "value": 8,
+          "unit": "",
+          "limit": "= 8",
+          "ok": true
+        },
+        {
+          "name": "echo: худший сдвиг звука",
+          "value": 0,
+          "unit": " мс",
+          "limit": "≤ 33 мс",
+          "ok": true
+        },
+        {
+          "name": "echo: пакеты звука не по 1024",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "plain": {
+          "sync": {
+            "flashes": [
+              1,
+              5,
+              9,
+              13,
+              17,
+              21,
+              25,
+              29
+            ],
+            "offsets": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "packets": {
+            "codec": "aac",
+            "broken": []
+          }
+        },
+        "even": {
+          "sync": {
+            "flashes": [
+              1,
+              5,
+              9,
+              13,
+              17,
+              21,
+              25,
+              29
+            ],
+            "offsets": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "packets": {
+            "codec": "aac",
+            "broken": []
+          }
+        },
+        "echo": {
+          "sync": {
+            "flashes": [
+              1,
+              5,
+              9,
+              13,
+              17,
+              21,
+              25,
+              29
+            ],
+            "offsets": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "packets": {
+            "codec": "aac",
+            "broken": []
+          }
+        }
+      },
+      "s": 69
+    },
+    {
+      "id": "Q-31",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "громкость",
+          "value": -14,
+          "unit": " LUFS",
+          "limit": "-14 ± 1 LUFS",
+          "ok": true
+        },
+        {
+          "name": "пик (сэмпл)",
+          "value": -1.4,
+          "unit": " dBFS",
+          "limit": "≤ -0,9 dBFS",
+          "ok": true
+        },
+        {
+          "name": "истинный пик",
+          "value": -1.4,
+          "unit": " dBTP",
+          "limit": "≤ -1 dBTP",
+          "ok": true
+        },
+        {
+          "name": "звук",
+          "value": "aac 160 кбит/с, 48000 Гц",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "звук до конца: длина звука",
+          "value": 86.846667,
+          "unit": " с",
+          "limit": "86,85 ± 0,1 с",
+          "ok": true
+        },
+        {
+          "name": "видео в файле",
+          "value": "h264",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "потеряно кадров",
+          "value": 0.40000999999983833,
+          "unit": "",
+          "limit": "≤ 3",
+          "ok": true
+        },
+        {
+          "name": "длительность",
+          "value": 86.846667,
+          "unit": " с",
+          "limit": "86,84 ± 0,1 с",
+          "ok": true
+        },
+        {
+          "name": "звук в файле",
+          "value": "aac",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "length": 86.843313,
+        "loud": {
+          "lufs": -14,
+          "samplePeak": -1.4,
+          "truePeak": -1.4
+        },
+        "audioS": 86.846667,
+        "sound": {
+          "codec": "aac",
+          "sampleRate": 48000,
+          "kbps": 160
+        },
+        "file": {
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1080,
+          "height": 1920,
+          "frames": 2605,
+          "duration": 86.846667,
+          "fps": 30,
+          "audio": "aac"
+        }
+      },
+      "s": 84
+    }
+  ]
+}
