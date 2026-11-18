@@ -1,0 +1,68 @@
+{
+  "lane": "l",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.13",
+  "started": "2026-11-18T12:40:46.793Z",
+  "finished": "2026-11-18T12:41:22.229Z",
+  "results": [
+    {
+      "id": "D-1",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "версия в подвале",
+          "value": "v1.9.13",
+          "unit": "",
+          "limit": "= v1.9.13",
+          "ok": true
+        }
+      ],
+      "measured": {
+        "version": "v1.9.13"
+      },
+      "s": 7
+    },
+    {
+      "id": "D-6",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "клипов после закрыть-открыть",
+          "value": 2,
+          "unit": "",
+          "limit": "= 2",
+          "ok": true
+        },
+        {
+          "name": "проект тот же (дорожки, места, длины)",
+          "value": "main:video@0.000+2.000,video@2.000+4.000",
+          "unit": "",
+          "limit": "main:video@0.000+2.000,video@2.000+4.000",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "before": "main:video@0.000+2.000,video@2.000+4.000",
+        "after": "main:video@0.000+2.000,video@2.000+4.000",
+        "clips": 2
+      },
+      "s": 16
+    }
+  ]
+}
