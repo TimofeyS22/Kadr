@@ -14,6 +14,30 @@ import { t, useLocale } from '../lib/i18n';
 import { Button, Tabs } from './ck/controls';
 import { giveBack, opener, watchPressed } from './ck/focus';
 
+/**
+ * A hint that names the keyframe button by its picture: `{key}` in the text becomes the same diamond the button draws.
+ * The character «◆» was in neither Geologica nor the system font: WebKit searched the system's fonts the first time it
+ * laid one out, 36–65 ms of the Transform sheet's first frame on the Mac (Д4); and it was filled, the button is not. A
+ * screen reader still hears «◆». The diamond keeps the word after it on its line («◆,» never breaks before the comma).
+ */
+export function KeyHint({ text, below }: { text: string; below?: boolean }) {
+  const parts = t(text).split('{key}');
+  return (
+    <p className="ck-hint" data-below={below ? '' : undefined}>
+      {parts.map((part, i) => {
+        if (!i) return part;
+        const glued = /^\S*/.exec(part)![0];
+        return (
+          <Fragment key={i}>
+            <span className="ck-key-glyph"><span role="img" aria-label="◆"><Diamond aria-hidden="true" /></span>{glued}</span>
+            {part.slice(glued.length)}
+          </Fragment>
+        );
+      })}
+    </p>
+  );
+}
+
 /** Px of downward drag before the sheet follows the finger (taps on the header stay taps). */
 const DRAG_SLOP = 8;
 /** Px of what follows a sheet's working set that stays in sight, so the person sees there is more (UI-7). */

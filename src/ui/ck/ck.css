@@ -350,3 +350,7 @@ textarea.ck-input { padding: var(--space-3); resize: vertical; }
 /* ---- a few quiet words that explain (a sheet, ?diag, the error screen) ---- */
 .ck-hint { margin: 0; font-size: var(--type-sm); line-height: var(--leading-text); color: var(--text-secondary); text-wrap: pretty; }
 .ck-hint[data-lead] { color: var(--text-primary); }
+/* The keyframe button named in a hint by its picture (KeyHint): the button's own diamond at the size of the letters,
+   sitting on the line like a capital, and kept with the punctuation after it. */
+.ck-key-glyph { white-space: nowrap; }
+.ck-key-glyph svg { width: 1em; height: 1em; vertical-align: -0.125em; }
