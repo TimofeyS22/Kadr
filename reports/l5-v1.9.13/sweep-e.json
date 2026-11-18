@@ -1,0 +1,230 @@
+{
+  "lane": "e",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.13",
+  "started": "2026-11-18T12:44:12.650Z",
+  "finished": "2026-11-18T12:52:00.489Z",
+  "results": [
+    {
+      "id": "V-259 · C-B2",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "файл целый (ffprobe, длина ± 0,1 с, звук)",
+          "value": "6 из 6",
+          "unit": "",
+          "limit": "6 из 6",
+          "ok": true
+        },
+        {
+          "name": "кодек H.264",
+          "value": "6 из 6",
+          "unit": "",
+          "limit": "6 из 6",
+          "ok": true
+        },
+        {
+          "name": "меньшая сторона 4K",
+          "value": 2160,
+          "unit": " px",
+          "limit": "≥ 2160 px",
+          "ok": true
+        },
+        {
+          "name": "перезапуски «Baseline»",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "профили",
+          "value": "1080p Baseline, 4k Baseline",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": [
+        {
+          "tag": "1080p",
+          "k": 1,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1920,
+          "height": 1080,
+          "frames": 900,
+          "duration": 30.014667,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "4k",
+          "k": 1,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 900,
+          "duration": 30.014667,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "1080p",
+          "k": 2,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1920,
+          "height": 1080,
+          "frames": 900,
+          "duration": 30.014667,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "4k",
+          "k": 2,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 900,
+          "duration": 30.014667,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "1080p",
+          "k": 3,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1920,
+          "height": 1080,
+          "frames": 900,
+          "duration": 30.014667,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "4k",
+          "k": 3,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 900,
+          "duration": 30.014667,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        }
+      ],
+      "s": 423
+    },
+    {
+      "id": "V-190",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "экспорт дошёл до файла",
+          "value": "Export failed: Something went wrong. The details are under “Details”. | DetailsKadr 1.9.13, 2026-11-18T12:51:43.408Z iPhone, iOS 18.7, Safari 26.5 export: InvalidStateError: Canvas has no frameCopy for supportNothing is sent by itself. File names and your text are not in it. | log [[{\"at\":1795006303408,\"version\":\"1.9.13\",\"where\":\"export\",\"kind\":\"InvalidStateError\",\"message\":\"Canvas has no frame\",\"device\":\"iPhone, iOS 18.7, Safari 26.5\"}]]",
+          "unit": "",
+          "limit": "да",
+          "ok": false
+        }
+      ],
+      "s": 20
+    },
+    {
+      "id": "V-232",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "превью: квадрат в середине (зелёный)",
+          "value": 216,
+          "unit": "",
+          "limit": "≥ 150",
+          "ok": true
+        },
+        {
+          "name": "превью: край широкого места",
+          "value": 0,
+          "unit": "",
+          "limit": "< 100",
+          "ok": true
+        },
+        {
+          "name": "файл: квадрат в середине",
+          "value": 216,
+          "unit": "",
+          "limit": "≥ 150",
+          "ok": true
+        },
+        {
+          "name": "файл: край широкого места",
+          "value": 0,
+          "unit": "",
+          "limit": "< 100",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "preview": {
+          "edge": 0,
+          "centre": 216
+        },
+        "file": {
+          "edge": 0,
+          "centre": 216
+        },
+        "bytes": 8370
+      },
+      "s": 8
+    }
+  ]
+}
