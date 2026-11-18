@@ -1,0 +1,325 @@
+{
+  "lane": "e",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.12",
+  "started": "2026-11-18T11:28:47.345Z",
+  "finished": "2026-11-18T11:47:21.192Z",
+  "results": [
+    {
+      "id": "V-259 · C-B2",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "файл целый (ffprobe, длина ± 0,1 с, звук)",
+          "value": "6 из 6",
+          "unit": "",
+          "limit": "6 из 6",
+          "ok": true
+        },
+        {
+          "name": "кодек H.264",
+          "value": "6 из 6",
+          "unit": "",
+          "limit": "6 из 6",
+          "ok": true
+        },
+        {
+          "name": "меньшая сторона 4K",
+          "value": 2160,
+          "unit": " px",
+          "limit": "≥ 2160 px",
+          "ok": true
+        },
+        {
+          "name": "перезапуски «Baseline»",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "профили",
+          "value": "1080p Baseline, 4k Baseline",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": [
+        {
+          "tag": "1080p",
+          "k": 1,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1920,
+          "height": 1080,
+          "frames": 900,
+          "duration": 30.025333,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "4k",
+          "k": 1,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 900,
+          "duration": 30.025333,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "1080p",
+          "k": 2,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1920,
+          "height": 1080,
+          "frames": 900,
+          "duration": 30.025333,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "4k",
+          "k": 2,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 900,
+          "duration": 30.025333,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "1080p",
+          "k": 3,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 1920,
+          "height": 1080,
+          "frames": 900,
+          "duration": 30.025333,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        },
+        {
+          "tag": "4k",
+          "k": 3,
+          "length": 30,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 900,
+          "duration": 30.025333,
+          "fps": 30,
+          "audio": "aac",
+          "baseline": []
+        }
+      ],
+      "s": 434
+    },
+    {
+      "id": "V-190",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "файл 4K целый (длина ± 0,1 с)",
+          "value": "3 из 3",
+          "unit": "",
+          "limit": "3 из 3",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": [
+        {
+          "length": 120,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 3600,
+          "duration": 120.025333,
+          "fps": 30,
+          "audio": "aac"
+        },
+        {
+          "length": 120,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 3600,
+          "duration": 120.025333,
+          "fps": 30,
+          "audio": "aac"
+        },
+        {
+          "length": 120,
+          "codec": "h264",
+          "profile": "Baseline",
+          "width": 3840,
+          "height": 2160,
+          "frames": 3600,
+          "duration": 120.025333,
+          "fps": 30,
+          "audio": "aac"
+        }
+      ],
+      "s": 390
+    },
+    {
+      "id": "V-103",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "небо: «No person found», картинка цела",
+          "value": "2 из 3",
+          "unit": "",
+          "limit": "3 из 3",
+          "ok": false
+        },
+        {
+          "name": "человек: фон убран",
+          "value": "3 из 3",
+          "unit": "",
+          "limit": "3 из 3",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": [
+        {
+          "kind": "sky",
+          "said": null,
+          "on": false,
+          "clips": 1
+        },
+        {
+          "kind": "person",
+          "said": "Background removed. Works best with people in the frame.",
+          "on": true,
+          "clips": 1
+        },
+        {
+          "kind": "sky",
+          "said": "No person found in this clip, so the background stays.",
+          "on": false,
+          "clips": 1
+        },
+        {
+          "kind": "person",
+          "said": "Background removed. Works best with people in the frame.",
+          "on": true,
+          "clips": 1
+        },
+        {
+          "kind": "sky",
+          "said": "No person found in this clip, so the background stays.",
+          "on": false,
+          "clips": 1
+        },
+        {
+          "kind": "person",
+          "said": "Background removed. Works best with people in the frame.",
+          "on": true,
+          "clips": 1
+        }
+      ],
+      "s": 241
+    },
+    {
+      "id": "V-157 (без наушников)",
+      "status": "LOOK",
+      "checks": [
+        {
+          "name": "замер",
+          "value": "есть",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "задержка выхода",
+          "value": 0,
+          "unit": " с",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "базовая",
+          "value": 0.0026666666666666666,
+          "unit": " с",
+          "limit": "записать",
+          "ok": true
+        }
+      ],
+      "look": "с наушниками Bluetooth — вручную (запись экрана с микрофоном), порог ≤ 80 мс",
+      "measured": {
+        "rows": 1
+      }
+    }
+  ]
+}
