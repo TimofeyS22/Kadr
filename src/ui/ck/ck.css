@@ -111,7 +111,9 @@
 .ck-scale-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; min-height: var(--touch); padding: 0 var(--space-1); }
 .ck-scale-side { display: flex; min-width: 0; overflow: hidden; }
 .ck-scale-side .ck-btn { padding: 0 var(--space-2); }
-.ck-scale-row { display: flex; align-items: stretch; }
+/* Room between the steps and the strip, and under the value's row with its ◆: a finger 21.5 px off «−» or ◆ landed on the
+   strip or on «+» (Д3, the exam's reach audit). 4 px at the sides, not 8: the strip keeps 80 % of the sheet's width (UI-3). */
+.ck-scale-row { display: flex; align-items: stretch; gap: var(--space-1); margin-top: var(--space-2); }
 .ck-scale-step { height: auto; color: var(--text-secondary); }
 .ck-scale-side.ck-end { justify-content: flex-end; }
 .ck-scale-head .ck-digit { min-width: 96px; text-align: center; }
