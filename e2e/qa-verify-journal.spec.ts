@@ -33,6 +33,9 @@ test('a journal made on an older revision is not replayed over a project saved a
   await title.fill('E2'); // a later edit, saved normally on a newer revision
   await expect.poll(() => page.evaluate(() => localStorage.getItem('kadr.journal')), { timeout: 10_000 }).toBeNull();
   await page.getByRole('button', { name: 'Back to projects' }).click();
+  // Leaving saves the project with its thumbnail first and only then goes Home. On a slow machine a reload before that
+  // reopened the project itself, with no «Open E2» to press (SW-E3-6, runs 44389966235, 44409049405, 44421930683).
+  await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
   await page.evaluate((j) => localStorage.setItem('kadr.journal', j), stale!);
   // The journal is read when a page opens the project from storage: the next visit, after the page that left it died.
   await page.reload();
