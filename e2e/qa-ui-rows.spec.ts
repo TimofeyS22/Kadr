@@ -432,3 +432,52 @@ test('SW-U-17: while a finger holds the timeline during playback, the playhead d
   const c = await state();
   expect(c.x - b.x, 'after the finger lets go the timeline follows the playhead again').toBeGreaterThan(5);
 });
+
+// The owner on the iPhone: «Она двигалась, когда я двигал ползунок» — a drag on the Speed scale moved the sheet. The
+// strip let the browser have a drag's vertical part (`touch-action: pan-y`) and the sheet's body, 40 px taller than its
+// window, scrolled under the finger. A finger is never level: a drag at ±20° must change the speed and nothing else.
+// Real touches (CDP) on Chromium, where the browser decides who gets a gesture as Safari does; WebKit checks the rule.
+test('SW-U-18: a drag on the Speed scale at ±20° changes the speed and moves nothing else — not the sheet, not the page', async ({ page, browserName }) => {
+  await sampleEditor(page, 'ru');
+  await page.locator('.tl-row.main .clip').first().click();
+  await tool(page, 'Скорость').scrollIntoViewIfNeeded();
+  await tool(page, 'Скорость').click();
+  const strip = page.locator('.sheet .ck-scale-strip');
+  await expect(strip).toBeVisible();
+  await page.waitForTimeout(500);
+  expect.soft(await strip.evaluate((e) => getComputedStyle(e).touchAction), 'the strip takes the whole drag').toBe('none');
+  if (browserName !== 'chromium') return;
+  const cdp = await page.context().newCDPSession(page);
+  const state = () => page.evaluate(() => ({
+    body: document.querySelector('.sheet .ck-panel-body')!.scrollTop,
+    page: [scrollY, Math.round(visualViewport!.pageTop)],
+    value: document.querySelector('.sheet .ck-scale .ck-digit')!.textContent,
+  }));
+  const moved: string[] = [];
+  // Right and down, left and up, right and up, left and down: 20° off level each way, so the value goes both ways;
+  // then a finger that starts steeply (60° for its first 30 px, as a thumb does) and goes on sideways.
+  for (const [deg, steep] of [[20, 0], [200, 0], [-20, 0], [160, 0], [20, 60], [200, 240]]) {
+    await page.evaluate(() => { document.querySelector('.sheet .ck-panel-body')!.scrollTop = 20; });
+    const b = (await strip.boundingBox())!, x0 = b.x + b.width * 0.5, y0 = b.y + b.height / 2;
+    const before = await state();
+    const path: [number, number][] = [];
+    let x = x0, y = y0;
+    if (steep) for (let i = 1; i <= 3; i++) { x += 10 * Math.cos((steep * Math.PI) / 180); y += 10 * Math.sin((steep * Math.PI) / 180); path.push([x, y]); }
+    for (let i = 1; i <= 12; i++) path.push([x + (120 * Math.cos((deg * Math.PI) / 180) * i) / 12, y + (120 * Math.sin((deg * Math.PI) / 180) * i) / 12]);
+    let peak = before.body, low = before.body;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+    for (const [px, py] of path) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: px, y: py }] });
+      const now = (await state()).body;
+      peak = Math.max(peak, now); low = Math.min(low, now);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(300);
+    const after = await state();
+    const how = steep ? `${steep}° then ${deg}°` : `${deg}°`;
+    if (peak !== before.body || low !== before.body || after.body !== before.body) moved.push(`${how}: the sheet's body scrolled (${before.body} → ${low}…${peak} px)`);
+    if (after.page.some((v) => v !== 0)) moved.push(`${how}: the page moved (scrollY, pageTop ${after.page})`);
+    if (after.value === before.value) moved.push(`${how}: the speed did not change («${before.value}»)`);
+  }
+  expect(moved, 'a tilted drag on the scale sets the speed and moves nothing else').toEqual([]);
+});
