@@ -365,3 +365,70 @@ test('SW-U-12: a touch whose pointer is already gone raises no page error where 
   await expect(open, 'a swipe of the Home sheet still carries it away').toHaveCount(0);
   expect(errors, 'no page error from a pointer that is gone').toEqual([]);
 });
+
+// On the iPhone the scroll of the timeline is applied by another process and its `scroll` event can come after a frame
+// of playback; D4 there (iPhone 15, live v1.9.14) lost 3 of 10 jumps of the timeline during playback: the playhead put
+// the scroll back under itself first, and the late event looked like its own (2.4–3.5 s until the preview reached the
+// place by playing). Here the first scroll event of each jump is held back 60 ms, as on the phone.
+test('SW-U-17: a jump of the timeline during playback is a scrub even when its scroll event comes after a frame of playback', async ({ page }) => {
+  await sampleEditor(page, 'ru');
+  await page.evaluate(() => {
+    const w = window as unknown as { __holdNext: boolean };
+    w.__holdNext = false;
+    addEventListener('scroll', (e) => {
+      const el = e.target as Element;
+      if (!w.__holdNext || !e.isTrusted || !el.classList?.contains('tl-scroll')) return;
+      w.__holdNext = false;
+      e.stopImmediatePropagation();
+      setTimeout(() => el.dispatchEvent(new Event('scroll')), 60);
+    }, { capture: true });
+  });
+  const play = page.locator('.transport .play-btn');
+  // «0:03.4 / 0:07.4»: where the playhead is, and how long the project is (the scroll's range is that long).
+  const clock = async () => { const m = (await page.locator('.transport').textContent())!.match(/(\d+):(\d+\.\d)\s*\/\s*(\d+):(\d+\.\d)/)!; return { t: +m[1] * 60 + +m[2], total: +m[3] * 60 + +m[4] }; };
+  const lost: string[] = [];
+  for (const f of [0.75, 0.2, 0.6, 0.15, 0.85]) {
+    await page.evaluate(() => { document.querySelector('.tl-scroll')!.scrollLeft = 0; });
+    await page.waitForTimeout(200);
+    if ((await play.getAttribute('aria-label')) !== 'Пауза') await play.click();
+    await expect(play).toHaveAttribute('aria-label', 'Пауза');
+    await page.waitForTimeout(500);
+    const want = await page.evaluate((f) => {
+      const el = document.querySelector<HTMLElement>('.tl-scroll')!, max = el.scrollWidth - el.clientWidth;
+      (window as unknown as { __holdNext: boolean }).__holdNext = true;
+      el.scrollLeft = Math.round(f * max);
+      return { x: el.scrollLeft, max };
+    }, f);
+    await page.waitForTimeout(500);
+    const { t, total } = await clock(), playing = (await play.getAttribute('aria-label')) === 'Пауза';
+    const at = (want.x / want.max) * total;
+    if (playing || Math.abs(t - at) > 0.25) lost.push(`jump to ${at.toFixed(1)} s: the playhead at ${t} s, ${playing ? 'still playing' : 'paused'}`);
+  }
+  expect(lost, 'every jump during playback seeks there and pauses, as a scrub does').toEqual([]);
+});
+
+test('SW-U-17: while a finger holds the timeline during playback, the playhead does not move its scroll; after it lets go, it does again', async ({ page }) => {
+  await sampleEditor(page, 'ru');
+  const play = page.locator('.transport .play-btn');
+  await play.click();
+  await expect(play).toHaveAttribute('aria-label', 'Пауза');
+  await page.waitForTimeout(400);
+  const state = () => page.evaluate(() => {
+    const m = document.querySelector('.transport')!.textContent!.match(/(\d+):(\d+\.\d)/)!;
+    return { x: document.querySelector('.tl-scroll')!.scrollLeft, t: +m[1] * 60 + +m[2] };
+  });
+  const press = (type: 'pointerdown' | 'pointerup') => page.evaluate((type) => {
+    const el = document.querySelector('.tl-scroll')!, r = el.getBoundingClientRect();
+    (type === 'pointerdown' ? el : window).dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: r.left + 40, clientY: r.top + 20, pointerId: 9, pointerType: 'touch', isPrimary: true }));
+  }, type);
+  await press('pointerdown');
+  const a = await state();
+  await page.waitForTimeout(500);
+  const b = await state();
+  expect(b.t - a.t, 'the preview keeps playing under the finger').toBeGreaterThan(0.2);
+  expect(Math.abs(b.x - a.x), 'the scroll stays where the finger holds it').toBeLessThan(1);
+  await press('pointerup');
+  await page.waitForTimeout(500);
+  const c = await state();
+  expect(c.x - b.x, 'after the finger lets go the timeline follows the playhead again').toBeGreaterThan(5);
+});

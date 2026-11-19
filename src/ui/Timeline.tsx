@@ -89,6 +89,8 @@ export function Timeline() {
   const dragRef = useRef<Drag | null>(null);
   const press = useRef<Press | null>(null);
   const ignoreScroll = useRef(Number.NaN);
+  /** Until when the person holds the timeline: a finger or a button on it, a wheel, and the glide after them. */
+  const heldUntil = useRef(0);
   const duration = projectDuration(project);
   const pad = vw / 2;
   const live = useRef({ zoom, pad });
@@ -106,13 +108,49 @@ export function Timeline() {
   // Time → scroll position (playback, seeks from elsewhere, zoom changes).
   useLayoutEffect(() => {
     const el = scroller.current!;
-    const apply = (t: number) => {
+    const apply = (t: number, settle = false) => {
+      // A scroll the playhead did not make, whose event has not come yet, is a scrub (a finger, a jump): the playhead
+      // must not put it back first. On the iPhone the scroll is applied by another process and its event can come after
+      // a frame of playback; putting the scroll back made that late event look like our own, and the scrub was lost —
+      // D4 on iPhone 15 (v1.9.14): 3 of 10 jumps during playback, 2.4–3.5 s until playback reached the place (SW-U-17).
+      // A hidden timeline (no width: the browser reset its scroll) and a new zoom or length settle it as before.
+      // While the person holds the timeline (and while it glides after a flick) the scroll is theirs: playback does not
+      // move it under their finger, whatever the order of events (the lead, SW-U-17). Both hold only for playback: a
+      // time set by the app on a pause (a trim let go, an undo) moves the scroll at once, as before.
+      if (!settle && player.playing && el.clientWidth) {
+        if (!Number.isNaN(ignoreScroll.current) && Math.abs(el.scrollLeft - ignoreScroll.current) >= 1.5) return;
+        if (performance.now() < heldUntil.current) return;
+      }
       const x = t * zoom;
-      if (Math.abs(el.scrollLeft - x) > 0.5) { ignoreScroll.current = x; el.scrollLeft = x; }
+      // What the browser made of it (rounded to a device pixel, held in range) is what its scroll event will carry.
+      if (Math.abs(el.scrollLeft - x) > 0.5) { el.scrollLeft = x; ignoreScroll.current = el.scrollLeft; }
     };
-    apply(useEditor.getState().time);
+    apply(useEditor.getState().time, true);
     return useEditor.subscribe((s, prev) => { if (s.time !== prev.time) apply(s.time); });
   }, [zoom, vw, duration]);
+
+  // The person holds the timeline from a touch, a press or a wheel until 150 ms after the last of its scroll events.
+  useEffect(() => {
+    const el = scroller.current!;
+    const GLIDE = 150;
+    let down = false;
+    const hold = () => { down = true; heldUntil.current = Infinity; };
+    const letGo = () => { if (!down) return; down = false; heldUntil.current = performance.now() + GLIDE; };
+    const wheel = () => { if (!down) heldUntil.current = performance.now() + GLIDE; };
+    const glide = () => { if (!down && heldUntil.current > performance.now()) heldUntil.current = performance.now() + GLIDE; };
+    el.addEventListener('touchstart', hold, { passive: true });
+    el.addEventListener('pointerdown', hold, { passive: true });
+    el.addEventListener('wheel', wheel, { passive: true });
+    el.addEventListener('scroll', glide, { passive: true });
+    for (const t of ['touchend', 'touchcancel', 'pointerup', 'pointercancel'] as const) window.addEventListener(t, letGo, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', hold);
+      el.removeEventListener('pointerdown', hold);
+      el.removeEventListener('wheel', wheel);
+      el.removeEventListener('scroll', glide);
+      for (const t of ['touchend', 'touchcancel', 'pointerup', 'pointercancel'] as const) window.removeEventListener(t, letGo);
+    };
+  }, []);
 
   // Scroll position → time (user scrubbing).
   const onScroll = () => {
