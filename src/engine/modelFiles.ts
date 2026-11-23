@@ -107,8 +107,20 @@ async function keptParts(cache: Cache, key: string, f: ModelFile): Promise<boole
   }));
 }
 
+/** A part that is not written to the device in this long has hung there: it is fetched and written again. */
+const WRITE_MS = 30_000;
+/**
+ * Keeps a part. The write has a limit, as the network has (SW-S-2: with none, a write that never finished left the
+ * download standing where it was for ever, with nothing said): 16 MiB are written in well under a second.
+ */
 async function keep(cache: Cache, key: string, i: number, bytes: Uint8Array<ArrayBuffer>): Promise<void> {
-  await cache.put(partKey(key, i), new Response(bytes, { headers: { 'content-length': String(bytes.byteLength), 'content-type': 'application/octet-stream' } }));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const hung = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`the device's storage did not answer for ${WRITE_MS / 1000} s, writing part ${i + 1}`)), WRITE_MS); });
+  try {
+    await Promise.race([cache.put(partKey(key, i), new Response(bytes, { headers: { 'content-length': String(bytes.byteLength), 'content-type': 'application/octet-stream' } })), hung]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Where Kadr ≤ 1.4.17 kept a file in transformers.js's cache: under its revision or under "main", on either host. */

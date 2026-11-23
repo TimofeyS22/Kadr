@@ -705,7 +705,7 @@ const SCENARIOS = {
     const first = await oneTapCaptions('eval_ru.mp4');
     const downloaded = first.asks.length > 0;
     const says = first.said.join(' | ');
-    if (downloaded && !/Скачиваем модель речи: \d+ МБ/.test(says)) throw new Error(`a download without its words: ${says}`);
+    if (downloaded && !/Скачиваем модель речи: (\d+ из )?\d+ МБ/.test(says)) throw new Error(`a download without its words: ${says}`);
     if (!downloaded && /Скачиваем|скачается/.test(says)) throw new Error(`"downloading" with the model on the phone: ${says}`);
     if (!first.said.includes('Запускаем модель речи (она уже на устройстве)…')) throw new Error(`no "starting": ${says}`);
     const wrong = wer(TEXTS.ru, first.lines.join(' '));

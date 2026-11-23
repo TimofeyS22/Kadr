@@ -235,7 +235,7 @@ export function StickersBody() {
 function progressLabel(p: CaptionProgress): string {
   // Two different things, worded apart (the owner, 2026-11-13: «модель скачивается каждый раз»): bytes from the
   // network, with how many; or the model this device keeps being started, with no network at all.
-  if (p.phase === 'download') return t('Downloading the speech model: {mb} MB, once…', { mb: p.mb });
+  if (p.phase === 'download') return t('Downloading the speech model: {done} of {mb} MB, once…', { done: Math.round(p.fraction * p.mb), mb: p.mb });
   if (p.phase === 'load') return t('Starting the speech model (it is on this device)…');
   if (p.phase === 'prepare') return t('Preparing the sound…');
   if (p.phase === 'listen') return t('Finding speech…');
