@@ -18,8 +18,8 @@ export default defineConfig({
     timeout: 600_000, // the production build can take minutes on a busy Mac
   },
   projects: [
-    { name: 'iphone-webkit', use: { ...devices['iPhone 15'] }, testIgnore: /perf\.spec|-eval\.spec|qa-speed\.spec/ },
-    { name: 'android-chromium', use: { ...devices['Pixel 7'] }, testIgnore: /perf\.spec|-eval\.spec|qa-speed\.spec/ },
+    { name: 'iphone-webkit', use: { ...devices['iPhone 15'] }, testIgnore: /perf\.spec|-eval\.spec|qa-speed\.spec|qa-platform-stage\.spec/ },
+    { name: 'android-chromium', use: { ...devices['Pixel 7'] }, testIgnore: /perf\.spec|-eval\.spec|qa-speed\.spec|qa-platform-stage\.spec/ },
     // `npm run perf`: the 4-minute benchmark from docs/04 (Chromium, CPU slowed 4× like a mid-range phone).
     // Real GPU (headless defaults to software SwiftShader, which inflates frame costs far beyond any phone).
     // Only with `npm run perf` (PERF=1), so a plain `playwright test` stays functional.
@@ -32,6 +32,13 @@ export default defineConfig({
     ...(process.env.SPEED ? [
       { name: 'speed-webkit', use: { ...devices['iPhone 15'] }, testMatch: /qa-speed\.spec/ },
       { name: 'speed-chromium', use: { ...devices['Pixel 7'], launchOptions: { args: ['--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] } }, testMatch: /qa-speed\.spec/ },
+    ] : []),
+    // `STAGE=1`: the release candidate beside the live site (V-234, e2e/qa-platform-stage.spec.ts). It needs a site of two
+    // builds — the live one at /Kadr/, the candidate in its next/ folder (VITE_STAGE=next) — which a plain run's one build
+    // at the root is not: E2E_URL=http://127.0.0.1:<port>/Kadr/ STAGE=1 npx playwright test --project=stage-webkit --project=stage-chromium.
+    ...(process.env.STAGE ? [
+      { name: 'stage-webkit', use: { ...devices['iPhone 15'] }, testMatch: /qa-platform-stage\.spec/ },
+      { name: 'stage-chromium', use: { ...devices['Pixel 7'] }, testMatch: /qa-platform-stage\.spec/ },
     ] : []),
     ...(process.env.PERF ? [{ name: 'perf', use: { ...devices['Pixel 7'], launchOptions: { args: ['--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] } }, testMatch: /perf\.spec/ }] : []),
   ],

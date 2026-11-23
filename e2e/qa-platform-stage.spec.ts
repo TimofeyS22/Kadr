@@ -7,6 +7,13 @@ import { audits, fx } from './qa-platform-kit';
 
 audits();
 
+// Only on a site of two builds (STAGE=1 projects, playwright.config.ts). A run against one build at the root — the cloud
+// e2e, `npm run e2e` — has no candidate at next/: the tests are skipped with the reason, not six false reds.
+test.beforeEach(async ({ request }) => {
+  const page = await request.get(next());
+  test.skip(!(page.ok() && (await page.text()).includes('<meta name="robots" content="noindex" />')), 'the site has no /next/: a site of two builds is needed (STAGE=1, docs/02 «Порядок выпуска»)');
+});
+
 // The kit's own settings (tips seen, the iPhone's format card, English) are written under the live site's keys; the
 // candidate reads its own («next:», src/lib/stageStorage.ts), so they are copied there once, not over what it set.
 test.beforeEach(async ({ page }) => {
