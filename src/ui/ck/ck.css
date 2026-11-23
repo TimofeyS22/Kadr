@@ -117,7 +117,10 @@
 .ck-scale-step { height: auto; color: var(--text-secondary); }
 .ck-scale-side.ck-end { justify-content: flex-end; }
 .ck-scale-head .ck-digit { min-width: 96px; text-align: center; }
-.ck-scale-strip { position: relative; flex: 1; min-width: 0; height: 3.25rem; overflow: hidden; touch-action: pan-y; cursor: grab; outline: none; user-select: none; -webkit-user-select: none; }
+/* The strip takes the whole of a finger's drag (SW-U-18, the owner: «Она двигалась, когда я двигал ползунок»). With
+   `pan-y` a drag that began a little downwards went to the browser: the sheet's body scrolled under the finger and the
+   value stayed. A finger is never quite level; the sheet scrolls from anywhere else. */
+.ck-scale-strip { position: relative; flex: 1; min-width: 0; height: 3.25rem; overflow: hidden; touch-action: none; cursor: grab; outline: none; user-select: none; -webkit-user-select: none; }
 .ck-scale-strip:focus-visible { box-shadow: inset 0 0 0 2px var(--text-primary); }
 .ck-ticks { position: absolute; left: 50%; top: 0; bottom: 0; will-change: transform; transition: transform var(--dur-undo) var(--ease-out); }
 .ck-scale[data-moving='true'] .ck-ticks { transition: none; }
