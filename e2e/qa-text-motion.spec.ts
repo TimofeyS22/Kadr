@@ -17,7 +17,12 @@ const MAX_BLOCK = 40;
 async function oneText(page: import('@playwright/test').Page) {
   await page.goto('./');
   await page.getByRole('button', { name: 'New project' }).click();
-  await page.locator('.aspect-card', { hasText: '9:16' }).click();
+  // Pressed once the format sheet has risen: in the cloud a card judged stable mid-rise was pressed below its place and
+  // nothing opened (run 45172337726; the class of SW-E3-2).
+  const sheet = page.getByRole('dialog', { name: 'Frame format' });
+  await expect(sheet).toBeVisible();
+  await sheet.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+  await sheet.locator('.aspect-card', { hasText: '9:16' }).click();
   await page.getByRole('button', { name: 'Text', exact: true }).click();
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.locator('.clip-text')).toHaveCount(1);
