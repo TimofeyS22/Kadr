@@ -108,11 +108,43 @@ test('GigaAM does not fit in memory: the compact model takes over without an err
   expect(await loads(page)).toEqual(['ru-fast']);
 });
 
-test('Kadr\'s site does not answer for the models: they come from Hugging Face, and the captions are made', async ({ page, context }) => {
+/**
+ * Hugging Face, played by the test build's own copy of the models: the same addresses and byte ranges, at the
+ * stand's speed. The test below checks that Kadr goes over to the second host, not how fast that host is today
+ * (2026-11-23: the real one gave this Mac 116 KB/s, and 225 MB did not come within the test's time).
+ */
+async function huggingFaceFromMirror(context: BrowserContext, baseURL: string) {
+  const PART = 16 * 1024 * 1024; // models.json "part"
+  const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-expose-headers': '*' };
+  await context.route(/^https:\/\/huggingface\.co\//, async (route) => {
+    const req = route.request();
+    if (req.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: cors }); return; }
+    const key = new URL(req.url()).pathname.slice(1);
+    const mirror = new URL(`models/${key}`, baseURL).href; // asked for by the test itself: the page's own way there is cut
+    const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers().range ?? '');
+    if (!range) {
+      const res = await fetch(mirror);
+      await route.fulfill(res.ok ? { status: 200, headers: cors, body: Buffer.from(await res.arrayBuffer()) } : { status: 404, headers: cors });
+      return;
+    }
+    // A large file: the mirror keeps it as parts; a range is a part, or the rest of one (SW-S-3).
+    const from = Number(range[1]), to = Number(range[2]), i = Math.floor(from / PART);
+    const res = await fetch(`${mirror}.parts/${i}`);
+    if (!res.ok) { await route.fulfill({ status: 404, headers: cors }); return; }
+    const part = Buffer.from(await res.arrayBuffer());
+    const body = part.subarray(from - i * PART, to - i * PART + 1);
+    await route.fulfill({ status: 206, headers: { ...cors, 'content-range': `bytes ${from}-${to}/*`, 'content-type': 'application/octet-stream' }, body });
+  });
+}
+
+test('Kadr\'s site does not answer for the models: they come from the second host (Hugging Face), and the captions are made', async ({ page, context, baseURL }) => {
   test.setTimeout(500_000);
   await context.route(/\/models\//, (route) => route.abort('connectionrefused'));
+  await huggingFaceFromMirror(context, baseURL!);
   const urls = requests(context);
   const text = (await russianCaptions(page))?.toLowerCase() ?? '';
   expect(text).toContain('привет');
   expect(from(urls, HF).length).toBeGreaterThan(0);
+  // Every large part came from the second host, as a byte range; none from the site.
+  expect(from(urls, HF).filter((u) => u.endsWith('.onnx')).length).toBeGreaterThan(1);
 });
