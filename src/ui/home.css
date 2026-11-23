@@ -35,7 +35,13 @@ button.ck-home-card:focus-visible { outline: 2px solid var(--text-primary); outl
 .ck-home-task b { font-size: var(--type-lg); font-weight: var(--weight-strong); }
 .ck-home-task-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .ck-home-tip p { margin: 0; line-height: var(--leading-text); }
-.ck-home-tip .ck-btn { align-self: flex-start; }
+/* As loud as the reel's card above it, no louder: the title in words, the why quiet, the how in white. */
+.ck-home-tip-title { margin: 0; font-size: var(--type-md); font-weight: var(--weight-strong); line-height: var(--leading-tight); }
+.ck-home-tip-text { color: var(--text-secondary); font-size: var(--type-sm); }
+.ck-home-tip-how { font-size: var(--type-sm); }
+.ck-home-tip-steps { display: grid; gap: var(--space-3); margin: 0; padding-left: var(--space-6); font-size: var(--type-sm); line-height: var(--leading-text); }
+.ck-home-tip-steps li > .ck-btn { display: flex; margin-top: var(--space-2); }
+.ck-home-tip-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-inline: calc(-1 * var(--space-4)); margin-bottom: calc(-1 * var(--space-2)); }
 
 /* Said once, where the buttons used to be (rule Ж1). */
 .ck-home-moved { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4); border-radius: var(--radius-control); box-shadow: inset 0 0 0 var(--hairline) var(--border-subtle); }

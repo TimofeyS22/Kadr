@@ -237,7 +237,7 @@ test('every project goes from Safari to the Home Screen app in one file: saved f
     await back(page);
     await expect(page.locator('.project-open')).toHaveCount(2);
     const dl = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Save a copy of every project' }).click();
+    await page.getByRole('note').filter({ hasText: 'Edit full screen' }).getByRole('button', { name: 'Save a backup' }).click();
     file = info.outputPath(`all-${(await dl).suggestedFilename()}`);
     await (await dl).saveAs(file);
     execFileSync('unzip', ['-tq', file]);

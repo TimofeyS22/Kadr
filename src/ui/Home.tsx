@@ -110,7 +110,13 @@ async function encodesAnySize(): Promise<boolean | null> {
 const open = (id: string) => { location.hash = `#/p/${id}`; };
 /** Width / height of a project's frame (a list from before aspects were kept counts as vertical). */
 const frame = (a: AspectId | undefined) => { const [w, h] = (a && ASPECTS[a]) || ASPECTS['9:16']; return w / h; };
-const KEEP_TIP_KEY = 'kadr.keepTip';
+/** v2 (SW-U-18): the advice now opens with what the Home Screen gives — full screen, without Safari's bars — and moves
+ *  every project in one copy (SW-A-22); said once more to someone who closed the old one. */
+const KEEP_TIP_KEY = 'kadr.keepTip.v2';
+/** The app on the Home Screen, opened with no projects: where the ones made in Safari are (dismissed for good). */
+const APP_TIP_KEY = 'kadr.appTip.v1';
+/** How many projects the copy of all of them held when it was saved (SW-A-22); none: no such copy yet. */
+const ALL_COPIED_KEY = 'kadr.allCopied';
 /** The buttons moved to the bottom (release 2 of Ч4): said once, where they were, to someone who knew them there (rule Ж1). */
 const MOVED_KEY = 'kadr.homeMoved.v1';
 /**
@@ -150,9 +156,19 @@ export function Home() {
   // Not in an app's built-in browser: it has no "Add to Home Screen", and the notice there says to leave it (audit V-203).
   const inAppNotice = useInAppNotice();
   const kept = projects?.length ?? 0;
-  const keepTip = IOS && !IN_APP && !standalone() && !busy && projects !== null && (kept ? keepTipSeen !== '1' : keepTipSeen === null);
+  // Closed with projects, it keeps their number: it comes once more if there is still no copy of all of them and there
+  // are twice as many now — the work to lose has grown (the lead). After that, never ('done').
+  const [allCopied, setAllCopied] = useState(() => { try { return localStorage.getItem(ALL_COPIED_KEY); } catch { return null; } });
+  const closedWith = keepTipSeen && /^[1-9]\d*$/.test(keepTipSeen) ? Number(keepTipSeen) : 0;
+  const keepTip = IOS && !IN_APP && !standalone() && !busy && projects !== null && (
+    keepTipSeen === null || (keepTipSeen === '0' && kept > 0) || (closedWith > 0 && allCopied === null && kept >= 2 * closedWith));
+  // The person who followed the advice and finds the app empty (audit V-164): their projects are in Safari's storage,
+  // not gone; the copy of all of them saved there comes in with «Восстановить копию» in the dock.
+  const [appTipSeen, setAppTipSeen] = useState(() => { try { return localStorage.getItem(APP_TIP_KEY) === '1'; } catch { return true; } });
+  const appTip = IOS && standalone() && !busy && projects !== null && projects.length === 0 && !appTipSeen;
+  const dismissAppTip = () => { try { localStorage.setItem(APP_TIP_KEY, '1'); } catch { /* shown again next time */ } setAppTipSeen(true); };
   const dismissKeepTip = () => {
-    const seen = kept ? '1' : '0';
+    const seen = !kept ? '0' : closedWith ? 'done' : String(kept);
     try { localStorage.setItem(KEEP_TIP_KEY, seen); } catch { /* shown again next time */ }
     setKeepTipSeen(seen);
     track('keep_tip_dismissed', { projects: kept });
@@ -298,6 +314,8 @@ export function Home() {
       setBusy(null);
       if (missing) toast(t('{n} media files are missing from this device, so they are not in the backup.', { n: missing }), 'error', 10_000);
       await saveFile(blob, 'Kadr — all projects.kadr');
+      try { localStorage.setItem(ALL_COPIED_KEY, String(all.length)); } catch { /* the advice may come once more */ }
+      setAllCopied(String(all.length));
       track('backup_saved', { mb: Math.round(blob.size / 1e6), projects: all.length });
     } catch (e) {
       toast(t('Could not save the backup: {error}', { error: errorMessage(e) }), 'error');
@@ -402,16 +420,35 @@ export function Home() {
     input?.select();
   }, [naming]);
 
+  // What the Home Screen gives (the owner: Safari's bars take the screen while editing; SW-U-18) and how. With projects
+  // the steps come in the order that keeps them: a copy first, then the icon, then the copy opened in the app — the
+  // Home Screen app has its own storage (V-164), and someone who added the icon first found it empty. With projects it
+  // stands after them, so the list is not pushed off the screen (the art director, Ж2).
+  const how = t('⋯ → Share → Add to Home Screen');
+  const homeTip = keepTip && (
+    <div className="ck-home-card ck-home-tip" role="note" aria-labelledby="home-tip">
+      <h2 id="home-tip" className="ck-home-tip-title">{t('Edit full screen')}</h2>
+      <p className="ck-home-tip-text">{t('From the Home Screen, Kadr opens without Safari’s bars, and iPhone does not erase your projects after 7 days away.')}</p>
+      {kept === 0 ? <p className="ck-home-tip-how">{how}</p> : (
+        <>
+          <p className="ck-home-tip-how">{t('Projects from Safari do not move to the app by themselves. Move them:')}</p>
+          <ol className="ck-home-tip-steps">
+            <li>{t('Save a backup of all projects.')}<Button icon={<Download aria-hidden />} onClick={() => void backupAll()}>{t('Save a backup')}</Button></li>
+            <li>{how}</li>
+            <li>{t('In the app, tap “Restore backup”.')}</li>
+          </ol>
+        </>
+      )}
+      <div className="ck-home-tip-acts"><Button variant="plain" onClick={dismissKeepTip}>{t('Got it')}</Button></div>
+    </div>
+  );
+
   // Someone coming back sees their work first; the first visit starts with what can be made (audit V-187).
   const yours = (
     <section className="ck-home-section" aria-labelledby="home-yours">
       <h2 id="home-yours" className="ck-home-title">{t('Your projects')}{!!projects?.length && <span className="ck-home-count">{projects.length}</span>}</h2>
       {projects === null ? <p className="ck-home-dim">{t('Loading…')}</p> : projects.length === 0 ? (
-        <Empty title={t('No projects yet')}>
-          {t('Start a new one or try the sample.')}
-          {/* The person who followed the advice and finds this list empty (audit V-164). */}
-          {IOS && standalone() && <> {t('Projects made in Safari stay in Safari. To bring them here, open Kadr in Safari, tap “Save a copy of every project”, then tap “Restore backup” here.')}</>}
-        </Empty>
+        <Empty title={t('No projects yet')}>{t('Start a new one or try the sample.')}</Empty>
       ) : (
         <ul className="ck-home-list">
           {projects.map((m) => (
@@ -524,7 +561,17 @@ export function Home() {
           )}
         </section>
 
+        {kept === 0 && homeTip}
+        {appTip && (
+          <div className="ck-home-card ck-home-tip" role="note" aria-labelledby="home-app-tip">
+            <h2 id="home-app-tip" className="ck-home-tip-title">{t('Projects from Safari')}</h2>
+            <p className="ck-home-tip-text">{t('They stayed in Safari. Open Kadr there, save a backup of all projects, then tap “Restore backup” below ↓')}</p>
+            <div className="ck-home-tip-acts"><Button variant="plain" onClick={dismissAppTip}>{t('Got it')}</Button></div>
+          </div>
+        )}
+
         {!!projects?.length && yours}
+        {kept > 0 && homeTip}
 
         <section className="ck-home-section" aria-labelledby="home-templates">
           <h2 id="home-templates" className="ck-home-title">{t('Start from a template')}</h2>
@@ -539,14 +586,6 @@ export function Home() {
           </div>
         </section>
 
-        {keepTip && (
-          <div className="ck-home-card ck-home-tip" role="note">
-            <p>{t('iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.')}</p>
-            {kept > 0 && <p>{t('Projects made in Safari stay in Safari, and you have {n} here. To move them, save a copy of every project here, then tap “Restore backup” in the Home Screen app.', { n: kept })}</p>}
-            {kept > 0 && <Button variant="primary" onClick={() => void backupAll()}>{t('Save a copy of every project')}</Button>}
-            <Button onClick={dismissKeepTip}>{t('Got it')}</Button>
-          </div>
-        )}
 
         {!projects?.length && yours}
 

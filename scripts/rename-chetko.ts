@@ -84,14 +84,13 @@ export const PAIRS: [string, string, string][] = [
   ['e2e/qa-inapp-and-install.spec.ts', "{ name: 'Link to Kadr' }", "{ name: 'Link to Chetko' }"],
   ['e2e/qa-inapp-and-install.spec.ts', "{ name: 'Install Kadr' }", "{ name: 'Install Chetko' }"],
   ['e2e/qa-inapp-and-install.spec.ts', 'Open Kadr in Chrome.', 'Open Chetko in Chrome.'],
-  ['e2e/qa-inapp-and-install.spec.ts', 'Add Kadr to the Home Screen and make', 'Add Chetko to the Home Screen and make'],
-  ['e2e/qa-inapp-and-install.spec.ts', 'To bring one here, open Kadr in Safari,', 'To bring one here, open Chetko in Safari,'],
+  ['e2e/qa-inapp-and-install.spec.ts', 'From the Home Screen, Kadr opens without', 'From the Home Screen, Chetko opens without'],
+  ['e2e/qa-inapp-and-install.spec.ts', 'They stayed in Safari. Open Kadr there,', 'They stayed in Safari. Open Chetko there,'],
   ['e2e/qa-media-newer.spec.ts', "'newer version of Kadr'", "'newer version of Chetko'"],
   ['e2e/qa-media-sample.spec.ts', "{ hasText: 'Kadr' }", "{ hasText: 'Чётко' }"],
   ['e2e/qa-media-sample.spec.ts', "toContainText('Сделано в Kadr')", "toContainText('Сделано в «Чётко»')"],
   ['e2e/qa-smoke.spec.ts', 'toContainText(`Kadr v${version}`)', 'toContainText(`Chetko v${version}`)'],
   ['e2e/qa-storage.spec.ts', "'Not enough storage for Kadr on this device'", "'Not enough storage for Chetko on this device'"],
-  ['e2e/qa-storage.spec.ts', "hasText: 'Add Kadr to the Home Screen'", "hasText: 'Add Chetko to the Home Screen'"],
 ];
 
 /** The files the rename may touch, relative to the repository. */
