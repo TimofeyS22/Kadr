@@ -1,0 +1,16 @@
+{
+  "lane": "e",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": null,
+  "started": "2026-11-23T11:08:55.690Z",
+  "finished": "2026-11-23T11:31:33.838Z",
+  "results": [
+    {
+      "id": "V-190 · SW-L-2 (4K подряд)",
+      "status": "ERROR",
+      "checks": [],
+      "error": "invalid session id: ",
+      "s": 1326
+    }
+  ]
+}

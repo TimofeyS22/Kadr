@@ -1,0 +1,227 @@
+{
+  "lane": "v16",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.15",
+  "started": "2026-11-23T11:36:18.261Z",
+  "finished": "2026-11-23T11:39:13.088Z",
+  "results": [
+    {
+      "id": "SW-A-22 (копия всех проектов, сторона Safari)",
+      "status": "ERROR",
+      "checks": [],
+      "error": "\"Save a copy of every project\": not within 30 s",
+      "s": 55
+    },
+    {
+      "id": "SW-A-3 (нижняя панель главной)",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "точка кнопки попадает в свою кнопку",
+          "value": "7 из 9",
+          "unit": "",
+          "limit": "9 из 9",
+          "ok": false
+        },
+        {
+          "name": "высота кнопок панели (меньшая)",
+          "value": 44,
+          "unit": " px",
+          "limit": "≥ 44 px",
+          "ok": true
+        },
+        {
+          "name": "середина «Новый проект» открыла выбор формата",
+          "value": "{\"format\":true,\"rename\":true}",
+          "unit": "",
+          "limit": "формат, не «Переименовать»",
+          "ok": false
+        },
+        {
+          "name": "мимо",
+          "value": "New project @0.5: Rename Project 2; New project @0.8: DIV",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "hits": [
+          {
+            "n": "New project",
+            "fx": 0.2,
+            "ok": true,
+            "hit": "New project",
+            "h": 56
+          },
+          {
+            "n": "New project",
+            "fx": 0.5,
+            "ok": false,
+            "hit": "Rename Project 2",
+            "h": 56
+          },
+          {
+            "n": "New project",
+            "fx": 0.8,
+            "ok": false,
+            "hit": "DIV",
+            "h": 56
+          },
+          {
+            "n": "Try a sample",
+            "fx": 0.2,
+            "ok": true,
+            "hit": "Try a sample",
+            "h": 44
+          },
+          {
+            "n": "Try a sample",
+            "fx": 0.5,
+            "ok": true,
+            "hit": "Try a sample",
+            "h": 44
+          },
+          {
+            "n": "Try a sample",
+            "fx": 0.8,
+            "ok": true,
+            "hit": "Try a sample",
+            "h": 44
+          },
+          {
+            "n": "Restore backup",
+            "fx": 0.2,
+            "ok": true,
+            "hit": "Restore backup",
+            "h": 44
+          },
+          {
+            "n": "Restore backup",
+            "fx": 0.5,
+            "ok": true,
+            "hit": "Restore backup",
+            "h": 44
+          },
+          {
+            "n": "Restore backup",
+            "fx": 0.8,
+            "ok": true,
+            "hit": "Restore backup",
+            "h": 44
+          }
+        ],
+        "pressed": true,
+        "opened": {
+          "format": true,
+          "rename": true
+        }
+      },
+      "s": 37
+    },
+    {
+      "id": "SW-U-17 (скраб во время воспроизведения)",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "прыжок ответил кадром у места ≤ 300 мс",
+          "value": "10 из 10",
+          "unit": "",
+          "limit": "10 из 10",
+          "ok": true
+        },
+        {
+          "name": "мс по прыжкам",
+          "value": "75, 33, 58, 31, 61, 37, 22, 28, 31, 23",
+          "unit": "",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "p90",
+          "value": 61,
+          "unit": " мс",
+          "limit": "записать",
+          "ok": true
+        },
+        {
+          "name": "ошибки страницы",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        },
+        {
+          "name": "тосты ошибок",
+          "value": 0,
+          "unit": "",
+          "limit": "= 0",
+          "ok": true,
+          "detail": []
+        }
+      ],
+      "measured": {
+        "jumps": [
+          {
+            "want": 40,
+            "ms": 75
+          },
+          {
+            "want": 12,
+            "ms": 33
+          },
+          {
+            "want": 50,
+            "ms": 58
+          },
+          {
+            "want": 25,
+            "ms": 31
+          },
+          {
+            "want": 5,
+            "ms": 61
+          },
+          {
+            "want": 33,
+            "ms": 37
+          },
+          {
+            "want": 45,
+            "ms": 22
+          },
+          {
+            "want": 18,
+            "ms": 28
+          },
+          {
+            "want": 55,
+            "ms": 31
+          },
+          {
+            "want": 28,
+            "ms": 23
+          }
+        ]
+      },
+      "s": 61
+    }
+  ]
+}

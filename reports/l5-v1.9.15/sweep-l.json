@@ -1,0 +1,81 @@
+{
+  "lane": "l",
+  "url": "https://timofeys22.github.io/Kadr/",
+  "version": "v1.9.15",
+  "started": "2026-11-23T11:07:18.448Z",
+  "finished": "2026-11-23T11:08:52.878Z",
+  "results": [
+    {
+      "id": "D-1",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "версия в подвале",
+          "value": "v1.9.15",
+          "unit": "",
+          "limit": "= v1.9.15",
+          "ok": true
+        }
+      ],
+      "measured": {
+        "version": "v1.9.15"
+      },
+      "s": 3
+    },
+    {
+      "id": "SW-U-15 (значок без касания)",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "apple-touch-icon на странице",
+          "value": "apple-touch-icon.png",
+          "unit": "",
+          "limit": "есть",
+          "ok": true
+        },
+        {
+          "name": "ответ",
+          "value": 200,
+          "unit": "",
+          "limit": "= 200",
+          "ok": true
+        },
+        {
+          "name": "тип",
+          "value": "image/png",
+          "unit": "",
+          "limit": "= image/png",
+          "ok": true
+        },
+        {
+          "name": "размер",
+          "value": "180×180",
+          "unit": "",
+          "limit": "= 180×180",
+          "ok": true
+        },
+        {
+          "name": "в кэше service worker",
+          "value": false,
+          "unit": "",
+          "limit": "да",
+          "ok": false
+        }
+      ],
+      "measured": {
+        "status": 200,
+        "links": [
+          {
+            "sizes": null,
+            "href": "https://timofeys22.github.io/Kadr/apple-touch-icon.png"
+          }
+        ],
+        "w": 180,
+        "cached": false,
+        "type": "image/png",
+        "h": 180
+      },
+      "s": 32
+    }
+  ]
+}

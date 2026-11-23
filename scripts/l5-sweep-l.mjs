@@ -120,6 +120,29 @@ await sweep({
       },
       judge: (m) => [...glChecks(m.gl), equals('отказов в 2D-холсте', m.gl.nulls2d, 0), equals('стоп-кадров на таймлайне', m.images, 5)],
     },
+    {
+      id: 'SW-U-15 (значок без касания)', price: 5,
+      // What can be seen without «На экран „Домой“»: the page names a 180 × 180 PNG as its apple-touch-icon, it loads, and
+      // the service worker keeps it. The icon in the Add sheet and on the Home Screen is the owner's step.
+      run: async (c) => {
+        await c.home();
+        return c.jsAsync(`const done = arguments[arguments.length - 1];
+          (async () => {
+            const links = [...document.querySelectorAll('link[rel~="apple-touch-icon"]')].map((l) => ({ href: l.href, sizes: l.getAttribute('sizes') }));
+            if (!links.length) return { links };
+            const res = await fetch(links[0].href, { cache: 'no-store' }), blob = await res.blob(), bmp = await createImageBitmap(blob);
+            let cached = false;
+            // Workbox keys its precache with «?__WB_REVISION__=…»: a cached copy is any key of the same path.
+            const path = new URL(links[0].href).pathname;
+            const inCache = async () => { for (const name of await caches.keys()) for (const r of await (await caches.open(name)).keys()) if (new URL(r.url).pathname === path) return name; return null; };
+            for (let i = 0; i < 30 && !cached; i++) { cached = await inCache(); if (!cached) await new Promise((ok) => setTimeout(ok, 1000)); }
+            return { links, status: res.status, type: blob.type, w: bmp.width, h: bmp.height, cached };
+          })().then(done, (e) => done({ error: String(e) }));`);
+      },
+      judge: (m) => [holds('apple-touch-icon на странице', m.links?.length > 0, m.links?.map((l) => l.href.split('/').pop()).join(', ') || 'нет', 'есть'), equals('ответ', m.status, 200),
+        equals('тип', m.type, 'image/png'), equals('размер', `${m.w}×${m.h}`, '180×180'), holds('в кэше service worker', !!m.cached, m.cached || 'нет', 'да')],
+      page: false,
+    },
   ],
   manual: [
     { id: 'D-1 (свой Safari)', steps: 'Свой Safari владельца (не скрипт): открыть сайт, футер главной; если старая — полностью закрыть Kadr и открыть снова.', limit: `в футере ${EXPECT}; обновление само на главном экране, не посреди работы` },

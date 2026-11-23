@@ -1,0 +1,32 @@
+// integration-7 (with 05a0555) dist on http://127.0.0.1:4611/ with its own model mirror (dist/models, from
+// scripts/mirror-models.mjs): files as they are — no relay, no compression — and byte ranges (206) for a part resumed.
+import { createServer } from 'node:http';
+import { createReadStream, existsSync, statSync } from 'node:fs';
+import { extname, join, normalize } from 'node:path';
+import { Transform } from 'node:stream';
+// L5_RATE_KBPS (2048): the model mirror sent at this pace, so that the download can be cut half way (localhost is instant).
+const RATE = Number(process.env.L5_RATE_KBPS ?? 2048) * 1024;
+const paced = () => { let sent = 0; const t0 = Date.now(); return new Transform({ transform(chunk, _e, done) { sent += chunk.length; const wait = (sent / RATE) * 1000 - (Date.now() - t0); setTimeout(() => done(null, chunk), Math.max(0, wait)); } }); };
+const root = new URL('./int7-s2/dist/', import.meta.url).pathname;
+const T = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.wasm': 'application/wasm', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.m4a': 'audio/mp4', '.txt': 'text/plain' };
+const server = createServer((req, res) => {
+  const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^(\.\.[/\\])+/, '');
+  let file = join(root, path);
+  if (!file.startsWith(root)) { res.writeHead(403); return res.end(); }
+  if (!existsSync(file) || statSync(file).isDirectory()) {
+    if (extname(path) || path.startsWith('/models/')) { res.writeHead(404); return res.end(); }
+    file = join(root, 'index.html');
+  }
+  const size = statSync(file).size, type = T[extname(file)] ?? 'application/octet-stream';
+  const r = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '');
+  if (r) {
+    const a = Number(r[1]), b = r[2] ? Math.min(Number(r[2]), size - 1) : size - 1;
+    if (a >= size) { res.writeHead(416, { 'content-range': `bytes */${size}` }); return res.end(); }
+    res.writeHead(206, { 'content-type': type, 'content-length': b - a + 1, 'content-range': `bytes ${a}-${b}/${size}`, 'accept-ranges': 'bytes', 'cache-control': 'no-cache' });
+    const st = createReadStream(file, { start: a, end: b }); return (path.startsWith('/models/') ? st.pipe(paced()) : st).pipe(res);
+  }
+  res.writeHead(200, { 'content-type': type, 'content-length': size, 'accept-ranges': 'bytes', 'cache-control': 'no-cache' });
+  const st = createReadStream(file); (path.startsWith('/models/') ? st.pipe(paced()) : st).pipe(res);
+});
+server.requestTimeout = 0; server.headersTimeout = 0; server.timeout = 0;
+server.listen(4611, '127.0.0.1', () => console.log('http://127.0.0.1:4611/'));

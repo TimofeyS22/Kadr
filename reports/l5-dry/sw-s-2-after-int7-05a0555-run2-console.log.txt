@@ -1,0 +1,16 @@
+2026-11-23T15:14:48.886Z page warning: The resource http://127.0.0.1:4611/assets/index-BNPzaepc.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it wasn't preloaded for nothing.
+2026-11-23T15:14:51.698Z worker asr.worker-DGICa2lX.js warning: Unknown model class "custom", attempting to construct from base class.
+2026-11-23T15:14:51.698Z page warning: Unknown model class "custom", attempting to construct from base class.
+2026-11-23T15:14:51.698Z worker asr.worker-DGICa2lX.js warning: [resolve_model_type] Architecture(s) not found in MODEL_TYPE_MAPPING: [(none)] for model type 'custom'. Falling back to EncoderOnly (single model.onnx file). If you encounter issues, please report at: https://github.com/huggingface/transformers.js/issues/new/choose
+2026-11-23T15:14:51.698Z page warning: [resolve_model_type] Architecture(s) not found in MODEL_TYPE_MAPPING: [(none)] for model type 'custom'. Falling back to EncoderOnly (single model.onnx file). If you encounter issues, please report at: https://github.com/huggingface/transformers.js/issues/new/choose
+2026-11-23T15:15:28.095Z worker asr.worker-DGICa2lX.js warning: model istupakov/gigaam-v3-onnx/resolve/322c3b29492673eb7d0b434bfa9dfb8653e34d02/v3_e2e_ctc.int8.onnx from own, try 1, part 5 goes on from byte 8519680: TypeError: Load failed
+2026-11-23T15:15:28.095Z page warning: model istupakov/gigaam-v3-onnx/resolve/322c3b29492673eb7d0b434bfa9dfb8653e34d02/v3_e2e_ctc.int8.onnx from own, try 1, part 5 goes on from byte 8519680: TypeError: Load failed
+2026-11-23T15:15:29.348Z worker asr.worker-DGICa2lX.js warning: Unknown model class "custom", attempting to construct from base class.
+2026-11-23T15:15:29.348Z page warning: Unknown model class "custom", attempting to construct from base class.
+2026-11-23T15:15:29.349Z worker asr.worker-DGICa2lX.js warning: [resolve_model_type] Architecture(s) not found in MODEL_TYPE_MAPPING: [(none)] for model type 'custom'. Falling back to EncoderOnly (single model.onnx file). If you encounter issues, please report at: https://github.com/huggingface/transformers.js/issues/new/choose
+2026-11-23T15:15:29.349Z page warning: [resolve_model_type] Architecture(s) not found in MODEL_TYPE_MAPPING: [(none)] for model type 'custom'. Falling back to EncoderOnly (single model.onnx file). If you encounter issues, please report at: https://github.com/huggingface/transformers.js/issues/new/choose
+2026-11-23T15:15:31.207Z page warning: The resource http://127.0.0.1:4611/assets/index-BNPzaepc.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it wasn't preloaded for nothing.
+2026-11-23T15:16:47.098Z page info: speech download ru: first byte 177 ms, first part written 34 ms, store cache, quota 20616 MB used 260 MB, persisted no
+2026-11-23T15:16:48.379Z worker asr.worker-DGICa2lX.js warning: Unknown model class "custom", attempting to construct from base class.
+2026-11-23T15:16:48.380Z page warning: Unknown model class "custom", attempting to construct from base class.
+2026-11-23T15:16:57.470Z page info: speech language by ru: russian [{"confidence":0.965,"seconds":28,"text":"…"}]

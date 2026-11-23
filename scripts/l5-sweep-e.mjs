@@ -171,6 +171,32 @@ await sweep({
       judge: (m) => [kOfN('файл 4K целый (длина ± 0,1 с)', m, (r) => r.height >= 2160 && Math.abs(r.duration - r.length) <= 0.1 && r.frames > 0, REPS)],
     },
     {
+      id: 'V-190 · SW-L-2 (4K подряд)', price: 2,
+      // As the queue's row of B: in ONE page, a 1080p and a 4K export of a video, then 40 photos of 12 Mp to 4K; L5_REPS_4K
+      // times (5). The fix (d6f5c8f) lets a 4K export's canvas go to 0×0 before its context; a GPU reset starts it again.
+      run: async (c) => {
+        const photos = Array.from({ length: 40 }, (_, i) => make(c.out, `v-190-${String(i + 1).padStart(2, '0')}.jpg`, ['-f', 'lavfi', '-i', `testsrc2=s=4000x3000:r=1:d=1,hue=h=${i * 9}`, '-frames:v', '1', '-q:v', '3']));
+        const runs = [];
+        await c.home();
+        for (let k = 1; k <= Number(process.env.L5_REPS_4K ?? 5); k++) {
+          for (const [what, files, preset] of [['1080p', ['phone_1080_h264.mp4'], 'TikTok, Reels, Shorts'], ['4K видео', ['phone_4k_hevc.mov'], 'Best quality'], ['4K из 40 фото', photos, 'Best quality']]) {
+            await c.fresh(files, { aspect: '16:9', keepPage: true });
+            if (files.length > 1) await c.waitFor('forty photos', async () => (await c.count('.tl-row.main .clip')) === 40, 300_000);
+            const length = await c.timelineLength();
+            const done = await c.exportAs({ preset, file: `v-190-run${k}-${what.replace(/\W+/g, '')}.mp4`, ms: 1_200_000 }).catch((e) => ({ failed: e.message }));
+            const p = done.file ? probe(done.file) : null;
+            const gpu = (await c.page()).warns.filter((w) => /GPU was reset/.test(w)).length;
+            runs.push({ k, what, length, failed: done.failed ?? null, ok: !!p && p.frames > 0 && Math.abs(p.duration - length) <= 0.1 && (preset === 'Best quality' ? Math.min(p.width, p.height) >= 2160 : true), gpuResets: gpu });
+            await c.cleanup();
+          }
+          console.log(`  круг ${k}: ${runs.slice(-3).map((r) => `${r.what} ${r.ok ? 'да' : 'НЕТ'}`).join(', ')}`);
+        }
+        return runs;
+      },
+      judge: (m) => [kOfN('файл целый (длина ± 0,1 с, 4K — 2160 px)', m, (r) => r.ok, m.length), none('«Something went wrong» и другие сбои', m.filter((r) => r.failed).map((r) => `${r.k} ${r.what}: ${r.failed.slice(0, 300)}`)),
+        record('экспорт начат заново после сброса GPU', m.reduce((s, r) => s + r.gpuResets, 0))],
+    },
+    {
       id: 'C-C3 (холодный старт, iPhone 15)', price: 3, newSession: true,
       // Each WebDriver session starts with empty site data: the first load is a cold one. The home screen is timed by the
       // page's own clock at the first look after the load event (an upper bound); the sample in the page, exactly.

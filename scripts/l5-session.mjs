@@ -73,14 +73,54 @@ const WATCH = `if (!window.__l5) {
   };
 }`;
 
+/**
+ * L5_PW=1: a dry run in Playwright's WebKit on this Mac (the e2e's «iPhone 15», a persistent profile — the ephemeral one
+ * refuses Blobs in IndexedDB), speaking the few WebDriver commands the sweeps use. It shows that a scenario is built and
+ * reaches its steps; it measures nothing of the phone.
+ */
+async function playwright(out) {
+  const { webkit, devices } = await import('@playwright/test');
+  const context = await webkit.launchPersistentContext(join(out, 'pw-profile'), { ...devices['iPhone 15'], headless: !process.env.L5_PW_HEADED });
+  const pages = context.pages().length ? [...context.pages()] : [await context.newPage()];
+  // The page's console and its workers', into L5_OUT/console.log: what Safari's Web Inspector would show on the phone.
+  const log = (where) => (m) => appendFileSync(join(out, 'console.log'), `${new Date().toISOString()} ${where} ${m.type()}: ${m.text().slice(0, 600)}\n`);
+  const watchPage = (p) => { p.on('console', log('page')); p.on('worker', (w) => w.on('console', log(`worker ${w.url().split('/').pop()}`))); };
+  pages.forEach(watchPage);
+  context.on('page', watchPage);
+  let current = pages[0];
+  const handle = (p) => `pw-${pages.indexOf(p)}`;
+  const b64 = (buf) => Buffer.from(buf).toString('base64');
+  async function call(method, path, body) {
+    const tail = path.replace(/^\/session\/[^/]+/, '');
+    if (method === 'POST' && tail === '/url') { await current.goto(body.url, { waitUntil: 'load' }); return null; }
+    if (method === 'POST' && tail === '/refresh') { await current.reload({ waitUntil: 'load' }); return null; }
+    if (method === 'POST' && tail === '/execute/sync') return current.evaluate(([src, args]) => new Function(src).apply(null, args), [body.script, body.args]);
+    if (method === 'POST' && tail === '/execute/async') return current.evaluate(([src, args]) => new Promise((done) => { new Function(src).apply(null, [...args, done]); }), [body.script, body.args]);
+    if (method === 'GET' && tail === '/screenshot') return b64(await current.screenshot());
+    if (method === 'POST' && tail === '/element') return { 'element-6066-11e4-a52e-4f735466cecf': encodeURIComponent(body.value) };
+    const el = /^\/element\/([^/]+)\/screenshot$/.exec(tail);
+    if (method === 'GET' && el) return b64(await current.locator(decodeURIComponent(el[1])).first().screenshot());
+    if (method === 'GET' && tail === '/window') return handle(current);
+    if (method === 'POST' && tail === '/window/new') { const p = await context.newPage(); pages.push(p); return { handle: handle(p), type: 'tab' }; }
+    if (method === 'POST' && tail === '/window') { current = pages[Number(body.handle.slice(3))]; await current.bringToFront(); return null; }
+    if (method === 'DELETE' && tail === '/window') { await current.close(); pages.splice(pages.indexOf(current), 1, null); current = pages.find(Boolean); return null; }
+    if (method === 'POST' && (tail === '/timeouts' || tail === '/window/rect')) return null;
+    if (method === 'DELETE' && tail === '') { await context.close(); return null; }
+    throw new Error(`L5_PW: no ${method} ${tail}`);
+  }
+  return { call, session: { sessionId: 'pw', capabilities: { 'safari:deviceName': 'Playwright WebKit (iPhone 15, Mac)', 'safari:platformVersion': 'dry run' } } };
+}
+
 /** Opens the session on the phone (or Safari on this Mac with L5_MAC=1) and returns the helpers bound to it. */
 export async function connect({ url, out, port = Number(process.env.L5_PORT ?? 4454) }) {
   mkdirSync(out, { recursive: true });
-  const driver = spawn('safaridriver', ['-p', String(port)], { stdio: 'ignore' });
-  await sleep(2000);
   // Every WebDriver call, with its time and outcome, into L5_OUT/trace.log (L5_TRACE=1): where a run broke off.
   const trace = (line) => { if (process.env.L5_TRACE) appendFileSync(join(out, 'trace.log'), `${new Date().toISOString()} ${line}\n`); };
+  const pw = process.env.L5_PW ? await playwright(out) : null;
+  const driver = pw ? { kill: () => undefined } : spawn('safaridriver', ['-p', String(port)], { stdio: 'ignore' });
+  if (!pw) await sleep(2000);
   async function call(method, path, body, ms = 330_000) {
+    if (pw) return pw.call(method, path, body);
     const what = `${method} ${path.split('/').slice(3).join('/') || path}`, t = Date.now();
     let res;
     const send = () => fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(ms) });
@@ -102,7 +142,7 @@ export async function connect({ url, out, port = Number(process.env.L5_PORT ?? 4
     return json.value;
   }
   const caps = process.env.L5_MAC ? { browserName: 'safari' } : { browserName: 'safari', platformName: 'ios', 'safari:useSimulator': false, ...(process.env.L5_UDID ? { 'safari:deviceUDID': process.env.L5_UDID } : { 'safari:deviceType': 'iPhone' }) };
-  let session;
+  let session = pw ? pw.session : null;
   // After a session ends the phone refuses a new one for 20–60 s (reports/L5 — журнал.md): tries 20 s apart for 4 min.
   const until = Date.now() + 240_000;
   while (!session) {
@@ -193,8 +233,10 @@ export async function connect({ url, out, port = Number(process.env.L5_PORT ?? 4
     await watch();
   }
   /** A new project of the given frame with the files added through «Media», the editor settled. */
-  async function fresh(files, { ru = false, aspect = '9:16' } = {}) {
-    await home({ ru });
+  async function fresh(files, { ru = false, aspect = '9:16', keepPage = false } = {}) {
+    // keepPage: the next project in the same page, home the app's own way (a defect that piles up across exports in one
+    // page, as V-190's GPU memory did, is gone with every new document).
+    if (keepPage) { await leave(); await waitFor('home', () => has(ru ? 'Новый проект' : 'New project'), 30_000); } else await home({ ru });
     await tap(ru ? 'Новый проект' : 'New project', 60_000);
     // Only a card on screen: a sheet's cards can be in the page while it is closed. A tap that came while the page was
     // still starting did not open the sheet, so «New project» is pressed again.

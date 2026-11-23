@@ -1,0 +1,31 @@
+// Throwaway: integration-7 + b453cf6's dist on http://127.0.0.1:4611/ (localhost is a secure context), /models/ relayed
+// from the live site (a real download, as on timofeys22.github.io), a missing file 404 — never the app's page.
+import { createServer } from 'node:http';
+import { createReadStream, existsSync, statSync } from 'node:fs';
+import { extname, join, normalize } from 'node:path';
+import { get as httpsGet } from 'node:https';
+const root = new URL('./int7-s2/dist/', import.meta.url).pathname;
+const T = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.wasm': 'application/wasm', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.m4a': 'audio/mp4', '.onnx': 'application/octet-stream' };
+const server = createServer(async (req, res) => {
+  const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^(\.\.[/\\])+/, '');
+  if (path.startsWith('/models/')) {
+    // Relayed byte for byte (gzip as Pages sends it, the browser inflates it), as the live site reaches the phone.
+    const up = httpsGet(`https://timofeys22.github.io/Kadr${path}`, { headers: { 'accept-encoding': req.headers['accept-encoding'] ?? 'identity', ...(req.headers.range ? { range: req.headers.range } : {}) } }, (r) => {
+      const h = {}; for (const k of ['content-type', 'content-length', 'content-range', 'content-encoding', 'accept-ranges', 'etag', 'last-modified']) if (r.headers[k]) h[k] = r.headers[k];
+      res.writeHead(r.statusCode, h); r.pipe(res);
+    });
+    up.on('error', () => { res.writeHead(502); res.end(); });
+    return;
+  }
+  let file = join(root, path);
+  if (!file.startsWith(root)) { res.writeHead(403); return res.end(); }
+  if (!existsSync(file) || statSync(file).isDirectory()) {
+    if (extname(path)) { res.writeHead(404); return res.end(); }
+    file = join(root, 'index.html');
+  }
+  res.writeHead(200, { 'content-type': T[extname(file)] ?? 'application/octet-stream', 'content-length': statSync(file).size, 'cache-control': 'no-cache' });
+  createReadStream(file).pipe(res);
+});
+// A 16 MiB part takes ~2 min on this Mac's network today: no timeout of Node's server may cut it (it did at 60 s).
+server.requestTimeout = 0; server.headersTimeout = 0; server.timeout = 0; server.keepAliveTimeout = 600_000;
+server.listen(4611, '127.0.0.1', () => console.log('http://127.0.0.1:4611/'));

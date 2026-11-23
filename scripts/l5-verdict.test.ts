@@ -178,3 +178,14 @@ describe('captions and the run’s choice of rows', () => {
     expect(picked('SW-A-19', 1, undefined, '1,2')).toBe(true);
   });
 });
+
+describe('the release candidate on the phone', () => {
+  it('holds the footer\'s «next · <sha>» to the candidate by their common beginning', () => {
+    expect(V.candidateLabel('Kadr v1.9.16 · next · 56b5d5f · Privacy', '56b5d5fa1c2e')).toEqual({ ok: true, seen: 'next · 56b5d5f' });
+    expect(V.candidateLabel('next · 56b5d5fa1c2e9d', '56b5d5f').ok).toBe(true);
+    expect(V.candidateLabel('next · 56b5d5f', '4760ec0').ok).toBe(false);
+    expect(V.candidateLabel('Kadr v1.9.15 · Privacy', '56b5d5f')).toEqual({ ok: false, seen: null }); // the live site, not next
+    expect(V.candidateLabel('next · 56b5d5f', undefined).ok).toBe(false);
+    expect(V.candidateLabel('next · 56b5d5f', 'main').ok).toBe(false);
+  });
+});

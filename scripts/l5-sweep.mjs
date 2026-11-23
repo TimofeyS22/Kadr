@@ -51,8 +51,8 @@ async function tools(item, { url, out }) {
  * Runs a lane. `items` in order: `{ id, run(ctx) → measured, judge(measured) → checks | { checks, look }, page: false }`
  * for the sweep's own scenarios, or `{ tools: { name, scenarios, env }, ids, judge(rows) → judged rows }` for l5-tools.
  */
-export async function sweep({ lane, title, items, manual = [] }) {
-  const url = process.argv[2] ?? 'https://timofeys22.github.io/Kadr/';
+export async function sweep({ lane, title, items, manual = [], url: given }) {
+  const url = given ?? process.argv[2] ?? 'https://timofeys22.github.io/Kadr/';
   // Absolute: a file made on the Mac is pushed by its full path (a relative one is read as a fixture's name).
   const out = resolve(process.env.L5_OUT ?? join(process.env.TMPDIR ?? '/tmp', `kadr-l5-sweep-${lane}`));
   mkdirSync(out, { recursive: true });

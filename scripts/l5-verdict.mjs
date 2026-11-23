@@ -277,3 +277,16 @@ export function wer(reference, captions) {
   }
   return Math.round((row[hyp.length] / ref.length) * 1000) / 10;
 }
+
+// ---------- the release candidate ----------
+/**
+ * The `next` build's footer label «next · <sha>» against the candidate's commit: a short sha and a full one match by
+ * their common beginning (7 characters at least). No candidate given, or no label, is not a match.
+ */
+export function candidateLabel(footer, candidate) {
+  const m = /\bnext\s*·\s*([0-9a-f]{7,40})\b/i.exec(footer ?? '');
+  const seen = m ? `next · ${m[1]}` : null;
+  if (!m || !candidate || !/^[0-9a-f]{7,40}$/i.test(candidate)) return { ok: false, seen };
+  const a = m[1].toLowerCase(), b = candidate.toLowerCase(), n = Math.min(a.length, b.length);
+  return { ok: a.slice(0, n) === b.slice(0, n), seen };
+}
