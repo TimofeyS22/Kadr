@@ -2,6 +2,7 @@
 // the kind of error, where in Kadr it happened, the version and the device — never file names, captions or other
 // text of the person's. Nothing is sent: "Copy for support" puts one entry on the clipboard, `?diag` lists them all.
 import { createStore, get, set, type UseStore } from 'idb-keyval';
+import { own } from './stage';
 
 export interface ErrorEntry {
   at: number;
@@ -17,7 +18,7 @@ export interface ErrorEntry {
 
 const MAX = 50;
 let store: UseStore | null = null;
-const db = () => (store ??= createStore('kadr-log', 'log'));
+const db = () => (store ??= createStore(own('kadr-log'), 'log'));
 
 const FILE = /[^\s/\\:"'«»“”]+\.(mp4|mov|m4v|webm|mkv|avi|3gp|jpe?g|png|heic|heif|webp|gif|avif|bmp|tiff?|m4a|mp3|wav|aiff?|aac|ogg|opus|flac|srt|vtt|zip|cube|ttf|otf|woff2?)\b/gi;
 

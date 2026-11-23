@@ -6,6 +6,7 @@
 // opening that project offers the file again. Saving it, letting the sheet go or a new export drops the note.
 import { deleteBlob, getBlob, putBlob } from '../storage/db';
 import type { ExportResult } from './exporter';
+import { opfsRoot } from './opfs';
 
 const NOTE = 'kadr.keptExport';
 /** The id the file is kept under in the media store where it did not go to disk (orphan collection may take it). */
@@ -53,7 +54,7 @@ export function dropKeptExport(): void {
 
 async function fromDisk(name: string): Promise<Blob | undefined> {
   try {
-    return await (await (await navigator.storage.getDirectory()).getFileHandle(name)).getFile();
+    return await (await (await opfsRoot()).getFileHandle(name)).getFile();
   } catch {
     return undefined; // gone with the project, or by another export
   }
@@ -65,7 +66,7 @@ async function fromDisk(name: string): Promise<Blob | undefined> {
  */
 async function sweep(keep: string | undefined): Promise<void> {
   try {
-    const root = await navigator.storage.getDirectory();
+    const root = await opfsRoot();
     for await (const name of root.keys()) if (name.startsWith('export-') && name !== keep) await root.removeEntry(name).catch(() => undefined);
   } catch { /* no file system here */ }
 }

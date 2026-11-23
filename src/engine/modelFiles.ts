@@ -12,6 +12,7 @@
 // from its parts when the model loads, so it is stored once, not twice.
 import manifest from './models.json';
 import { dropParts, onStoreEvent, partStore, readPart, within, writePart, type StoreName } from './modelStore';
+import { own } from '../lib/stage';
 
 export { PARTS_CACHE } from './modelStore';
 
@@ -34,7 +35,7 @@ export const SPEECH_REPOS = {
   'ru-fast': 'istupakov/stt_ru_fastconformer_hybrid_large_pc_onnx',
 } as const;
 /** Where transformers.js kept whole files before v1.4.17: moved into parts once, then deleted. */
-const LEGACY = 'transformers-cache';
+const LEGACY = own('transformers-cache');
 const HF = 'https://huggingface.co/';
 /** A part that sends nothing for this long has hung. */
 export const STALL_MS = 20_000;
