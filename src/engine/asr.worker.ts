@@ -10,6 +10,7 @@ import { alignScript, type ScriptCaptions } from '../core/script';
 import type { CaptionWord } from '../core/types';
 import { SPEECH_REPOS, absentOnSite, ensureFile, isLarge, isModelFileName, keptFile, legacySmall, mirrored, modelHosts, modelKey, probeAnswer, setModelHosts, smallFile } from './modelFiles';
 import { capSharedMemory, type HeapInfo } from './wasmMemory';
+import { own } from '../lib/stage';
 
 /**
  * Whisper sizes; 'ru': GigaAM v3, Russian only, the most accurate on Russian speech (docs/10); 'ru-fast':
@@ -41,13 +42,16 @@ env.allowLocalModels = false;
 // build with VITE_MODEL_HOST=/hf/, a relay on the build's own origin (vite.config.ts; the iOS Simulator behind this
 // Mac's VPN cannot resolve huggingface.co). The dev server has no copy of the models.
 setModelHosts({
-  own: import.meta.env.DEV ? null : new URL(`${import.meta.env.BASE_URL}models/`, self.location.origin).href,
+  // The candidate (lib/stage.ts) reads the live site's copy (VITE_MODEL_BASE=/Kadr/): the files are checked by their
+  // hashes, and two copies would not fit in the 1 GB GitHub Pages gives a site. One the live site lacks comes from the
+  // ranges host.
+  own: import.meta.env.DEV ? null : new URL(`${import.meta.env.VITE_MODEL_BASE ?? import.meta.env.BASE_URL}models/`, self.location.origin).href,
   ranges: import.meta.env.VITE_MODEL_HOST ? new URL(import.meta.env.VITE_MODEL_HOST as string, self.location.href).href : 'https://huggingface.co/',
 });
 env.remoteHost = modelHosts().own ?? modelHosts().ranges;
 // Large files come part by part, checked and resumable; small ones (configs, tokenizers) whole and checked, then
 // kept in the Cache API as before.
-const small = caches.open('transformers-cache').catch(() => null);
+const small = caches.open(own('transformers-cache')).catch(() => null);
 const largeKey = (req: string) => { const key = modelKey(req); return key && isLarge(key) ? key : null; };
 env.useBrowserCache = false;
 env.useCustomCache = true;
@@ -175,7 +179,7 @@ let ctc: { model: CtcModel; ready: Promise<{ run: Ctc; vocab: CtcVocab }> } | nu
 
 /** A small file from a model repo, kept in the Cache API so captions work offline after the first time. */
 async function cachedText(key: string): Promise<string> {
-  const cache = await caches.open('kadr-models').catch(() => null);
+  const cache = await caches.open(own('kadr-models')).catch(() => null);
   const at = `https://huggingface.co/${key}`; // the name it has been kept under since v1.4, whatever host it came from
   const hit = await cache?.match(at);
   if (hit) return hit.text();

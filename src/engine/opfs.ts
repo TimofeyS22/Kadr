@@ -1,6 +1,17 @@
 // Files streamed to the origin-private file system (OPFS): an export or a backup goes to disk as it is made instead
 // of piling up in memory, where a long one does not fit on a phone (docs/12 P2).
 
+import { STAGE } from '../lib/stage';
+
+/**
+ * The candidate's own folder of the origin-private file system (lib/stage.ts); the live site's is the root itself,
+ * whose sweeps look only at their own «export-» and «backup-» files, never into this folder.
+ */
+export async function opfsRoot(): Promise<FileSystemDirectoryHandle> {
+  const root = await navigator.storage.getDirectory();
+  return STAGE ? root.getDirectoryHandle(STAGE, { create: true }) : root;
+}
+
 export interface DiskFile {
   writable: FileSystemWritableFileStream;
   /** The finished file, read from disk (call after the writable is closed). */
@@ -15,7 +26,7 @@ export interface DiskFile {
  */
 export async function diskFile(prefix: string, ext: string): Promise<DiskFile | null> {
   try {
-    const root = await navigator.storage.getDirectory();
+    const root = await opfsRoot();
     for await (const name of root.keys()) if (name.startsWith(`${prefix}-`)) await root.removeEntry(name).catch(() => undefined);
     const handle = await root.getFileHandle(`${prefix}-${Date.now()}.${ext}`, { create: true });
     if (!('createWritable' in handle)) return null;
@@ -32,7 +43,7 @@ export async function diskFile(prefix: string, ext: string): Promise<DiskFile | 
 /** Removes the export and backup files kept on disk; one still being written keeps its lock and stays. */
 export async function clearDiskFiles(): Promise<void> {
   try {
-    const root = await navigator.storage.getDirectory();
+    const root = await opfsRoot();
     for await (const name of root.keys()) if (name.startsWith('export-') || name.startsWith('backup-')) await root.removeEntry(name).catch(() => undefined);
   } catch { /* no file system here: nothing was kept on it */ }
 }

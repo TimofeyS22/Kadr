@@ -1,3 +1,5 @@
+// The candidate's own localStorage keys, before any module reads one (lib/stageStorage.ts).
+import './lib/stageStorage';
 import './fonts';
 import './ui/ckFont';
 import './ui/tokens.css';

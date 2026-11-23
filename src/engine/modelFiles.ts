@@ -11,6 +11,7 @@
 // Small files (configs, vocabularies) come whole and are checked the same way. The finished file is put together
 // from its parts when the model loads, so it is stored once, not twice.
 import manifest from './models.json';
+import { own } from '../lib/stage';
 
 export interface ModelFile { size: number; sha256: string; parts: string[] }
 interface SmallFile { size: number; sha256: string }
@@ -19,7 +20,7 @@ const PART: number = manifest.part;
 const FILES = manifest.files as Record<string, ModelFile>;
 const SMALL = manifest.small as Record<string, SmallFile>;
 const MIRROR: string[] = manifest.mirror;
-export const PARTS_CACHE = 'kadr-model-parts';
+export const PARTS_CACHE = own('kadr-model-parts');
 /**
  * The repository each speech model comes from: the worker loads from it, and the page looks under it for what this
  * device already keeps (missingBytes), so the two cannot name different files.
@@ -32,7 +33,7 @@ export const SPEECH_REPOS = {
   'ru-fast': 'istupakov/stt_ru_fastconformer_hybrid_large_pc_onnx',
 } as const;
 /** Where transformers.js kept whole files before v1.4.17: moved into parts once, then deleted. */
-const LEGACY = 'transformers-cache';
+const LEGACY = own('transformers-cache');
 const HF = 'https://huggingface.co/';
 /** A part that sends nothing for this long has hung. */
 export const STALL_MS = 20_000;

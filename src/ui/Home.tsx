@@ -27,6 +27,7 @@ import { Confirm } from './ck/feedback';
 import { Field } from './ck/Field';
 import { Empty, ProjectRow } from './ck/home';
 import { Sheet } from './ck/Sheet';
+import { BUILD_SHA, STAGE, own } from '../lib/stage';
 
 /** The task from a deep link (#/start/<task>, the task pages) or "share" (Android share target, #/share). */
 function useStartRoute(): TaskId | 'share' | null {
@@ -54,7 +55,7 @@ async function takeSharedFiles(): Promise<{ files: File[]; clear(): Promise<void
   if (taking) return null;
   if (!('caches' in window)) return { files: [], clear: async () => undefined };
   taking = true;
-  const cache = await caches.open('kadr-share');
+  const cache = await caches.open(own('kadr-share'));
   const keys = await cache.keys();
   const files: File[] = [];
   for (const k of keys) {
@@ -531,6 +532,7 @@ export function Home() {
 
         <footer className="ck-home-foot home-foot">{/* home-foot: the iPhone script and the smoke test read the version here */}
           {t('Projects and media are stored in this browser.')} Kadr v{__APP_VERSION__}
+          {STAGE && <b className="ck-home-stage" data-stage={STAGE}>{' · '}{STAGE}{BUILD_SHA && ` · ${BUILD_SHA}`}</b>}{/* the candidate's mark (lib/stage.ts) */}
           {' · '}<a href={`${locale}/privacy/`}>{t('Privacy')}</a>{' · '}<a href={`${locale}/licenses/`}>{t('Licenses')}</a>
           {sinkConfig() && <>{' · '}<StatsSwitch /></>}
         </footer>

@@ -33,7 +33,8 @@ self.addEventListener('fetch', (event) => {
     try {
       const form = await event.request.formData();
       const files = form.getAll('media').filter((f) => typeof f !== 'string');
-      const cache = await caches.open('kadr-share');
+      // The candidate at /Kadr/next/ keeps its own (src/lib/stage.ts): the same name as the page's own('kadr-share').
+      const cache = await caches.open(`${new URL(self.registration.scope).pathname.endsWith('/next/') ? 'next:' : ''}kadr-share`);
       for (const key of await cache.keys()) await cache.delete(key);
       for (const f of files) {
         await cache.put(new URL(`shared/${count++}`, self.registration.scope).href, new Response(f, {

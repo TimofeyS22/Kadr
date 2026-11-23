@@ -15,9 +15,12 @@
     button.textContent = ru ? 'Загрузить заново' : 'Load again';
     button.style.cssText = 'min-height:44px;padding:0 24px;border:0;border-radius:12px;background:#fff;color:#161616;font:inherit';
     button.onclick = function () {
-      // The stored copy of the app goes, so the next load comes from the network; downloaded speech models stay.
-      var sw = navigator.serviceWorker ? navigator.serviceWorker.getRegistrations().then(function (l) { return Promise.all(l.map(function (r) { return r.unregister(); })); }) : Promise.resolve();
-      var app = window.caches ? caches.keys().then(function (l) { return Promise.all(l.filter(function (k) { return /precache|workbox/.test(k); }).map(function (k) { return caches.delete(k); })); }) : Promise.resolve();
+      // The stored copy of the app goes, so the next load comes from the network; downloaded speech models stay. Only
+      // this page's own: the live site at /Kadr/ and the candidate at /Kadr/next/ share the origin (V-234), and the one
+      // that failed to start must not take the other's worker and copy with it. A precache's name ends with its scope.
+      var scope = new URL('./', location.href).href;
+      var sw = navigator.serviceWorker ? navigator.serviceWorker.getRegistrations().then(function (l) { return Promise.all(l.filter(function (r) { return r.scope === scope; }).map(function (r) { return r.unregister(); })); }) : Promise.resolve();
+      var app = window.caches ? caches.keys().then(function (l) { return Promise.all(l.filter(function (k) { return /precache/.test(k) && k.slice(-scope.length) === scope; }).map(function (k) { return caches.delete(k); })); }) : Promise.resolve();
       Promise.all([sw, app]).catch(function () { /* reload anyway */ }).then(function () { location.reload(); });
     };
     box.appendChild(text);
