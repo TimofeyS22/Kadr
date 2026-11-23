@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'no
 import { join, resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa';
+import { VitePWA, type ManifestOptions, type VitePWAOptions } from 'vite-plugin-pwa';
 import { APP_TITLE, DEFAULT_SITE, appMeta, buildSite } from './seo/render.ts';
 import { eventsUrl, withEvents } from './scripts/events-sink.ts';
 import { noReservePlugin } from './scripts/no-reserve.ts';
@@ -47,6 +47,34 @@ const dropUnusedOrt: Plugin = {
 const eventsKey = process.env.KADR_EVENTS_KEY ?? '';
 const eventsAt = eventsUrl(eventsKey, process.env.KADR_EVENTS_URL);
 const eventsHost = eventsAt ? new URL(eventsAt).host : '';
+
+// The candidate at /Kadr/next/ (V-234, src/lib/stage.ts): its own cache names, its own worker, and no search engine.
+const STAGE = process.env.VITE_STAGE === 'next' ? 'next' : '';
+const own = (name: string) => (STAGE ? `${STAGE}:${name}` : name);
+const base = process.env.KADR_BASE ?? '/';
+/** The candidate's name on the Home Screen: the live one's, marked (no new «Kadr» to rename at Ч5, docs/17). */
+const stageManifest = (m: Partial<ManifestOptions>): Partial<ManifestOptions> => (STAGE ? { ...m, name: `${m.name ?? ''} · ${STAGE}`, short_name: `${m.short_name ?? ''} ${STAGE}` } : m);
+/** The worker's caches under the candidate's own names (the live ones keep theirs, written out for the tests). */
+type Caching = NonNullable<NonNullable<VitePWAOptions['workbox']>['runtimeCaching']>;
+const ownCaches = (routes: Caching): Caching =>
+  routes.map((r) => (r.options?.cacheName ? { ...r, options: { ...r.options, cacheName: own(r.options.cacheName) } } : r));
+const stageNoindex: Plugin = {
+  name: 'kadr-stage-noindex',
+  apply: 'build',
+  enforce: 'post',
+  transformIndexHtml: (html) => (STAGE ? html.replace('<head>', '<head>\n    <meta name="robots" content="noindex" />') : html),
+  // The task pages too; the sitemap and robots.txt are the live site's, and /Kadr/next/robots.txt is read by nobody.
+  generateBundle(_options, bundle) {
+    if (!STAGE) return;
+    for (const [name, file] of Object.entries(bundle)) {
+      if (file.type !== 'asset') continue;
+      if (name === 'sitemap.xml' || name === 'robots.txt') delete bundle[name];
+      else if (name.endsWith('.html') && typeof file.source === 'string' && !file.source.includes('name="robots"')) {
+        file.source = file.source.replace('<head>', '<head>\n<meta name="robots" content="noindex" />');
+      }
+    }
+  },
+};
 
 // Task pages, sitemap and robots.txt (docs/08 C) next to the app, plus the app's own description and Open Graph.
 const site = process.env.KADR_SITE ?? DEFAULT_SITE;
@@ -94,7 +122,7 @@ export default defineConfig({
   // React came in by both paths, two copies and a blank page (S-1-11; scripts/one-copy.ts fails the build on that).
   resolve: { dedupe: ['react', 'react-dom'] },
   // GitHub Pages serves the app from /<repo>/; CI sets KADR_BASE=/Kadr/.
-  base: process.env.KADR_BASE ?? '/',
+  base,
   // A chunk named after a dot-folder (@soundtouchjs/core's "dist" → ".dist-*.js") is skipped by the precache glob:
   // voice effects and pitch-kept speed then fail offline. Chunk names never start with a dot.
   build: {
@@ -112,10 +140,11 @@ export default defineConfig({
     e2eUpload,
     dropUnusedOrt,
     taskPages,
+    stageNoindex,
     VitePWA({
       registerType: 'prompt', // the app decides when a new version takes over (src/main.tsx)
       includeAssets: ['icon.svg', 'apple-touch-icon.png'], // the iPhone's Home Screen takes a PNG, not the SVG
-      manifest: {
+      manifest: stageManifest({
         name: 'Kadr — video editor',
         short_name: 'Kadr',
         description: 'Private video editor that runs entirely on your device.',
@@ -129,7 +158,7 @@ export default defineConfig({
           action: 'share-target', method: 'POST', enctype: 'multipart/form-data',
           params: { files: [{ name: 'media', accept: ['video/*', 'image/*', 'audio/*'] }] },
         },
-      },
+      }),
       workbox: {
         importScripts: ['share-target.js'],
         // Every font from the first visit: the interface's, and every face a text or caption style can pick, so a style
@@ -138,10 +167,11 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
         // On-device AI (speech model runtime, noise reduction) is large: cache it on first use instead of up front.
         globIgnores: ['**/rnnoise-*.js', '**/asr.worker-*.js', '**/vision.worker-*.js', '**/vision_bundle-*.js', '**/vision_wasm_internal-*.js', '**/vision_wasm_module_internal-*.js', 'ru/**', 'en/**'],
-        // Task pages are plain pages from the network, never the app shell.
-        navigateFallbackDenylist: [/\/(ru|en)\//],
+        // Task pages are plain pages from the network, never the app shell. Nor is the candidate (V-234): its pages
+        // are another build under another worker, and the live site's shell in their place would run the live code.
+        navigateFallbackDenylist: [/\/(ru|en)\//, ...(STAGE ? [] : [new RegExp(`^${base}next/`)])],
         maximumFileSizeToCacheInBytes: 4_000_000,
-        runtimeCaching: [
+        runtimeCaching: ownCaches([
           {
             // Model files from Hugging Face are fetched by the service worker itself: when WebKit lets a request of a
             // controlled page go past the worker, it drops the Range header (FACT, 2026-10-28), and the model would
@@ -150,21 +180,24 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
-            urlPattern: ({ url }) => /\/assets\/(rnnoise|asr\.worker|vision\.worker|vision_bundle|vision_wasm_internal|vision_wasm_module_internal|ort-wasm|selfie_segmenter|blaze_face_short_range)[-.]/.test(url.pathname),
+            // Each pattern below leaves the candidate's files to its own worker (V-234): its scope is inside this one's.
+            // Written out in each function, which workbox copies into the worker as text.
+            urlPattern: ({ url }) => /\/assets\/(rnnoise|asr\.worker|vision\.worker|vision_bundle|vision_wasm_internal|vision_wasm_module_internal|ort-wasm|selfie_segmenter|blaze_face_short_range)[-.]/.test(url.pathname)
+              && !url.pathname.startsWith(new URL('next/', (self as unknown as { registration: { scope: string } }).registration.scope).pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'kadr-ai', expiration: { maxEntries: 32 } }, // two generations of the speech runtime fit
           },
           {
             // Music library: the list refreshes in the background; tracks are kept once heard or added. Range
             // requests (audio preview streaming) go to the network: a cached full response can't answer them.
-            urlPattern: ({ url }) => /\/music\/music\.json$/.test(url.pathname),
+            urlPattern: ({ url }) => /\/music\/music\.json$/.test(url.pathname) && !url.pathname.startsWith(new URL('next/', (self as unknown as { registration: { scope: string } }).registration.scope).pathname),
             handler: 'StaleWhileRevalidate',
             // No list kept and no network: the page gets an answer marked so, which it says as «the server did not answer»
             // (S-1-6), not a refusal of the whole request, which WebKit also reported as an unhandled page error (SW-D-7).
             options: { cacheName: 'kadr-music-list', plugins: [{ handlerDidError: async () => new Response(null, { status: 503, statusText: 'Offline', headers: { 'x-kadr-no-network': '1' } }) }] },
           },
           {
-            urlPattern: ({ url, request }) => /\/music\/tracks\//.test(url.pathname) && !request.headers.has('range'),
+            urlPattern: ({ url, request }) => /\/music\/tracks\//.test(url.pathname) && !request.headers.has('range') && !url.pathname.startsWith(new URL('next/', (self as unknown as { registration: { scope: string } }).registration.scope).pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'kadr-music', expiration: { maxEntries: 60 } },
           },
@@ -172,11 +205,11 @@ export default defineConfig({
             // The precache answers for this version's fonts. This keeps the faces a tab of another version asks for
             // (deploy skew), once used, with room for every face: one let go would draw with a fallback face offline.
             // 191 faces with the fonts of docs/18; src/engine/fontFiles.test.ts keeps the count under this limit.
-            urlPattern: ({ url }) => /\.woff2$/.test(url.pathname),
+            urlPattern: ({ url }) => /\.woff2$/.test(url.pathname) && !url.pathname.startsWith(new URL('next/', (self as unknown as { registration: { scope: string } }).registration.scope).pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'kadr-fonts', expiration: { maxEntries: 300 } },
           },
-        ],
+        ]),
       },
     }),
   ],

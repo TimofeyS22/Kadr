@@ -5,6 +5,7 @@
 // as they change, so a reload between jobs loses nothing.
 import { useEffect } from 'react';
 import { t } from './i18n';
+import { own } from './stage';
 
 const KEY = 'kadr.reloadedForUpdate';
 const NOTICE = 'kadr.updateNotice';
@@ -43,7 +44,7 @@ export function useHoldUpdates(on: boolean): void {
 
 // --- Other tabs (Web Locks, Safari 15.4+): a new version takes over every tab at once ---
 
-const LOCK = 'kadr-working';
+const LOCK = own('kadr-working');
 const mine = `${LOCK}:${Math.random().toString(36).slice(2)}`; // this tab's own lock: never mistaken for another tab's
 let unlock: (() => void) | null = null;
 

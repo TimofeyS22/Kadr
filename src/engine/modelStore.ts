@@ -7,8 +7,12 @@
 // file system, then this session's memory — so the captions are made whatever the storage does. Keeping the model for
 // the next time is wanted, not required.
 
+import { own } from '../lib/stage';
+import { opfsRoot } from './opfs';
+
 export type StoreName = 'cache' | 'opfs' | 'memory';
-export const PARTS_CACHE = 'kadr-model-parts';
+/** Of this stage (lib/stage.ts): the candidate at /Kadr/next/ keeps its parts apart from the live site's (V-234). */
+export const PARTS_CACHE = own('kadr-model-parts');
 const PARTS_DIR = 'kadr-model-parts';
 /** A part (16 MiB) is written in well under a second; one not written in this long has hung. */
 export const WRITE_MS = 15_000;
@@ -67,7 +71,7 @@ function open(): Promise<Cache> {
 
 type SyncHandle = { truncate(n: number): void; write(b: Uint8Array, o: { at: number }): number; flush(): void; close(): void };
 const fileName = (id: string) => encodeURIComponent(id);
-const dir = async () => (await navigator.storage.getDirectory()).getDirectoryHandle(PARTS_DIR, { create: true });
+const dir = async () => (await opfsRoot()).getDirectoryHandle(PARTS_DIR, { create: true });
 const missing = (e: unknown) => (e as Error).name === 'NotFoundError';
 const opfsStore: Store = {
   name: 'opfs',

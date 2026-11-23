@@ -10,6 +10,7 @@ import { CHUNK, ChunkCache, HELD_CHUNKS, chunkedMedia, type Chunked, type Stored
 import { track } from '../lib/telemetry';
 import { leasedReader, type LeaseEvent, type MediaReader } from './reader';
 import { SNIFF_BYTES, sniffMime } from '../core/sniff';
+import { own } from '../lib/stage';
 
 /**
  * The 'kadr'/'kv' store, opened again when the browser drops the connection. WebKit drops it while the page is in the
@@ -19,7 +20,7 @@ import { SNIFF_BYTES, sniffMime } from '../core/sniff';
 let dbp: Promise<IDBDatabase> | null = null;
 function openDb(): Promise<IDBDatabase> {
   const p = new Promise<IDBDatabase>((ok, ko) => {
-    const r = indexedDB.open('kadr');
+    const r = indexedDB.open(own('kadr'));
     r.onupgradeneeded = () => r.result.createObjectStore('kv');
     r.onsuccess = () => ok(r.result);
     r.onerror = () => ko(r.error);
@@ -77,7 +78,7 @@ export class ProjectDeleted extends Error {
 
 // Tabs tell each other what they saved or deleted, so a tab showing an older version knows before it saves over it.
 type TabNews = { id: string; writer: string } & ({ rev: number } | { deleted: true });
-const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('kadr-projects') : null;
+const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(own('kadr-projects')) : null;
 const elsewhere = new Set<(id: string) => void>();
 const deletedElsewhere = new Set<(id: string) => void>();
 channel?.addEventListener('message', (e: MessageEvent<TabNews>) => {
@@ -426,7 +427,7 @@ async function writeChunks(assetId: string, type: () => string, pieces: AsyncIte
 // the tab dies (a crash, a reload, the system taking the page back). So a take whose lock is free is a crash's leftover,
 // and one whose lock is held is being recorded in another tab right now. Where the browser has no locks (an insecure
 // page), every take found counts as left over, as before.
-const takeLock = (project: string, take: string) => `kadr-take:${project}:${take}`;
+const takeLock = (project: string, take: string) => own(`kadr-take:${project}:${take}`);
 const lockManager = (): LockManager | undefined => (typeof navigator === 'undefined' ? undefined : navigator.locks as LockManager | undefined);
 
 /** Takes the lock `name` and resolves with the function that lets it go (else it goes with the page). */
