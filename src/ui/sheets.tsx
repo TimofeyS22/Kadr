@@ -18,7 +18,7 @@ import {
 import { errorMessage, track } from '../lib/telemetry';
 import { editor, useEditor, type SheetId } from '../state/store';
 import { detachSelectedAudio, editClip, updateClipSound, toggleFlip } from './actions';
-import { Chips, ClipScrub, Sheet, Slider, Swatches, Toggle, Values, num, pct, secs, signed, useSheetGuard } from './controls';
+import { Chips, ClipScrub, KeyHint, Sheet, Slider, Swatches, Toggle, Values, num, pct, secs, signed, useSheetGuard } from './controls';
 import { StylePicker, type TileDraw } from './picker';
 import { FontPicker } from './FontPicker';
 import { TextStyles } from './TextStyles';
@@ -249,7 +249,7 @@ function TransformBody({ clip }: { clip: Clip }) {
         );
       })}
       </Values>
-      <p className="ck-hint" data-below>{t('Tap ◆ to add a keyframe at the playhead. When a property has keyframes, changes create keyframes.')}</p>
+      <KeyHint below text="Tap {key} to add a keyframe at the playhead. When a property has keyframes, changes create keyframes." />
       {(clip.kind === 'video' || clip.kind === 'image') && (
         <div className="flip-row ck-pair">
           <Button aria-pressed={!!clip.flipX} icon={<TrianglesCenterlineDashedVertical aria-hidden="true" />} onClick={() => toggleFlip('x')}>{t('Mirror')}</Button>

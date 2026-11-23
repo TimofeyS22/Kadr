@@ -7,7 +7,7 @@ import { EFFECT_IDS, type EffectId, type ImageClip, type Privacy, type VideoClip
 import { t } from '../lib/i18n';
 import { useEditor } from '../state/store';
 import { editClip, importLut, preloadVision, setHideFaces } from './actions';
-import { Chips, ClipScrub, Slider, Toggle, Values, pct } from './controls';
+import { Chips, ClipScrub, KeyHint, Slider, Toggle, Values, pct } from './controls';
 import { LookActions } from './LookControls';
 import { useLookTiles } from './lookTiles';
 import { StylePicker, type TileDraw } from './picker';
@@ -82,7 +82,7 @@ export function PrivacyBody({ clip }: { clip: MediaVisual }) {
       ))}
       <Button disabled={pv.areas.length >= MAX_AREAS}
         onClick={() => set((p) => { p.areas.push({ x: anim(0.5), y: anim(0.5), w: 0.3, h: 0.15 }); })}>{t('Add area')}</Button>
-      <p className="ck-hint">{t('Faces are found on this device in every frame, best when they look at the camera. Add an area for number plates or anything else; ◆ makes it follow a moving object.')}</p>
+      <KeyHint text="Faces are found on this device in every frame, best when they look at the camera. Add an area for number plates or anything else; {key} makes it follow a moving object." />
     </>
   );
 }
