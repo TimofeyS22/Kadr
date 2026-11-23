@@ -22,6 +22,8 @@ async function inWorker(context: BrowserContext, shim: string) {
 const ONCE = "const once=async()=>{if(await caches.has('test-stall-once'))return false;await caches.open('test-stall-once');return true};";
 /** The second part of a model written to the device never finishes, once. */
 const HUNG_WRITE = `{${ONCE}const put=Cache.prototype.put;let n=0;Cache.prototype.put=async function(...a){if(String(a[0]).includes('__kadr-model-parts')&&++n===2&&await once())return new Promise(()=>{});return put.apply(this,a)};}`;
+/** No part is ever written to the Cache Storage: every `put` of a model part stays unfinished, in every worker. */
+const DEAD_CACHE = "{const put=Cache.prototype.put;Cache.prototype.put=function(...a){if(String(a[0]).includes('__kadr-model-parts'))return new Promise(()=>{});return put.apply(this,a)};}";
 /** The worker goes silent after its third word about the download, once: nothing it says reaches the page. */
 const SILENT = `{${ONCE}const post=self.postMessage.bind(self);let n=0,mute=false;self.postMessage=(m,...r)=>{if(mute)return;if(m&&m.type==='download'&&++n===3){mute=true;void once().then((first)=>{mute=first});return}return post(m,...r)};}`;
 
@@ -62,6 +64,11 @@ test('a worker that goes silent in the middle of a download: the sheet says it s
   await expect(page.locator('.toast.error')).toContainText('Скачивание модели речи остановилось', { timeout: 90_000 });
   await expect(page.locator('.toast.error')).toContainText('Нажмите ещё раз');
   await expect(page.locator('.clip-caption')).toHaveCount(0);
+  // The person can hand the notes over without a developer: «Подробнее» → «Скопировать для поддержки».
+  await page.locator('.toast.error').getByRole('button', { name: 'Подробнее' }).click();
+  await expect(page.locator('.error-details pre')).toContainText(/the worker said nothing for 45 s at \d+ of \d+ MB, quota \S+ MB used \S+ MB, persisted (yes|no|\?)/);
+  await expect(page.getByRole('button', { name: 'Скопировать для поддержки' })).toBeVisible();
+  await page.locator('.toast.error').getByRole('button', { name: /Закрыть/ }).click();
   // The next tap: a new worker, the parts already kept are not fetched again, the captions are made.
   await page.evaluate(() => (window as unknown as { __toastErrors?: string[] }).__toastErrors?.splice(0));
   const again = page.getByRole('button', { name: 'Создать субтитры' });
@@ -71,4 +78,28 @@ test('a worker that goes silent in the middle of a download: the sheet says it s
     if (await yes.isVisible({ timeout: 1500 }).catch(() => false)) await yes.click();
     await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 60_000 });
   }).toPass({ timeout: 150_000 });
+});
+
+/** Kadr's error log on this device (lib/errorLog.ts: idb-keyval, database kadr-log, store log, key entries). */
+const logged = (page: Page) => page.evaluate(() => new Promise<string[]>((resolve) => {
+  const open = indexedDB.open('kadr-log');
+  open.onerror = () => resolve([]);
+  open.onsuccess = () => {
+    if (!open.result.objectStoreNames.contains('log')) { resolve([]); return; }
+    const get = open.result.transaction('log').objectStore('log').get('entries');
+    get.onsuccess = () => resolve(((get.result as { message: string }[] | undefined) ?? []).map((x) => x.message));
+    get.onerror = () => resolve([]);
+  };
+}));
+
+test('a Cache Storage that never finishes a write: the parts go to another store, the captions are made, and the log says what happened', async ({ page, context }) => {
+  test.setTimeout(300_000);
+  await inWorker(context, DEAD_CACHE);
+  await tapCaptions(page);
+  // Two writes that did not finish (15 s each), then the parts go where writing works: nothing to tap, no error.
+  await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 200_000 });
+  await expect(page.locator('.toast.error')).toHaveCount(0);
+  // What tells Safari from the Home Screen app on a phone, kept for "Copy for support" and ?diag.
+  await expect.poll(async () => (await logged(page)).find((m) => /cache stalled → fallback/.test(m)) ?? '', { timeout: 15_000 })
+    .toMatch(/first byte \d+ ms.*first part written \d+ ms.*cache stalled → fallback (opfs|memory).*store (opfs|memory).*quota .*persisted (yes|no)/);
 });

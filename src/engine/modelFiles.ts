@@ -11,6 +11,9 @@
 // Small files (configs, vocabularies) come whole and are checked the same way. The finished file is put together
 // from its parts when the model loads, so it is stored once, not twice.
 import manifest from './models.json';
+import { dropParts, onStoreEvent, partStore, readPart, within, writePart, type StoreName } from './modelStore';
+
+export { PARTS_CACHE } from './modelStore';
 
 export interface ModelFile { size: number; sha256: string; parts: string[] }
 interface SmallFile { size: number; sha256: string }
@@ -19,7 +22,6 @@ const PART: number = manifest.part;
 const FILES = manifest.files as Record<string, ModelFile>;
 const SMALL = manifest.small as Record<string, SmallFile>;
 const MIRROR: string[] = manifest.mirror;
-export const PARTS_CACHE = 'kadr-model-parts';
 /**
  * The repository each speech model comes from: the worker loads from it, and the page looks under it for what this
  * device already keeps (missingBytes), so the two cannot name different files.
@@ -83,7 +85,9 @@ export const isModelFileName = (name: string): boolean => Object.keys(FILES).som
 const sources = (key: string): ('own' | 'ranges')[] => (hosts.own && mirrored(key) ? ['own', 'ranges'] : ['ranges']);
 const url = (source: 'own' | 'ranges', key: string) => (source === 'own' ? hosts.own! : hosts.ranges) + key;
 
-const partKey = (key: string, i: number) => new URL(`/__kadr-model-parts/${key}/${i}`, self.location.origin).href;
+/** A part's name in the stores (modelStore.ts). */
+const partId = (key: string, i: number) => `${key}/${i}`;
+const partSize = (f: ModelFile, i: number) => partRange(f, i)[1] - partRange(f, i)[0] + 1;
 const partRange = (f: ModelFile, i: number): [number, number] => [i * PART, Math.min(f.size, (i + 1) * PART) - 1];
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
 const sha256 = async (b: Uint8Array<ArrayBuffer>) => hex(await crypto.subtle.digest('SHA-256', b));
@@ -98,29 +102,41 @@ async function checked(bytes: Uint8Array<ArrayBuffer>, f: ModelFile, i: number):
   return bytes.byteLength === b - a + 1 && (await sha256(bytes)) === f.parts[i];
 }
 
-/** Which parts of the file are kept, by size (each was checked before it was kept). */
-async function keptParts(cache: Cache, key: string, f: ModelFile): Promise<boolean[]> {
-  return Promise.all(f.parts.map(async (_, i) => {
-    const hit = await cache.match(partKey(key, i));
-    const [a, b] = partRange(f, i);
-    return !!hit && Number(hit.headers.get('content-length')) === b - a + 1;
-  }));
+/**
+ * Which parts of the file are kept, by size (each was checked before it was kept). One after another: a store that
+ * does not answer is given up on at the first part, not waited for at every one. `keeps`: only where a part outlives
+ * the session (what the page asks before a download: a model held in memory is still to come next time).
+ */
+async function keptParts(key: string, f: ModelFile, keeps = false): Promise<boolean[]> {
+  const have: boolean[] = [];
+  for (let i = 0; i < f.parts.length; i++) have.push((await partStore(partId(key, i), partSize(f, i), keeps)) !== null);
+  return have;
 }
 
-/** A part that is not written to the device in this long has hung there: it is fetched and written again. */
-const WRITE_MS = 30_000;
 /**
- * Keeps a part. The write has a limit, as the network has (SW-S-2: with none, a write that never finished left the
- * download standing where it was for ever, with nothing said): 16 MiB are written in well under a second.
+ * What a download did, for the log (SW-S-2): the numbers that tell Safari from the Home Screen app on a phone.
+ * `firstByteMs`: from the start of the load to the first byte from the network; `firstWriteMs`: how long the first
+ * part took to be kept, a store that did not answer included; `store`: where the last part went.
  */
-async function keep(cache: Cache, key: string, i: number, bytes: Uint8Array<ArrayBuffer>): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const hung = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`the device's storage did not answer for ${WRITE_MS / 1000} s, writing part ${i + 1}`)), WRITE_MS); });
-  try {
-    await Promise.race([cache.put(partKey(key, i), new Response(bytes, { headers: { 'content-length': String(bytes.byteLength), 'content-type': 'application/octet-stream' } })), hung]);
-  } finally {
-    clearTimeout(timer);
-  }
+export interface DownloadDiag { firstByteMs: number | null; firstWriteMs: number | null; store: StoreName | null; events: string[] }
+let diag: DownloadDiag = { firstByteMs: null, firstWriteMs: null, store: null, events: [] };
+let diagFrom = 0;
+/** Starts the notes of a new load. */
+export function startDownloadDiag(): void { diag = { firstByteMs: null, firstWriteMs: null, store: null, events: [] }; diagFrom = Date.now(); }
+export const downloadDiag = (): DownloadDiag => diag;
+let storeHeard: ((message: string) => void) | null = null;
+/** Told at once of a store that failed or gave way (a sign of life for the page while a write is waited for). */
+export const onStorageTrouble = (fn: ((message: string) => void) | null) => { storeHeard = fn; };
+onStoreEvent((e) => {
+  const short = `${e.store} ${e.stalled ? 'stalled' : 'failed'}${e.next ? ` → fallback ${e.next}` : ''}`;
+  if (!diag.events.includes(short)) diag.events.push(short);
+  storeHeard?.(e.message);
+});
+
+async function keep(key: string, i: number, bytes: Uint8Array<ArrayBuffer>): Promise<void> {
+  const t = Date.now();
+  diag.store = await writePart(partId(key, i), bytes);
+  diag.firstWriteMs ??= Date.now() - t;
 }
 
 /** Where Kadr ≤ 1.4.17 kept a file in transformers.js's cache: under its revision or under "main", on either host. */
@@ -134,11 +150,14 @@ const legacyAddresses = (key: string): Set<string> => {
  * over, the old copy goes. Whisper was asked for by "main" before its revision was pinned: the same bytes, if the
  * parts' checksums say so.
  */
-async function migrate(cache: Cache, key: string, f: ModelFile, have: boolean[]): Promise<void> {
-  const old = await caches.open(LEGACY).catch(() => null);
+async function migrate(key: string, f: ModelFile, have: boolean[]): Promise<void> {
+  // Only where an older Kadr left its cache (looking must not create it), and never waited for: a Cache Storage that
+  // does not answer would hold every first download at its very start (SW-S-2).
+  if (typeof caches === 'undefined' || !(await within(caches.has(LEGACY), 'the older cache'))) return;
+  const old = await within(caches.open(LEGACY), 'the older cache');
   if (!old) return;
   for (const at of legacyAddresses(key)) {
-    const res = await old.match(at);
+    const res = await within(old.match(at), 'the older cache');
     if (!res) continue;
     const blob = await res.blob();
     if (blob.size === f.size) {
@@ -146,7 +165,7 @@ async function migrate(cache: Cache, key: string, f: ModelFile, have: boolean[])
         if (have[i]) continue;
         const [a, b] = partRange(f, i);
         const bytes = new Uint8Array(await blob.slice(a, b + 1).arrayBuffer());
-        if (await checked(bytes, f, i)) { await keep(cache, key, i, bytes); have[i] = true; }
+        if (await checked(bytes, f, i)) { await keep(key, i, bytes); have[i] = true; }
       }
     }
     await old.delete(at);
@@ -175,6 +194,7 @@ async function guarded(target: string, init: RequestInit, onResponse: (res: Resp
       watch();
       const { done, value } = await reader.read();
       if (done) return;
+      diag.firstByteMs ??= Date.now() - diagFrom;
       await onChunk(value);
     }
   } catch (e) {
@@ -193,23 +213,33 @@ async function guarded(target: string, init: RequestInit, onResponse: (res: Resp
  */
 class NoRanges extends Error {}
 
-/** One part: from Kadr's site as its own file, from a ranges host as a byte range. */
-async function fetchPart(source: 'own' | 'ranges', key: string, f: ModelFile, i: number, onBytes: (n: number) => void, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+/** A part on its way: the bytes that came stay through a lost connection, and the next try goes on after them. */
+interface Coming { i: number; out: Uint8Array<ArrayBuffer>; at: number }
+
+/**
+ * One part: from Kadr's site as its own file, from a ranges host as a byte range — from the byte `part.at` on
+ * (SW-S-3: a part that lost its connection began again from nothing; at the 170 KB/s Kadr's site gave on 2026-11-23,
+ * 16 MiB need 96 s without one break). A host that answers "go on from" with the whole part is taken at its word:
+ * the part begins again. The part's checksum is checked after, as before.
+ */
+async function fetchPart(source: 'own' | 'ranges', key: string, f: ModelFile, part: Coming, onAt: () => void, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  const { i, out } = part;
   const [a, b] = partRange(f, i);
-  const out = new Uint8Array(b - a + 1);
-  let at = 0;
   const own = source === 'own';
-  await guarded(own ? `${url('own', key)}.parts/${i}` : url('ranges', key), own ? {} : { headers: { Range: `bytes=${a}-${b}` } }, (res) => {
+  const from = part.at;
+  const range = own ? (from ? `bytes=${from}-` : null) : `bytes=${a + from}-${b}`;
+  await guarded(own ? `${url('own', key)}.parts/${i}` : url('ranges', key), range ? { headers: { Range: range } } : {}, (res) => {
     const whole = res.status === 200 && (own || (a === 0 && b === f.size - 1)); // a one-part file may come without a range
     if (res.status === 200 && !whole) { void res.body?.cancel(); throw new NoRanges(); }
     if (res.status !== 206 && !whole) throw new Error(`HTTP ${res.status} for part ${i + 1} of ${f.parts.length} from ${source === 'own' ? 'the site' : 'the model host'}`);
+    if (whole && part.at) { part.at = 0; onAt(); } // the whole part instead of its rest: from its first byte
   }, (value) => {
-    if (at + value.byteLength > out.byteLength) throw new Error(`part ${i + 1} is longer than expected`);
-    out.set(value, at);
-    at += value.byteLength;
-    onBytes(value.byteLength);
+    if (part.at + value.byteLength > out.byteLength) throw new Error(`part ${i + 1} is longer than expected`);
+    out.set(value, part.at);
+    part.at += value.byteLength;
+    onAt();
   }, signal);
-  if (at !== out.byteLength) throw new Error(`part ${i + 1} ended early`);
+  if (part.at !== out.byteLength) throw new Error(`part ${i + 1} ended early`);
   return out;
 }
 
@@ -251,11 +281,10 @@ async function streamWhole(key: string, f: ModelFile, have: boolean[], onPart: (
  */
 export async function missingBytes(repo: string): Promise<number> {
   const keys = Object.keys(FILES).filter((k) => k.startsWith(`${repo}/`));
-  const cache = typeof caches === 'undefined' ? null : await caches.open(PARTS_CACHE).catch(() => null);
   let missing = 0;
   for (const key of keys) {
     const f = FILES[key];
-    const have = cache ? await keptParts(cache, key, f) : f.parts.map(() => false);
+    const have = await keptParts(key, f, true);
     if (have.every((x) => x) || (await keptWhole(key, f))) continue;
     have.forEach((x, i) => { if (!x) missing += partRange(f, i)[1] - partRange(f, i)[0] + 1; });
   }
@@ -268,10 +297,7 @@ export async function missingBytes(repo: string): Promise<number> {
  * profile the second model's parts were then refused: «model parts were not kept (storage)»). Never throws.
  */
 export async function dropModelFiles(repo: string): Promise<void> {
-  try {
-    const cache = await caches.open(PARTS_CACHE);
-    await Promise.all((await cache.keys()).filter((r) => r.url.includes(`/${repo}/`)).map((r) => cache.delete(r)));
-  } catch { /* no storage: nothing was kept */ }
+  await dropParts(`${repo}/`);
 }
 
 /**
@@ -289,11 +315,11 @@ export async function keepModelsThroughPressure(): Promise<boolean> {
 
 /** An older Kadr's whole copy of the file is in transformers.js's cache (has() first: looking must not create it). */
 async function keptWhole(key: string, f: ModelFile): Promise<boolean> {
-  if (typeof caches === 'undefined' || !(await caches.has(LEGACY).catch(() => false))) return false;
-  const old = await caches.open(LEGACY).catch(() => null);
+  if (typeof caches === 'undefined' || !(await within(caches.has(LEGACY), 'the older cache'))) return false;
+  const old = await within(caches.open(LEGACY), 'the older cache');
   if (!old) return false;
   for (const at of legacyAddresses(key)) {
-    const hit = await old.match(at);
+    const hit = await within(old.match(at), 'the older cache');
     if (!hit) continue;
     // The size the server sent, without reading 200 MB to count them; a copy kept without it is measured.
     const length = hit.headers.get('content-length');
@@ -313,9 +339,8 @@ const final = (e: unknown) => (e as Error).name === 'AbortError' || (e as Error)
 export async function ensureFile(key: string, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<void> {
   const f = FILES[key];
   if (!f) return;
-  const cache = await caches.open(PARTS_CACHE);
-  const have = await keptParts(cache, key, f);
-  if (have.some((x) => !x)) await migrate(cache, key, f, have);
+  const have = await keptParts(key, f);
+  if (have.some((x) => !x)) await migrate(key, f, have);
   const size = (i: number) => { const [a, b] = partRange(f, i); return b - a + 1; };
   let loaded = have.reduce((s, x, i) => s + (x ? size(i) : 0), 0);
   onProgress(loaded, f.size);
@@ -325,21 +350,28 @@ export async function ensureFile(key: string, onProgress: (loaded: number, total
   let ownMissing = false; // the site answered with an error status: its copy is not there, the fallback keeps the file
   const keepPart = async (i: number, bytes: Uint8Array<ArrayBuffer>) => {
     if (!(await checked(bytes, f, i))) throw new Error(`part ${i + 1} of ${key} does not match its checksum`);
-    await keep(cache, key, i, bytes);
+    await keep(key, i, bytes);
     have[i] = true;
     loaded += bytes.byteLength;
   };
+  let coming = null as Coming | null; // the part on its way, with what came of it so far
   for (let failures = 0; have.some((x) => !x);) {
     const source = order[at];
     const before = loaded;
-    let got = 0;
+    let got = 0, came = 0;
     const onBytes = (n: number) => { got += n; onProgress(loaded + got, f.size); };
     try {
       if (source === 'ranges' && !ranges) {
+        coming = null;
         await streamWhole(key, f, have, async (i, bytes) => { got = 0; await keepPart(i, bytes); }, onBytes, signal);
       } else {
         const i = have.indexOf(false);
-        await keepPart(i, await fetchPart(source, key, f, i, onBytes, signal));
+        if (coming?.i !== i) coming = { i, out: new Uint8Array(size(i)), at: 0 };
+        const part: Coming = coming;
+        came = part.at;
+        const bytes = await fetchPart(source, key, f, part, () => onProgress(loaded + part.at, f.size), signal);
+        coming = null; // whole: kept below, or thrown away with a checksum that does not match
+        await keepPart(i, bytes);
       }
       failures = 0; // a part was kept: the next one gets its own tries
       // A blip on the way to the site does not send the rest of the file (up to 200 MB) to the slower host.
@@ -348,13 +380,18 @@ export async function ensureFile(key: string, onProgress: (loaded: number, total
       if (e instanceof NoRanges) { ranges = false; console.warn('the model host ignores ranges: the file comes whole', key); continue; }
       if (final(e)) throw e;
       if (source === 'own' && /^HTTP 4\d\d/.test((e as Error).message)) ownMissing = true;
-      if (loaded > before) failures = 0; // the whole stream kept something before it broke
+      // Bytes came before it broke (a part of the whole stream was kept, or this part went further): the host is
+      // alive, so it keeps its turn and its tries, and the part goes on from where it is.
+      const further = loaded > before || (coming !== null && coming.at > came);
+      if (further) failures = 0;
       // The connection is gone, hung, or sends broken data: the kept parts wait, the other host gets a turn.
       if (++failures >= TRIES) throw new Error(`${DOWNLOAD_STOPPED}: ${(e as Error).message}`);
-      console.warn(`model ${key} from ${source}, try ${failures}:`, e);
-      at = (at + 1) % order.length;
-      if (ownMissing && order[at] === 'own') at = (at + 1) % order.length; // no turn for a copy that is not there
-      onProgress(loaded, f.size);
+      console.warn(`model ${key} from ${source}, try ${failures}${coming?.at ? `, part ${coming.i + 1} goes on from byte ${coming.at}` : ''}:`, e);
+      if (!further) {
+        at = (at + 1) % order.length;
+        if (ownMissing && order[at] === 'own') at = (at + 1) % order.length; // no turn for a copy that is not there
+      }
+      onProgress(loaded + (coming?.at ?? 0), f.size);
       await sleep(PAUSE_MS[failures - 1], signal);
     }
   }
@@ -368,16 +405,14 @@ export async function ensureFile(key: string, onProgress: (loaded: number, total
 export async function keptFile(key: string): Promise<Response | undefined> {
   const f = FILES[key];
   if (!f) return undefined;
-  const cache = await caches.open(PARTS_CACHE);
-  for (let i = 0; i < f.parts.length; i++) if (!(await cache.match(partKey(key, i)))) return undefined;
+  if ((await keptParts(key, f)).some((x) => !x)) return undefined;
   let i = 0;
   // highWaterMark 0: nothing is read before it is asked for (transformers.js makes Responses it only looks at).
   const body = new ReadableStream<Uint8Array>({
     async pull(ctrl) {
       if (i === f.parts.length) { ctrl.close(); return; }
-      const hit = await cache.match(partKey(key, i));
-      const bytes = hit && new Uint8Array(await hit.arrayBuffer());
-      if (!bytes || bytes.byteLength !== partRange(f, i)[1] - partRange(f, i)[0] + 1) { ctrl.error(new Error(`part ${i + 1} of ${key} is gone from the cache`)); return; }
+      const bytes = await readPart(partId(key, i), partSize(f, i));
+      if (!bytes) { ctrl.error(new Error(`part ${i + 1} of ${key} is gone from the device`)); return; }
       i++;
       ctrl.enqueue(bytes);
     },
@@ -418,7 +453,7 @@ export async function smallFile(key: string, signal?: AbortSignal): Promise<Resp
  * detector under "main", before its revision was pinned): the same file, if its checksum says so. Without this, a
  * phone that made captions before would need the network again after the update, offline captions included.
  */
-export async function legacySmall(cache: Cache, key: string): Promise<Response | undefined> {
+export async function legacySmall(cache: { match(url: string): Promise<Response | undefined> }, key: string): Promise<Response | undefined> {
   const f = SMALL[key];
   if (!f) return undefined;
   for (const at of legacyAddresses(key)) {
