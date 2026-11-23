@@ -481,3 +481,22 @@ test('SW-U-18: a drag on the Speed scale at ±20° changes the speed and moves n
   }
   expect(moved, 'a tilted drag on the scale sets the speed and moves nothing else').toEqual([]);
 });
+
+// The window of the editor never stretches (SW-U-18, the lead): iOS takes the root's overscroll-behavior for the window,
+// not body's. Home and the site keep theirs and still scroll. A finger on the iPhone checks the zones (the owner's list).
+test('SW-U-18: in the editor the window does not stretch (the root takes no overscroll); Home keeps its own and scrolls', async ({ page }) => {
+  const root = () => page.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY);
+  await page.addInitScript(() => { localStorage.setItem('kadr.tips', '99'); localStorage.setItem('kadr.locale', 'ru'); localStorage.setItem('kadr.hint.move', '1'); localStorage.setItem('kadr.undoMoved.v1', '1'); });
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.goto('./');
+  await expect(page.getByRole('button', { name: 'Открыть пример' })).toBeVisible();
+  expect(await root(), 'Home: the window as before').toBe('auto');
+  const scrolled = await page.evaluate(async () => { scrollTo(0, 200); await new Promise((r) => requestAnimationFrame(r)); const y = scrollY; scrollTo(0, 0); return y; });
+  expect(scrolled, 'Home still scrolls').toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Открыть пример' }).click();
+  await expect(page.locator('.preview-canvas')).toBeVisible({ timeout: 60_000 });
+  expect(await root(), 'the editor: the window does not stretch').toBe('none');
+  await page.getByRole('button', { name: 'К проектам' }).click();
+  await expect(page.getByRole('button', { name: 'Открыть пример' })).toBeVisible();
+  expect(await root(), 'Home again: the window as before').toBe('auto');
+});
