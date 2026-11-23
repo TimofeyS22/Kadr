@@ -213,3 +213,47 @@ test('a restore without room says so before writing, and one that fails halfway 
     expect(said, 'the person is told it is about storage').toMatch(/storage|space|quota/i);
   });
 });
+
+// The owner's iPhone, 2026-11-23: in the Kadr on the Home Screen the projects made in Safari were not there — that app
+// keeps its own storage — and moving them took one backup per project. Safari's note on the Home Screen now saves a
+// copy of every project in one file, and «Restore backup» brings all of them back (SW-A-22). Two persistent profiles
+// stand for Safari and the Home Screen app.
+test('every project goes from Safari to the Home Screen app in one file: saved from the note, restored as all of them (SW-A-22)', async ({ playwright }, info) => {
+  test.skip(!info.project.name.includes('webkit'), 'the note is Safari on the iPhone’s');
+  test.setTimeout(300_000);
+  let file = '';
+  await withKadr(playwright, info, async (page) => {
+    await newProject(page);
+    await importFiles(page, 'Media', ['landscape.mp4']);
+    await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+    await page.getByRole('textbox', { name: 'Project name' }).fill('Sea');
+    await page.waitForTimeout(1500); // autosave
+    await back(page);
+    await newProject(page);
+    await importFiles(page, 'Media', ['photo.png']);
+    await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+    await page.getByRole('textbox', { name: 'Project name' }).fill('Photo');
+    await page.waitForTimeout(1500);
+    await back(page);
+    await expect(page.locator('.project-open')).toHaveCount(2);
+    const dl = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Save a copy of every project' }).click();
+    file = info.outputPath(`all-${(await dl).suggestedFilename()}`);
+    await (await dl).saveAs(file);
+    execFileSync('unzip', ['-tq', file]);
+    const names = execFileSync('unzip', ['-Z1', file]).toString().trim().split('\n').sort();
+    expect(names.filter((n) => n.endsWith('project.json'))).toEqual(['projects/0/project.json', 'projects/1/project.json']);
+  });
+  await withKadr(playwright, info, async (page) => {
+    await page.goto('./');
+    await expect(page.locator('.project-open')).toHaveCount(0); // a storage of its own, as the Home Screen app's
+    await restore(page, file);
+    await expect(page.locator('.project-open')).toHaveCount(2, { timeout: 60_000 });
+    for (const name of ['Sea (restored)', 'Photo (restored)']) await expect(opens(page, name)).toBeVisible();
+    expect(await toasts(page)).toContain('Projects restored: 2');
+    await opens(page, 'Sea (restored)').click();
+    await expect(page.locator('.tl-row.main .clip')).toHaveCount(1);
+    await expect(page.locator('.preview-canvas')).toBeVisible();
+    expect(await errorToasts(page)).toEqual([]);
+  });
+});

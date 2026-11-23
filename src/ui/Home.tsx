@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { produce } from 'immer';
 import { ASPECTS, createProject } from '../core/defaults';
 import { TEMPLATES, buildTemplate, type TemplateSpec } from '../core/templates';
-import type { AspectId } from '../core/types';
+import type { AspectId, Project } from '../core/types';
 import { IN_APP, IOS, standalone } from '../lib/device';
 import { optedOut, setOptedOut, sinkConfig } from '../lib/events';
 import { errorMessage, track } from '../lib/telemetry';
@@ -274,13 +274,33 @@ export function Home() {
     if (!file) return;
     setBusy(t('Restoring the backup…'));
     try {
-      const { importBackup } = await import('../engine/backup');
-      const { project: p, dropped } = await importBackup(file);
-      track('backup_restored');
+      const { importBackups } = await import('../engine/backup');
+      const { projects, dropped } = await importBackups(file);
+      track('backup_restored', { projects: projects.length });
       if (dropped) toast(t('Some parts of the backup could not be restored: {n}', { n: dropped }));
-      open(p.id);
+      // One project opens, as before; a copy of every project (SW-A-22) is listed here, each under its own name.
+      if (projects.length === 1) open(projects[0].id);
+      else { toast(t('Projects restored: {n}', { n: projects.length })); await refresh(); }
     } catch (e) {
       toast(t('Could not restore: {error}', { error: errorMessage(e) }), 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** One file with every project (SW-A-22): how projects get from Safari to a Kadr on the Home Screen. */
+  async function backupAll() {
+    setBusy(t('Packing every project…'));
+    try {
+      const [{ exportAllBackup }, { saveFile }] = await Promise.all([import('../engine/backup'), import('../engine/save')]);
+      const all = (await Promise.all((projects ?? []).map((m) => loadProject(m.id)))).filter((p): p is Project => !!p);
+      const { blob, missing } = await exportAllBackup(all);
+      setBusy(null);
+      if (missing) toast(t('{n} media files are missing from this device, so they are not in the backup.', { n: missing }), 'error', 10_000);
+      await saveFile(blob, 'Kadr — all projects.kadr');
+      track('backup_saved', { mb: Math.round(blob.size / 1e6), projects: all.length });
+    } catch (e) {
+      toast(t('Could not save the backup: {error}', { error: errorMessage(e) }), 'error');
     } finally {
       setBusy(null);
     }
@@ -390,7 +410,7 @@ export function Home() {
         <Empty title={t('No projects yet')}>
           {t('Start a new one or try the sample.')}
           {/* The person who followed the advice and finds this list empty (audit V-164). */}
-          {IOS && standalone() && <> {t('Projects made in Safari stay in Safari. To bring one here, open Kadr in Safari, save a backup of the project (↓), then tap “Restore backup” here.')}</>}
+          {IOS && standalone() && <> {t('Projects made in Safari stay in Safari. To bring them here, open Kadr in Safari, tap “Save a copy of every project”, then tap “Restore backup” here.')}</>}
         </Empty>
       ) : (
         <ul className="ck-home-list">
@@ -522,7 +542,8 @@ export function Home() {
         {keepTip && (
           <div className="ck-home-card ck-home-tip" role="note">
             <p>{t('iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.')}</p>
-            {kept > 0 && <p>{t('Projects made in Safari stay in Safari, and you have {n} here. To move one, save its backup here (↓), then tap “Restore backup” in the Home Screen app.', { n: kept })}</p>}
+            {kept > 0 && <p>{t('Projects made in Safari stay in Safari, and you have {n} here. To move them, save a copy of every project here, then tap “Restore backup” in the Home Screen app.', { n: kept })}</p>}
+            {kept > 0 && <Button variant="primary" onClick={() => void backupAll()}>{t('Save a copy of every project')}</Button>}
             <Button onClick={dismissKeepTip}>{t('Got it')}</Button>
           </div>
         )}

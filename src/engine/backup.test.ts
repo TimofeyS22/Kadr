@@ -14,7 +14,9 @@ import { createProject, createVideoClip } from '../core/defaults';
 import { insertMain } from '../core/timeline';
 import type { Asset } from '../core/types';
 import { putBlob, putCopy } from '../storage/db';
-import { exportBackup, importBackup } from './backup';
+import { exportAllBackup, exportBackup, importBackup, importBackups } from './backup';
+import { saveProject } from '../storage/db';
+import { zipEntries } from './zipread';
 
 const video = (id: string): Asset => ({ id, kind: 'video', name: id, mime: 'video/mp4', size: 1, duration: 3, width: 16, height: 9, hasAudio: false });
 
@@ -45,5 +47,52 @@ describe('importBackup', () => {
     expect(vi.mocked(putBlob)).not.toHaveBeenCalled();
     const copies = await Promise.all(vi.mocked(putCopy).mock.calls.map(async ([id, blob, type]) => [project.assets[id]?.name, await blob.text(), type]));
     expect(copies).toEqual([['one', 'the bytes of the first video', 'video/mp4'], ['two', 'and those of the second one', 'video/mp4']]);
+  });
+});
+
+// A Kadr on the Home Screen keeps its own storage, apart from Safari's: its projects get there through one file with
+// every project (SW-A-22, the owner's iPhone, 2026-11-23).
+describe('a backup of every project', () => {
+  const two = () => {
+    const a = createProject('Trip', '9:16'), b = createProject('Talk', '16:9');
+    for (const [p, id] of [[a, 'sea'], [a, 'song'], [b, 'face'], [b, 'song']] as const) { p.assets[id] = video(id); insertMain(p, createVideoClip(p.assets[id], 0), 0); }
+    return [a, b];
+  };
+
+  it('is one zip with each project under projects/<n>/ and a file two projects share once', async () => {
+    const { blob, missing } = await exportAllBackup(two());
+    expect(missing).toBe(0);
+    const names = (await zipEntries(blob)).map((e) => e.name).sort();
+    expect(names).toEqual(['media/face', 'media/sea', 'media/song', 'projects/0/project.json', 'projects/1/project.json']);
+  });
+
+  it('comes back as every project, each with new ids, and the shared file stored once for both', async () => {
+    vi.mocked(putCopy).mockClear();
+    vi.mocked(saveProject).mockClear();
+    const { blob } = await exportAllBackup(two());
+    const { projects, dropped } = await importBackups(blob);
+    expect(dropped).toBe(0);
+    expect(projects.map((p) => p.name)).toEqual(['Trip (restored)', 'Talk (restored)']);
+    expect(vi.mocked(saveProject)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(putCopy)).toHaveBeenCalledTimes(3);
+    const [trip, talk] = projects;
+    expect(Object.keys(trip.assets)).not.toContain('sea'); // new ids: a restore never overwrites
+    const song = (p: typeof trip) => Object.values(p.assets).find((x) => x.name === 'song')!.id;
+    expect(song(trip)).toBe(song(talk));
+    expect(trip.tracks.flatMap((t) => t.clips)).toHaveLength(2);
+    expect(talk.tracks.flatMap((t) => t.clips)).toHaveLength(2);
+  });
+
+  it('a backup of one project is still project.json, and the one-project restore still reads it', async () => {
+    const [a] = two();
+    const { blob } = await exportBackup(a);
+    expect((await zipEntries(blob)).map((e) => e.name)).toContain('project.json');
+    const { project } = await importBackup(blob);
+    expect(project.name).toBe('Trip (restored)');
+    expect((await importBackups(blob)).projects).toHaveLength(1);
+  });
+
+  it('says so when there is nothing to save', async () => {
+    await expect(exportAllBackup([])).rejects.toThrow();
   });
 });
