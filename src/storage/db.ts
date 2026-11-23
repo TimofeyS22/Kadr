@@ -205,6 +205,7 @@ export async function saveProject(p: Project, thumb?: string, force = false): Pr
   if (conflict) throw new ProjectConflict(p.id);
   seen.set(p.id, rev);
   channel?.postMessage({ id: p.id, rev, writer: TAB });
+  void keepProjects(); // there is a project to keep now (V-223)
   await withIndex((index) => {
     const prev = index.find((m) => m.id === p.id);
     const meta: ProjectMeta = {
@@ -594,11 +595,31 @@ export async function saveUnfinishedTake(project: string, take: string, assetId:
 export const putPeaks = (assetId: string, peaks: Float32Array): Promise<void> => set(`w:${assetId}`, peaks, store);
 export const getPeaks = (assetId: string): Promise<Float32Array | undefined> => get<Float32Array>(`w:${assetId}`, store);
 
-/** Asks the browser not to evict our data under storage pressure (important on iOS). */
-export async function requestPersistence(): Promise<boolean> {
+/**
+ * Asks the browser to keep this site's data for good (navigator.storage.persist), once a page, when there is a project
+ * to keep (V-223): the first save, or a Home that lists one. Safari and Chromium answer without a prompt, by how the
+ * site has been used, so the next page may be answered otherwise. Not asked when the data is kept already. A refusal,
+ * or a browser that cannot be asked, changes nothing but the words on Home (storageKept).
+ */
+let keeping: Promise<boolean> | null = null;
+export function keepProjects(): Promise<boolean> {
+  keeping ??= (async () => {
+    try {
+      if (!navigator.storage?.persist || !navigator.storage.persisted) return false;
+      return (await navigator.storage.persisted()) || (await navigator.storage.persist());
+    } catch (e) {
+      console.warn('the browser was not asked to keep the projects', e);
+      return false;
+    }
+  })();
+  return keeping;
+}
+
+/** Does the browser keep this site's data for good? Null when it cannot say. Asks nothing. */
+export async function storageKept(): Promise<boolean | null> {
   try {
-    return (await navigator.storage?.persisted?.()) || ((await navigator.storage?.persist?.()) ?? false);
+    return navigator.storage?.persisted ? await navigator.storage.persisted() : null;
   } catch {
-    return false;
+    return null;
   }
 }

@@ -12,6 +12,8 @@ export const RU: Record<string, string> = {
   'Your projects': 'Ваши проекты',
   'Loading…': 'Загрузка…',
   'Projects and media are stored in this browser.': 'Проекты и медиа хранятся в этом браузере.',
+  'Safari may delete projects if Kadr is not opened for 7 days. Add Kadr to the Home Screen or save a backup.': 'Safari может удалить проекты, если не открывать Kadr 7 дней. Добавьте Kadr на экран «Домой» или сохраняйте копию.',
+  'Safari may delete projects if Kadr is not opened for 7 days. Add Kadr to the Dock or save a backup.': 'Safari может удалить проекты, если не открывать Kadr 7 дней. Добавьте Kadr в Dock или сохраняйте копию.',
   'Project {n}': 'Проект {n}',
   'Project name': 'Название проекта',
   'Open {name}': 'Открыть «{name}»',

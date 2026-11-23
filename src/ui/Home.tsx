@@ -4,14 +4,14 @@ import { produce } from 'immer';
 import { ASPECTS, createProject } from '../core/defaults';
 import { TEMPLATES, buildTemplate, type TemplateSpec } from '../core/templates';
 import type { AspectId } from '../core/types';
-import { IN_APP, IOS, standalone } from '../lib/device';
+import { IN_APP, IOS, WEBKIT, standalone } from '../lib/device';
 import { optedOut, setOptedOut, sinkConfig } from '../lib/events';
 import { errorMessage, track } from '../lib/telemetry';
 import { within } from '../lib/limits';
 import { pickFiles } from '../lib/pickFiles';
 import { holdUpdates, othersWorking, updatesHeld, useHoldUpdates } from '../lib/update';
 import { useEditor } from '../state/store';
-import { collectOrphans, deleteProject, listProjects, loadProject, requestPersistence, saveProject, type ProjectMeta } from '../storage/db';
+import { collectOrphans, deleteProject, keepProjects, listProjects, loadProject, saveProject, storageKept, type ProjectMeta } from '../storage/db';
 import { formatTime } from './format';
 import { importNoteText, t, useLocale } from '../lib/i18n';
 import type { ImportNote } from '../engine/importer';
@@ -151,6 +151,14 @@ export function Home() {
   const inAppNotice = useInAppNotice();
   const kept = projects?.length ?? 0;
   const keepTip = IOS && !IN_APP && !standalone() && !busy && projects !== null && (kept ? keepTipSeen !== '1' : keepTipSeen === null);
+  // Whether the browser keeps this site's data for good (V-223): null until it says, or when it cannot. Asked to once
+  // there is a project (db.ts keepProjects). Only Safari away from the Home Screen deletes a site's data after 7 days
+  // of use without a visit: a line under Home says so while the data is not kept for good. On the iPhone it stays when
+  // the card above has been dismissed, and is not said beside it (U).
+  const [keptForGood, setKeptForGood] = useState<boolean | null>(null);
+  useEffect(() => { void storageKept().then(setKeptForGood); }, []);
+  useEffect(() => { if (kept) void keepProjects().then((yes) => { if (yes) setKeptForGood(true); }); }, [kept]);
+  const mayLose = WEBKIT && !IN_APP && !standalone() && keptForGood === false && projects !== null && !keepTip;
   const dismissKeepTip = () => {
     const seen = kept ? '1' : '0';
     try { localStorage.setItem(KEEP_TIP_KEY, seen); } catch { /* shown again next time */ }
@@ -180,7 +188,6 @@ export function Home() {
     // The first read of the list: storage that refuses it (turned off, a private window of an old browser) cannot keep a
     // project either, and is said at the door, not after the person has edited (V-199).
     listProjects().then(setProjects, (e: unknown) => { console.warn('the storage refuses the project list', e); setRefused('storage'); });
-    void requestPersistence();
     let gone = false;
     void encodesAnySize().then((ok) => { if (!gone && ok === false) setRefused((r) => r ?? 'encoder'); });
     return () => { gone = true; };
@@ -530,6 +537,12 @@ export function Home() {
         {!projects?.length && yours}
 
         <footer className="ck-home-foot home-foot">{/* home-foot: the iPhone script and the smoke test read the version here */}
+          {mayLose && (
+            <p className="ck-home-foot-keep">
+              {IOS ? t('Safari may delete projects if Kadr is not opened for 7 days. Add Kadr to the Home Screen or save a backup.')
+                : t('Safari may delete projects if Kadr is not opened for 7 days. Add Kadr to the Dock or save a backup.')}
+            </p>
+          )}
           {t('Projects and media are stored in this browser.')} Kadr v{__APP_VERSION__}
           {' · '}<a href={`${locale}/privacy/`}>{t('Privacy')}</a>{' · '}<a href={`${locale}/licenses/`}>{t('Licenses')}</a>
           {sinkConfig() && <>{' · '}<StatsSwitch /></>}
