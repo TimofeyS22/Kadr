@@ -48,7 +48,7 @@ test('a part that never finishes being written to the device: the download goes 
   const warnings: string[] = [];
   page.on('console', (m) => { if (m.type() === 'warning') warnings.push(m.text()); });
   await tapCaptions(page);
-  // The write is given 30 s, then the part is fetched and written again: no word to the person, nothing to tap.
+  // The write is given its 30 s, then the part is fetched and written again: no word to the person, nothing to tap.
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 150_000 });
   await expect(page.locator('.toast.error')).toHaveCount(0);
   expect(warnings.some((w) => /did not answer/.test(w)), 'the hung write was seen and named').toBe(true);
@@ -96,7 +96,7 @@ test('a Cache Storage that never finishes a write: the parts go to another store
   test.setTimeout(300_000);
   await inWorker(context, DEAD_CACHE);
   await tapCaptions(page);
-  // Two writes that did not finish (15 s each), then the parts go where writing works: nothing to tap, no error.
+  // Two writes that did not finish (30 s each), then the parts go where writing works: nothing to tap, no error.
   await expect(page.locator('.clip-caption')).toHaveCount(1, { timeout: 200_000 });
   await expect(page.locator('.toast.error')).toHaveCount(0);
   // What tells Safari from the Home Screen app on a phone, kept for "Copy for support" and ?diag.

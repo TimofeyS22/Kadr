@@ -46,6 +46,24 @@ describe('model parts: a store that does not answer gives way (SW-S-2)', () => {
     expect((await readPart('repo/file/0', 64))?.byteLength).toBe(64);
   });
 
+  it('a slow store is not a hung one: a look-up that takes 15 s is waited for, and one that hung once gets a second try', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('self', { location: { origin: ORIGIN } });
+    const kept = fakeCaches('works');
+    await writePart('repo/file/0', bytes(64));
+    const fast = { match: async (url: string) => kept.get(url)?.clone() };
+    let looks = 0;
+    // The first look never answers, the second takes 15 s: the part is on the device, and it is found there.
+    vi.stubGlobal('caches', { open: async () => ({ match: (url: string) => (++looks === 1 ? never<Response>() : new Promise<Response | undefined>((r) => setTimeout(() => void fast.match(url).then(r), 15_000))) }) });
+    resetStores(); // a new worker over the same device: the store is asked afresh
+    const events: StoreEvent[] = [];
+    onStoreEvent((e) => events.push(e));
+    const where = partStore('repo/file/0', 64, true);
+    await vi.advanceTimersByTimeAsync(20_000 + 15_000 + 100);
+    expect(await where).toBe('cache');
+    expect(events.map((e) => e.next)).toEqual([null]); // one stall noted, the store not given up on
+  });
+
   it('"no room" is not another store\'s to fix: it is said', async () => {
     vi.stubGlobal('self', { location: { origin: ORIGIN } });
     vi.stubGlobal('caches', { open: async () => ({ put: async () => { throw new DOMException('full', 'QuotaExceededError'); } }) });
@@ -57,7 +75,7 @@ describe('model parts: a store that does not answer gives way (SW-S-2)', () => {
     vi.stubGlobal('caches', { open: async () => ({ match: () => never<Response>(), put: () => never<void>() }) });
     const small = smallCache('any');
     const hit = small.match('https://example.test/config.json');
-    await vi.advanceTimersByTimeAsync(11_000);
+    await vi.advanceTimersByTimeAsync(21_000);
     expect(await hit).toBeUndefined();
     expect(await small.match('https://example.test/vocab.txt')).toBeUndefined(); // at once: the cache is not asked again
     await small.put('https://example.test/vocab.txt', new Response('x'));

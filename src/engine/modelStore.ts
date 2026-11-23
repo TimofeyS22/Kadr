@@ -14,11 +14,18 @@ export type StoreName = 'cache' | 'opfs' | 'memory';
 /** Of this stage (lib/stage.ts): the candidate at /Kadr/next/ keeps its parts apart from the live site's (V-234). */
 export const PARTS_CACHE = own('kadr-model-parts');
 const PARTS_DIR = 'kadr-model-parts';
-/** A part (16 MiB) is written in well under a second; one not written in this long has hung. */
-export const WRITE_MS = 15_000;
-/** Opening a store, looking a part up, reading it. */
-const QUICK_MS = 10_000;
-/** Writes in a row a store may fail before the next store takes over. */
+/**
+ * The limits are for a store that has hung, never for a slow one: a part (16 MiB) is written and read in well under
+ * a second on a phone, and a look-up is a few milliseconds, so a disk ten times slower than any measured is still
+ * inside them. Too tight, and a model that IS on the device would be taken for missing and asked from the network —
+ * which offline is an error where none was due (the cloud's WebKit is three times slower than the Mac).
+ */
+export const WRITE_MS = 30_000;
+/** Opening a store, looking a part up. */
+const QUICK_MS = 20_000;
+/** Reading a part back. */
+const READ_MS = 60_000;
+/** Times in a row a store may fail or not answer before the next store takes over. */
 const STRIKES = 2;
 
 /** What a store did not do, as it is logged: «cache stalled → fallback opfs». */
@@ -139,21 +146,32 @@ function failed(s: Store, op: StoreEvent['op'], e: unknown, giveUp: boolean): vo
 /** A failure that another store cannot help with: the device is out of room, and they share it. */
 const noRoom = (e: unknown) => (e as Error).name === 'QuotaExceededError';
 
-/** The store that keeps part `id` whole, if any does. A store that does not answer is given up on. */
-export async function partStore(id: string, size: number, keeps = false): Promise<StoreName | null> {
-  for (const s of stores(keeps)) {
-    try { if (await limited(s.has(id, size), QUICK_MS, `${s.name}: looking a part up`)) return s.name; } catch (e) { failed(s, 'look', e, true); }
+/** `op` on store `s`, with a second try before the store is given up on; undefined when it was. */
+async function asked<T>(s: Store, op: 'look' | 'read', ms: number, run: () => Promise<T>): Promise<T | undefined> {
+  for (;;) {
+    try {
+      const v = await limited(run(), ms, `${s.name}: ${op === 'look' ? 'looking a part up' : 'reading a part'}`);
+      strikes[s.name] = 0;
+      return v;
+    } catch (e) {
+      const n = (strikes[s.name] = (strikes[s.name] ?? 0) + 1);
+      failed(s, op, e, n >= STRIKES);
+      if (n >= STRIKES) return undefined;
+    }
   }
+}
+
+/** The store that keeps part `id` whole, if any does. A store that does not answer twice is given up on. */
+export async function partStore(id: string, size: number, keeps = false): Promise<StoreName | null> {
+  for (const s of stores(keeps)) if (await asked(s, 'look', QUICK_MS, () => s.has(id, size))) return s.name;
   return null;
 }
 
 /** Part `id` from the store that keeps it, or undefined. */
 export async function readPart(id: string, size: number): Promise<Uint8Array<ArrayBuffer> | undefined> {
   for (const s of stores()) {
-    try {
-      const bytes = await limited(s.read(id), QUICK_MS * 2, `${s.name}: reading a part`);
-      if (bytes?.byteLength === size) return bytes;
-    } catch (e) { failed(s, 'read', e, true); }
+    const bytes = await asked(s, 'read', READ_MS, () => s.read(id));
+    if (bytes?.byteLength === size) return bytes;
   }
   return undefined;
 }
