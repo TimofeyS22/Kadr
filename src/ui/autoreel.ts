@@ -36,7 +36,7 @@ export const reelUsesSpeech = (o: ReelOptions): boolean => o.captions || o.fille
 
 /** Stage on the progress bar (ui/pace), what to say, and the fraction when the job knows it. */
 function speechLabel(p: CaptionProgress): [string, string, number | null] {
-  if (p.phase === 'download') return ['model', t('Downloading the speech model: {mb} MB, once…', { mb: p.mb }), p.fraction];
+  if (p.phase === 'download') return ['model', t('Downloading the speech model: {done} of {mb} MB, once…', { done: Math.round(p.fraction * p.mb), mb: p.mb }), p.fraction];
   if (p.phase === 'load') return ['model', t('Starting the speech model (it is on this device)…'), null];
   if (p.phase === 'prepare') return ['prepare', t('Preparing the sound…'), null];
   if (p.phase === 'listen') return ['listen', t('Finding speech…'), null];

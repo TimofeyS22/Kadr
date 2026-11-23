@@ -59,9 +59,13 @@ test('captions in Russian: the model downloads once and the screen says so; a pa
   await page.getByRole('button', { name: 'Скачать и сделать субтитры', exact: true }).click();
   await expect(page.locator('.caption-row').first()).toBeVisible({ timeout: 400_000 });
   const first = await said(page);
-  expect(first).toContain(`Скачиваем модель речи: ${mb} МБ, один раз…`);
+  // The megabytes that came are in the words (SW-S-2): «37 из 225 МБ» that stands still is seen to stand still.
+  const downloading = new RegExp(`^Скачиваем модель речи: \\d+ из ${mb} МБ, один раз…$`);
+  const came = first.filter((x) => downloading.test(x)).map((x) => Number(/: (\d+) из/.exec(x)![1]));
+  expect(came.length).toBeGreaterThan(0);
+  expect(came).toEqual([...came].sort((x, y) => x - y)); // they only grow
   expect(first).toContain('Запускаем модель речи (она уже на устройстве)…');
-  expect(first.indexOf('Запускаем модель речи (она уже на устройстве)…')).toBeGreaterThan(first.indexOf(`Скачиваем модель речи: ${mb} МБ, один раз…`));
+  expect(first.indexOf('Запускаем модель речи (она уже на устройстве)…')).toBeGreaterThan(first.findLastIndex((x) => downloading.test(x)));
   expect(requests.length).toBeGreaterThan(0);
   const whole = await lines(page);
   expect(whole.join(' ')).toContain('привет');

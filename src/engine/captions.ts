@@ -282,6 +282,11 @@ function engineError(message: string, error: string): MediaError {
  * It was never let go before (QA, docs/11 §3.7).
  */
 const IDLE_MS = 60_000;
+/**
+ * A download the worker says nothing about for this long has stopped (SW-S-2). The worker's own longest silence is
+ * 29 s (20 s without a byte, then a 9 s pause before the next try), and each try and each megabyte is a word from it.
+ */
+const DOWNLOAD_QUIET_MS = 45_000;
 let inFlight = 0;
 let idle: ReturnType<typeof setTimeout> | undefined;
 /** The screen stays on while the worker downloads or listens (a dark phone suspends the page, docs/12 stage 2). */
@@ -450,9 +455,29 @@ async function transcribeWith(
       onProgress(missing ? { phase: 'download', fraction: 0, mb } : { phase: 'load' });
       setWorking(m);
       // A worker whose engine failed was replaced (retire): each request goes to the current one.
-      const loaded = await request(speechWorker(), { type: 'load', id: 0, model: m }, (_l, _t, fetched) => {
+      // While the model downloads, the worker is listened to: one that went silent (its storage or the worker itself
+      // hung; the network has its own limit in modelFiles.ts) is ended, with words and a tap that goes on from the
+      // kept parts — never a bar standing still for ever (SW-S-2). Starting the model is not timed: it says nothing
+      // while it works, for as long as the device needs.
+      const quiet = new AbortController();
+      const stop = () => quiet.abort();
+      signal?.addEventListener('abort', stop);
+      let silent = false, watch: ReturnType<typeof setTimeout> | undefined;
+      const w = speechWorker();
+      const listen = (downloading: boolean) => {
+        clearTimeout(watch);
+        if (downloading) watch = setTimeout(() => { silent = true; quiet.abort(); }, DOWNLOAD_QUIET_MS);
+      };
+      listen(missing > 0);
+      const loaded = await request(w, { type: 'load', id: 0, model: m }, (_l, _t, fetched) => {
+        listen(fetched < missing);
         if (missing) onProgress(fetched >= missing ? { phase: 'load' } : { phase: 'download', fraction: fetched / missing, mb });
-      }, signal);
+      }, quiet.signal).catch((e: unknown) => {
+        if (!silent || signal?.aborted) throw e;
+        console.warn(`speech model ${m}: the worker said nothing about the download for ${DOWNLOAD_QUIET_MS / 1000} s; it is ended`);
+        retire(w);
+        throw new MediaError(navigator.onLine ? 'The speech model download stopped. Tap again: it continues from where it stopped.' : 'No internet. The speech model download stopped. Tap again when you are online: it continues from where it stopped.');
+      }).finally(() => { clearTimeout(watch); signal?.removeEventListener('abort', stop); });
       if (loaded.type !== 'error') return m;
       // Offline before the first download: say what to do, not "Failed to fetch" (docs/11 QA).
       if (!navigator.onLine) throw new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: ASR_MODELS[m].mb });

@@ -973,7 +973,8 @@ export const RU: Record<string, string> = {
   'Add a box': 'Добавить подложку',
   'Whole text': 'Весь текст',
   // docs/20: captions — honest progress, Auto, parts of the video, the word under the playhead
-  'Downloading the speech model: {mb} MB, once…': 'Скачиваем модель речи: {mb} МБ, один раз…',
+  'Downloading the speech model: {done} of {mb} MB, once…': 'Скачиваем модель речи: {done} из {mb} МБ, один раз…',
+  'The speech model download stopped. Tap again: it continues from where it stopped.': 'Скачивание модели речи остановилось. Нажмите ещё раз: оно продолжится с того же места.',
   'Starting the speech model (it is on this device)…': 'Запускаем модель речи (она уже на устройстве)…',
   '{name}, on this device': '{name}, на устройстве',
   'Kadr picks the model for the language of the speech: “{name}” reads Russian, “{other}” the other languages.': 'Kadr сам берёт модель под язык речи: русскую читает «{name}», остальные языки — «{other}».',
