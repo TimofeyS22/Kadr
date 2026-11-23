@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import manifest from './models.json';
+import { resetStores } from './modelStore';
 import { PARTS_CACHE, SPEECH_REPOS, absentOnSite, isLarge, mirrored, missingBytes, modelKey, probeAnswer, setModelHosts } from './modelFiles';
 
 const GIGAAM = 'istupakov/gigaam-v3-onnx/resolve/322c3b29492673eb7d0b434bfa9dfb8653e34d02/v3_e2e_ctc.int8.onnx';
@@ -60,7 +61,7 @@ describe('what loading a speech model would download (audit V-181: asked about b
     const size = Math.min(f.size, (i + 1) * manifest.part) - i * manifest.part;
     return [`${ORIGIN}/__kadr-model-parts/${key}/${i}`, new Response(null, { headers: { 'content-length': String(size) } })] as const;
   };
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); resetStores(); }); // the store layer holds its cache open (modelStore.ts)
 
   it('a model this device does not keep: all of it, which is the size the sheet names for it', async () => {
     device();

@@ -14,6 +14,7 @@ import type { HeapInfo } from './wasmMemory';
 import { IOS } from '../lib/device';
 import { useLocale } from '../lib/i18n';
 import { isStaleCode, newerVersionDeployed, reloadIntoUpdate, updatingMessage } from '../lib/update';
+import { deviceSummary, logError, scrub } from '../lib/errorLog';
 import { keepAwake } from '../lib/wakeLock';
 
 export type { AsrModel };
@@ -267,9 +268,10 @@ const outOfMemory = (message: string) => /out of memory|maximum memory|cannot en
  * engine did not start at all, and a lighter model would not either.
  */
 const tooBigFor = (r: Extract<AsrResponse, { type: 'error' }>) => outOfMemory(r.message) && r.heap?.capMb != null;
-function engineError(message: string, error: string): MediaError {
+function engineError(message: string, error: string, download?: string): MediaError {
   console.error('speech engine:', message);
-  if (message.includes(DOWNLOAD_STOPPED)) return new MediaError(navigator.onLine ? 'The speech model download stopped: the server stopped answering. Tap again: it continues from where it stopped.' : 'No internet. The speech model download stopped. Tap again when you are online: it continues from where it stopped.');
+  // `download`: the notes of this download, under the toast's "Details" → "Copy for support" (SW-S-2).
+  if (message.includes(DOWNLOAD_STOPPED)) return new MediaError(navigator.onLine ? 'The speech model download stopped: the server stopped answering. Tap again: it continues from where it stopped.' : 'No internet. The speech model download stopped. Tap again when you are online: it continues from where it stopped.', download ? { error: download } : undefined);
   if (/quota/i.test(message)) return new MediaError('Not enough storage for Kadr on this device. Delete old projects or free up space, then try again.');
   return outOfMemory(message)
     ? new MediaError('Not enough memory on this device for the speech model. Close other tabs and apps and try again, or choose a smaller model.')
@@ -292,6 +294,28 @@ let idle: ReturnType<typeof setTimeout> | undefined;
 /** The screen stays on while the worker downloads or listens (a dark phone suspends the page, docs/12 stage 2). */
 let awake: (() => void) | null = null;
 
+/**
+ * The notes of a model download, kept where support can read them (SW-S-2): how long the first byte and the first
+ * kept part took, which store took the parts, how much room the browser gives. Into the error log only when it is
+ * worth a look — a store gave way, or the start was slow; the device line there says "from the Home Screen".
+ */
+function noteDownload(model: AsrModel, d: Extract<AsrResponse, { type: 'diag' }>): string {
+  const ms = (n: number | null) => (n === null ? 'none' : `${n} ms`);
+  const text = `speech download ${model}: first byte ${ms(d.firstByteMs)}, first part written ${ms(d.firstWriteMs)}${d.events.length ? `, ${d.events.join(', ')}` : ''}, store ${d.store ?? 'none'}, quota ${d.quotaMb ?? '?'} MB used ${d.usedMb ?? '?'} MB, persisted ${d.persisted === null ? '?' : d.persisted ? 'yes' : 'no'}`;
+  console.info(text);
+  if (!d.events.length && (d.firstByteMs ?? 0) < 10_000 && (d.firstWriteMs ?? 0) < 5_000) return text;
+  void logError({ at: Date.now(), version: __APP_VERSION__, where: 'captions', kind: 'SpeechDownload', message: scrub(text), device: deviceSummary() });
+  return text;
+}
+
+/** What the page itself can say of the storage, for a download whose worker went silent: it sent no notes. */
+async function pageStorage(): Promise<string> {
+  const soon = <T,>(p: Promise<T> | undefined): Promise<T | null> => Promise.race([(p ?? Promise.resolve(null)).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 2000))]);
+  const [est, persisted] = await Promise.all([soon(navigator.storage?.estimate?.()), soon(navigator.storage?.persisted?.())]);
+  const mb = (n: number | undefined) => (n === undefined ? '?' : Math.round(n / 1e6));
+  return `quota ${mb(est?.quota)} MB used ${mb(est?.usage)} MB, persisted ${persisted === null ? '?' : persisted ? 'yes' : 'no'}`;
+}
+
 /** Request ids, unique per page: a reply to a cancelled request can never be taken for a newer one. */
 let seq = 0;
 
@@ -299,7 +323,7 @@ let seq = 0;
  * Sends a request to the ASR worker. With a signal, Cancel (or Settings) is honoured at once, even mid-download or
  * mid-chunk: the worker finishes that job on its own (a model download is cached for next time), its reply is dropped.
  */
-function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total: number, fetched: number) => void, signal?: AbortSignal): Promise<AsrResponse> {
+function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total: number, fetched: number) => void, signal?: AbortSignal, onNote?: (r: Extract<AsrResponse, { type: 'storage' | 'diag' }>) => void): Promise<AsrResponse> {
   return new Promise((resolve, reject) => {
     const id = (msg.id = ++seq);
     let settled = false;
@@ -337,6 +361,7 @@ function request(w: Worker, msg: AsrRequest, onDownload?: (loaded: number, total
       // Every answer names its request: a load given up on (Cancel) still runs in the worker, and its progress or
       // its error must not be taken for a later request's.
       if (r.type === 'download') { if (r.id === id) onDownload?.(r.loaded, r.total, r.fetched); return; }
+      if (r.type === 'storage' || r.type === 'diag') { if (r.id === id) onNote?.(r); return; }
       const mine = r.id === id && (msg.type === 'load' ? r.type === 'ready' || r.type === 'error' : r.type !== 'ready');
       if (!mine) return;
       done();
@@ -462,7 +487,7 @@ async function transcribeWith(
       const quiet = new AbortController();
       const stop = () => quiet.abort();
       signal?.addEventListener('abort', stop);
-      let silent = false, watch: ReturnType<typeof setTimeout> | undefined;
+      let silent = false, watch: ReturnType<typeof setTimeout> | undefined, notes: string | undefined, came = 0;
       const w = speechWorker();
       const listen = (downloading: boolean) => {
         clearTimeout(watch);
@@ -471,18 +496,23 @@ async function transcribeWith(
       listen(missing > 0);
       const loaded = await request(w, { type: 'load', id: 0, model: m }, (_l, _t, fetched) => {
         listen(fetched < missing);
+        came = fetched;
         if (missing) onProgress(fetched >= missing ? { phase: 'load' } : { phase: 'download', fraction: fetched / missing, mb });
-      }, quiet.signal).catch((e: unknown) => {
+      }, quiet.signal, (r) => {
+        // A store that gave way is the worker speaking: it is alive, and waiting for the next store's write.
+        if (r.type === 'storage') { if (watch !== undefined) listen(true); } else notes = noteDownload(m, r);
+      }).catch(async (e: unknown) => {
         if (!silent || signal?.aborted) throw e;
-        console.warn(`speech model ${m}: the worker said nothing about the download for ${DOWNLOAD_QUIET_MS / 1000} s; it is ended`);
+        const said = `speech download ${m}: the worker said nothing for ${DOWNLOAD_QUIET_MS / 1000} s at ${Math.round(came / 1e6)} of ${mb} MB, ${await pageStorage()}`;
+        console.warn(`${said}; the worker is ended`);
         retire(w);
-        throw new MediaError(navigator.onLine ? 'The speech model download stopped. Tap again: it continues from where it stopped.' : 'No internet. The speech model download stopped. Tap again when you are online: it continues from where it stopped.');
+        throw new MediaError(navigator.onLine ? 'The speech model download stopped. Tap again: it continues from where it stopped.' : 'No internet. The speech model download stopped. Tap again when you are online: it continues from where it stopped.', { error: said });
       }).finally(() => { clearTimeout(watch); signal?.removeEventListener('abort', stop); });
       if (loaded.type !== 'error') return m;
       // Offline before the first download: say what to do, not "Failed to fetch" (docs/11 QA).
       if (!navigator.onLine) throw new MediaError('No internet. The speech model ({mb} MB) downloads once; after that captions work offline.', { mb: ASR_MODELS[m].mb });
       const lighter = tooBigFor(loaded) ? LIGHTER[m] : undefined;
-      if (!lighter) throw engineError(loaded.message, 'Could not load the speech model ({error})');
+      if (!lighter) throw engineError(loaded.message, 'Could not load the speech model ({error})', notes);
       console.warn(`speech model ${m} does not fit in this device's memory; ${lighter} takes over:`, loaded.message);
       await rememberTooBig(m);
       m = lighter;

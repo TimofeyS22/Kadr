@@ -8,7 +8,8 @@ import { NEMO_FRAME_S, nemoFeatures } from '../core/fastconformer';
 import { ctcDecode, gigaamFeatures, parseCtcVocab, type CtcVocab } from '../core/gigaam';
 import { alignScript, type ScriptCaptions } from '../core/script';
 import type { CaptionWord } from '../core/types';
-import { SPEECH_REPOS, absentOnSite, ensureFile, isLarge, isModelFileName, keptFile, legacySmall, mirrored, modelHosts, modelKey, probeAnswer, setModelHosts, smallFile } from './modelFiles';
+import { SPEECH_REPOS, absentOnSite, downloadDiag, ensureFile, isLarge, isModelFileName, keptFile, legacySmall, mirrored, modelHosts, modelKey, onStorageTrouble, probeAnswer, setModelHosts, smallFile, startDownloadDiag, type DownloadDiag } from './modelFiles';
+import { smallCache } from './modelStore';
 import { capSharedMemory, type HeapInfo } from './wasmMemory';
 
 /**
@@ -29,6 +30,10 @@ export type AsrResponse =
   /** `fetched`: bytes that came from the network in this load; the rest of `loaded` the device kept already. */
   | { type: 'download'; id: number; loaded: number; total: number; fetched: number }
   | { type: 'ready'; id: number }
+  /** A store of model parts failed or gave way, said at once: the worker is alive while a write is waited for (SW-S-2). */
+  | { type: 'storage'; id: number; message: string }
+  /** What the download of this load did, sent before its `ready` or `error` when anything came from the network. */
+  | ({ type: 'diag'; id: number; quotaMb: number | null; usedMb: number | null; persisted: boolean | null } & DownloadDiag)
   | { type: 'result'; id: number; words: { t0: number; t1: number; text: string }[]; confidence?: number; chars?: number }
   | { type: 'vad'; id: number; probs: Float32Array }
   | { type: 'language'; id: number; code: string; p: number }
@@ -47,7 +52,7 @@ setModelHosts({
 env.remoteHost = modelHosts().own ?? modelHosts().ranges;
 // Large files come part by part, checked and resumable; small ones (configs, tokenizers) whole and checked, then
 // kept in the Cache API as before.
-const small = caches.open('transformers-cache').catch(() => null);
+const small = smallCache('transformers-cache');
 const largeKey = (req: string) => { const key = modelKey(req); return key && isLarge(key) ? key : null; };
 env.useBrowserCache = false;
 env.useCustomCache = true;
@@ -55,14 +60,13 @@ env.customCache = {
   match: async (req: string) => {
     const url = String(req), key = modelKey(url);
     if (key && isLarge(key)) return keptFile(key);
-    const cache = await small;
-    const hit = await cache?.match(url);
-    if (hit || !key || !cache) return hit;
-    const old = await legacySmall(cache, key); // kept under its Hugging Face address by Kadr ≤ 1.4.17
-    if (old) await cache.put(url, old.clone()).catch(() => undefined);
+    const hit = await small.match(url);
+    if (hit || !key) return hit;
+    const old = await legacySmall(small, key); // kept under its Hugging Face address by Kadr ≤ 1.4.17
+    if (old) await small.put(url, old.clone());
     return old;
   },
-  put: async (req: string, res: Response) => { if (!largeKey(String(req))) await (await small)?.put(String(req), res); },
+  put: async (req: string, res: Response) => { if (!largeKey(String(req))) await small.put(String(req), res); },
 };
 const plainFetch = env.fetch;
 /**
@@ -173,14 +177,14 @@ const CTC: Record<CtcModel, { repo: string; rev: string; file: string; vocab: st
 type Ctc = ((inputs: Record<string, Tensor>) => Promise<Record<string, Tensor>>) & { dispose(): Promise<unknown> };
 let ctc: { model: CtcModel; ready: Promise<{ run: Ctc; vocab: CtcVocab }> } | null = null;
 
+const texts = smallCache('kadr-models');
 /** A small file from a model repo, kept in the Cache API so captions work offline after the first time. */
 async function cachedText(key: string): Promise<string> {
-  const cache = await caches.open('kadr-models').catch(() => null);
   const at = `https://huggingface.co/${key}`; // the name it has been kept under since v1.4, whatever host it came from
-  const hit = await cache?.match(at);
+  const hit = await texts.match(at);
   if (hit) return hit.text();
   const res = await smallFile(key);
-  await cache?.put(at, res.clone()).catch(() => undefined);
+  await texts.put(at, res.clone());
   return res.text();
 }
 
@@ -286,11 +290,23 @@ async function detectLanguage(run: AutomaticSpeechRecognitionPipeline, audio: Fl
   return best ? { code: best.code, p: Math.exp(best.x - max) / sum } : { code: 'en', p: 0 };
 }
 
+/** Sends the notes of a load that took anything from the network or had trouble with a store. Never throws, never waits long. */
+async function sayDownload(id: number): Promise<void> {
+  const d = downloadDiag();
+  if (d.firstByteMs === null && !d.events.length) return;
+  const soon = <T,>(p: Promise<T> | undefined): Promise<T | null> => Promise.race([(p ?? Promise.resolve(null)).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 2000))]);
+  const [est, persisted] = await Promise.all([soon(navigator.storage?.estimate?.()), soon(navigator.storage?.persisted?.())]);
+  const mb = (n: number | undefined) => (n === undefined ? null : Math.round(n / 1e6));
+  post({ type: 'diag', id, ...d, quotaMb: mb(est?.quota), usedMb: mb(est?.usage), persisted });
+}
+
 self.onmessage = async (e: MessageEvent<AsrRequest>) => {
   const msg = e.data;
   try {
     if (msg.type === 'load') {
-      await load(msg.model, msg.id);
+      startDownloadDiag();
+      onStorageTrouble((message) => post({ type: 'storage', id: msg.id, message }));
+      try { await load(msg.model, msg.id); } finally { await sayDownload(msg.id); }
       post({ type: 'ready', id: msg.id });
       return;
     }
