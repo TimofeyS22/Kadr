@@ -78,7 +78,7 @@ test('iPhone, not on the Home Screen: after the first project with media, Home s
   await page.getByRole('button', { name: 'Close tools' }).click();
   await page.getByRole('button', { name: 'Back to projects' }).click();
   await expect(page.locator('.project-card')).toHaveCount(1);
-  const tip = page.getByRole('note').filter({ hasText: 'Add Kadr to the Home Screen' });
+  const tip = page.getByRole('note').filter({ hasText: 'Edit full screen' });
   if (browserName !== 'webkit') { await expect(tip).toHaveCount(0); return; } // the iPhone profile is the WebKit one
   await expect(tip).toBeVisible();
   await tip.getByRole('button', { name: 'Got it' }).click();

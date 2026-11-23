@@ -531,6 +531,15 @@ export const RU: Record<string, string> = {
   'Pinch the timeline to zoom. In the preview, drag text and overlays, pinch to resize and rotate.': 'Сведите пальцы на таймлайне для масштаба. В превью тяните текст и наложения, двумя пальцами меняйте размер и поворот.',
   'Next': 'Дальше',
   'Got it': 'Понятно',
+  'Edit full screen': 'Монтаж на весь экран',
+  'From the Home Screen, Kadr opens without Safari’s bars, and iPhone does not erase your projects after 7 days away.': 'С экрана «Домой» Kadr открывается без панелей Safari, и iPhone не стирает проекты, даже если вы не заходили 7 дней.',
+  '⋯ → Share → Add to Home Screen': '⋯ → «Поделиться» → «На экран „Домой“»', // no break inside the item's name
+  'Projects from Safari do not move to the app by themselves. Move them:': 'Проекты из Safari сами в приложение не перейдут. Перенесите их:',
+  'Save a backup of all projects.': 'Сохраните копию всех проектов.',
+  'Save a backup': 'Сохранить копию',
+  'In the app, tap “Restore backup”.': 'В приложении нажмите «Восстановить копию».',
+  'Projects from Safari': 'Проекты из Safari',
+  'They stayed in Safari. Open Kadr there, save a backup of all projects, then tap “Restore backup” below ↓': 'Они остались в Safari. Откройте Kadr там, сохраните копию всех проектов, а здесь нажмите «Восстановить копию» ↓',
   // v0.5.1: import and errors
   'Drag to resize and rotate': 'Потяните, чтобы изменить размер и повернуть',
   'Adding {i} of {n}…': 'Добавляем {i} из {n}…',
@@ -922,10 +931,6 @@ export const RU: Record<string, string> = {
   'Link copied': 'Ссылка скопирована',
   'Link to Kadr': 'Ссылка на Kadr',
   'Press and hold the link to copy it.': 'Нажмите на ссылку и удерживайте, чтобы скопировать её.',
-  'iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.': 'iPhone стирает данные сайта, если его не открывали 7 дней. Добавьте Kadr на экран «Домой» и делайте проекты там: «Поделиться» → «На экран „Домой“».',
-  'Projects made in Safari stay in Safari, and you have {n} here. To move them, save a copy of every project here, then tap “Restore backup” in the Home Screen app.': 'Проекты, сделанные в Safari, остаются в Safari — сейчас их здесь: {n}. Чтобы перенести их, сохраните здесь копию всех проектов, а в приложении с экрана «Домой» нажмите «Восстановить копию».',
-  'Save a copy of every project': 'Сохранить копию всех проектов',
-  'Projects made in Safari stay in Safari. To bring them here, open Kadr in Safari, tap “Save a copy of every project”, then tap “Restore backup” here.': 'Проекты, сделанные в Safari, остаются в Safari. Чтобы перенести их сюда, откройте Kadr в Safari, нажмите «Сохранить копию всех проектов», а здесь — «Восстановить копию».',
   // Chetko, stage Ч4 release 2: the home screen on the components of the system.
   'saved': 'сохранено',
   'Frame format': 'Формат кадра',

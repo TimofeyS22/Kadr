@@ -167,39 +167,46 @@ test('a browser of its own (Safari on iPhone, Chrome on Android): no notice, on 
   await expect(notice(page)).toHaveCount(0);
 });
 
-// The Home Screen advice on an iPhone (audit V-164): the app on the Home Screen has its own storage, so the advice says
-// that the projects made in Safari stay in Safari, how many there are, and the way that moves one: a backup.
+// The Home Screen advice on an iPhone (audit V-164, SW-U-18): what the Home Screen gives (full screen, no address bar,
+// no 7-day erasing); with projects, that they stay in Safari's storage and the copy of all of them that moves them.
 const IPHONE_SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1';
-const SHORT = 'iPhone erases a website’s data after 7 days without a visit. Add Kadr to the Home Screen and make your projects there: Share → Add to Home Screen.';
+const SHORT = 'From the Home Screen, Kadr opens without Safari’s bars, and iPhone does not erase your projects after 7 days away.';
+const HOW = '⋯ → Share → Add to Home Screen';
+const MOVE = 'Projects from Safari do not move to the app by themselves. Move them:';
 
 test.describe('Safari on an iPhone', () => {
   test.use({ userAgent: IPHONE_SAFARI, viewport: { width: 375, height: 812 } });
 
-  test('no projects yet: the advice is short, and nothing is said about moving', async ({ page }) => {
+  test('no projects yet: the advice says what the Home Screen gives, and nothing about moving', async ({ page }) => {
     await home(page);
     const tip = advice(page);
     await expect(tip).toBeVisible();
-    await expect(tip.locator('p')).toHaveText([SHORT]);
+    await expect(tip.getByRole('heading', { name: 'Edit full screen' })).toBeVisible();
+    await expect(tip.locator('p')).toHaveText([SHORT, HOW]);
+    await expect(tip.getByRole('button', { name: 'Save a backup' })).toHaveCount(0);
     await fitsPhone(page, tip);
     await expect(notice(page)).toHaveCount(0);
   });
 
-  test('with projects: they stay in Safari, their number, and the backup that moves one; dismissed, it stays away', async ({ page }) => {
+  test('with projects: they stay in Safari, and a copy of all of them moves them; dismissed, it stays away', async ({ page }) => {
     await home(page);
     await projectWithVideo(page);
     await backHome(page, 1);
     const tip = advice(page);
-    await expect(tip.locator('p')).toHaveText([SHORT, 'Projects made in Safari stay in Safari, and you have 1 here. To move one, save its backup here (↓), then tap “Restore backup” in the Home Screen app.']);
-    // The two controls the advice names are on this screen.
-    await expect(page.getByRole('button', { name: 'Restore backup' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Save a backup of / })).toHaveCount(1);
+    await expect(tip.locator('p')).toHaveText([SHORT, MOVE]);
+    // The steps in the order that keeps the projects: the copy, the icon, the copy opened in the app.
+    await expect(tip.locator('li')).toHaveText(['Save a backup of all projects.Save a backup', HOW, 'In the app, tap “Restore backup”.']);
+    await expect(tip.getByRole('button', { name: 'Save a backup' })).toBeVisible();
+    // After the person's own work, not over it (the art director): the list's heading is above the advice.
+    const [list, card] = await Promise.all([page.getByRole('heading', { name: 'Your projects' }).boundingBox(), tip.boundingBox()]);
+    expect(list!.y).toBeLessThan(card!.y);
     await fitsPhone(page, tip);
 
     await page.getByRole('button', { name: 'New project' }).click();
     await page.locator('.aspect-card', { hasText: '9:16' }).click();
     await expect(page.locator('.preview-canvas')).toBeVisible();
     await backHome(page, 2);
-    await expect(tip).toContainText('you have 2 here');
+    await expect(tip).toContainText(MOVE);
 
     await tip.getByRole('button', { name: 'Got it' }).click();
     await expect(tip).toHaveCount(0);
@@ -207,6 +214,31 @@ test.describe('Safari on an iPhone', () => {
     await expect(page.locator('.project-card')).toHaveCount(2);
     await expect(tip).toHaveCount(0);
   });
+
+  // Closed with projects, it keeps their number and comes once more when there are twice as many and still no copy of
+  // all of them (the lead); after that, never. With a copy saved, it does not come back.
+  for (const copied of [false, true]) {
+    test(`closed with one project, it comes back ${copied ? 'not at all — a copy of all projects was saved' : 'once, at two projects with no copy, then never'}`, async ({ page }) => {
+      if (copied) await page.addInitScript(() => localStorage.setItem('kadr.allCopied', '1'));
+      await home(page);
+      await projectWithVideo(page);
+      await backHome(page, 1);
+      const tip = advice(page);
+      await tip.getByRole('button', { name: 'Got it' }).click();
+      await expect(tip).toHaveCount(0);
+      for (const n of [2, 3, 4]) {
+        await page.getByRole('button', { name: 'New project' }).click();
+        await page.locator('.aspect-card', { hasText: '9:16' }).click();
+        await expect(page.locator('.preview-canvas')).toBeVisible();
+        await backHome(page, n);
+        if (n === 2 && !copied) {
+          await expect(tip, 'twice as many, no copy: once more').toContainText(MOVE);
+          await tip.getByRole('button', { name: 'Got it' }).click();
+        }
+        await expect(tip).toHaveCount(0);
+      }
+    });
+  }
 
   test('the short advice, dismissed before there was anything to lose, is said in full once there is a project', async ({ page }) => {
     await home(page);
@@ -219,13 +251,18 @@ test.describe('Safari on an iPhone', () => {
     await expect(tip).toHaveCount(0);
     await projectWithVideo(page);
     await backHome(page, 1);
-    await expect(tip).toContainText('you have 1 here');
+    await expect(tip).toContainText(MOVE);
   });
 
-  test('opened from the Home Screen with an empty list: Kadr says where the Safari projects are and how to bring one', async ({ page }) => {
+  test('opened from the Home Screen with an empty list: Kadr says the Safari projects are kept apart and opens their copy', async ({ page }) => {
     await page.addInitScript(() => { Object.defineProperty(navigator, 'standalone', { value: true }); });
     await home(page);
-    await expect(page.getByText('Projects made in Safari stay in Safari. To bring one here, open Kadr in Safari, save a backup of the project (↓), then tap “Restore backup” here.')).toBeVisible();
+    const card = page.getByRole('note').filter({ hasText: 'Projects from Safari' });
+    await expect(card).toContainText('They stayed in Safari. Open Kadr there, save a backup of all projects, then tap “Restore backup” below ↓');
+    await expect(card.getByRole('button'), 'one «Restore backup» on the screen: the dock\'s').toHaveText(['Got it']);
+    await expect(page.getByRole('button', { name: 'Restore backup' })).toHaveCount(1);
+    await card.getByRole('button', { name: 'Got it' }).click();
+    await expect(card).toHaveCount(0);
     await expect(advice(page), 'already on the Home Screen: no advice to add it').toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 'no sideways scroll').toBeLessThanOrEqual(0);
   });
