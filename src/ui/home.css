@@ -68,6 +68,7 @@ button.ck-home-card:focus-visible { outline: 2px solid var(--text-primary); outl
 .ck-art-intro { background: linear-gradient(0deg, var(--surface-raised) 0 40%, var(--mark-was) 40% 48%, var(--surface-raised) 48%); }
 
 .ck-home-foot { margin-top: var(--space-4); color: var(--text-secondary); font-size: var(--type-xs); }
+.ck-home-foot-keep { margin: 0 0 var(--space-2); }
 .ck-home-foot a { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 var(--space-1); color: inherit; }
 /* The statistics switch reads as the links next to it (G-3). */
 .ck-home-foot-switch { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 var(--space-1); border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }

@@ -3,7 +3,7 @@ import { uid } from '../core/defaults';
 import { SNIFF_BYTES, animatedImage, sniffMime } from '../core/sniff';
 import type { Asset } from '../core/types';
 import { within } from '../lib/limits';
-import { openReader, putBlob, requestPersistence, type TakeWriter } from '../storage/db';
+import { openReader, putBlob, type TakeWriter } from '../storage/db';
 import { MediaMissing } from '../storage/reader';
 import { MediaError, probe } from './media';
 import { letGo } from '../lib/canvas';
@@ -33,8 +33,7 @@ export async function importFile(file: File | Blob, name = (file as File).name ?
   const asset = assetOf(uid(), name, file, await probe(file), onNote);
   await ensureRoom(file.size, name);
   await putBlob(asset.id, file);
-  persistOnce();
-  return asset;
+  return asset; // the project it goes into is saved, and that asks the browser to keep the data (db.ts keepProjects)
 }
 
 /** The asset a probed file makes; what the person should hear about it goes to `onNote`. */
@@ -58,9 +57,7 @@ export async function saveTake(take: TakeWriter, assetId: string, name: string, 
 export async function importStored(assetId: string, name: string, onNote?: (note: ImportNote) => void): Promise<Asset> {
   const media = await openReader(assetId);
   if (!media) throw new MediaMissing();
-  const asset = assetOf(assetId, name, media, await probe(media), onNote);
-  persistOnce();
-  return asset;
+  return assetOf(assetId, name, media, await probe(media), onNote);
 }
 
 /** Past this a picture is refused before decoding: 48 MP phone photos are fine, a 200 MP file takes the tab down. */
@@ -79,14 +76,6 @@ export async function ensureRoom(bytes: number, name: string): Promise<void> {
   if (free < bytes + ROOM_MARGIN) {
     throw new MediaError('Not enough storage on this device for “{name}” ({mb} MB). Delete old projects or free up space, then try again.', { name, mb: Math.ceil(bytes / 1e6) });
   }
-}
-
-let persisted = false;
-/** Media are in: the browser is asked again to keep this site's data (it may say yes now that the site is used). */
-function persistOnce(): void {
-  if (persisted) return;
-  persisted = true;
-  void requestPersistence();
 }
 
 /** Imports files one by one; failures are reported per file instead of aborting the batch. */
