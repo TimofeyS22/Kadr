@@ -96,6 +96,9 @@
   --z-content: 0;
   --z-mark: 1;
   --z-playhead: 2;
+  /* A bar fixed to the screen over a page that scrolls under it (Home's dock): over the marks and buttons of the page's
+     rows, under toasts, scrims and sheets (SW-A-3). Never on one screen with a playhead. */
+  --z-bar: 2;
   --z-toast: 3;
   --z-scrim: 4;
   --z-sheet: 5;

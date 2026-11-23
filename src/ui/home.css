@@ -77,7 +77,7 @@ button.ck-home-card:focus-visible { outline: 2px solid var(--text-primary); outl
 .ck-home { padding-bottom: var(--home-dock, 0px); }
 html:has(.ck-home-dock) { scroll-padding-bottom: var(--home-dock, 0px); }
 .ck-home-dock {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-mark); display: grid; gap: var(--space-2);
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-bar); display: grid; gap: var(--space-2);
   padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   background: var(--surface-panel); box-shadow: inset 0 var(--hairline) var(--border-subtle);
 }
