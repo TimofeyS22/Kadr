@@ -207,6 +207,9 @@ export function smallCache(name: string): { match(url: string): Promise<Response
   };
 }
 
+/** `p`, or undefined when it fails or does not answer in time: for a look into storage that may be done without. */
+export const within = <T>(p: Promise<T>, what: string): Promise<T | undefined> => limited(p, QUICK_MS, what).catch(() => undefined);
+
 /** For tests: every store in use again, nothing held in memory. */
 export function resetStores(): void {
   dead.clear();
